@@ -7,59 +7,70 @@ on:
   push:
     branches:
       - main
+    paths:
+      - "api/**"
+      - ".github/workflows/main_ember-api.yml"
   workflow_dispatch:
 
 jobs:
   build:
     runs-on: ubuntu-latest
     permissions:
-      contents: read #This is required for actions/checkout
+      contents: read
 
     steps:
-      - uses: actions/checkout@v4
+      - name: checkout
+        uses: actions/checkout@v4
 
-      - name: Set up Node.js version
-        uses: actions/setup-node@v3
+      - name: setup node
+        uses: actions/setup-node@v4
         with:
-          node-version: '22.x'
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: api/package-lock.json
 
-      - name: npm install, build, and test
-        run: |
-          npm install
-          npm run build --if-present
-          npm run test --if-present
+      - name: install
+        working-directory: api
+        run: npm ci
 
-      - name: Upload artifact for deployment job
+      - name: build (optional)
+        working-directory: api
+        run: npm run build --if-present
+
+      - name: test (optional)
+        working-directory: api
+        run: npm run test --if-present
+
+      - name: upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: node-app
-          path: .
+          name: api-app
+          path: api
 
   deploy:
     runs-on: ubuntu-latest
     needs: build
     permissions:
-      id-token: write #This is required for requesting the JWT
-      contents: read #This is required for actions/checkout
+      id-token: write
+      contents: read
 
     steps:
-      - name: Download artifact from build job
+      - name: download artifact
         uses: actions/download-artifact@v4
         with:
-          name: node-app
-      
-      - name: Login to Azure
+          name: api-app
+          path: api
+
+      - name: login to azure
         uses: azure/login@v2
         with:
           client-id: ${{ secrets.AZUREAPPSERVICE_CLIENTID_298408D4FB304F60B9F4AEC3C47B750A }}
           tenant-id: ${{ secrets.AZUREAPPSERVICE_TENANTID_D3D77769A6BA4D048343E3649FDF9157 }}
           subscription-id: ${{ secrets.AZUREAPPSERVICE_SUBSCRIPTIONID_92204967630B4F8DBB48662DA954AF63 }}
 
-      - name: 'Deploy to Azure Web App'
-        id: deploy-to-webapp
+      - name: deploy to azure web app
         uses: azure/webapps-deploy@v3
         with:
-          app-name: 'ember-api'
-          slot-name: 'Production'
-          package: .
-          
+          app-name: ember-api
+          slot-name: Production
+          package: api
