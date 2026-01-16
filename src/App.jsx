@@ -1,53 +1,57 @@
-import { useEffect, useState } from "react";
-import "./App.css";
-import { apiGet } from "./api";
+import { Routes, Route } from "react-router-dom";
+import Layout from "./Layout.jsx";
 
-function App() {
-  const [me, setMe] = useState(null);
-  const [error, setError] = useState(null);
-
-  useEffect(() => {
-    let alive = true;
-
-    apiGet("/me")
-      .then((data) => {
-        if (!alive) return;
-        setMe(data);
-      })
-      .catch((err) => {
-        if (!alive) return;
-        setError(err?.message || String(err));
-      });
-
-    return () => {
-      alive = false;
-    };
-  }, []);
-
+function Home() {
   return (
-    <>
+    <div>
       <h1>Ember</h1>
+      <p>Kies wat je wilt doen:</p>
 
-      {!me && !error && <p>laden...</p>}
+      <div className="grid">
+        <a className="card-link" href="/installaties">
+          <div className="card">
+            <h2>Installatiegegevens</h2>
+            <p>Zoek en bekijk installatie-informatie.</p>
+          </div>
+        </a>
 
-      {error && (
-        <div className="card">
-          <h2>fout</h2>
-          <pre style={{ textAlign: "left", whiteSpace: "pre-wrap" }}>{error}</pre>
-        </div>
-      )}
-
-      {me && (
-        <div className="card" style={{ textAlign: "left" }}>
-          <h2>ingelogd</h2>
-          <div><b>naam:</b> {me.user?.name}</div>
-          <div><b>email:</b> {me.user?.email}</div>
-          <div><b>oid:</b> {me.user?.objectId}</div>
-          <div><b>rollen:</b> {(me.roles || []).join(", ") || "-"}</div>
-        </div>
-      )}
-    </>
+        <a className="card-link" href="/formulieren">
+          <div className="card">
+            <h2>Formulier invullen</h2>
+            <p>Start of vervolg een formulier.</p>
+          </div>
+        </a>
+      </div>
+    </div>
   );
 }
 
-export default App;
+function Installaties() {
+  return (
+    <div>
+      <h1>Installatiegegevens</h1>
+      <p>placeholder (later: installatie zoeken + details)</p>
+    </div>
+  );
+}
+
+function Formulieren() {
+  return (
+    <div>
+      <h1>Formulier invullen</h1>
+      <p>placeholder (later: kies installatie → start formulier)</p>
+    </div>
+  );
+}
+
+export default function App() {
+  return (
+    <Routes>
+      <Route element={<Layout />}>
+        <Route path="/" element={<Home />} />
+        <Route path="/installaties" element={<Installaties />} />
+        <Route path="/formulieren" element={<Formulieren />} />
+      </Route>
+    </Routes>
+  );
+}
