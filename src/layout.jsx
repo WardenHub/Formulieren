@@ -1,184 +1,96 @@
-import { useEffect, useMemo, useState } from "react";
-import { Link, NavLink, Outlet, useLocation } from "react-router-dom";
-import { apiGet } from "./api";
+import { Outlet, NavLink, useLocation } from "react-router-dom";
+import { useEffect, useRef, useState } from "react";
 import "./layout.css";
 
-function initialsFromName(name, email) {
-  const src = (name || "").trim();
-  if (src) {
-    const parts = src.split(/\s+/).filter(Boolean);
-    const a = parts[0]?.[0] || "";
-    const b = parts.length > 1 ? parts[parts.length - 1]?.[0] : "";
-    return (a + b).toUpperCase() || "?";
-  }
-  if (email) return email.slice(0, 2).toUpperCase();
-  return "?";
-}
-
 export default function Layout() {
-  const [me, setMe] = useState(null);
-  const [error, setError] = useState(null);
-
-  const [sidebarOpen, setSidebarOpen] = useState(false); // mobiel: dicht starten
-  const [userMenuOpen, setUserMenuOpen] = useState(false);
-
+  const [navOpen, setNavOpen] = useState(false);
+  const [avatarOpen, setAvatarOpen] = useState(false);
+  const menuRef = useRef(null);
   const location = useLocation();
 
+  // sluit menus bij navigatie
   useEffect(() => {
-    let alive = true;
-
-    apiGet("/me")
-      .then((data) => {
-        if (!alive) return;
-        setMe(data);
-      })
-      .catch((err) => {
-        if (!alive) return;
-        setError(err?.message || String(err));
-      });
-
-    return () => {
-      alive = false;
-    };
-  }, []);
-
-  // sluit menus bij route change
-  useEffect(() => {
-    setSidebarOpen(false);
-    setUserMenuOpen(false);
+    setNavOpen(false);
+    setAvatarOpen(false);
   }, [location.pathname]);
 
-  // sluit dropdown bij klik buiten
+  // sluit avatar menu bij klik buiten menu
   useEffect(() => {
     function onDocClick(e) {
-      const el = e.target;
-      if (!(el instanceof HTMLElement)) return;
-      if (el.closest("[data-user-menu]")) return;
-      setUserMenuOpen(false);
+      if (!menuRef.current) return;
+      if (menuRef.current.contains(e.target)) return;
+      setAvatarOpen(false);
     }
-    document.addEventListener("click", onDocClick);
-    return () => document.removeEventListener("click", onDocClick);
+    document.addEventListener("mousedown", onDocClick);
+    return () => document.removeEventListener("mousedown", onDocClick);
   }, []);
-
-  const initials = useMemo(() => {
-    return initialsFromName(me?.user?.name, me?.user?.email);
-  }, [me]);
-
-  const rolesLabel = (me?.roles || []).join(", ");
 
   return (
     <div className="app-shell">
-      {/* topbar */}
       <header className="topbar">
         <button
           className="icon-btn"
           aria-label="menu"
-          onClick={() => setSidebarOpen((v) => !v)}
+          onClick={() => setNavOpen((v) => !v)}
         >
-          {/* hamburger */}
-          <span className="hamburger" aria-hidden="true" />
+          ☰
         </button>
 
-        <Link to="/" className="brand">
-          Ember
-        </Link>
+        <div className="brand">Ember</div>
 
         <div className="topbar-spacer" />
 
-        <a
-          className="icon-btn"
-          href="https://kennis.wardenburg.nl/Main/Werkwijze/Ember/"
-          target="_blank"
-          rel="noreferrer"
-          aria-label="help"
-          title="help"
-        >
-          ?
-        </a>
-
-        <div className="user" data-user-menu>
+        <div className="avatar-wrap" ref={menuRef}>
           <button
-            className="avatar-btn"
-            onClick={() => setUserMenuOpen((v) => !v)}
-            aria-label="user menu"
+            className="icon-btn"
+            aria-label="account"
+            onClick={() => setAvatarOpen((v) => !v)}
           >
-            <span className="avatar" aria-hidden="true">
-              {initials}
-            </span>
+            🙂
           </button>
 
-          {userMenuOpen && (
-            <div className="user-menu" role="menu">
-              <div className="user-menu-header">
-                <div className="user-name">{me?.user?.name || "..."}</div>
-                <div className="user-sub">{me?.user?.email || ""}</div>
-                <div className="user-sub">{rolesLabel || ""}</div>
-              </div>
+          {avatarOpen && (
+            <div className="avatar-menu" role="menu">
+              <a
+                className="menu-item"
+                href="https://kennis.wardenburg.nl/Main/Werkwijze/Ember/"
+                target="_blank"
+                rel="noreferrer"
+              >
+                Help
+              </a>
 
-              <div className="user-menu-sep" />
-
-              {/* SWA logout endpoint */}
-              <a className="user-menu-item" href="/.auth/logout">
-                uitloggen
+              <a className="menu-item danger" href="/.auth/logout">
+                Uitloggen
               </a>
             </div>
           )}
         </div>
       </header>
 
-      {/* sidebar + content */}
-      <div className="body">
-        {/* overlay voor mobiel */}
-        {sidebarOpen && <div className="overlay" onClick={() => setSidebarOpen(false)} />}
+      {/* overlay voor mobile */}
+      <div
+        className={`backdrop ${navOpen ? "show" : ""}`}
+        onClick={() => setNavOpen(false)}
+      />
 
-        <aside className={`sidebar ${sidebarOpen ? "open" : ""}`}>
-          <nav className="nav">
-            <NavLink to="/" end className={({ isActive }) => `nav-item ${isActive ? "active" : ""}`}>
-              Home
-            </NavLink>
-            <NavLink
-              to="/installaties"
-              className={({ isActive }) => `nav-item ${isActive ? "active" : ""}`}
-            >
-              Installatiegegevens
-            </NavLink>
-            <NavLink
-              to="/formulieren"
-              className={({ isActive }) => `nav-item ${isActive ? "active" : ""}`}
-            >
-              Formulier invullen
-            </NavLink>
+      <aside className={`sidebar ${navOpen ? "open" : ""}`}>
+        <nav className="nav">
+          <NavLink to="/" end className="nav-link">
+            Home
+          </NavLink>
+          <NavLink to="/installaties" className="nav-link">
+            Installatiegegevens
+          </NavLink>
+          <NavLink to="/formulieren" className="nav-link">
+            Formulier invullen
+          </NavLink>
+        </nav>
+      </aside>
 
-            {/* als je later admin-only items wil tonen */}
-            {me?.roles?.includes("admin") && (
-              <div className="nav-section">
-                <div className="nav-section-title">admin</div>
-                <NavLink
-                  to="/admin"
-                  className={({ isActive }) => `nav-item ${isActive ? "active" : ""}`}
-                >
-                  Beheer
-                </NavLink>
-              </div>
-            )}
-          </nav>
-        </aside>
-
-        <main className="content">
-          {!me && !error && <p className="muted">laden...</p>}
-
-          {error && (
-            <div className="card">
-              <h2>fout</h2>
-              <pre className="pre">{error}</pre>
-            </div>
-          )}
-
-          {/* als /me faalt: je SWA route config zal meestal redirecten naar login,
-              maar deze fallback houdt het netjes */}
-          {me && <Outlet context={{ me }} />}
-        </main>
-      </div>
+      <main className="content">
+        <Outlet />
+      </main>
     </div>
   );
 }
