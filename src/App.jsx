@@ -1,4 +1,4 @@
-import { Routes, Route } from "react-router-dom";
+import { Routes, Route, Link } from "react-router-dom";
 import Layout from "./Layout.jsx";
 
 function Home() {
@@ -8,23 +8,24 @@ function Home() {
       <p>Kies wat je wilt doen:</p>
 
       <div className="grid">
-        <a className="card-link" href="/installaties">
+        <Link className="card-link" to="/installaties">
           <div className="card">
             <h2>Installatiegegevens</h2>
             <p>Zoek en bekijk installatie-informatie.</p>
           </div>
-        </a>
+        </Link>
 
-        <a className="card-link" href="/formulieren">
+        <Link className="card-link" to="/formulieren">
           <div className="card">
             <h2>Formulier invullen</h2>
             <p>Start of vervolg een formulier.</p>
           </div>
-        </a>
+        </Link>
       </div>
     </div>
   );
 }
+
 
 function Installaties() {
   return (
