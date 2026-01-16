@@ -31,19 +31,27 @@ function getClaim(principal, claimType) {
 }
 
 async function graphGet(url) {
-  const token = await credential.getToken("https://graph.microsoft.com/.default");
+  console.log("[GRAPH] GET", url);
+
+  const token = await credential.getToken(
+    "https://graph.microsoft.com/.default"
+  );
 
   const res = await fetch(url, {
-    headers: { Authorization: `Bearer ${token.token}` },
+    headers: {
+      Authorization: `Bearer ${token.token}`,
+    },
   });
 
   if (!res.ok) {
     const text = await res.text();
+    console.error("[GRAPH ERROR]", res.status, text);
     throw new Error(`graph error ${res.status}: ${text}`);
   }
 
   return res.json();
 }
+
 
 // haalt groepen op, inclusief nested groepen
 async function getUserGroupIds(userObjectId) {
