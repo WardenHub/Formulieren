@@ -33,14 +33,10 @@ function getClaim(principal, claimType) {
 async function graphGet(url) {
   console.log("[GRAPH] GET", url);
 
-  const token = await credential.getToken(
-    "https://graph.microsoft.com/.default"
-  );
+  const token = await credential.getToken("https://graph.microsoft.com/.default");
 
   const res = await fetch(url, {
-    headers: {
-      Authorization: `Bearer ${token.token}`,
-    },
+    headers: { Authorization: `Bearer ${token.token}` },
   });
 
   if (!res.ok) {
@@ -51,7 +47,6 @@ async function graphGet(url) {
 
   return res.json();
 }
-
 
 // haalt groepen op, inclusief nested groepen
 async function getUserGroupIds(userObjectId) {
@@ -77,7 +72,6 @@ async function authMiddleware(req, res, next) {
     const principal = getClientPrincipal(req);
     if (!principal) return res.status(401).json({ error: "not authenticated" });
 
-    // Entra Object ID zit meestal als claim: http://schemas.microsoft.com/identity/claims/objectidentifier
     const userObjectId =
       getClaim(principal, "http://schemas.microsoft.com/identity/claims/objectidentifier") ||
       getClaim(principal, "oid");
@@ -114,24 +108,16 @@ async function authMiddleware(req, res, next) {
   }
 }
 
-function requireRole(role) {
+function requireRole(...allowed) {
   return (req, res, next) => {
     const roles = req.roles || [];
-    if (!roles.includes(role)) return res.status(403).json({ error: "forbidden" });
+    const ok = allowed.some((r) => roles.includes(r));
+    if (!ok) return res.status(403).json({ error: "forbidden", required: allowed });
     next();
   };
 }
 
-function requireAnyRole(rolesAllowed) {
-  return (req, res, next) => {
-    const roles = req.roles || [];
-    const ok = rolesAllowed.some((r) => roles.includes(r));
-    if (!ok) return res.status(403).json({ error: "forbidden" });
-    next();
-  };
-}
-
-// routes
+// public route (geen auth)
 app.get("/health", (req, res) => {
   res.json({ ok: true, service: "ember-api" });
 });
@@ -140,30 +126,15 @@ app.get("/health", (req, res) => {
 app.use(authMiddleware);
 
 app.get("/me", (req, res) => {
-  res.json({
-    user: req.user,
-    roles: req.roles || [],
-  });
+  res.json({ user: req.user, roles: req.roles || [] });
 });
 
 app.get("/forms/definitions", requireRole("admin"), (req, res) => {
-  res.json({
-    ok: true,
-    route: "/forms/definitions",
-    user: req.user,
-    roles: req.roles,
-    data: [],
-  });
+  res.json({ ok: true, data: [] });
 });
 
-app.get("/forms/instances", requireAnyRole(["admin", "monteur"]), (req, res) => {
-  res.json({
-    ok: true,
-    route: "/forms/instances",
-    user: req.user,
-    roles: req.roles,
-    data: [],
-  });
+app.get("/forms/instances", requireRole("admin", "monteur"), (req, res) => {
+  res.json({ ok: true, data: [] });
 });
 
 const port = process.env.PORT || 8080;
