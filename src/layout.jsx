@@ -1,111 +1,182 @@
-import { Link, Outlet, useNavigate } from "react-router-dom";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { Link, NavLink, Outlet, useLocation } from "react-router-dom";
 import { apiGet } from "./api";
+import "./layout.css";
 
-const HELP_URL = "https://kennis.wardenburg.nl/Main/Werkwijze/Ember/";
-
-function initials(nameOrEmail) {
-  const s = (nameOrEmail || "").trim();
-  if (!s) return "?";
-  const parts = s.split(" ").filter(Boolean);
-  if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase();
-  return s.slice(0, 2).toUpperCase();
+function initialsFromName(name, email) {
+  const src = (name || "").trim();
+  if (src) {
+    const parts = src.split(/\s+/).filter(Boolean);
+    const a = parts[0]?.[0] || "";
+    const b = parts.length > 1 ? parts[parts.length - 1]?.[0] : "";
+    return (a + b).toUpperCase() || "?";
+  }
+  if (email) return email.slice(0, 2).toUpperCase();
+  return "?";
 }
 
 export default function Layout() {
   const [me, setMe] = useState(null);
+  const [error, setError] = useState(null);
+
+  const [sidebarOpen, setSidebarOpen] = useState(false); // mobiel: dicht starten
   const [userMenuOpen, setUserMenuOpen] = useState(false);
-  const [navOpen, setNavOpen] = useState(false);
-  const menuRef = useRef(null);
-  const navigate = useNavigate();
+
+  const location = useLocation();
 
   useEffect(() => {
-    apiGet("/me").then(setMe).catch(console.error);
+    let alive = true;
+
+    apiGet("/me")
+      .then((data) => {
+        if (!alive) return;
+        setMe(data);
+      })
+      .catch((err) => {
+        if (!alive) return;
+        setError(err?.message || String(err));
+      });
+
+    return () => {
+      alive = false;
+    };
   }, []);
 
+  // sluit menus bij route change
+  useEffect(() => {
+    setSidebarOpen(false);
+    setUserMenuOpen(false);
+  }, [location.pathname]);
+
+  // sluit dropdown bij klik buiten
   useEffect(() => {
     function onDocClick(e) {
-      if (!menuRef.current) return;
-      if (!menuRef.current.contains(e.target)) setUserMenuOpen(false);
+      const el = e.target;
+      if (!(el instanceof HTMLElement)) return;
+      if (el.closest("[data-user-menu]")) return;
+      setUserMenuOpen(false);
     }
     document.addEventListener("click", onDocClick);
     return () => document.removeEventListener("click", onDocClick);
   }, []);
 
-  const displayName = me?.user?.name || me?.user?.email || "gebruiker";
-  const roles = me?.roles || [];
+  const initials = useMemo(() => {
+    return initialsFromName(me?.user?.name, me?.user?.email);
+  }, [me]);
+
+  const rolesLabel = (me?.roles || []).join(", ");
 
   return (
     <div className="app-shell">
+      {/* topbar */}
       <header className="topbar">
-        <div className="topbar-left">
+        <button
+          className="icon-btn"
+          aria-label="menu"
+          onClick={() => setSidebarOpen((v) => !v)}
+        >
+          {/* hamburger */}
+          <span className="hamburger" aria-hidden="true" />
+        </button>
+
+        <Link to="/" className="brand">
+          Ember
+        </Link>
+
+        <div className="topbar-spacer" />
+
+        <a
+          className="icon-btn"
+          href="https://kennis.wardenburg.nl/Main/Werkwijze/Ember/"
+          target="_blank"
+          rel="noreferrer"
+          aria-label="help"
+          title="help"
+        >
+          ?
+        </a>
+
+        <div className="user" data-user-menu>
           <button
-            className="icon-btn"
-            onClick={() => setNavOpen((v) => !v)}
-            aria-label="menu"
-            title="menu"
-            type="button"
+            className="avatar-btn"
+            onClick={() => setUserMenuOpen((v) => !v)}
+            aria-label="user menu"
           >
-            ☰
+            <span className="avatar" aria-hidden="true">
+              {initials}
+            </span>
           </button>
 
-          <div className="brand" onClick={() => navigate("/")} role="button" tabIndex={0}>
-            Ember
-          </div>
-
-          {/* later: installatiecontext */}
-          {/* <div className="context">Installatie 12345 – Locatie</div> */}
-        </div>
-
-        <div className="topbar-right">
-          <a className="icon-btn link-btn" href={HELP_URL} target="_blank" rel="noreferrer">
-            ?
-          </a>
-
-          <div className="user-menu" ref={menuRef}>
-            <button
-              className="avatar-btn"
-              onClick={() => setUserMenuOpen((v) => !v)}
-              aria-label="account"
-              title={displayName}
-              type="button"
-            >
-              <div className="avatar">{initials(displayName)}</div>
-            </button>
-
-            {userMenuOpen && (
-              <div className="dropdown">
-                <div className="dropdown-title">{displayName}</div>
-                <div className="dropdown-sub">{roles.join(", ") || "geen rollen"}</div>
-
-                <div className="dropdown-divider" />
-
-                <a className="dropdown-item" href="/.auth/logout?post_logout_redirect_uri=/">
-                  uitloggen
-                </a>
+          {userMenuOpen && (
+            <div className="user-menu" role="menu">
+              <div className="user-menu-header">
+                <div className="user-name">{me?.user?.name || "..."}</div>
+                <div className="user-sub">{me?.user?.email || ""}</div>
+                <div className="user-sub">{rolesLabel || ""}</div>
               </div>
-            )}
-          </div>
+
+              <div className="user-menu-sep" />
+
+              {/* SWA logout endpoint */}
+              <a className="user-menu-item" href="/.auth/logout">
+                uitloggen
+              </a>
+            </div>
+          )}
         </div>
       </header>
 
-      <div className="content-shell">
-        <aside className={`sidenav ${navOpen ? "open" : ""}`}>
+      {/* sidebar + content */}
+      <div className="body">
+        {/* overlay voor mobiel */}
+        {sidebarOpen && <div className="overlay" onClick={() => setSidebarOpen(false)} />}
+
+        <aside className={`sidebar ${sidebarOpen ? "open" : ""}`}>
           <nav className="nav">
-            <Link to="/" className="nav-item" onClick={() => setNavOpen(false)}>
+            <NavLink to="/" end className={({ isActive }) => `nav-item ${isActive ? "active" : ""}`}>
               Home
-            </Link>
-            <Link to="/installaties" className="nav-item" onClick={() => setNavOpen(false)}>
+            </NavLink>
+            <NavLink
+              to="/installaties"
+              className={({ isActive }) => `nav-item ${isActive ? "active" : ""}`}
+            >
               Installatiegegevens
-            </Link>
-            <Link to="/formulieren" className="nav-item" onClick={() => setNavOpen(false)}>
+            </NavLink>
+            <NavLink
+              to="/formulieren"
+              className={({ isActive }) => `nav-item ${isActive ? "active" : ""}`}
+            >
               Formulier invullen
-            </Link>
+            </NavLink>
+
+            {/* als je later admin-only items wil tonen */}
+            {me?.roles?.includes("admin") && (
+              <div className="nav-section">
+                <div className="nav-section-title">admin</div>
+                <NavLink
+                  to="/admin"
+                  className={({ isActive }) => `nav-item ${isActive ? "active" : ""}`}
+                >
+                  Beheer
+                </NavLink>
+              </div>
+            )}
           </nav>
         </aside>
 
-        <main className="main">
-          <Outlet />
+        <main className="content">
+          {!me && !error && <p className="muted">laden...</p>}
+
+          {error && (
+            <div className="card">
+              <h2>fout</h2>
+              <pre className="pre">{error}</pre>
+            </div>
+          )}
+
+          {/* als /me faalt: je SWA route config zal meestal redirecten naar login,
+              maar deze fallback houdt het netjes */}
+          {me && <Outlet context={{ me }} />}
         </main>
       </div>
     </div>

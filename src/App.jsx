@@ -3,29 +3,26 @@ import Layout from "./layout.jsx";
 
 function Home() {
   return (
-    <div>
-      <h1>Ember</h1>
-      <p>Kies wat je wilt doen:</p>
+    <div style={{ display: "grid", gap: 14 }}>
+      <h1 style={{ margin: 0 }}>Ember</h1>
+      <p className="muted" style={{ margin: 0 }}>
+        Kies wat je wilt doen:
+      </p>
 
-      <div className="grid">
-        <Link className="card-link" to="/installaties">
-          <div className="card">
-            <h2>Installatiegegevens</h2>
-            <p>Zoek en bekijk installatie-informatie.</p>
-          </div>
+      <div className="home-grid">
+        <Link className="home-card" to="/installaties">
+          <div className="home-card-title">Installatiegegevens</div>
+          <div className="home-card-sub">Zoek en bekijk installatie-informatie.</div>
         </Link>
 
-        <Link className="card-link" to="/formulieren">
-          <div className="card">
-            <h2>Formulier invullen</h2>
-            <p>Start of vervolg een formulier.</p>
-          </div>
+        <Link className="home-card" to="/formulieren">
+          <div className="home-card-title">Formulier invullen</div>
+          <div className="home-card-sub">Start of vervolg een formulier.</div>
         </Link>
       </div>
     </div>
   );
 }
-
 
 function Installaties() {
   return (
