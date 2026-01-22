@@ -68,6 +68,8 @@ export async function getDbConnection() {
     // "mi" in azure, "aad" local (or if you set DB_AUTH=aad)
     const credential = isAzure ? new ManagedIdentityCredential() : new DefaultAzureCredential();
     const token = await credential.getToken("https://database.windows.net/.default");
+    const payload = JSON.parse(Buffer.from(token.token.split(".")[1], "base64").toString("utf8"));
+    console.log("[SQL] token tid", payload.tid, "oid", payload.oid, "aud", payload.aud);
 
     console.log(
       "[SQL] got token",

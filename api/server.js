@@ -166,9 +166,6 @@ app.get("/health", async (req, res) => {
   }
 });
 
-
-
-
 // alles hieronder vereist user + roles
 app.use(authMiddleware);
 
