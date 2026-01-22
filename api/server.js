@@ -143,26 +143,12 @@ app.get("/", (req, res) =>  res.json({ ok: true, service: "ember-api"   }));
 app.get("/health", async (req, res) => {
   try {
     const pool = await getDbConnection();
-    console.log("[HEALTH] pool state", { connected: pool.connected, connecting: pool.connecting });
-
-    console.log("sql pool state", {
-      connected: pool.connected,
-      connecting: pool.connecting,
-    });
-
-    const result = await pool.request().query("select 1 as ok");
-
     res.json({
       api: "ok",
-      db: result.recordset[0].ok,
+      db: pool?.connected ? 1 : 0,
     });
   } catch (err) {
-    console.error(err);
-    res.status(500).json({
-      api: "ok",
-      db: "error",
-      message: err.message,
-    });
+    res.status(500).json({ api: "ok", db: 0 });
   }
 });
 
