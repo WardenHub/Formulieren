@@ -1,5 +1,8 @@
 import express from "express";
+import "dotenv/config";
 import { DefaultAzureCredential } from "@azure/identity";
+// db toevoegen
+import { getDbConnection } from "./db.js";
 
 const app = express();
 app.use(express.json());
@@ -15,6 +18,18 @@ const credential = new DefaultAzureCredential();
 // key = userObjectId, value = { roles, expiresAt }
 const rolesCache = new Map();
 const CACHE_TTL_MS = 5 * 60 * 1000;
+
+const required = ["SQL_SERVER", "SQL_DATABASE"];
+for (const k of required) {
+  if (!process.env[k]) throw new Error(`missing env var ${k}`);
+}
+
+if ((process.env.DB_AUTH || "aad") === "sql") {
+  for (const k of ["SQL_USER", "SQL_PASSWORD"]) {
+    if (!process.env[k]) throw new Error(`missing env var ${k} for sql auth`);
+  }
+}
+
 
 function getClientPrincipal(req) {
   const b64 = req.headers["x-ms-client-principal"];
@@ -118,8 +133,24 @@ function requireRole(...allowed) {
 }
 
 // public route (geen auth)
-app.get("/health", (req, res) => {
-  res.json({ ok: true, service: "ember-api" });
+app.get("/health", async (req, res) => {
+  console.log("SQL_SERVER", process.env.SQL_SERVER);
+  console.log("SQL_DATABASE", process.env.SQL_DATABASE);
+  try {
+    const pool = await getDbConnection();
+    const result = await pool.request().query("select 1 as ok");
+    res.json({
+      api: "ok",
+      db: result.recordset[0].ok,
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({
+      api: "ok",
+      db: "error",
+      message: err.message,
+    });
+  }
 });
 
 // alles hieronder vereist user + roles

@@ -85,6 +85,9 @@ export default function Layout() {
           <NavLink to="/formulieren" className="nav-link">
             Formulier invullen
           </NavLink>
+          {roles.includes("admin") && (
+            <NavLink to="/beheer" className="nav-link">Beheer</NavLink>
+           )}
         </nav>
       </aside>
 

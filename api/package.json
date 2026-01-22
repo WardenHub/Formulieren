@@ -8,6 +8,9 @@
   },
   "dependencies": {
     "@azure/identity": "^4.13.0",
-    "express": "^4.19.2"
+    "dotenv": "^17.2.3",
+    "express": "^4.19.2",
+    "mssql": "^12.2.0",
+    "tedious": "^19.2.0"
   }
 }
