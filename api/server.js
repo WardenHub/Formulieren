@@ -7,6 +7,11 @@ import { getDbConnection } from "./db.js";
 const app = express();
 app.use(express.json());
 
+console.log("node", process.version);
+console.log("db auth mode", process.env.DB_AUTH || "aad");
+console.log("sql server", process.env.SQL_SERVER);
+console.log("sql database", process.env.SQL_DATABASE);
+
 const ROLE_GROUPS = {
   admin: "03ba899f-0af6-4d81-9ab7-023a0cc42455",
   monteur: "64e2c12f-73d5-4b2a-9d56-fc465e3cc9bf",
@@ -159,6 +164,9 @@ app.use(authMiddleware);
 app.get("/me", (req, res) => {
   res.json({ user: req.user, roles: req.roles || [] });
 });
+
+app.get("/", (req, res) =>  res.json({ ok: true, service: "ember-api"   }));
+
 
 app.get("/forms/definitions", requireRole("admin"), (req, res) => {
   res.json({ ok: true, data: [] });
