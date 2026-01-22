@@ -1,5 +1,5 @@
 import sql from "mssql";
-import { DefaultAzureCredential } from "@azure/identity";
+import { ManagedIdentityCredential, DefaultAzureCredential } from "@azure/identity";
 
 let pool;
 
@@ -29,37 +29,30 @@ export async function getDbConnection() {
   if (!server) throw new Error("missing env var SQL_SERVER or AZURE_SQL_SERVER");
   if (!database) throw new Error("missing env var SQL_DATABASE or AZURE_SQL_DATABASE");
 
-  // if we have a healthy connected pool, reuse it
   if (pool?.connected) return pool;
 
-  // if we have a stale/closed pool hanging around, drop it
   if (pool && !pool.connected) {
     try { pool.close(); } catch {}
     pool = undefined;
   }
 
-  const credential = new DefaultAzureCredential();
-  const token = await credential.getToken("https://database.windows.net/.default");
+  const isAzure = !!process.env.WEBSITE_INSTANCE_ID;
 
-  const cfg = buildConfigWithAccessToken({
-    server,
-    database,
-    token: token.token,
-  });
+  // in azure: force managed identity
+  // local: keep default chain (az cli / env etc.)
+  const credential = isAzure ? new ManagedIdentityCredential() : new DefaultAzureCredential();
+
+  const token = await credential.getToken("https://database.windows.net/.default");
+  console.log("[SQL] got token", !!token?.token, "expires", token?.expiresOnTimestamp, "isAzure", isAzure);
+
+  const cfg = buildConfigWithAccessToken({ server, database, token: token.token });
 
   const nextPool = new sql.ConnectionPool(cfg);
+  nextPool.on("error", (err) => console.error("[SQL POOL ERROR]", err));
 
-  // optional; helps you see pool-level errors in logs
-  nextPool.on("error", (err) => {
-    console.error("[SQL POOL ERROR]", err);
-  });
+  await nextPool.connect();
+  pool = nextPool;
+  console.log("[SQL] pool connected", { connected: pool.connected, connecting: pool.connecting });
 
-  try {
-    await nextPool.connect();
-    pool = nextPool; // only cache after connect succeeded
-    return pool;
-  } catch (err) {
-    try { nextPool.close(); } catch {}
-    throw err;
-  }
+  return pool;
 }
