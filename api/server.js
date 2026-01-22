@@ -137,6 +137,9 @@ function requireRole(...allowed) {
   };
 }
 
+
+app.get("/", (req, res) =>  res.json({ ok: true, service: "ember-api"   }));
+
 // public route (geen auth)
 app.get("/health", async (req, res) => {
   console.log("SQL_SERVER", process.env.SQL_SERVER);
@@ -158,14 +161,13 @@ app.get("/health", async (req, res) => {
   }
 });
 
+
 // alles hieronder vereist user + roles
 app.use(authMiddleware);
 
 app.get("/me", (req, res) => {
   res.json({ user: req.user, roles: req.roles || [] });
 });
-
-app.get("/", (req, res) =>  res.json({ ok: true, service: "ember-api"   }));
 
 
 app.get("/forms/definitions", requireRole("admin"), (req, res) => {

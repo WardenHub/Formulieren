@@ -4,6 +4,11 @@ import { DefaultAzureCredential } from "@azure/identity";
 let pool;
 
 export async function getDbConnection() {
+  const server = process.env.SQL_SERVER || process.env.AZURE_SQL_SERVER;
+  const database = process.env.SQL_DATABASE || process.env.AZURE_SQL_DATABASE;
+  if (!server) throw new Error("missing env var SQL_SERVER or AZURE_SQL_SERVER");
+  if (!database) throw new Error("missing env var SQL_DATABASE or AZURE_SQL_DATABASE");
+  
   if (pool) return pool;
 
   const auth = process.env.DB_AUTH || "aad";
