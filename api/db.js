@@ -27,12 +27,10 @@ export async function getDbConnection() {
   };
 
   if (isAzure) {
-    // 🔥 DIT IS DE FIX
     config.authentication = {
-      type: "azure-active-directory-msi",
+      type: "azure-active-directory-msi-app-service",
     };
   } else {
-    // lokaal: SQL login of Azure CLI
     config.user = process.env.SQL_USER;
     config.password = process.env.SQL_PASSWORD;
   }

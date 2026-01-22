@@ -5,6 +5,7 @@ import "./layout.css";
 export default function Layout() {
   const [navOpen, setNavOpen] = useState(false);
   const [avatarOpen, setAvatarOpen] = useState(false);
+  const [roles, setRoles] = useState([]); 
   const menuRef = useRef(null);
   const location = useLocation();
 
@@ -23,6 +24,37 @@ export default function Layout() {
     }
     document.addEventListener("mousedown", onDocClick);
     return () => document.removeEventListener("mousedown", onDocClick);
+  }, []);
+
+  // haal rollen op
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadMe() {
+      try {
+        const res = await fetch("/api/me", { credentials: "include" });
+
+        if (res.status === 401) {
+          window.location.assign("/.auth/login/aad");
+          return;
+        }
+
+        if (!res.ok) {
+          console.error("me failed", res.status);
+          return;
+        }
+
+        const data = await res.json();
+        if (!cancelled) setRoles(data.roles ?? []);
+      } catch (err) {
+        console.error("me fetch failed", err);
+      }
+    }
+
+    loadMe();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   return (
@@ -68,7 +100,6 @@ export default function Layout() {
         </div>
       </header>
 
-      {/* overlay voor mobile */}
       <div
         className={`backdrop ${navOpen ? "show" : ""}`}
         onClick={() => setNavOpen(false)}
@@ -85,9 +116,12 @@ export default function Layout() {
           <NavLink to="/formulieren" className="nav-link">
             Formulier invullen
           </NavLink>
+
           {roles.includes("admin") && (
-            <NavLink to="/beheer" className="nav-link">Beheer</NavLink>
-           )}
+            <NavLink to="/beheer" className="nav-link">
+              Beheer
+            </NavLink>
+          )}
         </nav>
       </aside>
 
