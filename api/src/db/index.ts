@@ -6,9 +6,9 @@
 import sql from "mssql";
 import { DefaultAzureCredential } from "@azure/identity";
 
-let pool;
+let pool: sql.ConnectionPool | undefined;
 
-function baseConfig({ server, database }) {
+function baseConfig({ server, database }: { server: string; database: string }) {
   return {
     server,
     database,
@@ -35,10 +35,10 @@ export async function getDbConnection() {
   const isAzure = !!process.env.WEBSITE_INSTANCE_ID;
   const authMode = (process.env.DB_AUTH || "sql").toLowerCase();
 
-  let config = baseConfig({ server, database });
+  let config: any = baseConfig({ server, database });
 
   if (isAzure) {
-    // 🔥 production path; DO NOT TOUCH
+    // production path; DO NOT TOUCH
     config.authentication = {
       type: "azure-active-directory-msi-app-service",
     };
@@ -68,4 +68,16 @@ export async function getDbConnection() {
 
   pool = await sql.connect(config);
   return pool;
+}
+
+export async function sqlQuery<T = any>(queryText: string, params?: Record<string, any>) {
+  const pool = await getDbConnection();
+  const req = pool.request();
+
+  for (const [k, v] of Object.entries(params || {})) {
+    req.input(k, v as any);
+  }
+
+  const result = await req.query<T>(queryText);
+  return result.recordset;
 }

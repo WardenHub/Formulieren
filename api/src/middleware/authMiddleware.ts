@@ -1,18 +1,6 @@
-import express from "express";
-import "dotenv/config";
 import { DefaultAzureCredential } from "@azure/identity";
-// db toevoegen
-import { getDbConnection } from "./db.js";
 
-const app = express();
-app.use(express.json());
-
-console.log("node", process.version);
-console.log("db auth mode", process.env.DB_AUTH || "aad");
-console.log("sql server", process.env.SQL_SERVER);
-console.log("sql database", process.env.SQL_DATABASE);
-
-const ROLE_GROUPS = {
+const ROLE_GROUPS: Record<string, string> = {
   admin: "03ba899f-0af6-4d81-9ab7-023a0cc42455",
   monteur: "64e2c12f-73d5-4b2a-9d56-fc465e3cc9bf",
 };
@@ -21,22 +9,10 @@ const credential = new DefaultAzureCredential();
 
 // simpele cache zodat je niet elke request Graph aanroept
 // key = userObjectId, value = { roles, expiresAt }
-const rolesCache = new Map();
+const rolesCache = new Map<string, { roles: string[]; expiresAt: number }>();
 const CACHE_TTL_MS = 600 * 60 * 1000;
-const required = ["SQL_SERVER", "SQL_DATABASE"];
-//-------------
-for (const k of required) {
-  if (!process.env[k]) throw new Error(`missing env var ${k}`);
-}
 
-if ((process.env.DB_AUTH || "aad") === "sql") {
-  for (const k of ["SQL_USER", "SQL_PASSWORD"]) {
-    if (!process.env[k]) throw new Error(`missing env var ${k} for sql auth`);
-  }
-}
-
-
-function getClientPrincipal(req) {
+function getClientPrincipal(req: any) {
   const b64 = req.headers["x-ms-client-principal"];
   if (!b64) return null;
 
@@ -48,13 +24,19 @@ function getClientPrincipal(req) {
   }
 }
 
-async function graphGet(url) {
+function getClaim(principal: any, claimType: string) {
+  const claims = principal?.claims || [];
+  const found = claims.find((c: any) => c.typ === claimType);
+  return found?.val || null;
+}
+
+async function graphGet(url: string) {
   console.log("[GRAPH] GET", url);
 
   const token = await credential.getToken("https://graph.microsoft.com/.default");
 
   const res = await fetch(url, {
-    headers: { Authorization: `Bearer ${token.token}` },
+    headers: { Authorization: `Bearer ${token?.token}` },
   });
 
   if (!res.ok) {
@@ -66,16 +48,16 @@ async function graphGet(url) {
   return res.json();
 }
 
-async function getUserGroupIds(userObjectId) {
+async function getUserGroupIds(userObjectId: string) {
   const data = await graphGet(
     `https://graph.microsoft.com/v1.0/users/${userObjectId}/transitiveMemberOf?$select=id`
   );
 
-  return (data.value || []).map((g) => g.id);
+  return (data.value || []).map((g: any) => g.id);
 }
 
-function mapGroupsToRoles(groupIds) {
-  const roles = [];
+function mapGroupsToRoles(groupIds: string[]) {
+  const roles: string[] = [];
 
   for (const [role, groupId] of Object.entries(ROLE_GROUPS)) {
     if (groupIds.includes(groupId)) roles.push(role);
@@ -84,7 +66,7 @@ function mapGroupsToRoles(groupIds) {
   return roles;
 }
 
-async function authMiddleware(req, res, next) {
+export async function authMiddleware(req: any, res: any, next: any) {
   try {
     const principal = getClientPrincipal(req);
     if (!principal) return res.status(401).json({ error: "not authenticated" });
@@ -112,12 +94,12 @@ async function authMiddleware(req, res, next) {
       return next();
     }
 
-    let roles = [];
+    let roles: string[] = [];
 
     try {
       const groupIds = await getUserGroupIds(userObjectId);
       roles = mapGroupsToRoles(groupIds);
-    } catch (e) {
+    } catch (e: any) {
       console.error("[GRAPH] roles lookup failed", e?.message || e);
       roles = [];
     }
@@ -131,45 +113,3 @@ async function authMiddleware(req, res, next) {
     res.status(500).json({ error: "auth middleware failed" });
   }
 }
-
-function requireRole(...allowed) {
-  return (req, res, next) => {
-    const roles = req.roles || [];
-    const ok = allowed.some((r) => roles.includes(r));
-    if (!ok) return res.status(403).json({ error: "forbidden", required: allowed });
-    next();
-  };
-}
-
-app.get("/", (req, res) =>  res.json({ ok: true, service: "ember-api", blij:"Jesse"}));
-
-app.get("/health", async (req, res) => {
-  try {
-    const pool = await getDbConnection();
-    res.json({
-      api: "ok",
-      db: pool?.connected ? 1 : 0,
-    });
-  } catch (err) {
-    res.status(500).json({ api: "ok", db: "error" });
-  }
-});
-
-// alles hieronder vereist user + roles
-app.use(authMiddleware);
-
-app.get("/me", (req, res) => {
-  res.json({ user: req.user, roles: req.roles || [] });
-});
-
-
-app.get("/forms/definitions", requireRole("admin"), (req, res) => {
-  res.json({ ok: true, data: [] });
-});
-
-app.get("/forms/instances", requireRole("admin", "monteur"), (req, res) => {
-  res.json({ ok: true, data: [] });
-});
-
-const port = process.env.PORT || 8080;
-app.listen(port, () => console.log(`ember-api listening on ${port}`));
