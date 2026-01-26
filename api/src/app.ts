@@ -3,6 +3,8 @@ import "dotenv/config";
 import { authMiddleware } from "./middleware/authMiddleware";
 import { requireRole } from "./middleware/roleMiddleware";
 import { getDbConnection } from "./db";
+import installationsRouter from "./routes/installations";
+
 
 const app = express();
 app.use(express.json());
@@ -39,6 +41,8 @@ app.get("/health", async (req, res) => {
 
 // alles hieronder vereist user + roles
 app.use(authMiddleware);
+app.use("/installations", installationsRouter);
+
 
 app.get("/me", (req: any, res) => {
   res.json({ user: req.user, roles: req.roles || [] });
