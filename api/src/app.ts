@@ -1,5 +1,4 @@
 import express from "express";
-import "dotenv/config";
 import { authMiddleware } from "./middleware/authMiddleware";
 import { requireRole } from "./middleware/roleMiddleware";
 import { getDbConnection } from "./db";
@@ -13,6 +12,9 @@ console.log("node", process.version);
 console.log("db auth mode", process.env.DB_AUTH || "aad");
 console.log("sql server", process.env.SQL_SERVER);
 console.log("sql database", process.env.SQL_DATABASE);
+console.log("node env", process.env.NODE_ENV);
+console.log("dev auth", process.env.DEV_AUTH);
+
 
 const required = ["SQL_SERVER", "SQL_DATABASE"];
 for (const k of required) {

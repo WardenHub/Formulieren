@@ -5,6 +5,13 @@ const ROLE_GROUPS: Record<string, string> = {
   monteur: "64e2c12f-73d5-4b2a-9d56-fc465e3cc9bf",
 };
 
+function isDevAuthEnabled() {
+  const nodeEnv = (process.env.NODE_ENV || "").toLowerCase();
+  const devAuth = (process.env.DEV_AUTH || "").trim();
+  return nodeEnv === "development" && devAuth === "1";
+}
+
+
 const credential = new DefaultAzureCredential();
 
 // simpele cache zodat je niet elke request Graph aanroept
@@ -68,6 +75,22 @@ function mapGroupsToRoles(groupIds: string[]) {
 
 export async function authMiddleware(req: any, res: any, next: any) {
   try {
+    if (isDevAuthEnabled()) {
+      req.user = {
+        objectId: process.env.DEV_USER_OID || "local-dev-user",
+        email: process.env.DEV_USER_EMAIL || null,
+        name: process.env.DEV_USER_NAME || null,
+      };
+
+      const rolesRaw = process.env.DEV_ROLES || "";
+      req.roles = rolesRaw
+        .split(",")
+        .map((r) => r.trim())
+        .filter(Boolean);
+
+      return next();
+    }
+
     const principal = getClientPrincipal(req);
     if (!principal) return res.status(401).json({ error: "not authenticated" });
 
@@ -107,9 +130,9 @@ export async function authMiddleware(req: any, res: any, next: any) {
     rolesCache.set(userObjectId, { roles, expiresAt: Date.now() + CACHE_TTL_MS });
 
     req.roles = roles;
-    next();
+    return next();
   } catch (err) {
     console.error(err);
-    res.status(500).json({ error: "auth middleware failed" });
+    return res.status(500).json({ error: "auth middleware failed" });
   }
 }

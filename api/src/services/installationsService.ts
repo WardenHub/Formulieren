@@ -1,10 +1,11 @@
 import { sqlQuery } from "../db";
 import {
   getInstallationSql,
-  getCatalogSectionsSql,
-  getCatalogFieldsSql,
-  getCatalogDocumentTypesSql,
   getCustomValuesSql,
+  getCatalogSectionsSql,
+  getCatalogExternalFieldsSql,
+  getCatalogCustomFieldsSql,
+  getCatalogDocumentTypesSql,
   upsertCustomValuesSql,
 } from "../db/queries/installations.sql";
 
@@ -15,11 +16,14 @@ export async function getInstallationByCode(code: string) {
 }
 
 export async function getCatalog() {
-  const [sections, fields, documentTypes] = await Promise.all([
+  const [sections, externalFields, customFields, documentTypes] = await Promise.all([
     sqlQuery(getCatalogSectionsSql),
-    sqlQuery(getCatalogFieldsSql),
+    sqlQuery(getCatalogExternalFieldsSql),
+    sqlQuery(getCatalogCustomFieldsSql),
     sqlQuery(getCatalogDocumentTypesSql),
   ]);
+
+  const fields = [...externalFields, ...customFields];
 
   return { sections, fields, documentTypes };
 }
