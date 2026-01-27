@@ -33,19 +33,6 @@ export async function getCustomValues(code: string) {
   return { values };
 }
 
-function normalizeValueRow(v: any) {
-  // ensure only provided typed columns are present; leave others null
-  return {
-    field_key: v.field_key,
-    value_string: v.value_string ?? null,
-    value_number: v.value_number ?? null,
-    value_bool: v.value_bool ?? null,
-    value_date: v.value_date ?? null,
-    value_datetime: v.value_datetime ?? null,
-    value_json: v.value_json ?? null,
-  };
-}
-
 export async function upsertCustomValues(code: string, values: any[], user: any) {
   if (!Array.isArray(values)) {
     return { ok: false, error: "values must be an array" };
@@ -53,14 +40,25 @@ export async function upsertCustomValues(code: string, values: any[], user: any)
 
   const cleaned = values
     .filter((v) => v && typeof v.field_key === "string" && v.field_key.trim().length)
-    .map(normalizeValueRow);
+    .map((v) => ({
+      field_key: v.field_key,
+      value_string: v.value_string ?? null,
+      value_number: v.value_number ?? null,
+      value_bool: v.value_bool ?? null,
+      value_date: v.value_date ?? null,
+      value_json: v.value_json ?? null,
+    }));
 
   const valuesJson = JSON.stringify(cleaned);
+
+  const updatedBy = user?.name || user?.objectId || "unknown";
 
   const result = await sqlQuery(upsertCustomValuesSql, {
     code,
     valuesJson,
+    updatedBy,
   });
 
   return { ok: true, result };
 }
+

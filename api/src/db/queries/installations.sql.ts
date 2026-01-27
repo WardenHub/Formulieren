@@ -118,7 +118,10 @@ order by v.field_key
 // note; PK is (installation_id, field_key)
 // note; keep atrium_installation_code consistent
 // ------------------------------
+
 export const upsertCustomValuesSql = `
+-- expects params: @code, @valuesJson, @updatedBy
+
 declare @installation_id uniqueidentifier;
 declare @atrium_installation_code nvarchar(64);
 
@@ -132,6 +135,8 @@ if @installation_id is null
 begin
   throw 50000, 'installation not found', 1;
 end;
+
+declare @actions table (action nvarchar(10));
 
 merge dbo.InstallationCustomFieldValue as tgt
 using (
@@ -190,7 +195,11 @@ when not matched then insert (
   s.value_json,
   sysutcdatetime(),
   @updatedBy
-);
+)
+output $action into @actions;
 
-select @@rowcount as affected_rows;
+select
+  (select count(*) from @actions) as affected_rows,
+  (select count(*) from @actions where action = 'INSERT') as inserted_rows,
+  (select count(*) from @actions where action = 'UPDATE') as updated_rows;
 `;
