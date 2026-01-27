@@ -1,4 +1,5 @@
 import express from "express";
+import cors from "cors";
 import { authMiddleware } from "./middleware/authMiddleware";
 import { requireRole } from "./middleware/roleMiddleware";
 import { getDbConnection } from "./db";
@@ -7,6 +8,24 @@ import installationsRouter from "./routes/installations";
 
 const app = express();
 app.use(express.json());
+app.use(
+  cors({
+    origin: (origin, cb) => {
+      const allow = new Set([
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+      ]);
+
+      // allow non-browser clients; curl; powershell; etc
+      if (!origin) return cb(null, true);
+
+      if (allow.has(origin)) return cb(null, true);
+      return cb(new Error(`cors blocked origin: ${origin}`));
+    },
+    credentials: true,
+  })
+);
+
 
 console.log("node", process.version);
 console.log("db auth mode", process.env.DB_AUTH || "aad");

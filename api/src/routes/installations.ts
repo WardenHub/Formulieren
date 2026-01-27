@@ -4,6 +4,7 @@ import {
   getCatalog,
   getCustomValues,
   putCustomValues,
+  getDocuments,
 } from "../controllers/installationsController";
 import { requireRole } from "../middleware/roleMiddleware";
 
@@ -13,7 +14,10 @@ const router = Router();
 
 router.get("/:code", getInstallation);
 router.get("/:code/catalog", getCatalog);
+
 router.get("/:code/custom-values", getCustomValues);
 router.put("/:code/custom-values", requireRole("admin", "monteur"), putCustomValues);
+
+router.get("/:code/documents", requireRole("admin", "monteur"), getDocuments);
 
 export default router;

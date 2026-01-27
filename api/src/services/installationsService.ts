@@ -7,6 +7,7 @@ import {
   getCatalogCustomFieldsSql,
   getCatalogDocumentTypesSql,
   upsertCustomValuesSql,
+  getInstallationDocumentsSql 
 } from "../db/queries/installations.sql";
 
 export async function getInstallationByCode(code: string) {
@@ -52,6 +53,7 @@ export async function upsertCustomValues(code: string, values: any[], user: any)
   const valuesJson = JSON.stringify(cleaned);
 
   const updatedBy = user?.name || user?.objectId || "unknown";
+  
 
   const result = await sqlQuery(upsertCustomValuesSql, {
     code,
@@ -60,5 +62,58 @@ export async function upsertCustomValues(code: string, values: any[], user: any)
   });
 
   return { ok: true, result };
+}
+
+export async function getInstallationDocuments(code: string) {
+  const rows = await sqlQuery(getInstallationDocumentsSql, { code });
+
+  const byType = new Map<
+    string,
+    {
+      document_type_key: string;
+      document_type_name: string;
+      section_key: string | null;
+      sort_order: number | null;
+      documents: any[];
+    }
+  >();
+
+  for (const r of rows as any[]) {
+    if (!byType.has(r.document_type_key)) {
+      byType.set(r.document_type_key, {
+        document_type_key: r.document_type_key,
+        document_type_name: r.document_type_name,
+        section_key: r.section_key ?? null,
+        sort_order: r.sort_order ?? null,
+        documents: [],
+      });
+    }
+
+    if (r.document_id) {
+      byType.get(r.document_type_key)!.documents.push({
+        document_id: r.document_id,
+        title: r.title,
+        document_number: r.document_number,
+        document_date: r.document_date,
+        revision: r.revision,
+        file_name: r.file_name,
+        mime_type: r.mime_type,
+        file_size_bytes: r.file_size_bytes,
+        storage_provider: r.storage_provider,
+        storage_key: r.storage_key,
+        storage_url: r.storage_url,
+        checksum_sha256: r.checksum_sha256,
+        source_system: r.source_system,
+        source_reference: r.source_reference,
+        created_at: r.created_at,
+        created_by: r.created_by,
+      });
+    }
+  }
+
+  return {
+    code,
+    documentTypes: Array.from(byType.values()),
+  };
 }
 

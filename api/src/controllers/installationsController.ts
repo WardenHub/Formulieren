@@ -37,17 +37,35 @@ export async function getCustomValues(req: Request, res: Response) {
   }
 }
 
-export async function putCustomValues(req: any, res: Response) {
+export async function putCustomValues(req: any, res: any) {
+  try {
+    const code = String(req.params.code || "");
+    const values = req.body?.values;
+    const result = await service.upsertCustomValues(code, values, req.user);
+    if (result?.ok === false) return res.status(400).json(result);
+
+    return res.json(result);
+  } catch (err: any) {
+    const msg = err?.message || String(err);
+
+    if (msg.toLowerCase().includes("installation not found")) {
+      return res.status(404).json({ error: "installation not found" });
+    }
+
+    console.error(err);
+    return res.status(500).json({ error: "putCustomValues failed" });
+  }
+}
+
+export async function getDocuments(req: any, res: Response) {
   try {
     const codeParam: any = (req.params as any).code;
     const code = Array.isArray(codeParam) ? codeParam[0] : codeParam;
 
-    const values = req.body?.values || [];
-    const user = req.user;
-    const data = await service.upsertCustomValues(code, values, user);
+    const data = await service.getInstallationDocuments(code);
     return res.json(data);
   } catch (err) {
     console.error(err);
-    return res.status(500).json({ error: "putCustomValues failed" });
+    return res.status(500).json({ error: "getDocuments failed" });
   }
 }

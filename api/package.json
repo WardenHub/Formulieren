@@ -10,12 +10,14 @@
   },
   "dependencies": {
     "@azure/identity": "^4.13.0",
+    "cors": "^2.8.6",
     "dotenv": "^17.2.3",
     "express": "^4.19.2",
     "mssql": "^12.2.0",
     "tedious": "^19.2.0"
   },
   "devDependencies": {
+    "@types/cors": "^2.8.19",
     "@types/express": "^5.0.6",
     "@types/node": "^25.0.10",
     "cross-env": "^10.1.0",

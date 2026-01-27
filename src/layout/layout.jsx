@@ -1,6 +1,6 @@
 import { Outlet, NavLink, useLocation } from "react-router-dom";
 import { useEffect, useRef, useState } from "react";
-import "./layout.css";
+import "../styles/layout.css";
 
 export default function Layout() {
   const [navOpen, setNavOpen] = useState(false);

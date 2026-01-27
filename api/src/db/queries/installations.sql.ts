@@ -203,3 +203,40 @@ select
   (select count(*) from @actions where action = 'INSERT') as inserted_rows,
   (select count(*) from @actions where action = 'UPDATE') as updated_rows;
 `;
+
+export const getInstallationDocumentsSql = `
+select
+  dt.document_type_key,
+  dt.naam as document_type_name,
+  dt.sectie_key as section_key,
+  dt.sort_order,
+  dt.is_active as document_type_is_active,
+
+  d.document_id,
+  d.title,
+  d.document_number,
+  d.document_date,
+  d.revision,
+  d.file_name,
+  d.mime_type,
+  d.file_size_bytes,
+  d.storage_provider,
+  d.storage_key,
+  d.storage_url,
+  d.checksum_sha256,
+  d.source_system,
+  d.source_reference,
+  d.is_active as document_is_active,
+  d.created_at,
+  d.created_by
+from dbo.DocumentType dt
+left join dbo.InstallationDocument d
+  on d.document_type_key = dt.document_type_key
+  and d.atrium_installation_code = @code
+  and d.is_active = 1
+where dt.is_active = 1
+order by
+  case when dt.sort_order is null then 999999 else dt.sort_order end,
+  dt.document_type_key,
+  d.created_at desc
+`;
