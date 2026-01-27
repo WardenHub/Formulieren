@@ -3,7 +3,9 @@ import * as service from "../services/installationsService";
 
 export async function getInstallation(req: Request, res: Response) {
   try {
-    const { code } = req.params;
+    const codeParam: any = (req.params as any).code;
+    const code = Array.isArray(codeParam) ? codeParam[0] : codeParam;
+
     const data = await service.getInstallationByCode(code);
     return res.json(data);
   } catch (err) {
@@ -24,7 +26,9 @@ export async function getCatalog(req: Request, res: Response) {
 
 export async function getCustomValues(req: Request, res: Response) {
   try {
-    const { code } = req.params;
+    const codeParam: any = (req.params as any).code;
+    const code = Array.isArray(codeParam) ? codeParam[0] : codeParam;
+
     const data = await service.getCustomValues(code);
     return res.json(data);
   } catch (err) {
@@ -35,7 +39,9 @@ export async function getCustomValues(req: Request, res: Response) {
 
 export async function putCustomValues(req: any, res: Response) {
   try {
-    const { code } = req.params;
+    const codeParam: any = (req.params as any).code;
+    const code = Array.isArray(codeParam) ? codeParam[0] : codeParam;
+
     const values = req.body?.values || [];
     const user = req.user;
     const data = await service.upsertCustomValues(code, values, user);
