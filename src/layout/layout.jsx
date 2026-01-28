@@ -1,6 +1,12 @@
+// /src/layout/layout.jsx
+
 import { Outlet, NavLink, useLocation } from "react-router-dom";
 import { useEffect, useRef, useState } from "react";
 import "../styles/layout.css";
+
+import { HomeIcon } from "@/components/ui/home";
+import { SearchIcon } from "@/components/ui/search";
+import { FileTextIcon } from "@/components/ui/file-text";
 
 export default function Layout() {
   const [navOpen, setNavOpen] = useState(false);
@@ -8,6 +14,23 @@ export default function Layout() {
   const [roles, setRoles] = useState([]); 
   const menuRef = useRef(null);
   const location = useLocation();
+
+  function AnimatedNavLink({ to, end, Icon, children }) {
+    const iconRef = useRef(null);
+
+    return (
+      <NavLink
+        to={to}
+        end={end}
+        className="nav-link nav-link--icon"
+        onMouseEnter={() => iconRef.current?.startAnimation?.()}
+        onMouseLeave={() => iconRef.current?.stopAnimation?.()}
+      >
+        <Icon ref={iconRef} size={18} className="nav-anim-icon" />
+        <span>{children}</span>
+      </NavLink>
+    );
+  }
 
   // sluit menus bij navigatie
   useEffect(() => {
@@ -107,15 +130,16 @@ export default function Layout() {
 
       <aside className={`sidebar ${navOpen ? "open" : ""}`}>
         <nav className="nav">
-          <NavLink to="/" end className="nav-link">
-            Home
-          </NavLink>
-          <NavLink to="/installaties" className="nav-link">
+          <AnimatedNavLink to="/" end Icon={HomeIcon}> Home
+          </AnimatedNavLink>
+
+          <AnimatedNavLink to="/installaties" Icon={SearchIcon}>
             Installatiegegevens
-          </NavLink>
-          <NavLink to="/formulieren" className="nav-link">
-            Formulier invullen
-          </NavLink>
+          </AnimatedNavLink>
+
+          <AnimatedNavLink to="/formulieren" Icon={FileTextIcon}>
+            Formulieren
+          </AnimatedNavLink>
 
           {roles.includes("admin") && (
             <NavLink to="/beheer" className="nav-link">

@@ -277,10 +277,195 @@ from dbo.DocumentType dt
 left join dbo.InstallationDocument d
   on d.document_type_key = dt.document_type_key
   and d.atrium_installation_code = @code
-  and d.is_active = 1
 where dt.is_active = 1
 order by
   case when dt.sort_order is null then 999999 else dt.sort_order end,
   dt.document_type_key,
   d.created_at desc
+`;
+
+export const upsertInstallationDocumentsSql = `
+-- expects params: @code, @documentsJson, @updatedBy
+
+declare @installation_id uniqueidentifier;
+declare @atrium_installation_code nvarchar(64);
+
+select
+  @installation_id = i.installation_id,
+  @atrium_installation_code = i.atrium_installation_code
+from dbo.Installation i
+where i.atrium_installation_code = @code;
+
+if @installation_id is null
+begin
+  throw 50000, 'installation not found', 1;
+end;
+
+declare @actions table (action nvarchar(10));
+
+merge dbo.InstallationDocument as tgt
+using (
+  select
+    isnull(src.document_id, newid()) as document_id,
+    @installation_id as installation_id,
+    @atrium_installation_code as atrium_installation_code,
+
+    src.document_type_key,
+    src.title,
+    src.document_number,
+    src.document_date,
+    src.revision,
+    src.file_name,
+    src.mime_type,
+    src.file_size_bytes,
+    src.storage_provider,
+    src.storage_key,
+    src.storage_url,
+    src.checksum_sha256,
+    src.source_system,
+    src.source_reference,
+    src.is_active
+  from openjson(@documentsJson)
+  with (
+    document_id uniqueidentifier '$.document_id',
+    document_type_key nvarchar(64) '$.document_type_key',
+
+    title nvarchar(400) '$.title',
+    document_number nvarchar(100) '$.document_number',
+    document_date date '$.document_date',
+    revision nvarchar(50) '$.revision',
+
+    file_name nvarchar(260) '$.file_name',
+    mime_type nvarchar(120) '$.mime_type',
+    file_size_bytes bigint '$.file_size_bytes',
+
+    storage_provider nvarchar(64) '$.storage_provider',
+    storage_key nvarchar(1024) '$.storage_key',
+    storage_url nvarchar(2048) '$.storage_url',
+    checksum_sha256 nvarchar(128) '$.checksum_sha256',
+
+    source_system nvarchar(64) '$.source_system',
+    source_reference nvarchar(256) '$.source_reference',
+
+    is_active bit '$.is_active'
+  ) src
+  join dbo.DocumentType dt
+    on dt.document_type_key = src.document_type_key
+   and dt.is_active = 1
+) as s
+on tgt.document_id = s.document_id
+when matched then update set
+  tgt.installation_id = s.installation_id,
+  tgt.atrium_installation_code = s.atrium_installation_code,
+  tgt.document_type_key = s.document_type_key,
+
+  tgt.title = s.title,
+  tgt.document_number = s.document_number,
+  tgt.document_date = s.document_date,
+  tgt.revision = s.revision,
+
+  tgt.file_name = s.file_name,
+  tgt.mime_type = s.mime_type,
+  tgt.file_size_bytes = s.file_size_bytes,
+
+  tgt.storage_provider = s.storage_provider,
+  tgt.storage_key = s.storage_key,
+  tgt.storage_url = s.storage_url,
+  tgt.checksum_sha256 = s.checksum_sha256,
+
+  tgt.source_system = s.source_system,
+  tgt.source_reference = s.source_reference,
+
+  tgt.is_active = isnull(s.is_active, 1)
+
+when not matched then insert (
+  document_id,
+  installation_id,
+  atrium_installation_code,
+  document_type_key,
+
+  title,
+  document_number,
+  document_date,
+  revision,
+
+  file_name,
+  mime_type,
+  file_size_bytes,
+
+  storage_provider,
+  storage_key,
+  storage_url,
+  checksum_sha256,
+
+  source_system,
+  source_reference,
+
+  is_active,
+  created_at,
+  created_by
+) values (
+  s.document_id,
+  s.installation_id,
+  s.atrium_installation_code,
+  s.document_type_key,
+
+  s.title,
+  s.document_number,
+  s.document_date,
+  s.revision,
+
+  s.file_name,
+  s.mime_type,
+  s.file_size_bytes,
+
+  s.storage_provider,
+  s.storage_key,
+  s.storage_url,
+  s.checksum_sha256,
+
+  s.source_system,
+  s.source_reference,
+
+  isnull(s.is_active, 1),
+  sysutcdatetime(),
+  @updatedBy
+)
+output $action into @actions;
+
+select
+  (select count(*) from @actions) as affected_rows,
+  (select count(*) from @actions where action = 'INSERT') as inserted_rows,
+  (select count(*) from @actions where action = 'UPDATE') as updated_rows;
+`;
+
+export const searchInstallationsSql = `
+select top (@take)
+  i.installation_id,
+  i.atrium_installation_code,
+  i.installation_type_key,
+  it.display_name as installation_type_name,
+  i.is_active,
+  i.created_at,
+  coalesce(nullif(a.obj_naam, ''), i.atrium_installation_code) as installation_name
+from dbo.Installation i
+left join dbo.InstallationType it
+  on it.installation_type_key = i.installation_type_key
+left join dbo.AtriumInstallationBase a
+  on a.atrium_installation_code = i.atrium_installation_code
+where i.is_active = 1
+and (
+  i.atrium_installation_code like @qLike
+  or a.obj_naam like @qLike
+)
+order by
+  case
+    when i.atrium_installation_code = @q then 0
+    when i.atrium_installation_code like @qPrefix then 1
+    when i.atrium_installation_code like @qLike then 2
+    when a.obj_naam like @qPrefix then 3
+    when a.obj_naam like @qLike then 4
+    else 9
+  end,
+  i.atrium_installation_code;
 `;

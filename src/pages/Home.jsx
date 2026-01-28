@@ -1,22 +1,24 @@
+// /src/pages/Home.jsx
+
 import { Link } from "react-router-dom";
 
 export default function Home() {
   return (
-    <div style={{ display: "grid", gap: 14 }}>
-      <h1 style={{ margin: 0 }}>Ember</h1>
-      <p className="muted" style={{ margin: 0 }}>
-        Kies wat je wilt doen:
-      </p>
+    <div className="home">
+      <div className="home-hero">
+        <h1 className="home-title">Ember</h1>
+        <p className="home-subtitle muted">Kies wat je wilt doen:</p>
+      </div>
 
       <div className="home-grid">
-        <Link className="home-card" to="/installaties">
+        <Link to="/installaties" className="home-card">
           <div className="home-card-title">Installatiegegevens</div>
-          <div className="home-card-sub">Zoek en bekijk installatie-informatie.</div>
+          <div className="home-card-text muted">Zoek en bekijk installatie-informatie.</div>
         </Link>
 
-        <Link className="home-card" to="/formulieren">
+        <Link to="/formulieren" className="home-card">
           <div className="home-card-title">Formulier invullen</div>
-          <div className="home-card-sub">Start of vervolg een formulier.</div>
+          <div className="home-card-text muted">Start of vervolg een formulier.</div>
         </Link>
       </div>
     </div>

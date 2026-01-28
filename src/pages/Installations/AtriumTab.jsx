@@ -1,3 +1,5 @@
+// /src/pages/Installations/AtriumTab.jsx
+
 export default function AtriumTab({ catalog, installation }) {
   if (!catalog || !installation) {
     return <p className="muted">laden; atriumdata</p>;

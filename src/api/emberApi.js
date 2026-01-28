@@ -43,3 +43,16 @@ export function setInstallationType(code, installation_type_key) {
     installation_type_key,
   });
 }
+
+export async function putDocuments(code, documents) {
+  return apiPut(`/installations/${code}/documents`, { documents });
+}
+
+export async function searchInstallations(q, take = 25) {
+  const qs = new URLSearchParams();
+  if (q && String(q).trim()) qs.set("q", String(q).trim());
+  qs.set("take", String(take));
+
+  return apiGet(`/installations/search?${qs.toString()}`);
+}
+

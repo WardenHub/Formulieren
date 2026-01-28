@@ -7,14 +7,16 @@ import {
   getCustomValues,
   putCustomValues,
   getDocuments,
-  putInstallationType, 
+  putInstallationType,
+  putDocuments,
+  searchInstallations, 
 } from "../controllers/installationsController";
 import { requireRole } from "../middleware/roleMiddleware";
 
 const router = Router();
 
 // authMiddleware zit al globaal in app.ts; dus hier geen router.use(authMiddleware)
-
+router.get("/search", requireRole("admin", "monteur"), searchInstallations);
 router.get("/:code", getInstallation);
 router.get("/:code/catalog", getCatalog);
 
@@ -24,5 +26,8 @@ router.put("/:code/custom-values", requireRole("admin", "monteur"), putCustomVal
 router.get("/:code/documents", requireRole("admin", "monteur"), getDocuments);
 
 router.put("/:code/type", requireRole("admin", "monteur"), putInstallationType);
+
+router.put("/:code/documents", requireRole("admin", "monteur"), putDocuments);
+
 
 export default router;

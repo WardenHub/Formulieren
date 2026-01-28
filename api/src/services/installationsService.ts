@@ -9,7 +9,9 @@ import {
   getCatalogCustomFieldsSql,
   getCatalogDocumentTypesSql,
   upsertCustomValuesSql,
-  getInstallationDocumentsSql 
+  getInstallationDocumentsSql, 
+  upsertInstallationDocumentsSql,
+  searchInstallationsSql
 } from "../db/queries/installations.sql";
 
 import {
@@ -112,19 +114,12 @@ export async function getInstallationDocuments(code: string) {
     if (r.document_id) {
       byType.get(r.document_type_key)!.documents.push({
         document_id: r.document_id,
+        document_type_key: r.document_type_key,
+        document_is_active: r.document_is_active,
         title: r.title,
         document_number: r.document_number,
         document_date: r.document_date,
         revision: r.revision,
-        file_name: r.file_name,
-        mime_type: r.mime_type,
-        file_size_bytes: r.file_size_bytes,
-        storage_provider: r.storage_provider,
-        storage_key: r.storage_key,
-        storage_url: r.storage_url,
-        checksum_sha256: r.checksum_sha256,
-        source_system: r.source_system,
-        source_reference: r.source_reference,
         created_at: r.created_at,
         created_by: r.created_by,
       });
@@ -136,6 +131,50 @@ export async function getInstallationDocuments(code: string) {
     documentTypes: Array.from(byType.values()),
   };
 }
+
+export async function upsertInstallationDocuments(code: string, documents: any[], user: any) {
+  if (!Array.isArray(documents)) {
+    return { ok: false, error: "documents must be an array" };
+  }
+
+  const cleaned = documents
+    .filter((d) => d && typeof d.document_type_key === "string" && d.document_type_key.trim().length)
+    .map((d) => ({
+      document_id: d.document_id ?? null,
+      document_type_key: String(d.document_type_key),
+
+      title: d.title ?? null,
+      document_number: d.document_number ?? null,
+      document_date: d.document_date ?? null,
+      revision: d.revision ?? null,
+
+      file_name: d.file_name ?? null,
+      mime_type: d.mime_type ?? null,
+      file_size_bytes: d.file_size_bytes ?? null,
+
+      storage_provider: d.storage_provider ?? null,
+      storage_key: d.storage_key ?? null,
+      storage_url: d.storage_url ?? null,
+      checksum_sha256: d.checksum_sha256 ?? null,
+
+      source_system: d.source_system ?? null,
+      source_reference: d.source_reference ?? null,
+
+      is_active: d.is_active ?? true,
+    }));
+
+  const documentsJson = JSON.stringify(cleaned);
+  const updatedBy = user?.name || user?.objectId || "unknown";
+
+  const result = await sqlQuery(upsertInstallationDocumentsSql, {
+    code,
+    documentsJson,
+    updatedBy,
+  });
+
+  return { ok: true, result };
+}
+
 
 export async function getInstallationTypes() {
   const rows = await sqlQuery(getInstallationTypesSql);
@@ -151,5 +190,22 @@ export async function setInstallationType(code: string, installation_type_key: s
   });
 
   return { ok: true, result: result?.[0] || null };
+}
+
+export async function searchInstallations(q: string | null, take = 25) {
+  const clean = q ? String(q).trim() : "";
+
+  if (!clean) {
+    return { items: [] };
+  }
+
+  const rows = await sqlQuery(searchInstallationsSql, {
+    take,
+    q: clean,
+    qLike: `%${clean}%`,
+    qPrefix: `${clean}%`,
+  });
+
+  return { items: rows };
 }
 

@@ -1,10 +1,12 @@
 // /src/pages/Installations/InstallationDetails.jsx
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useParams } from "react-router-dom";
+import { useParams , useNavigate  } from "react-router-dom";
 
 import AtriumTab from "./AtriumTab.jsx";
 import DocumentsTab from "./DocumentsTab.jsx";
 import CustomFieldsTab from "./CustomFieldsTab.jsx";
+import SaveButton from "../../components/SaveButton.jsx";
+import { ChevronLeftIcon } from "@/components/ui/chevron-left";
 
 import {
   getInstallation,
@@ -15,14 +17,14 @@ import {
   setInstallationType,
 } from "../../api/emberApi.js";
 
-import { Save, Loader2, Check } from "lucide-react";
-
 import Tabs from "../../components/Tabs.jsx";
 import InstallationTypeRequiredPanel from "../../components/InstallationTypeRequiredPanel.jsx";
 import InstallationTypeTag from "../../components/InstallationTypeTag.jsx";
 
 export default function InstallationDetails() {
   const { code } = useParams();
+  const navigate = useNavigate();
+  const backIconRef = useRef(null);
 
   const [activeTab, setActiveTab] = useState("documents");
   const saveOkTimerRef = useRef(null);
@@ -40,9 +42,17 @@ export default function InstallationDetails() {
   const [installationTypes, setInstallationTypesState] = useState([]);
   const [typeSaving, setTypeSaving] = useState(false);
 
+  const [typePickerOpen, setTypePickerOpen] = useState(false);
+  const typePickerRef = useRef(null);
+
   const customSaveRef = useRef(null);
 
   const typeIsSet = Boolean(installation?.installation_type_key);
+  const docsSaveRef = useRef(null);
+
+  const [docsDirty, setDocsDirty] = useState(false);
+  const [docsSaving, setDocsSaving] = useState(false);
+  const [docsSaveOk, setDocsSaveOk] = useState(false);
 
   async function reloadCustomValues() {
     const vals = await getCustomValues(code);
@@ -52,23 +62,62 @@ export default function InstallationDetails() {
   async function handleSetType(typeKey) {
     try {
       setTypeSaving(true);
+
+      // 1) update type
       await setInstallationType(code, typeKey);
 
-      const refreshed = await getInstallation(code);
-      setInstallation(refreshed.installation || null);
+      // 2) haal alles opnieuw op wat door type beïnvloed wordt
+      const [inst, cat, vals, docData] = await Promise.all([
+        getInstallation(code),
+        getCatalog(code),
+        getCustomValues(code),
+        getDocuments(code),
+      ]);
 
-      // optioneel: zet user meteen naar eigenschappen
+      setInstallation(inst.installation || null);
+      setCatalogState(cat || null);
+      setCustomValuesState(vals?.values || []);
+      setDocs(docData || null);
+
+      // 3) reset save-state (want je grid kan veranderen)
+      setCustomDirty(false);
+      setCustomSaveOk(false);
+
+      // 4) ga naar eigenschappen
       setActiveTab("custom");
     } finally {
       setTypeSaving(false);
     }
   }
 
+
+  // close popover on outside click + esc
+  useEffect(() => {
+    if (!typePickerOpen) return;
+
+    function onMouseDown(e) {
+      const el = typePickerRef.current;
+      if (!el) return;
+      if (!el.contains(e.target)) setTypePickerOpen(false);
+    }
+
+    function onKeyDown(e) {
+      if (e.key === "Escape") setTypePickerOpen(false);
+    }
+
+    document.addEventListener("mousedown", onMouseDown);
+    document.addEventListener("keydown", onKeyDown);
+
+    return () => {
+      document.removeEventListener("mousedown", onMouseDown);
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [typePickerOpen]);
+
   useEffect(() => {
     let cancelled = false;
     setError(null);
 
-    // types (frontend filter op is_active)
     getInstallationTypes()
       .then((res) => {
         if (cancelled) return;
@@ -102,6 +151,38 @@ export default function InstallationDetails() {
     };
   }, []);
 
+  useEffect(() => {
+    function onKeyDown(e) {
+      // alt + s
+      if (e.altKey && (e.key === "s" || e.key === "S")) {
+        e.preventDefault();
+
+        // bepaal welke save actief is
+        if (activeTab === "custom") {
+          if (customDirty && !customSaving) {
+            customSaveRef.current?.save?.();
+          }
+        }
+
+        if (activeTab === "documents") {
+          if (docsDirty && !docsSaving) {
+            docsSaveRef.current?.save?.();
+          }
+        }
+      }
+    }
+
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [
+    activeTab,
+    customDirty,
+    customSaving,
+    docsDirty,
+    docsSaving,
+  ]);
+
+
   const title = useMemo(() => {
     const name =
       installation?.name ||
@@ -112,6 +193,8 @@ export default function InstallationDetails() {
   }, [installation, code]);
 
   const tabs = useMemo(() => {
+    const customLabel = typeIsSet ? "Eigenschappen" : "Eigenschappen (kies type)";
+
     return [
       {
         key: "atrium",
@@ -120,10 +203,10 @@ export default function InstallationDetails() {
       },
       {
         key: "custom",
-        // label aanpassen als type nog niet gezet is
-        label: typeIsSet ? "Eigenschappen" : "Eigenschappen (kies type)",
+        label: customLabel,
         content: typeIsSet ? (
           <CustomFieldsTab
+            key={installation?.installation_type_key || "no-type"}
             ref={customSaveRef}
             code={code}
             catalog={catalog}
@@ -139,6 +222,7 @@ export default function InstallationDetails() {
           />
         ) : (
           <InstallationTypeRequiredPanel
+            title="Installatiesoort kiezen"
             types={installationTypes}
             saving={typeSaving}
             onSelect={handleSetType}
@@ -148,7 +232,24 @@ export default function InstallationDetails() {
       {
         key: "documents",
         label: "Documenten",
-        content: <DocumentsTab docs={docs} />,
+        content: (
+          <DocumentsTab
+            ref={docsSaveRef}
+            code={code}
+            docs={docs}
+            onDirtyChange={setDocsDirty}
+            onSavingChange={setDocsSaving}
+            onSaveOk={() => {
+              setDocsSaveOk(true);
+              if (saveOkTimerRef.current) clearTimeout(saveOkTimerRef.current);
+              saveOkTimerRef.current = setTimeout(() => setDocsSaveOk(false), 2500);
+            }}
+            onSaved={async () => {
+              const docData = await getDocuments(code);
+              setDocs(docData || null);
+            }}
+          />
+        ),
       },
     ];
   }, [catalog, installation, docs, code, customValues, typeIsSet, installationTypes, typeSaving]);
@@ -157,45 +258,76 @@ export default function InstallationDetails() {
     return tabs.find((t) => t.key === activeTab)?.content ?? null;
   }, [tabs, activeTab]);
 
-  const showHeaderSave = activeTab === "custom" && typeIsSet;
+  const showHeaderSave = (activeTab === "custom" && typeIsSet) || activeTab === "documents";
+
 
   return (
     <div>
       <div className="inst-sticky">
         <div className="inst-sticky-row">
-          <div className="inst-title">
-            <h1>{title}</h1>
-            <div
-              className="muted"
-              style={{ fontSize: 13, display: "flex", gap: 8, alignItems: "center" }}
+          <div className="inst-sticky-left">
+            <button
+              type="button"
+              className="icon-btn"
+              title="terug naar installaties"
+              onClick={() => navigate("/installaties")}
+              onMouseEnter={() => backIconRef.current?.startAnimation?.()}
+              onMouseLeave={() => backIconRef.current?.stopAnimation?.()}
             >
-              <span>code: {code}</span>
-              <InstallationTypeTag
-                typeKey={installation?.installation_type_key}
-                label={installation?.installation_type_name}
-              />
+              <ChevronLeftIcon ref={backIconRef} size={18} />
+            </button>
+
+            <div className="inst-title">
+              <h1>{title}</h1>
+
+              <div className="muted" style={{ fontSize: 13, display: "flex", gap: 8, alignItems: "center" }}>
+                <span>code: {code}</span>
+
+                <div className="type-picker-wrap" ref={typePickerRef}>
+                  <button
+                    type="button"
+                    className="type-tag-btn"
+                    onClick={() => setTypePickerOpen((v) => !v)}
+                    title={typeIsSet ? "wijzig installatiesoort" : "kies installatiesoort"}
+                  >
+                    <InstallationTypeTag
+                      typeKey={installation?.installation_type_key}
+                      label={installation?.installation_type_name}
+                    />
+                  </button>
+
+                  {typePickerOpen && (
+                    <div className="type-popover" role="dialog" aria-label="installatiesoort kiezen">
+                      <InstallationTypeRequiredPanel
+                        title={typeIsSet ? "Wijzig installatiesoort" : "Installatiesoort kiezen"}
+                        compact={typeIsSet}
+                        types={installationTypes}
+                        saving={typeSaving}
+                        onSelect={async (typeKey) => {
+                          await handleSetType(typeKey);
+                          setTypePickerOpen(false);
+                        }}
+                      />
+                    </div>
+                  )}
+                </div>
+              </div>
             </div>
           </div>
 
           {showHeaderSave && (
-            <button
-              className="btn-save"
-              disabled={!customDirty || customSaving}
-              onClick={() => customSaveRef.current?.save?.()}
-              title={customSaving ? "opslaan..." : customDirty ? "opslaan" : "geen wijzigingen"}
-            >
-              {customSaving ? (
-                <Loader2 size={18} className="spin" />
-              ) : customSaveOk ? (
-                <Check size={18} className="icon-success" />
-              ) : (
-                <Save size={18} />
-              )}
-              <span className="btn-save-text">Opslaan</span>
-            </button>
+            <SaveButton
+              disabled={activeTab === "custom" ? !customDirty : !docsDirty}
+              saving={activeTab === "custom" ? customSaving : docsSaving}
+              saved={activeTab === "custom" ? customSaveOk : docsSaveOk}
+              pulse={activeTab === "custom" ? customDirty : docsDirty}
+              onClick={() => {
+                if (activeTab === "custom") customSaveRef.current?.save?.();
+                if (activeTab === "documents") docsSaveRef.current?.save?.();
+              }}
+            />
           )}
         </div>
-
         <Tabs tabs={tabs} activeKey={activeTab} onChange={setActiveTab} />
       </div>
 
