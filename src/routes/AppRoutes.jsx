@@ -1,5 +1,5 @@
 import { Routes, Route } from "react-router-dom";
-import Layout from "../layout/Layout.jsx";
+import Layout from "../layout/layout.jsx";
 import Home from "../pages/Home.jsx";
 import InstallationsIndex from "../pages/Installations/InstallationsIndex.jsx";
 import InstallationDetails from "../pages/Installations/InstallationDetails.jsx";
