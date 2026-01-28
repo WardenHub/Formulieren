@@ -4,6 +4,7 @@ import { authMiddleware } from "./middleware/authMiddleware";
 import { requireRole } from "./middleware/roleMiddleware";
 import { getDbConnection } from "./db";
 import installationsRouter from "./routes/installations";
+import installationTypesRouter from "./routes/installationTypes";
 
 
 const app = express();
@@ -54,6 +55,7 @@ app.get("/health", async (req, res) => {
     res.json({
       api: "ok",
       db: pool?.connected ? 1 : 0,
+      "Jesse" : "Blij 😁",
     });
   } catch (err) {
     res.status(500).json({ api: "ok", db: "error" });
@@ -63,7 +65,7 @@ app.get("/health", async (req, res) => {
 // alles hieronder vereist user + roles
 app.use(authMiddleware);
 app.use("/installations", installationsRouter);
-
+app.use("/installation-types", installationTypesRouter);
 
 app.get("/me", (req: any, res) => {
   res.json({ user: req.user, roles: req.roles || [] });

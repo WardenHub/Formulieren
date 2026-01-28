@@ -1,3 +1,4 @@
+// /api/src/db/queries/installations.sql.ts
 // =========================================================
 // installations queries; aligned to tabel-definities.sql
 // =========================================================
@@ -6,15 +7,20 @@ export const getInstallationSql = `
 select top 1
   i.installation_id,
   i.atrium_installation_code,
+  i.installation_type_key,
+  it.display_name as installation_type_name,
   i.created_at,
   i.created_by,
   i.is_active,
   a.*
 from dbo.Installation i
+left join dbo.InstallationType it
+  on it.installation_type_key = i.installation_type_key
 left join dbo.AtriumInstallationBase a
   on a.atrium_installation_code = i.atrium_installation_code
 where i.atrium_installation_code = @code
 `;
+
 
 // ------------------------------
 // catalog; sections
@@ -36,6 +42,7 @@ order by
 // note; ExternalFieldDefinition has no data_type; we default to 'string'
 // ------------------------------
 export const getCatalogExternalFieldsSql = `
+-- external fields
 select
   efd.field_key,
   efd.sectie_key as section_key,
@@ -43,7 +50,7 @@ select
   cast('string' as nvarchar(20)) as data_type,
   cast(0 as bit) as is_editable,
   cast('external' as nvarchar(20)) as source,
-
+  efd.sort_order,
   efd.source_type,
   efd.fabric_table,
   efd.fabric_column,
@@ -53,14 +60,20 @@ from dbo.ExternalFieldDefinition efd
 order by
   case when efd.sectie_key is null then 1 else 0 end,
   efd.sectie_key,
-  efd.field_key
+  case when efd.sort_order is null then 999999 else efd.sort_order end,
+  efd.display_name,
+  efd.field_key;
+
 `;
+
 
 // ------------------------------
 // catalog; custom fields (editable)
 // note; InstallationCustomFieldDefinition has data_type
 // ------------------------------
 export const getCatalogCustomFieldsSql = `
+-- expects: @installationTypeKey (nullable)
+
 select
   icfd.field_key,
   icfd.sectie_key as section_key,
@@ -68,13 +81,37 @@ select
   icfd.data_type,
   cast(1 as bit) as is_editable,
   cast('custom' as nvarchar(20)) as source,
+  icfd.sort_order,
   icfd.is_active
 from dbo.InstallationCustomFieldDefinition icfd
+where icfd.is_active = 1
+and (
+  -- geen type-koppelingen => altijd zichtbaar
+  not exists (
+    select 1
+    from dbo.InstallationCustomFieldDefinitionType x
+    where x.field_key = icfd.field_key
+  )
+  -- wel type-koppelingen => alleen zichtbaar bij match
+  or (
+    @installationTypeKey is not null
+    and exists (
+      select 1
+      from dbo.InstallationCustomFieldDefinitionType x
+      where x.field_key = icfd.field_key
+        and x.installation_type_key = @installationTypeKey
+    )
+  )
+)
 order by
   case when icfd.sectie_key is null then 1 else 0 end,
   icfd.sectie_key,
-  icfd.field_key
+  case when icfd.sort_order is null then 999999 else icfd.sort_order end,
+  icfd.display_name,
+  icfd.field_key;
 `;
+
+
 
 // ------------------------------
 // catalog; document types
@@ -109,9 +146,16 @@ select
   v.updated_at,
   v.updated_by
 from dbo.InstallationCustomFieldValue v
+join dbo.InstallationCustomFieldDefinition d
+  on d.field_key = v.field_key
 where v.atrium_installation_code = @code
-order by v.field_key
+order by
+  case when d.sectie_key is null then 1 else 0 end,
+  d.sectie_key,
+  case when d.sort_order is null then 999999 else d.sort_order end,
+  v.field_key
 `;
+
 
 // ------------------------------
 // upsert custom values

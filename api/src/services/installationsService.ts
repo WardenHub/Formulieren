@@ -1,3 +1,5 @@
+// api/src/services/installationsService.ts
+
 import { sqlQuery } from "../db";
 import {
   getInstallationSql,
@@ -10,24 +12,42 @@ import {
   getInstallationDocumentsSql 
 } from "../db/queries/installations.sql";
 
+import {
+  getInstallationTypesSql,
+  setInstallationTypeSql,
+} from "../db/queries/installationTypes.sql";
+
 export async function getInstallationByCode(code: string) {
   const rows = await sqlQuery(getInstallationSql, { code });
   if (!rows.length) return { error: "not found" };
   return { installation: rows[0] };
 }
 
-export async function getCatalog() {
+export async function getCatalog(code: string) {
+  // haal type op (kan null zijn)
+  const instRows = await sqlQuery(
+    `select top 1 installation_type_key
+     from dbo.Installation
+     where atrium_installation_code = @code`,
+    { code }
+  );
+
+  const installationTypeKey = instRows?.[0]?.installation_type_key ?? null;
+
   const [sections, externalFields, customFields, documentTypes] = await Promise.all([
     sqlQuery(getCatalogSectionsSql),
     sqlQuery(getCatalogExternalFieldsSql),
-    sqlQuery(getCatalogCustomFieldsSql),
+
+    // belangrijk: param altijd meegeven (ook null)
+    sqlQuery(getCatalogCustomFieldsSql, { installationTypeKey }),
+
     sqlQuery(getCatalogDocumentTypesSql),
   ]);
 
   const fields = [...externalFields, ...customFields];
-
   return { sections, fields, documentTypes };
 }
+
 
 export async function getCustomValues(code: string) {
   const values = await sqlQuery(getCustomValuesSql, { code });
@@ -115,5 +135,21 @@ export async function getInstallationDocuments(code: string) {
     code,
     documentTypes: Array.from(byType.values()),
   };
+}
+
+export async function getInstallationTypes() {
+  const rows = await sqlQuery(getInstallationTypesSql);
+  return { types: rows };
+}
+
+export async function setInstallationType(code: string, installation_type_key: string | null) {
+  const key = installation_type_key ? String(installation_type_key) : null;
+
+  const result = await sqlQuery(setInstallationTypeSql, {
+    code,
+    installation_type_key: key,
+  });
+
+  return { ok: true, result: result?.[0] || null };
 }
 

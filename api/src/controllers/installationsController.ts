@@ -1,3 +1,5 @@
+// /api/src/controllers/installationsController.ts
+
 import { Request, Response } from "express";
 import * as service from "../services/installationsService";
 
@@ -16,13 +18,17 @@ export async function getInstallation(req: Request, res: Response) {
 
 export async function getCatalog(req: Request, res: Response) {
   try {
-    const data = await service.getCatalog();
+    const codeParam: any = (req.params as any).code;
+    const code = Array.isArray(codeParam) ? codeParam[0] : codeParam;
+
+    const data = await service.getCatalog(code);
     return res.json(data);
   } catch (err) {
     console.error(err);
     return res.status(500).json({ error: "getCatalog failed" });
   }
 }
+
 
 export async function getCustomValues(req: Request, res: Response) {
   try {
@@ -69,3 +75,33 @@ export async function getDocuments(req: any, res: Response) {
     return res.status(500).json({ error: "getDocuments failed" });
   }
 }
+
+export async function getInstallationTypes(req: Request, res: Response) {
+  try {
+    const data = await service.getInstallationTypes();
+    return res.json(data);
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ error: "getInstallationTypes failed" });
+  }
+}
+
+export async function putInstallationType(req: any, res: any) {
+  try {
+    const code = String(req.params.code || "");
+    const installation_type_key = req.body?.installation_type_key ?? null;
+
+    const data = await service.setInstallationType(code, installation_type_key);
+    return res.json(data);
+  } catch (err: any) {
+    const msg = err?.message || String(err);
+
+    if (msg.toLowerCase().includes("installation not found")) {
+      return res.status(404).json({ error: "installation not found" });
+    }
+
+    console.error(err);
+    return res.status(500).json({ error: "putInstallationType failed" });
+  }
+}
+

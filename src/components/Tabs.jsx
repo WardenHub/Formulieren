@@ -1,6 +1,8 @@
 // /src/components/Tabs.jsx
 
-export default function Tabs({ tabs, activeKey, onChange }) {
+export default function Tabs({ tabs, activeKey, onChange, renderContent = true }) {
+  const activeTab = tabs.find((t) => t.key === activeKey);
+
   return (
     <div className="tabs">
       <div className="tabs-row">
@@ -19,6 +21,8 @@ export default function Tabs({ tabs, activeKey, onChange }) {
           );
         })}
       </div>
+
+      {renderContent ? <div>{activeTab?.content}</div> : null}
     </div>
   );
 }

@@ -1,3 +1,5 @@
+// src/api/emberApi.js
+
 import { httpJson } from "./http";
 
 export function apiGet(path) {
@@ -30,4 +32,14 @@ export function putCustomValues(code, values) {
 
 export function getDocuments(code) {
   return apiGet(`/installations/${code}/documents`);
+}
+
+export function getInstallationTypes() {
+  return apiGet("/installation-types");
+}
+
+export function setInstallationType(code, installation_type_key) {
+  return apiPut(`/installations/${code}/type`, {
+    installation_type_key,
+  });
 }

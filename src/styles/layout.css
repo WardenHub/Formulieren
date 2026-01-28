@@ -308,3 +308,24 @@ a{ color: inherit; text-decoration: none; }
   opacity: .5;
   cursor: not-allowed;
 }
+
+.type-tag{
+  display:inline-flex;
+  align-items:center;
+  height: 22px;
+  padding: 0 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 650;
+  color: rgba(255,255,255,.95);
+  border: 1px solid rgba(255,255,255,.12);
+}
+
+.type-none{ background: rgba(255,255,255,.06); }
+
+.type-bmi{ background: rgba(220, 38, 38, .35); border-color: rgba(220, 38, 38, .35); }          /* rood */
+.type-bmi-oai{ background: rgba(249, 115, 22, .35); border-color: rgba(249, 115, 22, .35); }    /* oranje */
+.type-oai{ background: rgba(59, 130, 246, .35); border-color: rgba(59, 130, 246, .35); }        /* blauw */
+.type-ibc{ background: rgba(34, 197, 94, .30); border-color: rgba(34, 197, 94, .30); }          /* groen */
+.type-telefonie{ background: rgba(168, 85, 247, .35); border-color: rgba(168, 85, 247, .35); }  /* paars */
+.type-camera{ background: rgba(234, 179, 8, .30); border-color: rgba(234, 179, 8, .30); }        /* geel */
