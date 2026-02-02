@@ -4,9 +4,8 @@
 // =========================================================
 
 export const ensureInstallationSql = `
--- expects: @code, @createdBy
+-- expects params: @code, @createdBy
 
--- 1) validate installation exists in ERP sync table
 if not exists (
   select 1
   from dbo.AtriumInstallationBase a
@@ -16,7 +15,6 @@ begin
   throw 50000, 'atrium installation not found', 1;
 end;
 
--- 2) create ember installation row if missing
 if not exists (
   select 1
   from dbo.Installation i
@@ -42,13 +40,12 @@ begin
 end;
 
 select top 1
-  installation_id,
-  atrium_installation_code,
-  installation_type_key
-from dbo.Installation
-where atrium_installation_code = @code;
+  i.installation_id,
+  i.atrium_installation_code,
+  i.installation_type_key
+from dbo.Installation i
+where i.atrium_installation_code = @code;
 `;
-
 
 export const getInstallationTypesSql = `
 select
@@ -64,19 +61,50 @@ order by
 `;
 
 export const setInstallationTypeSql = `
--- expects: @code, @installation_type_key
+-- expects params: @code, @installation_type_key, @updatedBy
 
-update i
-set installation_type_key = @installation_type_key
-from dbo.Installation i
-where i.atrium_installation_code = @code;
-
-if @@rowcount = 0
+-- 1) atrium installatie moet bestaan
+if not exists (
+  select 1
+  from dbo.AtriumInstallationBase a
+  where a.installatie_code = @code
+)
 begin
-  throw 50000, 'ember installation row missing', 1;
+  throw 50000, 'atrium installation not found', 1;
 end;
 
-select
+-- 2) lazy create dbo.Installation als die nog niet bestaat
+if not exists (
+  select 1
+  from dbo.Installation i
+  where i.atrium_installation_code = @code
+)
+begin
+  insert into dbo.Installation (
+    installation_id,
+    atrium_installation_code,
+    installation_type_key,
+    created_at,
+    created_by,
+    is_active
+  ) values (
+    newid(),
+    @code,
+    @installation_type_key,
+    sysutcdatetime(),
+    @updatedBy,
+    1
+  );
+end
+else
+begin
+  update i
+  set installation_type_key = @installation_type_key
+  from dbo.Installation i
+  where i.atrium_installation_code = @code;
+end;
+
+select top 1
   i.atrium_installation_code,
   i.installation_type_key
 from dbo.Installation i

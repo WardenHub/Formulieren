@@ -15,7 +15,6 @@ import {
 } from "../db/queries/installations.sql.js";
 
 import {
-  ensureInstallationSql
   getInstallationTypesSql,
   setInstallationTypeSql,
 } from "../db/queries/installationTypes.sql.js";
@@ -182,16 +181,22 @@ export async function getInstallationTypes() {
   return { types: rows };
 }
 
-export async function setInstallationType(code: string, installation_type_key: string | null) {
+export async function setInstallationType(
+  code: string,
+  installation_type_key: string | null,
+  updatedBy: string
+) {
   const key = installation_type_key ? String(installation_type_key) : null;
 
-  const result = await sqlQuery(setInstallationTypeSql, {
-    code,
+  const rows = await sqlQuery(setInstallationTypeSql, {
+    code: String(code),
     installation_type_key: key,
+    updatedBy: updatedBy || "unknown",
   });
 
-  return { ok: true, result: result?.[0] || null };
+  return { ok: true, installation: rows?.[0] || null };
 }
+
 
 export async function searchInstallations(q: string | null, take = 25) {
   const clean = q ? String(q).trim() : "";
