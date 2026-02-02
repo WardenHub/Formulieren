@@ -1,5 +1,6 @@
 // /src/layout/layout.jsx
 
+import { httpJson } from "../api/http";
 import { Outlet, NavLink, useLocation } from "react-router-dom";
 import { useEffect, useRef, useState } from "react";
 import "../styles/layout.css";
@@ -50,24 +51,12 @@ export default function Layout() {
   }, []);
 
   // haal rollen op
-  useEffect(() => {
+    useEffect(() => {
     let cancelled = false;
 
     async function loadMe() {
       try {
-        const res = await fetch("/api/me", { credentials: "include" });
-
-        if (res.status === 401) {
-          window.location.assign("/.auth/login/aad");
-          return;
-        }
-
-        if (!res.ok) {
-          console.error("me failed", res.status);
-          return;
-        }
-
-        const data = await res.json();
+        const data = await httpJson("/me");
         if (!cancelled) setRoles(data.roles ?? []);
       } catch (err) {
         console.error("me fetch failed", err);
@@ -79,7 +68,7 @@ export default function Layout() {
       cancelled = true;
     };
   }, []);
-
+  
   return (
     <div className="app-shell">
       <header className="topbar">
