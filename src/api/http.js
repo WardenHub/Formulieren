@@ -3,6 +3,7 @@ import { getApiAccessToken } from "../auth/msal";
 
 const RAW_BASE = import.meta.env.VITE_API_BASE || "";
 const API_BASE = RAW_BASE.replace(/\/+$/, "");
+console.log("api base", import.meta.env.VITE_API_BASE);
 
 function buildUrl(path) {
   if (/^https?:\/\//i.test(path)) return path;
@@ -26,9 +27,9 @@ export async function httpJson(path, options = {}) {
   });
 
   if (res.status === 401) {
-    window.location.assign("/.auth/login/aad");
-    throw new Error("unauthorized");
+  throw new Error("unauthorized");
   }
+
 
   const ct = res.headers.get("content-type") || "";
   if (!ct.includes("application/json")) {

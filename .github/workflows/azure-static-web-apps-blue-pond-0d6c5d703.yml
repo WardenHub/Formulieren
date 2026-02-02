@@ -62,4 +62,6 @@ jobs:
         env:
           VITE_API_BASE: ${{ vars.VITE_API_BASE }}
         with:
+          app_location: "/"
           action: "close"
+          azure_static_web_apps_api_token: ${{ secrets.AZURE_STATIC_WEB_APPS_API_TOKEN_BLUE_POND_0D6C5D703 }}

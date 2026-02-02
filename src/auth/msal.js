@@ -1,53 +1,45 @@
 // src/auth/msal.js
 import { PublicClientApplication } from "@azure/msal-browser";
 
+const tenantId = import.meta.env.VITE_AAD_TENANT_ID;
+const clientId = import.meta.env.VITE_AAD_CLIENT_ID;
+const apiAppId = import.meta.env.VITE_API_APP_ID;
+
 const msal = new PublicClientApplication({
   auth: {
-    clientId: import.meta.env.VITE_AAD_CLIENT_ID,
-    authority: `https://login.microsoftonline.com/${import.meta.env.VITE_AAD_TENANT_ID}`,
+    clientId,
+    authority: `https://login.microsoftonline.com/${tenantId}`,
     redirectUri: window.location.origin,
     navigateToLoginRequestUrl: false,
   },
-  cache: {
-    cacheLocation: "sessionStorage",
-  },
+  cache: { cacheLocation: "sessionStorage" },
 });
 
-let initPromise = null;
-function ensureInit() {
+let initPromise;
+async function ensureInit() {
   if (!initPromise) initPromise = msal.initialize();
-  return initPromise;
+  await initPromise;
+  await msal.handleRedirectPromise();
 }
 
-const API_SCOPE = `api://${import.meta.env.VITE_API_APP_ID}/user_impersonation`;
+const scope = `api://${apiAppId}/user_impersonation`;
 
 export async function getApiAccessToken() {
+  if (import.meta.env.MODE === "development") return null;
+
   await ensureInit();
 
-  // als je net van een redirect terugkomt; laat MSAL dat eerst afhandelen
-  const redirectResult = await msal.handleRedirectPromise();
-  if (redirectResult?.accessToken) return redirectResult.accessToken;
-
-  // loginHint uit SWA sessie; helpt silent SSO
-  const meRes = await fetch("/.auth/me", { credentials: "include" });
-  const me = await meRes.json();
-  const loginHint = me?.clientPrincipal?.userDetails || undefined;
-
   const accounts = msal.getAllAccounts();
-  const account = accounts[0] || undefined;
+  const account = accounts[0];
 
   try {
     const result = await msal.acquireTokenSilent({
+      scopes: [scope],
       account,
-      scopes: [API_SCOPE],
-      loginHint,
     });
     return result.accessToken;
   } catch {
-    await msal.acquireTokenRedirect({
-      scopes: [API_SCOPE],
-      loginHint,
-    });
+    await msal.acquireTokenRedirect({ scopes: [scope] });
     return null;
   }
 }
