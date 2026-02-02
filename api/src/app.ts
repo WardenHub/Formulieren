@@ -9,24 +9,29 @@ import installationTypesRouter from "./routes/installationTypes.js";
 
 
 const app = express();
+const RAW_ORIGINS = (process.env.CORS_ORIGINS || "")
+  .split(",")
+  .map(s => s.trim())
+  .filter(Boolean);
+
+function norm(o) {
+  return (o || "").replace(/\/+$/, "");
+}
+
+const ALLOWED = new Set(RAW_ORIGINS.map(norm));
 app.use(express.json());
-app.use(
-  cors({
-    origin: (origin, cb) => {
-      const allow = new Set([
-        "http://localhost:5173",
-        "http://127.0.0.1:5173",
-      ]);
+app.use(cors({
+  origin: (origin, cb) => {
+    // allow non-browser calls (no Origin), health checks, curl, etc.
+    if (!origin) return cb(null, true);
 
-      // allow non-browser clients; curl; powershell; etc
-      if (!origin) return cb(null, true);
+    const o = norm(origin);
+    if (ALLOWED.has(o)) return cb(null, true);
 
-      if (allow.has(origin)) return cb(null, true);
-      return cb(new Error(`cors blocked origin: ${origin}`));
-    },
-    credentials: true,
-  })
-);
+    return cb(new Error(`cors blocked origin: ${origin}`));
+  },
+  credentials: true,
+}));
 
 
 console.log("node", process.version);
