@@ -64,9 +64,10 @@ export default function Layout() {
     }
 
     loadMe();
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, []);
-
 
   return (
     <div className="app-shell">

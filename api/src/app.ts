@@ -53,7 +53,10 @@ if ((process.env.DB_AUTH || "aad") === "sql") {
   }
 }
 
-app.get("/", (req, res) => res.json({ ok: true, service: "ember-api", blij: "Jesse" }));
+app.get("/", (req, res) => {
+  console.log("hit /", new Date().toISOString(), "auth", req.headers.authorization ? "yes" : "no");
+  res.json({ ok: true, service: "ember-api", blij: "Jesse" });
+});
 
 app.get("/health", async (req, res) => {
   try {
