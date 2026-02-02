@@ -1,15 +1,4 @@
 {
-  "routes": [
-    {
-      "route": "/*",
-      "allowedRoles": ["anonymous"],
-      "redirect": "/.auth/login/aad"
-    },
-    {
-      "route": "/*",
-      "allowedRoles": ["authenticated"]
-    }
-  ],
   "navigationFallback": {
     "rewrite": "/index.html",
     "exclude": [
@@ -22,5 +11,17 @@
       "/*.png",
       "/*.svg"
     ]
+  },
+  "routes": [
+    {
+      "route": "/*",
+      "allowedRoles": ["authenticated"]
+    }
+  ],
+  "responseOverrides": {
+    "401": {
+      "redirect": "/.auth/login/aad",
+      "statusCode": 302
+    }
   }
 }
