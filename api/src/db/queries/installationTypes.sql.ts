@@ -4,44 +4,34 @@
 // =========================================================
 
 export const ensureInstallationSql = `
--- expects params: @code, @createdBy
+-- expects: @code, @createdBy
 
--- 1) must exist in ERP sync
-if not exists (
-  select 1
-  from dbo.AtriumInstallationBase a
-  where a.installatie_code = @code
-)
+if not exists (select 1 from dbo.AtriumInstallationBase where installatie_code = @code)
 begin
   throw 50000, 'atrium installation not found', 1;
 end;
 
--- 2) create ember row if missing
-if not exists (
-  select 1
-  from dbo.Installation i
-  where i.atrium_installation_code = @code
-)
+if not exists (select 1 from dbo.Installation where atrium_installation_code = @code)
 begin
   insert into dbo.Installation (
     installation_id,
     atrium_installation_code,
-    created_by
+    installation_type_key,
+    created_at,
+    created_by,
+    is_active
   )
   values (
     newid(),
     @code,
-    @createdBy
+    null,
+    sysutcdatetime(),
+    @createdBy,
+    1
   );
 end;
-
-select top 1
-  i.installation_id,
-  i.atrium_installation_code,
-  i.installation_type_key
-from dbo.Installation i
-where i.atrium_installation_code = @code;
 `;
+
 
 export const getInstallationTypesSql = `
 select
