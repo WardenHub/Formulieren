@@ -4,6 +4,8 @@ import { httpJson } from "../api/http";
 import { Outlet, NavLink, useLocation } from "react-router-dom";
 import { useEffect, useRef, useState } from "react";
 import "../styles/layout.css";
+import { logout } from "../auth/msal";
+import { LogoutIcon } from "@/components/ui/logout";
 
 import { HomeIcon } from "@/components/ui/home";
 import { SearchIcon } from "@/components/ui/search";
@@ -15,6 +17,23 @@ export default function Layout() {
   const [roles, setRoles] = useState([]); 
   const menuRef = useRef(null);
   const location = useLocation();
+
+  function AnimatedMenuItem({ onClick, Icon, children, className = "menu-item" }) {
+  const iconRef = useRef(null);
+
+  return (
+    <button
+      type="button"
+      className={className}
+      onClick={onClick}
+      onMouseEnter={() => iconRef.current?.startAnimation?.()}
+      onMouseLeave={() => iconRef.current?.stopAnimation?.()}
+    >
+      <Icon ref={iconRef} size={18} className="nav-anim-icon" />
+      <span>{children}</span>
+    </button>
+  );
+}
 
   function AnimatedNavLink({ to, end, Icon, children }) {
     const iconRef = useRef(null);
@@ -50,7 +69,7 @@ export default function Layout() {
     return () => document.removeEventListener("mousedown", onDocClick);
   }, []);
 
-  // haal rollen op
+    // haal rollen op
   useEffect(() => {
     let cancelled = false;
 
@@ -59,18 +78,15 @@ export default function Layout() {
         const data = await httpJson("/me");
         if (!cancelled) setRoles(data.roles ?? []);
       } catch (err) {
-        // dit is je "login verplicht"
-        window.location.assign("/");
-        // of beter: trigger msal redirect door token op te vragen:
-        // await getApiAccessToken(); (maar dat doe je al in httpJson)
+        // auth is handled by AuthGate; here we only log and keep UI stable
         console.error("me fetch failed", err);
+        if (!cancelled) setRoles([]);
       }
     }
 
     loadMe();
     return () => { cancelled = true; };
   }, []);
-
 
   return (
     <div className="app-shell">
@@ -106,10 +122,13 @@ export default function Layout() {
               >
                 Help
               </a>
-
-              <a className="menu-item danger" href="/.auth/logout">
+              <AnimatedMenuItem
+                className="menu-item danger"
+                Icon={LogoutIcon}
+                onClick={() => logout()}
+              >
                 Uitloggen
-              </a>
+              </AnimatedMenuItem>
             </div>
           )}
         </div>

@@ -43,3 +43,10 @@ export async function getApiAccessToken() {
     return null;
   }
 }
+
+export async function logout() {
+  await ensureInit();
+  await msal.logoutRedirect({
+    postLogoutRedirectUri: window.location.origin,
+  });
+}
