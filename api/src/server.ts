@@ -1,7 +1,8 @@
-import "./env";
-import app from "./app";
+// api/src/server.ts
+import "./env.js";
+import app from "./app.js";
 
-const port = process.env.PORT || 8080;
+const port = Number(process.env.PORT || 8080);
 
 process.on("unhandledRejection", (err) => {
   console.error("[unhandledRejection]", err);
@@ -12,3 +13,4 @@ process.on("uncaughtException", (err) => {
 });
 
 app.listen(port, () => console.log(`ember-api listening on ${port}`));
+

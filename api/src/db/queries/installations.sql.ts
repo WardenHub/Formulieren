@@ -17,9 +17,10 @@ from dbo.Installation i
 left join dbo.InstallationType it
   on it.installation_type_key = i.installation_type_key
 left join dbo.AtriumInstallationBase a
-  on a.atrium_installation_code = i.atrium_installation_code
+  on a.installatie_code = i.atrium_installation_code
 where i.atrium_installation_code = @code
 `;
+
 
 
 // ------------------------------
@@ -452,7 +453,7 @@ from dbo.Installation i
 left join dbo.InstallationType it
   on it.installation_type_key = i.installation_type_key
 left join dbo.AtriumInstallationBase a
-  on a.atrium_installation_code = i.atrium_installation_code
+  on a.installatie_code = i.atrium_installation_code
 where i.is_active = 1
 and (
   i.atrium_installation_code like @qLike
