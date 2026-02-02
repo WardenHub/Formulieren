@@ -1,3 +1,4 @@
+// /api/src/middleware/authMiddleware.ts
 import { DefaultAzureCredential } from "@azure/identity";
 
 const ROLE_GROUPS: Record<string, string> = {

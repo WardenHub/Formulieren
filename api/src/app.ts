@@ -1,3 +1,4 @@
+// / api/src/app.ts
 import express from "express";
 import cors from "cors";
 import { authMiddleware } from "./middleware/authMiddleware.js";

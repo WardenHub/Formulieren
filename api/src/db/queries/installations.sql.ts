@@ -291,6 +291,36 @@ order by
 export const upsertInstallationDocumentsSql = `
 -- expects params: @code, @documentsJson, @updatedBy
 
+set nocount on;
+
+-- 1) validate atrium installation exists
+if not exists (select 1 from dbo.AtriumInstallationBase where installatie_code = @code)
+begin
+  throw 50000, 'atrium installation not found', 1;
+end;
+
+-- 2) lazy create ember overlay row if missing
+if not exists (select 1 from dbo.Installation where atrium_installation_code = @code)
+begin
+  insert into dbo.Installation (
+    installation_id,
+    atrium_installation_code,
+    installation_type_key,
+    created_at,
+    created_by,
+    is_active
+  )
+  values (
+    newid(),
+    @code,
+    null,
+    sysutcdatetime(),
+    @updatedBy,
+    1
+  );
+end;
+
+-- 3) load installation context
 declare @installation_id uniqueidentifier;
 declare @atrium_installation_code nvarchar(64);
 
@@ -300,6 +330,7 @@ select
 from dbo.Installation i
 where i.atrium_installation_code = @code;
 
+-- should never happen now, but keep guard
 if @installation_id is null
 begin
   throw 50000, 'installation not found', 1;
@@ -358,6 +389,7 @@ using (
    and dt.is_active = 1
 ) as s
 on tgt.document_id = s.document_id
+and tgt.atrium_installation_code = @code
 when matched then update set
   tgt.installation_id = s.installation_id,
   tgt.atrium_installation_code = s.atrium_installation_code,
@@ -442,6 +474,7 @@ select
   (select count(*) from @actions where action = 'INSERT') as inserted_rows,
   (select count(*) from @actions where action = 'UPDATE') as updated_rows;
 `;
+
 
 export const searchInstallationsSql = `
 select top (@take)

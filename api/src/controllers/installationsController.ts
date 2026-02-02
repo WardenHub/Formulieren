@@ -118,9 +118,13 @@ export async function putDocuments(req: any, res: any) {
 
     return res.json(result);
   } catch (err: any) {
-    const msg = err?.message || String(err);
+    const msg = (err?.message || String(err)).toLowerCase();
 
-    if (msg.toLowerCase().includes("installation not found")) {
+    if (msg.includes("atrium installation not found")) {
+      return res.status(404).json({ error: "atrium installation not found" });
+    }
+
+    if (msg.includes("installation not found")) {
       return res.status(404).json({ error: "installation not found" });
     }
 
@@ -128,6 +132,7 @@ export async function putDocuments(req: any, res: any) {
     return res.status(500).json({ error: "putDocuments failed" });
   }
 }
+
 
 export async function searchInstallations(req: any, res: Response) {
   try {

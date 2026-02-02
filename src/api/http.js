@@ -1,28 +1,27 @@
 // /src/api/http.js
+import { getApiAccessToken } from "../auth/msal";
 
 const RAW_BASE = import.meta.env.VITE_API_BASE || "";
-const API_BASE = RAW_BASE.replace(/\/+$/, ""); // trim trailing slash
+const API_BASE = RAW_BASE.replace(/\/+$/, "");
 
 function buildUrl(path) {
-  // allow absolute urls
   if (/^https?:\/\//i.test(path)) return path;
-
-  // ensure leading slash
   const p = path.startsWith("/") ? path : `/${path}`;
-
-  // if VITE_API_BASE is set, use it, otherwise same-origin
   return API_BASE ? `${API_BASE}${p}` : p;
 }
 
 export async function httpJson(path, options = {}) {
   const url = buildUrl(path);
 
+  const token = await getApiAccessToken();
+
   const res = await fetch(url, {
     ...options,
-    credentials: "include",
+    credentials: "omit",
     headers: {
       ...(options.headers || {}),
       Accept: "application/json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
     },
   });
 
