@@ -15,6 +15,7 @@ import {
 } from "../db/queries/installations.sql.js";
 
 import {
+  ensureInstallationSql,
   getInstallationTypesSql,
   setInstallationTypeSql,
 } from "../db/queries/installationTypes.sql.js";
@@ -186,16 +187,28 @@ export async function setInstallationType(
   installation_type_key: string | null,
   updatedBy: string
 ) {
+  const cleanCode = String(code || "").trim();
   const key = installation_type_key ? String(installation_type_key) : null;
+  const who = updatedBy || "unknown";
 
-  const rows = await sqlQuery(setInstallationTypeSql, {
-    code: String(code),
-    installation_type_key: key,
-    updatedBy: updatedBy || "unknown",
+  // 1) ensure ember row exists (or throw if code not in Atrium sync)
+  await sqlQuery(ensureInstallationSql, {
+    code: cleanCode,
+    createdBy: who,
   });
 
-  return { ok: true, installation: rows?.[0] || null };
+  // 2) set type
+  const rows = await sqlQuery(setInstallationTypeSql, {
+    code: cleanCode,
+    installation_type_key: key,
+  });
+
+  return {
+    ok: true,
+    result: rows?.[0] ?? { atrium_installation_code: cleanCode, installation_type_key: key },
+  };
 }
+
 
 
 export async function searchInstallations(q: string | null, take = 25) {

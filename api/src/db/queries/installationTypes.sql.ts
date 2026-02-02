@@ -6,6 +6,7 @@
 export const ensureInstallationSql = `
 -- expects params: @code, @createdBy
 
+-- 1) must exist in ERP sync
 if not exists (
   select 1
   from dbo.AtriumInstallationBase a
@@ -15,6 +16,7 @@ begin
   throw 50000, 'atrium installation not found', 1;
 end;
 
+-- 2) create ember row if missing
 if not exists (
   select 1
   from dbo.Installation i
@@ -24,18 +26,12 @@ begin
   insert into dbo.Installation (
     installation_id,
     atrium_installation_code,
-    installation_type_key,
-    created_at,
-    created_by,
-    is_active
+    created_by
   )
   values (
     newid(),
     @code,
-    null,
-    sysutcdatetime(),
-    @createdBy,
-    1
+    @createdBy
   );
 end;
 
@@ -61,48 +57,12 @@ order by
 `;
 
 export const setInstallationTypeSql = `
--- expects params: @code, @installation_type_key, @updatedBy
+-- expects params: @code, @installation_type_key
 
--- 1) atrium installatie moet bestaan
-if not exists (
-  select 1
-  from dbo.AtriumInstallationBase a
-  where a.installatie_code = @code
-)
-begin
-  throw 50000, 'atrium installation not found', 1;
-end;
-
--- 2) lazy create dbo.Installation als die nog niet bestaat
-if not exists (
-  select 1
-  from dbo.Installation i
-  where i.atrium_installation_code = @code
-)
-begin
-  insert into dbo.Installation (
-    installation_id,
-    atrium_installation_code,
-    installation_type_key,
-    created_at,
-    created_by,
-    is_active
-  ) values (
-    newid(),
-    @code,
-    @installation_type_key,
-    sysutcdatetime(),
-    @updatedBy,
-    1
-  );
-end
-else
-begin
-  update i
-  set installation_type_key = @installation_type_key
-  from dbo.Installation i
-  where i.atrium_installation_code = @code;
-end;
+update i
+set installation_type_key = @installation_type_key
+from dbo.Installation i
+where i.atrium_installation_code = @code;
 
 select top 1
   i.atrium_installation_code,
@@ -110,4 +70,3 @@ select top 1
 from dbo.Installation i
 where i.atrium_installation_code = @code;
 `;
-

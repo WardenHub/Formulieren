@@ -1,26 +1,45 @@
-// src/api/http.js
-const API_BASE = import.meta.env.VITE_API_BASE || "";
-console.log("api base", API_BASE);
+// /src/api/http.js
+
+const RAW_BASE = import.meta.env.VITE_API_BASE || "";
+const API_BASE = RAW_BASE.replace(/\/+$/, ""); // trim trailing slash
+
+function buildUrl(path) {
+  // allow absolute urls
+  if (/^https?:\/\//i.test(path)) return path;
+
+  // ensure leading slash
+  const p = path.startsWith("/") ? path : `/${path}`;
+
+  // if VITE_API_BASE is set, use it, otherwise same-origin
+  return API_BASE ? `${API_BASE}${p}` : p;
+}
 
 export async function httpJson(path, options = {}) {
-  const res = await fetch(`${API_BASE}${path}`, {
+  const url = buildUrl(path);
+
+  const res = await fetch(url, {
+    ...options,
     credentials: "include",
     headers: {
-      Accept: "application/json",
       ...(options.headers || {}),
+      Accept: "application/json",
     },
-    ...options,
   });
 
   if (res.status === 401) {
-    const returnTo = encodeURIComponent(window.location.href);
-    window.location.href = `${API_BASE}/.auth/login/aad?post_login_redirect_uri=${returnTo}`;
-    return;
+    window.location.assign("/.auth/login/aad");
+    throw new Error("unauthorized");
+  }
+
+  const ct = res.headers.get("content-type") || "";
+  if (!ct.includes("application/json")) {
+    const text = await res.text();
+    throw new Error(`Expected JSON from ${url}, got: ${ct}. First chars: ${text.slice(0, 80)}`);
   }
 
   if (!res.ok) {
-    const text = await res.text();
-    throw new Error(`${res.status} ${res.statusText}: ${text}`);
+    const data = await res.json().catch(() => null);
+    throw new Error(data?.error || `Request failed (${res.status})`);
   }
 
   return res.json();
