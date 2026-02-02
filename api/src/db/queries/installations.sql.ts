@@ -6,22 +6,20 @@
 export const getInstallationSql = `
 select top 1
   i.installation_id,
-  a.installatie_code as atrium_installation_code,
+  i.atrium_installation_code,
   i.installation_type_key,
   it.display_name as installation_type_name,
   i.created_at,
   i.created_by,
-  coalesce(i.is_active, cast(1 as bit)) as is_active,
+  i.is_active,
   a.*
-from dbo.AtriumInstallationBase a
-left join dbo.Installation i
-  on i.atrium_installation_code = a.installatie_code
+from dbo.Installation i
 left join dbo.InstallationType it
   on it.installation_type_key = i.installation_type_key
-where a.installatie_code = @code;
+left join dbo.AtriumInstallationBase a
+  on a.installatie_code = i.atrium_installation_code
+where i.atrium_installation_code = @code
 `;
-
-
 
 // ------------------------------
 // catalog; sections
@@ -443,29 +441,30 @@ select
 export const searchInstallationsSql = `
 select top (@take)
   i.installation_id,
-  a.installatie_code as atrium_installation_code,
+  i.atrium_installation_code,
   i.installation_type_key,
   it.display_name as installation_type_name,
-  coalesce(i.is_active, cast(1 as bit)) as is_active,
+  i.is_active,
   i.created_at,
-  coalesce(nullif(a.obj_naam, ''), a.installatie_code) as installation_name
-from dbo.AtriumInstallationBase a
-left join dbo.Installation i
-  on i.atrium_installation_code = a.installatie_code
+  coalesce(nullif(a.obj_naam, ''), i.atrium_installation_code) as installation_name
+from dbo.Installation i
 left join dbo.InstallationType it
   on it.installation_type_key = i.installation_type_key
-where (
-  a.installatie_code like @qLike
+left join dbo.AtriumInstallationBase a
+  on a.installatie_code = i.atrium_installation_code
+where i.is_active = 1
+and (
+  i.atrium_installation_code like @qLike
   or a.obj_naam like @qLike
 )
 order by
   case
-    when a.installatie_code = @q then 0
-    when a.installatie_code like @qPrefix then 1
-    when a.installatie_code like @qLike then 2
+    when i.atrium_installation_code = @q then 0
+    when i.atrium_installation_code like @qPrefix then 1
+    when i.atrium_installation_code like @qLike then 2
     when a.obj_naam like @qPrefix then 3
     when a.obj_naam like @qLike then 4
     else 9
   end,
-  a.installatie_code;
+  i.atrium_installation_code;
 `;

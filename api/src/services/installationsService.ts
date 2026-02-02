@@ -15,6 +15,7 @@ import {
 } from "../db/queries/installations.sql.js";
 
 import {
+  ensureInstallationSql
   getInstallationTypesSql,
   setInstallationTypeSql,
 } from "../db/queries/installationTypes.sql.js";
