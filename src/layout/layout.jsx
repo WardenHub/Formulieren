@@ -59,15 +59,18 @@ export default function Layout() {
         const data = await httpJson("/me");
         if (!cancelled) setRoles(data.roles ?? []);
       } catch (err) {
+        // dit is je "login verplicht"
+        window.location.assign("/");
+        // of beter: trigger msal redirect door token op te vragen:
+        // await getApiAccessToken(); (maar dat doe je al in httpJson)
         console.error("me fetch failed", err);
       }
     }
 
     loadMe();
-    return () => {
-      cancelled = true;
-    };
+    return () => { cancelled = true; };
   }, []);
+
 
   return (
     <div className="app-shell">
