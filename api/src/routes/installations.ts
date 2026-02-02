@@ -10,8 +10,8 @@ import {
   putInstallationType,
   putDocuments,
   searchInstallations, 
-} from "../controllers/installationsController";
-import { requireRole } from "../middleware/roleMiddleware";
+} from "../controllers/installationsController.js";
+import { requireRole } from "../middleware/roleMiddleware.js";
 
 const router = Router();
 

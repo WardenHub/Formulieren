@@ -1,10 +1,10 @@
 import express from "express";
 import cors from "cors";
-import { authMiddleware } from "./middleware/authMiddleware";
-import { requireRole } from "./middleware/roleMiddleware";
-import { getDbConnection } from "./db";
-import installationsRouter from "./routes/installations";
-import installationTypesRouter from "./routes/installationTypes";
+import { authMiddleware } from "./middleware/authMiddleware.js";
+import { requireRole } from "./middleware/roleMiddleware.js";
+import { getDbConnection } from "./db/index.js";
+import installationsRouter from "./routes/installations.js";
+import installationTypesRouter from "./routes/installationTypes.js";
 
 
 const app = express();

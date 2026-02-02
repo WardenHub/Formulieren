@@ -1,7 +1,7 @@
 // /api/src/controllers/installationsController.ts
 
-import { Request, Response } from "express";
-import * as service from "../services/installationsService";
+import type { Request, Response } from "express";
+import * as service from "../services/installationsService.js";
 
 export async function getInstallation(req: Request, res: Response) {
   try {

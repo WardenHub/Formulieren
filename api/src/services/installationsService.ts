@@ -1,6 +1,6 @@
 // api/src/services/installationsService.ts
 
-import { sqlQuery } from "../db";
+import { sqlQuery } from "../db/index.js";
 import {
   getInstallationSql,
   getCustomValuesSql,
@@ -12,12 +12,12 @@ import {
   getInstallationDocumentsSql, 
   upsertInstallationDocumentsSql,
   searchInstallationsSql
-} from "../db/queries/installations.sql";
+} from "../db/queries/installations.sql.js";
 
 import {
   getInstallationTypesSql,
   setInstallationTypeSql,
-} from "../db/queries/installationTypes.sql";
+} from "../db/queries/installationTypes.sql.js";
 
 export async function getInstallationByCode(code: string) {
   const rows = await sqlQuery(getInstallationSql, { code });
