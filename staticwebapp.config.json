@@ -1,8 +1,18 @@
 {
+  "routes": [
+    {
+      "route": "/*",
+      "allowedRoles": ["anonymous"],
+      "redirect": "/.auth/login/aad"
+    },
+    {
+      "route": "/*",
+      "allowedRoles": ["authenticated"]
+    }
+  ],
   "navigationFallback": {
     "rewrite": "/index.html",
     "exclude": [
-      "/api/*",
       "/.auth/*",
       "/assets/*",
       "/*.css",
@@ -12,11 +22,5 @@
       "/*.png",
       "/*.svg"
     ]
-  },
-  "routes": [
-    {
-      "route": "/*",
-      "allowedRoles": ["authenticated"]
-    }
-  ]
+  }
 }
