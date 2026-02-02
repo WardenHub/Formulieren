@@ -2,7 +2,6 @@
   "navigationFallback": {
     "rewrite": "/index.html",
     "exclude": [
-      "/.auth/*",
       "/assets/*",
       "/*.css",
       "/*.js",
@@ -11,17 +10,5 @@
       "/*.png",
       "/*.svg"
     ]
-  },
-  "routes": [
-    {
-      "route": "/*",
-      "allowedRoles": ["authenticated"]
-    }
-  ],
-  "responseOverrides": {
-    "401": {
-      "redirect": "/.auth/login/aad",
-      "statusCode": 302
-    }
   }
 }
