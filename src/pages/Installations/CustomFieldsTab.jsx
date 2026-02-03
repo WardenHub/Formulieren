@@ -10,6 +10,9 @@ import {
 import { putCustomValues } from "../../api/emberApi.js";
 import { Check } from "lucide-react";
 
+import { PlusIcon } from "@/components/ui/plus";
+import { ChevronUpIcon } from "@/components/ui/chevron-up";
+
 const SAVED_MS = 3000;
 
 function valueToTyped(field, v) {
@@ -58,6 +61,9 @@ const CustomFieldsTab = forwardRef(function CustomFieldsTab(
 
   const [savedKeys, setSavedKeys] = useState(() => new Set());
   const savedTimersRef = useRef(new Map()); // field_key -> timeoutId
+
+  const [openMap, setOpenMap] = useState({}); // section_key -> bool
+  const toggleIconRefs = useRef({}); // section_key -> iconRef
 
   const customFields = useMemo(() => {
     const fields = catalog?.fields || [];
@@ -112,6 +118,17 @@ const CustomFieldsTab = forwardRef(function CustomFieldsTab(
       fields,
     }));
   }, [customFields, sectionsByKey]);
+
+  // default collapsed (alles dicht) zodra we groups kennen; preserve user toggles
+  useEffect(() => {
+    setOpenMap((prev) => {
+      const next = { ...prev };
+      for (const g of grouped) {
+        if (next[g.section_key] === undefined) next[g.section_key] = false;
+      }
+      return next;
+    });
+  }, [grouped]);
 
   const dirtyKeys = useMemo(() => {
     const set = new Set();
@@ -187,6 +204,33 @@ const CustomFieldsTab = forwardRef(function CustomFieldsTab(
     clearSaved(fieldKey);
   }
 
+  function toggleOpen(sectionKey) {
+    setOpenMap((prev) => ({ ...prev, [sectionKey]: !prev[sectionKey] }));
+  }
+
+  function animateSummaryIcon(sectionKey) {
+    toggleIconRefs.current[sectionKey]?.startAnimation?.();
+  }
+
+  function stopSummaryIcon(sectionKey) {
+    toggleIconRefs.current[sectionKey]?.stopAnimation?.();
+  }
+
+  function countFilled(fieldsInSection) {
+    let filled = 0;
+    for (const f of fieldsInSection) {
+      const v = draft[f.field_key];
+      const val = valueToTyped(f, valuesByKey.get(f.field_key));
+      const cur = v === undefined ? val : v;
+
+      // “gevuld” = niet null/undefined/"" (bool false telt als gevuld)
+      if (cur === null || cur === undefined) continue;
+      if (typeof cur === "string" && cur.trim() === "") continue;
+      filled++;
+    }
+    return filled;
+  }
+
   async function save() {
     if (saving) return;
 
@@ -240,94 +284,154 @@ const CustomFieldsTab = forwardRef(function CustomFieldsTab(
       {saveError && <div style={{ color: "salmon" }}>{saveError}</div>}
 
       <div style={{ display: "grid", gap: 10 }}>
-        {grouped.map((g) => (
-          <div
-            key={g.section_key}
-            style={{
-              padding: 12,
-              border: "1px solid rgba(255,255,255,0.12)",
-              borderRadius: 12,
-            }}
-          >
-            <div style={{ fontWeight: 600, marginBottom: 8 }}>
-              {g.section?.section_name || g.section_key}
-            </div>
+        {grouped.map((g) => {
+          const totalCount = g.fields.length;
+          const filledCount = countFilled(g.fields);
+          const isOpen = Boolean(openMap[g.section_key]);
 
-            <div className="cf-grid">
-              {g.fields.map((f) => {
-                const val = draft[f.field_key];
-                const label = f.label || f.field_key;
-                const dirty = dirtyKeys.has(f.field_key);
-                const saved = savedKeys.has(f.field_key);
-                const isWide = f.data_type === "json";
+          return (
+            <div
+              key={g.section_key}
+              style={{
+                padding: 12,
+                border: "1px solid rgba(255,255,255,0.12)",
+                borderRadius: 12,
+              }}
+            >
+              {/* summary row */}
+              <button
+                type="button"
+                onClick={() => toggleOpen(g.section_key)}
+                onMouseEnter={() => animateSummaryIcon(g.section_key)}
+                onMouseLeave={() => stopSummaryIcon(g.section_key)}
+                style={{
+                  width: "100%",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  gap: 12,
+                  background: "transparent",
+                  border: "none",
+                  padding: 0,
+                  cursor: "pointer",
+                  textAlign: "left",
+                }}
+                title={isOpen ? "inklappen" : "uitklappen"}
+              >
+                <div style={{ display: "flex", alignItems: "baseline", gap: 12, minWidth: 0, flexWrap: "wrap" }}>
+                  <div style={{ fontWeight: 600 }}>{g.section?.section_name || g.section_key}</div>
 
-                return (
-                  <div key={f.field_key} className={isWide ? "cf-row wide" : "cf-row"}>
-                    <div className="cf-label">
-                      {saved ? (
-                        <span className="icon-ok icon-ok--green" title="opgeslagen">
-                          <Check size={14} />
-                        </span>
-                      ) : (
-                        <span className={dirty ? "dot dirty" : "dot"} title={dirty ? "gewijzigd" : ""} />
-                      )}
-                      <div className="cf-label-text">{label}</div>
-                    </div>
-
-                    <div className="cf-control">
-                      {f.data_type === "bool" ? (
-                        <div className="cf-bool">
-                          <button
-                            type="button"
-                            className={val === true ? "cf-bool-btn active" : "cf-bool-btn"}
-                            onClick={() => setField(f.field_key, true)}
-                          >
-                            Ja
-                          </button>
-                          <button
-                            type="button"
-                            className={val === false ? "cf-bool-btn active" : "cf-bool-btn"}
-                            onClick={() => setField(f.field_key, false)}
-                          >
-                            Nee
-                          </button>
-                        </div>
-                      ) : f.data_type === "number" ? (
-                        <input
-                          type="number"
-                          value={val ?? ""}
-                          onChange={(e) => setField(f.field_key, e.target.value)}
-                          className="cf-input"
-                        />
-                      ) : f.data_type === "date" ? (
-                        <input
-                          type="date"
-                          value={formatDateForInput(val)}
-                          onChange={(e) => setField(f.field_key, e.target.value)}
-                          className="cf-input"
-                        />
-                      ) : f.data_type === "json" ? (
-                        <textarea
-                          value={val ?? ""}
-                          onChange={(e) => setField(f.field_key, e.target.value)}
-                          rows={5}
-                          className="cf-textarea"
-                        />
-                      ) : (
-                        <input
-                          type="text"
-                          value={val ?? ""}
-                          onChange={(e) => setField(f.field_key, e.target.value)}
-                          className="cf-input"
-                        />
-                      )}
-                    </div>
+                  <div className="muted" style={{ whiteSpace: "nowrap" }}>
+                    {totalCount} velden
                   </div>
-                );
-              })}
+
+                  <div className="muted" style={{ whiteSpace: "nowrap" }}>
+                    {filledCount} met waarde
+                  </div>
+                </div>
+
+                <div style={{ flex: "0 0 auto", display: "inline-flex", alignItems: "center" }}>
+                  {!isOpen ? (
+                    <PlusIcon
+                      ref={(el) => {
+                        toggleIconRefs.current[g.section_key] = el;
+                      }}
+                      size={18}
+                      className="nav-anim-icon"
+                    />
+                  ) : (
+                    <ChevronUpIcon
+                      ref={(el) => {
+                        toggleIconRefs.current[g.section_key] = el;
+                      }}
+                      size={18}
+                      className="nav-anim-icon"
+                    />
+                  )}
+                </div>
+              </button>
+
+              {/* details */}
+              {isOpen && (
+                <div style={{ marginTop: 10 }}>
+                  <div className="cf-grid">
+                    {g.fields.map((f) => {
+                      const val = draft[f.field_key];
+                      const label = f.label || f.field_key;
+                      const dirty = dirtyKeys.has(f.field_key);
+                      const saved = savedKeys.has(f.field_key);
+                      const isWide = f.data_type === "json";
+
+                      return (
+                        <div key={f.field_key} className={isWide ? "cf-row wide" : "cf-row"}>
+                          <div className="cf-label">
+                            {saved ? (
+                              <span className="icon-ok icon-ok--green" title="opgeslagen">
+                                <Check size={14} />
+                              </span>
+                            ) : (
+                              <span className={dirty ? "dot dirty" : "dot"} title={dirty ? "gewijzigd" : ""} />
+                            )}
+                            <div className="cf-label-text">{label}</div>
+                          </div>
+
+                          <div className="cf-control">
+                            {f.data_type === "bool" ? (
+                              <div className="cf-bool">
+                                <button
+                                  type="button"
+                                  className={val === true ? "cf-bool-btn active" : "cf-bool-btn"}
+                                  onClick={() => setField(f.field_key, true)}
+                                >
+                                  Ja
+                                </button>
+                                <button
+                                  type="button"
+                                  className={val === false ? "cf-bool-btn active" : "cf-bool-btn"}
+                                  onClick={() => setField(f.field_key, false)}
+                                >
+                                  Nee
+                                </button>
+                              </div>
+                            ) : f.data_type === "number" ? (
+                              <input
+                                type="number"
+                                value={val ?? ""}
+                                onChange={(e) => setField(f.field_key, e.target.value)}
+                                className="cf-input"
+                              />
+                            ) : f.data_type === "date" ? (
+                              <input
+                                type="date"
+                                value={formatDateForInput(val)}
+                                onChange={(e) => setField(f.field_key, e.target.value)}
+                                className="cf-input"
+                              />
+                            ) : f.data_type === "json" ? (
+                              <textarea
+                                value={val ?? ""}
+                                onChange={(e) => setField(f.field_key, e.target.value)}
+                                rows={5}
+                                className="cf-textarea"
+                              />
+                            ) : (
+                              <input
+                                type="text"
+                                value={val ?? ""}
+                                onChange={(e) => setField(f.field_key, e.target.value)}
+                                className="cf-input"
+                              />
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
             </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );

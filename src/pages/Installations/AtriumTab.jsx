@@ -1,6 +1,10 @@
 // /src/pages/Installations/AtriumTab.jsx
+import { useEffect, useMemo, useRef, useState } from "react";
 
-export default function AtriumTab({ catalog, installation }) {
+import { PlusIcon } from "@/components/ui/plus";
+import { ChevronUpIcon } from "@/components/ui/chevron-up";
+
+export default function AtriumTab({ catalog, installation, isAdmin = false }) {
   if (!catalog || !installation) {
     return <p className="muted">laden; atriumdata</p>;
   }
@@ -8,33 +12,44 @@ export default function AtriumTab({ catalog, installation }) {
   const sections = Array.isArray(catalog.sections) ? catalog.sections : [];
   const fields = Array.isArray(catalog.fields) ? catalog.fields : [];
 
-  // only external fields from AtriumInstallationBase
-  const atriumFields = fields.filter((f) => {
-    if (!f) return false;
-    if (f.is_active === false) return false;
-    if (f.source !== "external") return false;
-    if (f.source_type && f.source_type !== "fabric") return false;
-    if (f.fabric_table && f.fabric_table !== "AtriumInstallationBase") return false;
-    return true;
-  });
+  // only external fields from AtriumInstallationBase + filter synced/gcid
+  const atriumFields = useMemo(() => {
+    return fields.filter((f) => {
+      if (!f) return false;
+      if (f.is_active === false) return false;
+      if (f.source !== "external") return false;
+      if (f.source_type && f.source_type !== "fabric") return false;
+      if (f.fabric_table && f.fabric_table !== "AtriumInstallationBase") return false;
 
-  const fieldsBySection = new Map();
-  for (const f of atriumFields) {
-    const key = f.section_key || "overig";
-    if (!fieldsBySection.has(key)) fieldsBySection.set(key, []);
-    fieldsBySection.get(key).push(f);
-  }
+      const sk = String(f.section_key || "overig");
+      if (sk === "gcid") return false;
+      if (sk === "synced" && !isAdmin) return false;
+
+      return true;
+    });
+  }, [fields, isAdmin]);
+
+  const fieldsBySection = useMemo(() => {
+    const m = new Map();
+    for (const f of atriumFields) {
+      const key = f.section_key || "overig";
+      if (!m.has(key)) m.set(key, []);
+      m.get(key).push(f);
+    }
+    return m;
+  }, [atriumFields]);
 
   // prefer section order from catalog; append unknown section keys at end
-  const knownSectionKeys = sections.map((s) => s.section_key);
-  const unknownSectionKeys = Array.from(fieldsBySection.keys()).filter(
-    (k) => !knownSectionKeys.includes(k)
-  );
+  const orderedSectionKeys = useMemo(() => {
+    const knownSectionKeys = sections
+      .map((s) => s.section_key)
+      .filter((k) => k !== "gcid")
+      .filter((k) => (isAdmin ? true : k !== "synced"));
 
-  const orderedSectionKeys = [
-    ...knownSectionKeys.filter((k) => fieldsBySection.has(k)),
-    ...unknownSectionKeys,
-  ];
+    const unknownSectionKeys = Array.from(fieldsBySection.keys()).filter((k) => !knownSectionKeys.includes(k));
+
+    return [...knownSectionKeys.filter((k) => fieldsBySection.has(k)), ...unknownSectionKeys];
+  }, [sections, fieldsBySection, isAdmin]);
 
   function getValueForField(f) {
     const col = f.fabric_column;
@@ -53,17 +68,50 @@ export default function AtriumTab({ catalog, installation }) {
     return s?.section_name || sectionKey;
   }
 
+  const [openMap, setOpenMap] = useState({}); // sectionKey -> bool
+  const toggleIconRefs = useRef({});
+
+  // init default collapsed state (alles dicht, tenzij al gezet)
+  useEffect(() => {
+    setOpenMap((prev) => {
+      const next = { ...prev };
+      for (const sectionKey of orderedSectionKeys) {
+        if (next[sectionKey] === undefined) next[sectionKey] = false;
+      }
+      return next;
+    });
+  }, [orderedSectionKeys]);
+
+  function toggleOpen(sectionKey) {
+    setOpenMap((prev) => ({ ...prev, [sectionKey]: !prev[sectionKey] }));
+  }
+
+  function animateSummaryIcon(sectionKey) {
+    toggleIconRefs.current[sectionKey]?.startAnimation?.();
+  }
+
+  function stopSummaryIcon(sectionKey) {
+    toggleIconRefs.current[sectionKey]?.stopAnimation?.();
+  }
+
   return (
     <div style={{ display: "grid", gap: 12 }}>
       <h2 style={{ margin: 0 }}>Atriumdata</h2>
 
-      {orderedSectionKeys.length === 0 && (
-        <p className="muted">geen atrium velden gevonden in catalog</p>
-      )}
+      {orderedSectionKeys.length === 0 && <p className="muted">geen atrium velden gevonden in catalog</p>}
 
       <div style={{ display: "grid", gap: 10 }}>
         {orderedSectionKeys.map((sectionKey) => {
           const list = fieldsBySection.get(sectionKey) || [];
+          const totalCount = list.length;
+
+          let filledCount = 0;
+          for (const f of list) {
+            const val = formatValue(getValueForField(f));
+            if (val !== null) filledCount++;
+          }
+
+          const isOpen = Boolean(openMap[sectionKey]);
 
           return (
             <div
@@ -74,33 +122,83 @@ export default function AtriumTab({ catalog, installation }) {
                 borderRadius: 12,
               }}
             >
-              <div style={{ marginBottom: 8, fontWeight: 600 }}>
-                {sectionName(sectionKey)}
-              </div>
+              {/* summary row */}
+              <button
+                type="button"
+                onClick={() => toggleOpen(sectionKey)}
+                onMouseEnter={() => animateSummaryIcon(sectionKey)}
+                onMouseLeave={() => stopSummaryIcon(sectionKey)}
+                style={{
+                  width: "100%",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  gap: 12,
+                  background: "transparent",
+                  border: "none",
+                  padding: 0,
+                  cursor: "pointer",
+                  textAlign: "left",
+                }}
+                title={isOpen ? "inklappen" : "uitklappen"}
+              >
+                <div style={{ display: "flex", alignItems: "baseline", gap: 12, minWidth: 0, flexWrap: "wrap" }}>
+                  <div style={{ fontWeight: 600 }}>{sectionName(sectionKey)}</div>
 
-              <div style={{ display: "grid", gap: 8 }}>
-                {list.map((f) => {
-                  const raw = getValueForField(f);
-                  const val = formatValue(raw);
+                  <div className="muted" style={{ whiteSpace: "nowrap" }}>
+                    {totalCount} velden
+                  </div>
 
-                  return (
-                    <div
-                      key={f.field_key}
-                      style={{
-                        display: "grid",
-                        gridTemplateColumns: "260px 1fr",
-                        gap: 12,
-                        alignItems: "baseline",
+                  <div className="muted" style={{ whiteSpace: "nowrap" }}>
+                    {filledCount} met waarde
+                  </div>
+                </div>
+
+                <div style={{ flex: "0 0 auto", display: "inline-flex", alignItems: "center" }}>
+                  {!isOpen ? (
+                    <PlusIcon
+                      ref={(el) => {
+                        toggleIconRefs.current[sectionKey] = el;
                       }}
-                    >
-                      <div className="muted">{f.label || f.field_key}</div>
-                      <div style={{ overflowWrap: "anywhere" }}>
-                        {val ?? <span className="muted">geen waarde</span>}
+                      size={18}
+                      className="nav-anim-icon"
+                    />
+                  ) : (
+                    <ChevronUpIcon
+                      ref={(el) => {
+                        toggleIconRefs.current[sectionKey] = el;
+                      }}
+                      size={18}
+                      className="nav-anim-icon"
+                    />
+                  )}
+                </div>
+              </button>
+
+              {/* details */}
+              {isOpen && (
+                <div style={{ display: "grid", gap: 8, marginTop: 10 }}>
+                  {list.map((f) => {
+                    const raw = getValueForField(f);
+                    const val = formatValue(raw);
+
+                    return (
+                      <div
+                        key={f.field_key}
+                        style={{
+                          display: "grid",
+                          gridTemplateColumns: "260px 1fr",
+                          gap: 12,
+                          alignItems: "baseline",
+                        }}
+                      >
+                        <div className="muted">{f.label || f.field_key}</div>
+                        <div style={{ overflowWrap: "anywhere" }}>{val ?? <span className="muted">geen waarde</span>}</div>
                       </div>
-                    </div>
-                  );
-                })}
-              </div>
+                    );
+                  })}
+                </div>
+              )}
             </div>
           );
         })}

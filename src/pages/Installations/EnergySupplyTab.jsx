@@ -2,6 +2,7 @@
 import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
 import { putEnergySupplies, deleteEnergySupply } from "../../api/emberApi.js";
 
+import { BatteryWarningIcon } from "@/components/ui/battery-warning";
 import { BatteryPlusIcon } from "@/components/ui/battery-plus";
 import { DeleteIcon } from "@/components/ui/delete";
 import { RotateCCWIcon } from "@/components/ui/rotate-ccw";
@@ -61,7 +62,7 @@ function formatAh(v) {
   return s.endsWith(".0") ? s.slice(0, -2) : s;
 }
 
-function formatAgeFromDate(dateStr) {
+function getAgeInfo(dateStr) {
   const iso = normalizeDateForInput(dateStr);
   if (!iso) return null;
 
@@ -73,13 +74,14 @@ function formatAgeFromDate(dateStr) {
   if (diffMs < 0) return null;
 
   const days = diffMs / 86400000;
+  const years = days / 365.25;
 
   // dagen: 0 decimalen, altijd omhoog afronden
-  if (days < 30) return `${Math.ceil(days)} d`;
+  if (days < 30) return { label: `${Math.ceil(days)} d`, years };
 
   // maanden/jaren: 1 decimaal
-  if (days < 365) return `${(days / 30.4375).toFixed(1)} mnd`;
-  return `${(days / 365.25).toFixed(1)} jr`;
+  if (days < 365) return { label: `${(days / 30.4375).toFixed(1)} mnd`, years };
+  return { label: `${years.toFixed(1)} jr`, years };
 }
 
 const EnergySupplyTab = forwardRef(function EnergySupplyTab(
@@ -97,6 +99,7 @@ const EnergySupplyTab = forwardRef(function EnergySupplyTab(
   const wipeIconRefs = useRef({});
   const msgIconRefs = useRef({});
   const toggleIconRefs = useRef({}); // plus/chevron
+  const warnIconRefs = useRef({}); // battery-warning
 
   const brandTypeMap = useMemo(() => {
     const m = new Map();
@@ -154,6 +157,19 @@ const EnergySupplyTab = forwardRef(function EnergySupplyTab(
     const now = JSON.stringify(rows);
     onDirtyChange?.(now !== initialJsonRef.current);
   }, [rows, onDirtyChange]);
+
+  // keep warning icon running for old batteries (>4.0 years)
+  useEffect(() => {
+    for (let i = 0; i < rows.length; i++) {
+      const r = rows[i];
+      const key = r.energy_supply_id ?? `new-${i}`;
+      const ageInfo = getAgeInfo(r.battery_date);
+      const isOld = Boolean(ageInfo && ageInfo.years >= 4.0);
+
+      if (isOld) warnIconRefs.current[key]?.startAnimation?.();
+      else warnIconRefs.current[key]?.stopAnimation?.();
+    }
+  }, [rows]);
 
   function updateRow(idx, patch) {
     setRows((prev) => prev.map((r, i) => (i === idx ? { ...r, ...patch } : r)));
@@ -312,14 +328,15 @@ const EnergySupplyTab = forwardRef(function EnergySupplyTab(
   }
 
   function animateSummaryIcons(key) {
-    // animate toggle + message (if present)
     toggleIconRefs.current[key]?.startAnimation?.();
     msgIconRefs.current[key]?.startAnimation?.();
+    warnIconRefs.current[key]?.startAnimation?.();
   }
 
-  function stopSummaryIcons(key) {
+  function stopSummaryIcons(key, isOld) {
     toggleIconRefs.current[key]?.stopAnimation?.();
     msgIconRefs.current[key]?.stopAnimation?.();
+    if (!isOld) warnIconRefs.current[key]?.stopAnimation?.();
   }
 
   return (
@@ -362,7 +379,10 @@ const EnergySupplyTab = forwardRef(function EnergySupplyTab(
           const isOpen = Boolean(openMap[key]);
 
           const hasRemarks = String(r.remarks || "").trim().length > 0;
-          const age = formatAgeFromDate(r.battery_date);
+
+          const ageInfo = getAgeInfo(r.battery_date);
+          const isOld = Boolean(ageInfo && ageInfo.years >= 4.0);
+          const dangerColor = "var(--danger, #ff5b5b)";
 
           return (
             <div key={key} className="panel" style={{ padding: 12 }}>
@@ -373,7 +393,7 @@ const EnergySupplyTab = forwardRef(function EnergySupplyTab(
                 onClick={() => toggleOpen(key)}
                 disabled={saving}
                 onMouseEnter={() => animateSummaryIcons(key)}
-                onMouseLeave={() => stopSummaryIcons(key)}
+                onMouseLeave={() => stopSummaryIcons(key, isOld)}
                 style={{
                   width: "100%",
                   display: "flex",
@@ -419,9 +439,28 @@ const EnergySupplyTab = forwardRef(function EnergySupplyTab(
                       {effectiveAh === null ? "n.v.t." : `${effectiveAh} Ah`}
                     </div>
 
-                    {age && (
-                      <div className="muted" style={{ whiteSpace: "nowrap" }}>
-                        ({age})
+                    {ageInfo && (
+                      <div
+                        className="muted"
+                        style={{
+                          whiteSpace: "nowrap",
+                          display: "inline-flex",
+                          alignItems: "center",
+                          gap: 6,
+                          color: isOld ? dangerColor : undefined,
+                        }}
+                      >
+                        {isOld && (
+                          <BatteryWarningIcon
+                            ref={(el) => {
+                              warnIconRefs.current[key] = el;
+                            }}
+                            size={18}
+                            className="nav-anim-icon"
+                            style={{ color: dangerColor }}
+                          />
+                        )}
+                        ({ageInfo.label})
                       </div>
                     )}
 
@@ -629,7 +668,7 @@ const EnergySupplyTab = forwardRef(function EnergySupplyTab(
                         <option value="single">single</option>
                         <option value="series">series</option>
                         <option value="parallel">parallel</option>
-                        <option value="unknown">unknown</option>
+                        <option value="unknown">onbekend</option>
                       </select>
                     </div>
 
@@ -646,7 +685,7 @@ const EnergySupplyTab = forwardRef(function EnergySupplyTab(
                         {rawEffectiveAh === null
                           ? "n.v.t."
                           : r.configuration === "series"
-                            ? `${formatAh(rawEffectiveAh)} series verhoogt spanning; Ah blijft gelijk`
+                            ? `${formatAh(rawEffectiveAh)}`
                             : String(formatAh(rawEffectiveAh))}
                       </div>
                     </div>
@@ -657,7 +696,7 @@ const EnergySupplyTab = forwardRef(function EnergySupplyTab(
                         className="input"
                         value={r.remarks}
                         onChange={(e) => updateRow(idx, { remarks: e.target.value })}
-                        placeholder="bijv. datum vervangen; afwijkingen; meting"
+                        placeholder="bijv. bijzondere plaatsing; afwijkingen; attentiepunten."
                         rows={3}
                         disabled={saving}
                       />
