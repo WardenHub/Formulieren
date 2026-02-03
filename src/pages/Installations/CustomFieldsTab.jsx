@@ -1,12 +1,5 @@
 // /src/pages/Installations/CustomFieldsTab.jsx
-import {
-  forwardRef,
-  useEffect,
-  useMemo,
-  useImperativeHandle,
-  useRef,
-  useState,
-} from "react";
+import { forwardRef, useEffect, useMemo, useImperativeHandle, useRef, useState } from "react";
 import { putCustomValues } from "../../api/emberApi.js";
 import { Check } from "lucide-react";
 
@@ -52,7 +45,7 @@ function formatDateForInput(value) {
 }
 
 const CustomFieldsTab = forwardRef(function CustomFieldsTab(
-  { code, catalog, customValues, onSaved, onDirtyChange, onSavingChange, onSaveOk },
+  { code, catalog, customValues, onSaved, onDirtyChange, onSavingChange, onSaveOk, onAnyOpenChange },
   ref
 ) {
   const [draft, setDraft] = useState({});
@@ -62,8 +55,8 @@ const CustomFieldsTab = forwardRef(function CustomFieldsTab(
   const [savedKeys, setSavedKeys] = useState(() => new Set());
   const savedTimersRef = useRef(new Map()); // field_key -> timeoutId
 
-  const [openMap, setOpenMap] = useState({}); // section_key -> bool
   const toggleIconRefs = useRef({}); // section_key -> iconRef
+  const [openMap, setOpenMap] = useState({}); // section_key -> bool
 
   const customFields = useMemo(() => {
     const fields = catalog?.fields || [];
@@ -99,7 +92,6 @@ const CustomFieldsTab = forwardRef(function CustomFieldsTab(
     setDraft(next);
     setSaveError(null);
 
-    // reset per-field saved indicators bij “nieuwe” load
     setSavedKeys(new Set());
     for (const t of savedTimersRef.current.values()) clearTimeout(t);
     savedTimersRef.current.clear();
@@ -119,7 +111,7 @@ const CustomFieldsTab = forwardRef(function CustomFieldsTab(
     }));
   }, [customFields, sectionsByKey]);
 
-  // default collapsed (alles dicht) zodra we groups kennen; preserve user toggles
+  // init defaults: alles dicht
   useEffect(() => {
     setOpenMap((prev) => {
       const next = { ...prev };
@@ -129,6 +121,12 @@ const CustomFieldsTab = forwardRef(function CustomFieldsTab(
       return next;
     });
   }, [grouped]);
+
+  // notify parent: staat er iets open?
+  useEffect(() => {
+    const anyOpen = Object.values(openMap).some(Boolean);
+    onAnyOpenChange?.(anyOpen);
+  }, [openMap, onAnyOpenChange]);
 
   const dirtyKeys = useMemo(() => {
     const set = new Set();
@@ -204,33 +202,6 @@ const CustomFieldsTab = forwardRef(function CustomFieldsTab(
     clearSaved(fieldKey);
   }
 
-  function toggleOpen(sectionKey) {
-    setOpenMap((prev) => ({ ...prev, [sectionKey]: !prev[sectionKey] }));
-  }
-
-  function animateSummaryIcon(sectionKey) {
-    toggleIconRefs.current[sectionKey]?.startAnimation?.();
-  }
-
-  function stopSummaryIcon(sectionKey) {
-    toggleIconRefs.current[sectionKey]?.stopAnimation?.();
-  }
-
-  function countFilled(fieldsInSection) {
-    let filled = 0;
-    for (const f of fieldsInSection) {
-      const v = draft[f.field_key];
-      const val = valueToTyped(f, valuesByKey.get(f.field_key));
-      const cur = v === undefined ? val : v;
-
-      // “gevuld” = niet null/undefined/"" (bool false telt als gevuld)
-      if (cur === null || cur === undefined) continue;
-      if (typeof cur === "string" && cur.trim() === "") continue;
-      filled++;
-    }
-    return filled;
-  }
-
   async function save() {
     if (saving) return;
 
@@ -274,10 +245,44 @@ const CustomFieldsTab = forwardRef(function CustomFieldsTab(
     }
   }
 
-  useImperativeHandle(ref, () => ({ save }), [save]);
+  function toggleSection(sectionKey) {
+    setOpenMap((prev) => ({ ...prev, [sectionKey]: !prev[sectionKey] }));
+  }
+
+  function expandAll() {
+    setOpenMap((prev) => {
+      const next = { ...prev };
+      for (const g of grouped) next[g.section_key] = true;
+      return next;
+    });
+  }
+
+  function collapseAll() {
+    setOpenMap((prev) => {
+      const next = { ...prev };
+      for (const g of grouped) next[g.section_key] = false;
+      return next;
+    });
+  }
+
+  function animateSectionIcon(sectionKey) {
+    toggleIconRefs.current[sectionKey]?.startAnimation?.();
+  }
+
+  function stopSectionIcon(sectionKey) {
+    toggleIconRefs.current[sectionKey]?.stopAnimation?.();
+  }
+
+  useImperativeHandle(ref, () => ({ save, expandAll, collapseAll }));
 
   if (!catalog) return <div className="muted">laden; catalog</div>;
   if (customFields.length === 0) return <div className="muted">geen eigenschappen beschikbaar</div>;
+
+  function isFilledValue(v) {
+    if (v === null || v === undefined) return false;
+    if (typeof v === "string") return v.trim().length > 0;
+    return true;
+  }
 
   return (
     <div style={{ display: "grid", gap: 12 }}>
@@ -285,9 +290,14 @@ const CustomFieldsTab = forwardRef(function CustomFieldsTab(
 
       <div style={{ display: "grid", gap: 10 }}>
         {grouped.map((g) => {
-          const totalCount = g.fields.length;
-          const filledCount = countFilled(g.fields);
           const isOpen = Boolean(openMap[g.section_key]);
+
+          const totalCount = g.fields.length;
+          let filledCount = 0;
+          for (const f of g.fields) {
+            const val = draft[f.field_key];
+            if (isFilledValue(val)) filledCount++;
+          }
 
           return (
             <div
@@ -301,9 +311,9 @@ const CustomFieldsTab = forwardRef(function CustomFieldsTab(
               {/* summary row */}
               <button
                 type="button"
-                onClick={() => toggleOpen(g.section_key)}
-                onMouseEnter={() => animateSummaryIcon(g.section_key)}
-                onMouseLeave={() => stopSummaryIcon(g.section_key)}
+                onClick={() => toggleSection(g.section_key)}
+                onMouseEnter={() => animateSectionIcon(g.section_key)}
+                onMouseLeave={() => stopSectionIcon(g.section_key)}
                 style={{
                   width: "100%",
                   display: "flex",
@@ -353,80 +363,78 @@ const CustomFieldsTab = forwardRef(function CustomFieldsTab(
 
               {/* details */}
               {isOpen && (
-                <div style={{ marginTop: 10 }}>
-                  <div className="cf-grid">
-                    {g.fields.map((f) => {
-                      const val = draft[f.field_key];
-                      const label = f.label || f.field_key;
-                      const dirty = dirtyKeys.has(f.field_key);
-                      const saved = savedKeys.has(f.field_key);
-                      const isWide = f.data_type === "json";
+                <div className="cf-grid" style={{ marginTop: 10 }}>
+                  {g.fields.map((f) => {
+                    const val = draft[f.field_key];
+                    const label = f.label || f.field_key;
+                    const dirty = dirtyKeys.has(f.field_key);
+                    const saved = savedKeys.has(f.field_key);
+                    const isWide = f.data_type === "json";
 
-                      return (
-                        <div key={f.field_key} className={isWide ? "cf-row wide" : "cf-row"}>
-                          <div className="cf-label">
-                            {saved ? (
-                              <span className="icon-ok icon-ok--green" title="opgeslagen">
-                                <Check size={14} />
-                              </span>
-                            ) : (
-                              <span className={dirty ? "dot dirty" : "dot"} title={dirty ? "gewijzigd" : ""} />
-                            )}
-                            <div className="cf-label-text">{label}</div>
-                          </div>
-
-                          <div className="cf-control">
-                            {f.data_type === "bool" ? (
-                              <div className="cf-bool">
-                                <button
-                                  type="button"
-                                  className={val === true ? "cf-bool-btn active" : "cf-bool-btn"}
-                                  onClick={() => setField(f.field_key, true)}
-                                >
-                                  Ja
-                                </button>
-                                <button
-                                  type="button"
-                                  className={val === false ? "cf-bool-btn active" : "cf-bool-btn"}
-                                  onClick={() => setField(f.field_key, false)}
-                                >
-                                  Nee
-                                </button>
-                              </div>
-                            ) : f.data_type === "number" ? (
-                              <input
-                                type="number"
-                                value={val ?? ""}
-                                onChange={(e) => setField(f.field_key, e.target.value)}
-                                className="cf-input"
-                              />
-                            ) : f.data_type === "date" ? (
-                              <input
-                                type="date"
-                                value={formatDateForInput(val)}
-                                onChange={(e) => setField(f.field_key, e.target.value)}
-                                className="cf-input"
-                              />
-                            ) : f.data_type === "json" ? (
-                              <textarea
-                                value={val ?? ""}
-                                onChange={(e) => setField(f.field_key, e.target.value)}
-                                rows={5}
-                                className="cf-textarea"
-                              />
-                            ) : (
-                              <input
-                                type="text"
-                                value={val ?? ""}
-                                onChange={(e) => setField(f.field_key, e.target.value)}
-                                className="cf-input"
-                              />
-                            )}
-                          </div>
+                    return (
+                      <div key={f.field_key} className={isWide ? "cf-row wide" : "cf-row"}>
+                        <div className="cf-label">
+                          {saved ? (
+                            <span className="icon-ok icon-ok--green" title="opgeslagen">
+                              <Check size={14} />
+                            </span>
+                          ) : (
+                            <span className={dirty ? "dot dirty" : "dot"} title={dirty ? "gewijzigd" : ""} />
+                          )}
+                          <div className="cf-label-text">{label}</div>
                         </div>
-                      );
-                    })}
-                  </div>
+
+                        <div className="cf-control">
+                          {f.data_type === "bool" ? (
+                            <div className="cf-bool">
+                              <button
+                                type="button"
+                                className={val === true ? "cf-bool-btn active" : "cf-bool-btn"}
+                                onClick={() => setField(f.field_key, true)}
+                              >
+                                Ja
+                              </button>
+                              <button
+                                type="button"
+                                className={val === false ? "cf-bool-btn active" : "cf-bool-btn"}
+                                onClick={() => setField(f.field_key, false)}
+                              >
+                                Nee
+                              </button>
+                            </div>
+                          ) : f.data_type === "number" ? (
+                            <input
+                              type="number"
+                              value={val ?? ""}
+                              onChange={(e) => setField(f.field_key, e.target.value)}
+                              className="cf-input"
+                            />
+                          ) : f.data_type === "date" ? (
+                            <input
+                              type="date"
+                              value={formatDateForInput(val)}
+                              onChange={(e) => setField(f.field_key, e.target.value)}
+                              className="cf-input"
+                            />
+                          ) : f.data_type === "json" ? (
+                            <textarea
+                              value={val ?? ""}
+                              onChange={(e) => setField(f.field_key, e.target.value)}
+                              rows={5}
+                              className="cf-textarea"
+                            />
+                          ) : (
+                            <input
+                              type="text"
+                              value={val ?? ""}
+                              onChange={(e) => setField(f.field_key, e.target.value)}
+                              className="cf-input"
+                            />
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
               )}
             </div>

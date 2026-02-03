@@ -1,16 +1,12 @@
 // /src/pages/Installations/AtriumTab.jsx
-import { useEffect, useMemo, useRef, useState } from "react";
+import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
 
 import { PlusIcon } from "@/components/ui/plus";
 import { ChevronUpIcon } from "@/components/ui/chevron-up";
 
-export default function AtriumTab({ catalog, installation, isAdmin = false }) {
-  if (!catalog || !installation) {
-    return <p className="muted">laden; atriumdata</p>;
-  }
-
-  const sections = Array.isArray(catalog.sections) ? catalog.sections : [];
-  const fields = Array.isArray(catalog.fields) ? catalog.fields : [];
+const AtriumTab = forwardRef(function AtriumTab({ catalog, installation, isAdmin = false, onAnyOpenChange }, ref) {
+  const sections = Array.isArray(catalog?.sections) ? catalog.sections : [];
+  const fields = Array.isArray(catalog?.fields) ? catalog.fields : [];
 
   // only external fields from AtriumInstallationBase + filter synced/gcid
   const atriumFields = useMemo(() => {
@@ -39,22 +35,20 @@ export default function AtriumTab({ catalog, installation, isAdmin = false }) {
     return m;
   }, [atriumFields]);
 
-  // prefer section order from catalog; append unknown section keys at end
   const orderedSectionKeys = useMemo(() => {
-    const knownSectionKeys = sections
+    const known = sections
       .map((s) => s.section_key)
       .filter((k) => k !== "gcid")
       .filter((k) => (isAdmin ? true : k !== "synced"));
 
-    const unknownSectionKeys = Array.from(fieldsBySection.keys()).filter((k) => !knownSectionKeys.includes(k));
-
-    return [...knownSectionKeys.filter((k) => fieldsBySection.has(k)), ...unknownSectionKeys];
+    const unknown = Array.from(fieldsBySection.keys()).filter((k) => !known.includes(k));
+    return [...known.filter((k) => fieldsBySection.has(k)), ...unknown];
   }, [sections, fieldsBySection, isAdmin]);
 
   function getValueForField(f) {
     const col = f.fabric_column;
     if (!col) return null;
-    return installation[col] ?? null;
+    return installation?.[col] ?? null;
   }
 
   function formatValue(v) {
@@ -71,7 +65,7 @@ export default function AtriumTab({ catalog, installation, isAdmin = false }) {
   const [openMap, setOpenMap] = useState({}); // sectionKey -> bool
   const toggleIconRefs = useRef({});
 
-  // init default collapsed state (alles dicht, tenzij al gezet)
+  // init defaults: alles dicht
   useEffect(() => {
     setOpenMap((prev) => {
       const next = { ...prev };
@@ -82,9 +76,33 @@ export default function AtriumTab({ catalog, installation, isAdmin = false }) {
     });
   }, [orderedSectionKeys]);
 
+  // notify parent: staat er iets open?
+  useEffect(() => {
+    const anyOpen = Object.values(openMap).some(Boolean);
+    onAnyOpenChange?.(anyOpen);
+  }, [openMap, onAnyOpenChange]);
+
   function toggleOpen(sectionKey) {
     setOpenMap((prev) => ({ ...prev, [sectionKey]: !prev[sectionKey] }));
   }
+
+  function expandAll() {
+    setOpenMap((prev) => {
+      const next = { ...prev };
+      for (const sectionKey of orderedSectionKeys) next[sectionKey] = true;
+      return next;
+    });
+  }
+
+  function collapseAll() {
+    setOpenMap((prev) => {
+      const next = { ...prev };
+      for (const sectionKey of orderedSectionKeys) next[sectionKey] = false;
+      return next;
+    });
+  }
+
+  useImperativeHandle(ref, () => ({ expandAll, collapseAll }));
 
   function animateSummaryIcon(sectionKey) {
     toggleIconRefs.current[sectionKey]?.startAnimation?.();
@@ -93,6 +111,8 @@ export default function AtriumTab({ catalog, installation, isAdmin = false }) {
   function stopSummaryIcon(sectionKey) {
     toggleIconRefs.current[sectionKey]?.stopAnimation?.();
   }
+
+  if (!catalog || !installation) return <p className="muted">laden; atriumdata</p>;
 
   return (
     <div style={{ display: "grid", gap: 12 }}>
@@ -122,7 +142,6 @@ export default function AtriumTab({ catalog, installation, isAdmin = false }) {
                 borderRadius: 12,
               }}
             >
-              {/* summary row */}
               <button
                 type="button"
                 onClick={() => toggleOpen(sectionKey)}
@@ -175,7 +194,6 @@ export default function AtriumTab({ catalog, installation, isAdmin = false }) {
                 </div>
               </button>
 
-              {/* details */}
               {isOpen && (
                 <div style={{ display: "grid", gap: 8, marginTop: 10 }}>
                   {list.map((f) => {
@@ -193,7 +211,9 @@ export default function AtriumTab({ catalog, installation, isAdmin = false }) {
                         }}
                       >
                         <div className="muted">{f.label || f.field_key}</div>
-                        <div style={{ overflowWrap: "anywhere" }}>{val ?? <span className="muted">geen waarde</span>}</div>
+                        <div style={{ overflowWrap: "anywhere" }}>
+                          {val ?? <span className="muted">geen waarde</span>}
+                        </div>
                       </div>
                     );
                   })}
@@ -205,4 +225,6 @@ export default function AtriumTab({ catalog, installation, isAdmin = false }) {
       </div>
     </div>
   );
-}
+});
+
+export default AtriumTab;

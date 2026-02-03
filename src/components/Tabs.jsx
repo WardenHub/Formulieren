@@ -1,6 +1,5 @@
 // /src/components/Tabs.jsx
 import { useRef } from "react";
-console.log("Tabs.jsx loaded marker v1");
 
 export default function Tabs({ tabs, activeKey, onChange }) {
   const iconRefs = useRef({});

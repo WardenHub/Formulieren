@@ -1,17 +1,21 @@
 // /src/pages/Installations/InstallationDetails.jsx
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useParams , useNavigate  } from "react-router-dom";
+import { useParams, useNavigate } from "react-router-dom";
 
 import AtriumTab from "./AtriumTab.jsx";
 import DocumentsTab from "./DocumentsTab.jsx";
 import CustomFieldsTab from "./CustomFieldsTab.jsx";
 import EnergySupplyTab from "./EnergySupplyTab.jsx";
 import SaveButton from "../../components/SaveButton.jsx";
+
 import { ChevronLeftIcon } from "@/components/ui/chevron-left";
 import { IdCardIcon } from "@/components/ui/id-card";
 import { TornadoIcon } from "@/components/ui/tornado";
 import { FileStackIcon } from "@/components/ui/file-stack";
 import { BatteryIcon } from "@/components/ui/battery";
+
+import { ChevronsDownUpIcon } from "@/components/ui/chevrons-down-up";
+import { ChevronsUpDownIcon } from "@/components/ui/chevrons-up-down";
 
 import {
   getInstallation,
@@ -31,7 +35,11 @@ import InstallationTypeTag from "../../components/InstallationTypeTag.jsx";
 export default function InstallationDetails() {
   const { code } = useParams();
   const navigate = useNavigate();
+
   const backIconRef = useRef(null);
+
+  // hover animation for collapse/expand-all icon
+  const collapseAllIconRef = useRef(null);
 
   const [activeTab, setActiveTab] = useState("documents");
   const saveOkTimerRef = useRef(null);
@@ -55,18 +63,45 @@ export default function InstallationDetails() {
   const typePickerRef = useRef(null);
 
   const customSaveRef = useRef(null);
+  const docsSaveRef = useRef(null);
+  const energySaveRef = useRef(null);
+  const atriumRef = useRef(null);
 
   const typeIsSet = Boolean(installation?.installation_type_key);
-  const docsSaveRef = useRef(null);
 
   const [docsDirty, setDocsDirty] = useState(false);
   const [docsSaving, setDocsSaving] = useState(false);
   const [docsSaveOk, setDocsSaveOk] = useState(false);
 
-  const energySaveRef = useRef(null);
   const [energyDirty, setEnergyDirty] = useState(false);
   const [energySaving, setEnergySaving] = useState(false);
   const [energySaveOk, setEnergySaveOk] = useState(false);
+
+  // per-tab: staat er iets open?
+  const [anyOpenByTab, setAnyOpenByTab] = useState({
+    atrium: false,
+    custom: false,
+    energy: false,
+  });
+
+  function setAnyOpen(tabKey, value) {
+    setAnyOpenByTab((prev) => {
+      if (prev[tabKey] === value) return prev;
+      return { ...prev, [tabKey]: value };
+    });
+  }
+
+  function getActiveExpandRef() {
+    if (activeTab === "atrium") return atriumRef.current;
+    if (activeTab === "custom") return customSaveRef.current;
+    if (activeTab === "energy") return energySaveRef.current;
+    return null;
+  }
+
+  const showCollapseAllToggle = activeTab !== "documents";
+  const anyOpenInActiveTab = Boolean(anyOpenByTab[activeTab]);
+  const collapseBtnTitle = anyOpenInActiveTab ? "Alles inklappen" : "Alles uitklappen";
+  const CollapseIcon = anyOpenInActiveTab ? ChevronsDownUpIcon : ChevronsUpDownIcon;
 
   async function reloadCustomValues() {
     const vals = await getCustomValues(code);
@@ -74,10 +109,7 @@ export default function InstallationDetails() {
   }
 
   async function reloadEnergySupplies() {
-    const [items, types] = await Promise.all([
-      getEnergySupplies(code),
-      getEnergySupplyBrandTypes(),
-    ]);
+    const [items, types] = await Promise.all([getEnergySupplies(code), getEnergySupplyBrandTypes()]);
     setEnergySupplies(items?.items || []);
     setEnergyBrandTypes(types?.types || []);
   }
@@ -86,10 +118,8 @@ export default function InstallationDetails() {
     try {
       setTypeSaving(true);
 
-      // 1) update type
       await setInstallationType(code, typeKey);
 
-      // 2) haal alles opnieuw op wat door type beïnvloed wordt
       const [inst, cat, vals, docData, energyData, brandTypes] = await Promise.all([
         getInstallation(code),
         getCatalog(code),
@@ -106,19 +136,16 @@ export default function InstallationDetails() {
       setEnergySupplies(energyData?.items || []);
       setEnergyBrandTypes(brandTypes?.types || []);
 
-      // 3) reset save-state (want je grid kan veranderen)
       setCustomDirty(false);
       setCustomSaveOk(false);
       setEnergyDirty(false);
       setEnergySaveOk(false);
 
-      // 4) ga naar eigenschappen
       setActiveTab("custom");
     } finally {
       setTypeSaving(false);
     }
   }
-
 
   // close popover on outside click + esc
   useEffect(() => {
@@ -201,47 +228,29 @@ export default function InstallationDetails() {
       if (e.altKey && (e.key === "s" || e.key === "S")) {
         e.preventDefault();
 
-        // bepaal welke save actief is
         if (activeTab === "custom") {
-          if (customDirty && !customSaving) {
-            customSaveRef.current?.save?.();
-          }
+          if (customDirty && !customSaving) customSaveRef.current?.save?.();
         }
-
         if (activeTab === "documents") {
-          if (docsDirty && !docsSaving) {
-            docsSaveRef.current?.save?.();
-          }
-        }  
+          if (docsDirty && !docsSaving) docsSaveRef.current?.save?.();
+        }
         if (activeTab === "energy") {
-          if (energyDirty && !energySaving) {
-            energySaveRef.current?.save?.();
-          }
+          if (energyDirty && !energySaving) energySaveRef.current?.save?.();
         }
       }
     }
 
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [
-    activeTab,
-    customDirty,
-    customSaving,
-    docsDirty,
-    docsSaving,
-    energyDirty,
-    energySaving,
-  ]);
-
+  }, [activeTab, customDirty, customSaving, docsDirty, docsSaving, energyDirty, energySaving]);
 
   const title = useMemo(() => {
-    const name =
-      installation?.name ||
-      installation?.obj_naam ||
-      installation?.atrium_installation_code ||
-      code;
+    const name = installation?.name || installation?.obj_naam || installation?.atrium_installation_code || code;
     return `Installatie ${name}`;
   }, [installation, code]);
+
+  // best-effort admin flag (pas aan als jij elders user info hebt)
+  const isAdmin = Boolean(installation?.is_admin || installation?.isAdmin || installation?.user_is_admin);
 
   const tabs = useMemo(() => {
     const customLabel = typeIsSet ? "Eigenschappen" : "Eigenschappen (kies type)";
@@ -251,7 +260,15 @@ export default function InstallationDetails() {
         key: "atrium",
         label: "Atriumdata",
         Icon: IdCardIcon,
-        content: <AtriumTab catalog={catalog} installation={installation} />,
+        content: (
+          <AtriumTab
+            ref={atriumRef}
+            catalog={catalog}
+            installation={installation}
+            isAdmin={isAdmin}
+            onAnyOpenChange={(v) => setAnyOpen("atrium", v)}
+          />
+        ),
       },
       {
         key: "custom",
@@ -272,6 +289,7 @@ export default function InstallationDetails() {
               saveOkTimerRef.current = setTimeout(() => setCustomSaveOk(false), 2500);
             }}
             onSaved={reloadCustomValues}
+            onAnyOpenChange={(v) => setAnyOpen("custom", v)}
           />
         ) : (
           <InstallationTypeRequiredPanel
@@ -323,6 +341,7 @@ export default function InstallationDetails() {
               saveOkTimerRef.current = setTimeout(() => setEnergySaveOk(false), 2500);
             }}
             onSaved={reloadEnergySupplies}
+            onAnyOpenChange={(v) => setAnyOpen("energy", v)}
           />
         ),
       },
@@ -338,16 +357,14 @@ export default function InstallationDetails() {
     typeSaving,
     energySupplies,
     energyBrandTypes,
+    isAdmin,
   ]);
 
   const activeContent = useMemo(() => {
     return tabs.find((t) => t.key === activeTab)?.content ?? null;
   }, [tabs, activeTab]);
 
-  const showHeaderSave =
-    (activeTab === "custom" && typeIsSet) ||
-    activeTab === "documents" ||
-    activeTab === "energy";
+  const showHeaderSave = (activeTab === "custom" && typeIsSet) || activeTab === "documents" || activeTab === "energy";
 
   return (
     <div>
@@ -403,42 +420,51 @@ export default function InstallationDetails() {
             </div>
           </div>
 
-          {showHeaderSave && (
-            <SaveButton
-              disabled={
-                activeTab === "custom" ? !customDirty :
-                activeTab === "documents" ? !docsDirty :
-                !energyDirty
-              }
-              saving={
-                activeTab === "custom" ? customSaving :
-                activeTab === "documents" ? docsSaving :
-                energySaving
-              }
-              saved={
-                activeTab === "custom" ? customSaveOk :
-                activeTab === "documents" ? docsSaveOk :
-                energySaveOk
-              }
-              pulse={
-                activeTab === "custom" ? customDirty :
-                activeTab === "documents" ? docsDirty :
-                energyDirty
-              }
-              onClick={() => {
-                if (activeTab === "custom") customSaveRef.current?.save?.();
-                if (activeTab === "documents") docsSaveRef.current?.save?.();
-                if (activeTab === "energy") energySaveRef.current?.save?.();
-              }}
-            />
-          )}
+          {/* rechts: collapse/expand all + save */}
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            {showCollapseAllToggle && (
+              <button
+                type="button"
+                className="icon-btn"
+                title={collapseBtnTitle}
+                onClick={() => {
+                  const api = getActiveExpandRef();
+                  if (!api) return;
+
+                  if (anyOpenInActiveTab) api.collapseAll?.();
+                  else api.expandAll?.();
+                }}
+                onMouseEnter={() => collapseAllIconRef.current?.startAnimation?.()}
+                onMouseLeave={() => collapseAllIconRef.current?.stopAnimation?.()}
+              >
+                <CollapseIcon ref={collapseAllIconRef} size={18} className="nav-anim-icon" />
+              </button>
+            )}
+
+            {showHeaderSave && (
+              <SaveButton
+                disabled={activeTab === "custom" ? !customDirty : activeTab === "documents" ? !docsDirty : !energyDirty}
+                saving={activeTab === "custom" ? customSaving : activeTab === "documents" ? docsSaving : energySaving}
+                saved={activeTab === "custom" ? customSaveOk : activeTab === "documents" ? docsSaveOk : energySaveOk}
+                pulse={activeTab === "custom" ? customDirty : activeTab === "documents" ? docsDirty : energyDirty}
+                onClick={() => {
+                  if (activeTab === "custom") customSaveRef.current?.save?.();
+                  if (activeTab === "documents") docsSaveRef.current?.save?.();
+                  if (activeTab === "energy") energySaveRef.current?.save?.();
+                }}
+              />
+            )}
+          </div>
         </div>
+
         <Tabs tabs={tabs} activeKey={activeTab} onChange={setActiveTab} />
       </div>
 
       <div className="inst-body">
         {error && <p style={{ color: "salmon" }}>{error}</p>}
-        {!installation && !catalog && !customValues && !docs && !energySupplies && !energyBrandTypes && !error && <p>laden</p>}
+        {!installation && !catalog && !customValues && !docs && !energySupplies && !energyBrandTypes && !error && (
+          <p>laden</p>
+        )}
         {activeContent}
       </div>
     </div>

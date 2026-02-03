@@ -13,7 +13,6 @@ import { ChevronUpIcon } from "@/components/ui/chevron-up";
 function normalizeDateForInput(v) {
   if (!v) return null;
   const s = String(v);
-  // accept "YYYY-MM-DD", "YYYY-MM-DDTHH:mm:ss..." etc.
   return s.length >= 10 ? s.slice(0, 10) : null;
 }
 
@@ -56,8 +55,6 @@ function formatAh(v) {
   if (v === null || v === undefined) return null;
   const n = Number(v);
   if (!Number.isFinite(n)) return null;
-
-  // 1 decimal is genoeg; strip trailing .0
   const s = n.toFixed(1);
   return s.endsWith(".0") ? s.slice(0, -2) : s;
 }
@@ -76,16 +73,13 @@ function getAgeInfo(dateStr) {
   const days = diffMs / 86400000;
   const years = days / 365.25;
 
-  // dagen: 0 decimalen, altijd omhoog afronden
   if (days < 30) return { label: `${Math.ceil(days)} d`, years };
-
-  // maanden/jaren: 1 decimaal
   if (days < 365) return { label: `${(days / 30.4375).toFixed(1)} mnd`, years };
   return { label: `${years.toFixed(1)} jr`, years };
 }
 
 const EnergySupplyTab = forwardRef(function EnergySupplyTab(
-  { code, items, brandTypes, onDirtyChange, onSavingChange, onSaveOk, onSaved },
+  { code, items, brandTypes, onDirtyChange, onSavingChange, onSaveOk, onSaved, onAnyOpenChange },
   ref
 ) {
   const initialJsonRef = useRef("");
@@ -98,8 +92,13 @@ const EnergySupplyTab = forwardRef(function EnergySupplyTab(
   const deleteIconRefs = useRef({});
   const wipeIconRefs = useRef({});
   const msgIconRefs = useRef({});
-  const toggleIconRefs = useRef({}); // plus/chevron
-  const warnIconRefs = useRef({}); // battery-warning
+  const toggleIconRefs = useRef({});
+  const warnIconRefs = useRef({});
+
+  const rowsLenRef = useRef(0);
+  useEffect(() => {
+    rowsLenRef.current = rows.length;
+  }, [rows.length]);
 
   const brandTypeMap = useMemo(() => {
     const m = new Map();
@@ -115,24 +114,16 @@ const EnergySupplyTab = forwardRef(function EnergySupplyTab(
     return first === null || first === undefined ? null : String(first);
   }
 
-  // init rows + default collapsed state for existing items
   useEffect(() => {
     const normalized = (items || []).map((x) => ({
       energy_supply_id: x.energy_supply_id ?? null,
-
       location_label: x.location_label ?? "",
-
-      brand_type_key:
-        x.brand_type_key === null || x.brand_type_key === undefined ? null : String(x.brand_type_key),
+      brand_type_key: x.brand_type_key === null || x.brand_type_key === undefined ? null : String(x.brand_type_key),
       brand_type_manual: x.brand_type_manual ?? "",
-
       capacity_ah: x.capacity_ah ?? null,
-
       quantity: x.quantity ?? 1,
       configuration: x.configuration ?? "single",
-
       battery_date: normalizeDateForInput(x.battery_date),
-
       remarks: x.remarks ?? "",
     }));
 
@@ -140,7 +131,6 @@ const EnergySupplyTab = forwardRef(function EnergySupplyTab(
     initialJsonRef.current = JSON.stringify(normalized);
     onDirtyChange?.(false);
 
-    // existing => default closed, new => default open
     setOpenMap((prev) => {
       const next = { ...prev };
       for (let i = 0; i < normalized.length; i++) {
@@ -152,13 +142,16 @@ const EnergySupplyTab = forwardRef(function EnergySupplyTab(
     });
   }, [items, onDirtyChange]);
 
-  // dirty tracking: only from state changes, never in render
   useEffect(() => {
     const now = JSON.stringify(rows);
     onDirtyChange?.(now !== initialJsonRef.current);
   }, [rows, onDirtyChange]);
 
-  // keep warning icon running for old batteries (>4.0 years)
+  useEffect(() => {
+    const anyOpen = Object.values(openMap).some(Boolean);
+    onAnyOpenChange?.(anyOpen);
+  }, [openMap, onAnyOpenChange]);
+
   useEffect(() => {
     for (let i = 0; i < rows.length; i++) {
       const r = rows[i];
@@ -176,8 +169,12 @@ const EnergySupplyTab = forwardRef(function EnergySupplyTab(
   }
 
   function addRow() {
+    if (saving) return;
+
     const defaultKey = getDefaultBrandTypeKey();
     const bt = defaultKey ? brandTypeMap.get(defaultKey) : null;
+
+    const newIndex = rowsLenRef.current;
 
     setRows((prev) => [
       ...prev,
@@ -189,14 +186,37 @@ const EnergySupplyTab = forwardRef(function EnergySupplyTab(
         capacity_ah: bt?.default_capacity_ah ?? null,
         quantity: 1,
         configuration: "single",
-        battery_date: todayIsoDate(), // verplicht + default vandaag
+        battery_date: todayIsoDate(),
         remarks: "",
       },
     ]);
 
-    // open the newly added panel (best effort; key is new-index)
-    setOpenMap((prev) => ({ ...prev, [`new-${rows.length}`]: true }));
+    setOpenMap((prev) => ({ ...prev, [`new-${newIndex}`]: true }));
+
+    addIconRef.current?.startAnimation?.();
+    window.setTimeout(() => addIconRef.current?.stopAnimation?.(), 650);
   }
+
+    useEffect(() => {
+    function onKeyDown(e) {
+      if (saving) return;
+      if (e.repeat) return;
+
+      // Alt+T (zonder Ctrl/Meta/Shift)
+      if (!e.altKey) return;
+      if (e.ctrlKey || e.metaKey || e.shiftKey) return;
+
+      const k = String(e.key || "");
+      if (k !== "t" && k !== "T") return;
+
+      e.preventDefault();
+      addRow();
+    }
+
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [saving]);
+
 
   function validateRow(r) {
     const hasKey = r.brand_type_key !== null && r.brand_type_key !== undefined && String(r.brand_type_key) !== "";
@@ -235,22 +255,14 @@ const EnergySupplyTab = forwardRef(function EnergySupplyTab(
 
       const payloadItems = rows.map((r, idx) => ({
         energy_supply_id: r.energy_supply_id,
-
         location_label: String(r.location_label || "").trim() || null,
-
         brand_type_key: r.brand_type_key,
         brand_type_manual: String(r.brand_type_manual || "").trim() || null,
-
         capacity_ah: toNumberOrNull(r.capacity_ah),
-
         quantity: clampQty(r.quantity),
         configuration: r.configuration || "single",
-
-        // stuur exact YYYY-MM-DD; backend moet dit zo opslaan
         battery_date: normalizeDateForInput(r.battery_date),
-
         remarks: String(r.remarks || "").trim() || null,
-
         sort_order: idx + 1,
         kind: "battery_set",
         is_active: true,
@@ -261,7 +273,6 @@ const EnergySupplyTab = forwardRef(function EnergySupplyTab(
       onSaveOk?.();
       await onSaved?.();
 
-      // na save: klap alles wat nu "bestaand" is dicht
       setOpenMap((prev) => {
         const next = { ...prev };
         for (let i = 0; i < rows.length; i++) {
@@ -277,7 +288,27 @@ const EnergySupplyTab = forwardRef(function EnergySupplyTab(
     }
   }
 
-  useImperativeHandle(ref, () => ({ save }));
+  function expandAll() {
+    setOpenMap((prev) => {
+      const next = { ...prev };
+      for (let i = 0; i < rows.length; i++) {
+        const r = rows[i];
+        const k = r.energy_supply_id ?? `new-${i}`;
+        next[k] = true;
+      }
+      return next;
+    });
+  }
+
+  function collapseAll() {
+    setOpenMap((prev) => {
+      const next = { ...prev };
+      for (const k of Object.keys(next)) next[k] = false;
+      return next;
+    });
+  }
+
+  useImperativeHandle(ref, () => ({ save, expandAll, collapseAll }));
 
   async function onDelete(idx) {
     const row = rows[idx];
@@ -357,6 +388,7 @@ const EnergySupplyTab = forwardRef(function EnergySupplyTab(
           onMouseEnter={() => addIconRef.current?.startAnimation?.()}
           onMouseLeave={() => addIconRef.current?.stopAnimation?.()}
           style={{ display: "flex", alignItems: "center", gap: 8 }}
+          title="toevoegen (Alt+T)"
         >
           <BatteryPlusIcon ref={addIconRef} size={18} className="nav-anim-icon" />
           <span>toevoegen</span>
@@ -386,7 +418,6 @@ const EnergySupplyTab = forwardRef(function EnergySupplyTab(
 
           return (
             <div key={key} className="panel" style={{ padding: 12 }}>
-              {/* summary row */}
               <button
                 type="button"
                 className="panel-summary"
@@ -434,7 +465,6 @@ const EnergySupplyTab = forwardRef(function EnergySupplyTab(
                       {getBrandLabel(r)}
                     </div>
 
-                    {/* juiste volgorde: Ah -> (leeftijd) -> icoon */}
                     <div className="muted" style={{ whiteSpace: "nowrap" }}>
                       {effectiveAh === null ? "n.v.t." : `${effectiveAh} Ah`}
                     </div>
@@ -503,7 +533,6 @@ const EnergySupplyTab = forwardRef(function EnergySupplyTab(
                 </div>
               </button>
 
-              {/* detail */}
               {isOpen && (
                 <>
                   <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 10 }}>
