@@ -376,7 +376,7 @@ const EnergySupplyTab = forwardRef(function EnergySupplyTab(
         <div>
           <div style={{ fontWeight: 600 }}>Energievoorziening</div>
           <div className="muted" style={{ fontSize: 13 }}>
-            voeg accu-sets toe per paneel
+            voeg energievoorziening toe per type/locatie
           </div>
         </div>
 
