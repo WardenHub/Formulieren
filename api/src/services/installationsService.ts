@@ -20,6 +20,17 @@ import {
   setInstallationTypeSql,
 } from "../db/queries/installationTypes.sql.js";
 
+import {
+  getEnergySupplyBrandTypesSql,
+  upsertEnergySupplyBrandTypesSql,
+} from "../db/queries/energySupplyBrandTypes.sql.js";
+
+import {
+  getInstallationEnergySuppliesSql,
+  upsertInstallationEnergySuppliesSql,
+  deleteInstallationEnergySupplySql,
+} from "../db/queries/energySupplies.sql.js";
+
 export async function getInstallationByCode(code: string) {
   const rows = await sqlQuery(getInstallationSql, { code });
   if (!rows.length) return { error: "not found" };
@@ -50,7 +61,6 @@ export async function getCatalog(code: string) {
   const fields = [...externalFields, ...customFields];
   return { sections, fields, documentTypes };
 }
-
 
 export async function getCustomValues(code: string) {
   const values = await sqlQuery(getCustomValuesSql, { code });
@@ -209,8 +219,6 @@ export async function setInstallationType(
   };
 }
 
-
-
 export async function searchInstallations(q: string | null, take = 25) {
   const clean = q ? String(q).trim() : "";
 
@@ -228,3 +236,122 @@ export async function searchInstallations(q: string | null, take = 25) {
   return { items: rows };
 }
 
+export async function getEnergySupplyBrandTypes() {
+  const rows = await sqlQuery(getEnergySupplyBrandTypesSql);
+  return { types: rows };
+}
+
+export async function upsertEnergySupplyBrandTypes(types: any[], user: any) {
+  if (!Array.isArray(types)) {
+    return { ok: false, error: "types must be an array" };
+  }
+
+  const cleaned = types
+    .filter((t) => t && typeof t.brand_type_key === "string" && t.brand_type_key.trim().length)
+    .map((t) => ({
+      brand_type_key: String(t.brand_type_key).trim(),
+      display_name: String(t.display_name ?? t.brand_type_key).trim(),
+      default_capacity_ah: t.default_capacity_ah ?? null,
+      sort_order: t.sort_order ?? null,
+      is_active: t.is_active ?? true,
+    }));
+
+  const typesJson = JSON.stringify(cleaned);
+  const updatedBy = user?.name || user?.objectId || "unknown";
+
+  const result = await sqlQuery(upsertEnergySupplyBrandTypesSql, {
+    typesJson,
+    updatedBy,
+  });
+
+  return { ok: true, result };
+}
+
+export async function getInstallationEnergySupplies(code: string) {
+  const rows = await sqlQuery(getInstallationEnergySuppliesSql, { code });
+  return { items: rows };
+}
+
+export async function upsertInstallationEnergySupplies(code: string, items: any[], user: any) {
+  if (!Array.isArray(items)) {
+    return { ok: false, error: "items must be an array" };
+  }
+
+  const cleaned = items.map((x) => ({
+    energy_supply_id: x.energy_supply_id ?? null,
+
+    sort_order: x.sort_order ?? null,
+    kind: x.kind ?? "battery_set",
+
+    location_label: x.location_label ?? null,
+
+    brand_type_key: x.brand_type_key ?? null,
+    brand_type_manual: x.brand_type_manual ?? null,
+
+    quantity: x.quantity ?? 1,
+    configuration: x.configuration ?? "single",
+
+    capacity_ah: x.capacity_ah ?? null,
+
+    battery_date: x.battery_date ?? null,
+
+    remarks: x.remarks ?? null,
+
+    is_active: x.is_active ?? true,
+  }));
+
+  for (const it of cleaned) {
+    const hasKey = it.brand_type_key && String(it.brand_type_key).trim().length > 0;
+    const hasManual = it.brand_type_manual && String(it.brand_type_manual).trim().length > 0;
+
+    if (hasKey && hasManual) {
+      return { ok: false, error: "kies óf merk/type óf handmatig; niet allebei" };
+    }
+  }
+
+  for (const it of cleaned) {
+    if (it.quantity !== null && it.quantity !== undefined) {
+      const q = Number(it.quantity);
+      if (!Number.isFinite(q) || q < 1) return { ok: false, error: "quantity must be >= 1" };
+      it.quantity = Math.trunc(q);
+    } else {
+      it.quantity = 1;
+    }
+
+    const cfg = String(it.configuration || "").toLowerCase();
+    if (!["single", "series", "parallel", "unknown"].includes(cfg)) {
+      return { ok: false, error: "configuration must be single; series; parallel; unknown" };
+    }
+    it.configuration = cfg;
+
+    // plaatsingdatum is verplicht en moet YYYY-MM-DD blijven (geen normalisatie)
+    const ds = it.battery_date ? String(it.battery_date).trim() : "";
+    if (!ds) return { ok: false, error: "plaatsingdatum is verplicht" };
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(ds)) return { ok: false, error: "plaatsingdatum is ongeldig" };
+    it.battery_date = ds;
+  }
+
+  const itemsJson = JSON.stringify(cleaned);
+  const updatedBy = user?.name || user?.objectId || "unknown";
+
+  const result = await sqlQuery(upsertInstallationEnergySuppliesSql, {
+    code,
+    itemsJson,
+    updatedBy,
+  });
+
+  return { ok: true, result };
+}
+
+
+export async function deleteInstallationEnergySupply(code: string, energy_supply_id: string, user: any) {
+  const updatedBy = user?.name || user?.objectId || "unknown";
+
+  const result = await sqlQuery(deleteInstallationEnergySupplySql, {
+    code,
+    energy_supply_id,
+    updatedBy,
+  });
+
+  return { ok: true, result };
+}

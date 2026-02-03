@@ -1,9 +1,10 @@
 // /src/pages/Installations/InstallationsIndex.jsx
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 
 import { searchInstallations } from "@/api/emberApi.js";
 import { SearchIcon } from "@/components/ui/search";
+import { LoaderPinwheelIcon } from "@/components/ui/loader-pinwheel";
 import InstallationTypeTag from "@/components/InstallationTypeTag.jsx";
 
 export default function InstallationsIndex() {
@@ -11,6 +12,13 @@ export default function InstallationsIndex() {
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState(null);
+
+  const loaderRef = useRef(null);
+
+  useEffect(() => {
+    if (loading) loaderRef.current?.startAnimation?.();
+    else loaderRef.current?.stopAnimation?.();
+  }, [loading]);
 
   useEffect(() => {
     let cancelled = false;
@@ -54,10 +62,20 @@ export default function InstallationsIndex() {
       </div>
 
       {err && <p style={{ color: "salmon", margin: 0 }}>{err}</p>}
+
       {loading && (
-        <p className="muted" style={{ margin: 0 }}>
-          laden
-        </p>
+        <div
+          className="muted"
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 10,
+            margin: 0,
+          }}
+        >
+          <LoaderPinwheelIcon ref={loaderRef} size={18} aria-label="laden" />
+          <span>laden</span>
+        </div>
       )}
 
       {!loading && !hasQuery && (
@@ -86,37 +104,34 @@ export default function InstallationsIndex() {
               }}
             >
               <div style={{ display: "grid", gap: 4 }}>
-  {/* bovenste regel: code + type */}
-  <div
-    style={{
-      display: "flex",
-      alignItems: "center",
-      gap: 8,
-      minWidth: 0,
-    }}
-  >
-    <div style={{ fontWeight: 650 }}>
-      {i.atrium_installation_code}
-    </div>
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 8,
+                    minWidth: 0,
+                  }}
+                >
+                  <div style={{ fontWeight: 650 }}>
+                    {i.atrium_installation_code}
+                  </div>
 
-    {i.installation_type_key && (
-      <InstallationTypeTag
-        typeKey={i.installation_type_key}
-        label={i.installation_type_name}
-      />
-    )}
-  </div>
+                  {i.installation_type_key && (
+                    <InstallationTypeTag
+                      typeKey={i.installation_type_key}
+                      label={i.installation_type_name}
+                    />
+                  )}
+                </div>
 
-  {/* tweede regel: locatie / naam */}
-  <div className="muted" style={{ fontSize: 13 }}>
-    {i.installation_name || "geen naam"}
-  </div>
-</div>
+                <div className="muted" style={{ fontSize: 13 }}>
+                  {i.installation_name || "geen naam"}
+                </div>
+              </div>
             </Link>
           ))}
         </div>
       )}
-
     </div>
   );
 }

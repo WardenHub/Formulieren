@@ -1,5 +1,4 @@
 // src/api/emberApi.js
-
 import { httpJson } from "./http";
 
 export function apiGet(path) {
@@ -11,6 +10,12 @@ export function apiPut(path, bodyObj) {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(bodyObj),
+  });
+}
+
+export function apiDelete(path) {
+  return httpJson(path, {
+    method: "DELETE",
   });
 }
 
@@ -39,12 +44,10 @@ export function getInstallationTypes() {
 }
 
 export function setInstallationType(code, installation_type_key) {
-  return apiPut(`/installations/${code}/type`, {
-    installation_type_key,
-  });
+  return apiPut(`/installations/${code}/type`, { installation_type_key });
 }
 
-export async function putDocuments(code, documents) {
+export function putDocuments(code, documents) {
   return apiPut(`/installations/${code}/documents`, { documents });
 }
 
@@ -56,3 +59,27 @@ export async function searchInstallations(q, take = 25) {
   return apiGet(`/installations/search?${qs.toString()}`);
 }
 
+export function getEnergySupplyBrandTypes() {
+  return apiGet("/installations/energy-supply-brand-types");
+}
+
+export function putEnergySupplyBrandTypes(types) {
+  return apiPut("/installations/energy-supply-brand-types", { types });
+}
+
+export function getEnergySupplies(code) {
+  return apiGet(`/installations/${encodeURIComponent(code)}/energy-supplies`);
+}
+
+export async function putEnergySupplies(code, items) {
+  return httpJson(`/installations/${encodeURIComponent(code)}/energy-supplies`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ items }),
+  });
+}
+
+
+export function deleteEnergySupply(code, energySupplyId) {
+  return apiDelete(`/installations/${encodeURIComponent(code)}/energy-supplies/${energySupplyId}`);
+}

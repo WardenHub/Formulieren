@@ -640,3 +640,115 @@ a{ color: inherit; text-decoration: none; }
   font-size: 13px;
   line-height: 1.35;
 }
+
+/* /src/styles/layout.css */
+.card{
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 16px;
+  padding: 14px;
+  background: rgba(255,255,255,0.02);
+}
+
+.card-head{
+  margin-bottom: 12px;
+}
+
+.card-body{
+  display: grid;
+  gap: 12px;
+}
+
+.panel{
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 12px;
+  background: rgba(255,255,255,0.02);
+}
+
+.label{
+  font-size: 13px;
+  color: var(--muted);
+  margin-bottom: 8px;
+}
+
+.input{
+  width: 100%;
+  padding: 10px;
+  border-radius: 10px;
+  border: 1px solid rgba(255,255,255,0.12);
+  background: transparent;
+  color: inherit;
+  outline: none;
+}
+
+.btn{
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 12px;
+  border: 1px solid rgba(255,255,255,0.12);
+  background: rgba(255,255,255,0.04);
+  color: inherit;
+  cursor: pointer;
+}
+
+.btn:hover{
+  background: rgba(255,255,255,0.07);
+}
+
+.btn.danger{
+  border-color: rgba(239, 68, 68, 0.28);
+  background: rgba(239, 68, 68, 0.10);
+}
+
+.btn.danger:hover{
+  background: rgba(239, 68, 68, 0.16);
+}
+
+/* /src/styles/layout.css */
+
+select.input{
+  background: rgba(255,255,255,0.03);
+  color: var(--text);
+  color-scheme: dark;
+}
+select.input option{
+  background: #0f1620; 
+  color: rgba(255,255,255,.92);
+}
+
+input[type="date"].input{
+  background: rgba(255,255,255,0.03);
+  color-scheme: dark;
+}
+
+.energy-row-head{
+  width:100%;
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:12px;
+  background:transparent;
+  border:1px solid rgba(255,255,255,0.08);
+  border-radius:12px;
+  padding:10px 12px;
+  cursor:pointer;
+}
+
+.energy-row-head:hover{
+  border-color: rgba(255,255,255,0.14);
+}
+
+.energy-row-summary{
+  display:flex;
+  flex-direction:column;
+  gap:4px;
+  text-align:left;
+}
+
+.energy-row-actions{
+  display:flex;
+  align-items:center;
+  gap:10px;
+  flex:0 0 auto;
+}

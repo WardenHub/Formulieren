@@ -147,3 +147,73 @@ export async function searchInstallations(req: any, res: Response) {
   }
 }
 
+export async function getEnergySupplyBrandTypes(req: any, res: Response) {
+  try {
+    const data = await service.getEnergySupplyBrandTypes();
+    return res.json(data);
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ error: "getEnergySupplyBrandTypes failed" });
+  }
+}
+
+export async function putEnergySupplyBrandTypes(req: any, res: any) {
+  try {
+    const types = req.body?.types;
+    const result = await service.upsertEnergySupplyBrandTypes(types, req.user);
+    if (result?.ok === false) return res.status(400).json(result);
+    return res.json(result);
+  } catch (err: any) {
+    console.error(err);
+    return res.status(500).json({ error: "putEnergySupplyBrandTypes failed" });
+  }
+}
+
+export async function getEnergySupplies(req: any, res: Response) {
+  try {
+    const code = String(req.params.code || "");
+    const data = await service.getInstallationEnergySupplies(code);
+    return res.json(data);
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ error: "getEnergySupplies failed" });
+  }
+}
+
+export async function putEnergySupplies(req: any, res: any) {
+  try {
+    const code = String(req.params.code || "");
+    const items = req.body?.items;
+
+    const result = await service.upsertInstallationEnergySupplies(code, items, req.user);
+    if (result?.ok === false) return res.status(400).json(result);
+
+    return res.json(result);
+  } catch (err: any) {
+    const msg = (err?.message || String(err)).toLowerCase();
+
+    if (msg.includes("atrium installation not found")) {
+      return res.status(404).json({ error: "atrium installation not found" });
+    }
+
+    if (msg.includes("installation not found")) {
+      return res.status(404).json({ error: "installation not found" });
+    }
+
+    console.error(err);
+    return res.status(500).json({ error: "putEnergySupplies failed" });
+  }
+}
+
+export async function deleteEnergySupply(req: any, res: any) {
+  try {
+    const code = String(req.params.code || "");
+    const energy_supply_id = String(req.params.energySupplyId || "");
+
+    const result = await service.deleteInstallationEnergySupply(code, energy_supply_id, req.user);
+    return res.json(result);
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ error: "deleteEnergySupply failed" });
+  }
+}

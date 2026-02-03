@@ -5,8 +5,13 @@ import { useParams , useNavigate  } from "react-router-dom";
 import AtriumTab from "./AtriumTab.jsx";
 import DocumentsTab from "./DocumentsTab.jsx";
 import CustomFieldsTab from "./CustomFieldsTab.jsx";
+import EnergySupplyTab from "./EnergySupplyTab.jsx";
 import SaveButton from "../../components/SaveButton.jsx";
 import { ChevronLeftIcon } from "@/components/ui/chevron-left";
+import { IdCardIcon } from "@/components/ui/id-card";
+import { TornadoIcon } from "@/components/ui/tornado";
+import { FileStackIcon } from "@/components/ui/file-stack";
+import { BatteryIcon } from "@/components/ui/battery";
 
 import {
   getInstallation,
@@ -15,6 +20,8 @@ import {
   getDocuments,
   getInstallationTypes,
   setInstallationType,
+  getEnergySupplies,
+  getEnergySupplyBrandTypes,
 } from "../../api/emberApi.js";
 
 import Tabs from "../../components/Tabs.jsx";
@@ -33,6 +40,8 @@ export default function InstallationDetails() {
   const [catalog, setCatalogState] = useState(null);
   const [customValues, setCustomValuesState] = useState(null);
   const [docs, setDocs] = useState(null);
+  const [energySupplies, setEnergySupplies] = useState(null);
+  const [energyBrandTypes, setEnergyBrandTypes] = useState(null);
   const [error, setError] = useState(null);
 
   const [customDirty, setCustomDirty] = useState(false);
@@ -54,9 +63,23 @@ export default function InstallationDetails() {
   const [docsSaving, setDocsSaving] = useState(false);
   const [docsSaveOk, setDocsSaveOk] = useState(false);
 
+  const energySaveRef = useRef(null);
+  const [energyDirty, setEnergyDirty] = useState(false);
+  const [energySaving, setEnergySaving] = useState(false);
+  const [energySaveOk, setEnergySaveOk] = useState(false);
+
   async function reloadCustomValues() {
     const vals = await getCustomValues(code);
     setCustomValuesState(vals?.values || []);
+  }
+
+  async function reloadEnergySupplies() {
+    const [items, types] = await Promise.all([
+      getEnergySupplies(code),
+      getEnergySupplyBrandTypes(),
+    ]);
+    setEnergySupplies(items?.items || []);
+    setEnergyBrandTypes(types?.types || []);
   }
 
   async function handleSetType(typeKey) {
@@ -67,21 +90,27 @@ export default function InstallationDetails() {
       await setInstallationType(code, typeKey);
 
       // 2) haal alles opnieuw op wat door type beïnvloed wordt
-      const [inst, cat, vals, docData] = await Promise.all([
+      const [inst, cat, vals, docData, energyData, brandTypes] = await Promise.all([
         getInstallation(code),
         getCatalog(code),
         getCustomValues(code),
         getDocuments(code),
+        getEnergySupplies(code),
+        getEnergySupplyBrandTypes(),
       ]);
 
       setInstallation(inst.installation || null);
       setCatalogState(cat || null);
       setCustomValuesState(vals?.values || []);
       setDocs(docData || null);
+      setEnergySupplies(energyData?.items || []);
+      setEnergyBrandTypes(brandTypes?.types || []);
 
       // 3) reset save-state (want je grid kan veranderen)
       setCustomDirty(false);
       setCustomSaveOk(false);
+      setEnergyDirty(false);
+      setEnergySaveOk(false);
 
       // 4) ga naar eigenschappen
       setActiveTab("custom");
@@ -125,17 +154,32 @@ export default function InstallationDetails() {
       })
       .catch(() => {});
 
-    Promise.all([getInstallation(code), getCatalog(code), getCustomValues(code), getDocuments(code)])
-      .then(([inst, cat, vals, docData]) => {
-        if (cancelled) return;
-        setInstallation(inst.installation || null);
-        setCatalogState(cat || null);
-        setCustomValuesState(vals?.values || []);
-        setDocs(docData || null);
-      })
-      .catch((e) => {
-        if (!cancelled) setError(e.message || String(e));
-      });
+    Promise.allSettled([
+      getInstallation(code),
+      getCatalog(code),
+      getCustomValues(code),
+      getDocuments(code),
+      getEnergySupplies(code),
+      getEnergySupplyBrandTypes(),
+    ]).then((results) => {
+      if (cancelled) return;
+
+      const [instR, catR, valsR, docR, energyR, brandR] = results;
+
+      if (instR.status === "fulfilled") setInstallation(instR.value.installation || null);
+      if (catR.status === "fulfilled") setCatalogState(catR.value || null);
+      if (valsR.status === "fulfilled") setCustomValuesState(valsR.value?.values || []);
+      if (docR.status === "fulfilled") setDocs(docR.value || null);
+
+      if (energyR.status === "fulfilled") setEnergySupplies(energyR.value?.items || []);
+      else setEnergySupplies([]);
+
+      if (brandR.status === "fulfilled") setEnergyBrandTypes(brandR.value?.types || []);
+      else setEnergyBrandTypes([]);
+
+      const firstErr = results.find((x) => x.status === "rejected");
+      if (firstErr) setError(firstErr.reason?.message || String(firstErr.reason));
+    });
 
     return () => {
       cancelled = true;
@@ -168,6 +212,11 @@ export default function InstallationDetails() {
           if (docsDirty && !docsSaving) {
             docsSaveRef.current?.save?.();
           }
+        }  
+        if (activeTab === "energy") {
+          if (energyDirty && !energySaving) {
+            energySaveRef.current?.save?.();
+          }
         }
       }
     }
@@ -180,6 +229,8 @@ export default function InstallationDetails() {
     customSaving,
     docsDirty,
     docsSaving,
+    energyDirty,
+    energySaving,
   ]);
 
 
@@ -199,11 +250,13 @@ export default function InstallationDetails() {
       {
         key: "atrium",
         label: "Atriumdata",
+        Icon: IdCardIcon,
         content: <AtriumTab catalog={catalog} installation={installation} />,
       },
       {
         key: "custom",
         label: customLabel,
+        Icon: TornadoIcon,
         content: typeIsSet ? (
           <CustomFieldsTab
             key={installation?.installation_type_key || "no-type"}
@@ -232,6 +285,7 @@ export default function InstallationDetails() {
       {
         key: "documents",
         label: "Documenten",
+        Icon: FileStackIcon,
         content: (
           <DocumentsTab
             ref={docsSaveRef}
@@ -251,15 +305,49 @@ export default function InstallationDetails() {
           />
         ),
       },
+      {
+        key: "energy",
+        label: "Energievoorziening",
+        Icon: BatteryIcon,
+        content: (
+          <EnergySupplyTab
+            ref={energySaveRef}
+            code={code}
+            items={energySupplies || []}
+            brandTypes={energyBrandTypes || []}
+            onDirtyChange={setEnergyDirty}
+            onSavingChange={setEnergySaving}
+            onSaveOk={() => {
+              setEnergySaveOk(true);
+              if (saveOkTimerRef.current) clearTimeout(saveOkTimerRef.current);
+              saveOkTimerRef.current = setTimeout(() => setEnergySaveOk(false), 2500);
+            }}
+            onSaved={reloadEnergySupplies}
+          />
+        ),
+      },
     ];
-  }, [catalog, installation, docs, code, customValues, typeIsSet, installationTypes, typeSaving]);
+  }, [
+    catalog,
+    installation,
+    docs,
+    code,
+    customValues,
+    typeIsSet,
+    installationTypes,
+    typeSaving,
+    energySupplies,
+    energyBrandTypes,
+  ]);
 
   const activeContent = useMemo(() => {
     return tabs.find((t) => t.key === activeTab)?.content ?? null;
   }, [tabs, activeTab]);
 
-  const showHeaderSave = (activeTab === "custom" && typeIsSet) || activeTab === "documents";
-
+  const showHeaderSave =
+    (activeTab === "custom" && typeIsSet) ||
+    activeTab === "documents" ||
+    activeTab === "energy";
 
   return (
     <div>
@@ -317,13 +405,30 @@ export default function InstallationDetails() {
 
           {showHeaderSave && (
             <SaveButton
-              disabled={activeTab === "custom" ? !customDirty : !docsDirty}
-              saving={activeTab === "custom" ? customSaving : docsSaving}
-              saved={activeTab === "custom" ? customSaveOk : docsSaveOk}
-              pulse={activeTab === "custom" ? customDirty : docsDirty}
+              disabled={
+                activeTab === "custom" ? !customDirty :
+                activeTab === "documents" ? !docsDirty :
+                !energyDirty
+              }
+              saving={
+                activeTab === "custom" ? customSaving :
+                activeTab === "documents" ? docsSaving :
+                energySaving
+              }
+              saved={
+                activeTab === "custom" ? customSaveOk :
+                activeTab === "documents" ? docsSaveOk :
+                energySaveOk
+              }
+              pulse={
+                activeTab === "custom" ? customDirty :
+                activeTab === "documents" ? docsDirty :
+                energyDirty
+              }
               onClick={() => {
                 if (activeTab === "custom") customSaveRef.current?.save?.();
                 if (activeTab === "documents") docsSaveRef.current?.save?.();
+                if (activeTab === "energy") energySaveRef.current?.save?.();
               }}
             />
           )}
@@ -333,7 +438,7 @@ export default function InstallationDetails() {
 
       <div className="inst-body">
         {error && <p style={{ color: "salmon" }}>{error}</p>}
-        {!installation && !catalog && !customValues && !docs && !error && <p>laden</p>}
+        {!installation && !catalog && !customValues && !docs && !energySupplies && !energyBrandTypes && !error && <p>laden</p>}
         {activeContent}
       </div>
     </div>
