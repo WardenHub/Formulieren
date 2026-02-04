@@ -752,3 +752,100 @@ input[type="date"].input{
   gap:10px;
   flex:0 0 auto;
 }
+
+/* performance requirements badges */
+.pr-badge{
+  display:inline-flex;
+  align-items:center;
+  height: 22px;
+  padding: 0 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 650;
+  border: 1px solid rgba(255,255,255,0.12);
+  background: rgba(255,255,255,0.04);
+  color: rgba(255,255,255,.92);
+}
+
+.pr-badge--met{
+  border-color: rgba(59,130,246,.28);
+  background: rgba(59,130,246,.14);
+}
+
+.pr-badge--zonder{
+  border-color: rgba(34,197,94,.26);
+  background: rgba(34,197,94,.12);
+}
+
+.pr-badge--geen{
+  border-color: rgba(255,255,255,.14);
+  background: rgba(255,255,255,.06);
+}
+
+/* =========================================================
+   Performance Requirements (NEN2535)
+   ========================================================= */
+
+.pr-badge{
+  display: inline-flex;
+  align-items: center;
+  height: 22px;
+  padding: 0 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 650;
+  color: rgba(255,255,255,.92);
+  border: 1px solid rgba(255,255,255,.12);
+  background: rgba(255,255,255,.06);
+}
+
+.pr-badge--met{
+  border-color: rgba(34, 197, 94, 0.28);
+  background: rgba(34, 197, 94, 0.12);
+}
+
+.pr-badge--zonder{
+  border-color: rgba(59, 130, 246, 0.28);
+  background: rgba(59, 130, 246, 0.14);
+}
+
+.pr-badge--geen{
+  border-color: rgba(255,255,255,.12);
+  background: rgba(255,255,255,.06);
+  color: rgba(255,255,255,.78);
+}
+
+.pr-head-title{
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  flex-wrap: wrap;
+}
+
+.pr-func{
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.pr-label-pill{
+  display: inline-flex;
+  align-items: center;
+  height: 22px;
+  padding: 0 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 650;
+  color: rgba(255,255,255,.92);
+  border: 1px solid rgba(255,255,255,.12);
+  background: rgba(255,255,255,.06);
+}
+
+/* icon button danger variant */
+.icon-btn--danger{
+  border-color: rgba(239, 68, 68, 0.28);
+  background: rgba(239, 68, 68, 0.10);
+}
+.icon-btn--danger:hover{
+  background: rgba(239, 68, 68, 0.16);
+}

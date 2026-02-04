@@ -1,3 +1,4 @@
+// api/src/db/index.ts
 // IMPORTANT:
 // In Azure App Service we MUST use:
 // "azure-active-directory-msi-app-service"
@@ -35,13 +36,11 @@ export async function getDbConnection() {
   const isAzure = !!process.env.WEBSITE_INSTANCE_ID;
   const authMode = (process.env.DB_AUTH || "sql").toLowerCase();
 
-  let config: any = baseConfig({ server, database });
+  const config: any = baseConfig({ server, database });
 
   if (isAzure) {
     // production path; DO NOT TOUCH
-    config.authentication = {
-      type: "azure-active-directory-msi-app-service",
-    };
+    config.authentication = { type: "azure-active-directory-msi-app-service" };
     console.log("[SQL] auth mode: managed identity (app service)");
   } else if (authMode === "aad") {
     // lokaal: Azure CLI / VS Code login
@@ -70,14 +69,34 @@ export async function getDbConnection() {
   return pool;
 }
 
-export async function sqlQuery<T = any>(queryText: string, params?: Record<string, any>) {
-  const pool = await getDbConnection();
-  const req = pool.request();
-
+function applyParams(req: sql.Request, params?: Record<string, any>) {
   for (const [k, v] of Object.entries(params || {})) {
     req.input(k, v as any);
   }
+}
+
+/**
+ * Single SELECT helper (backwards compatible)
+ * Returns: rows array
+ */
+export async function sqlQuery<T = any>(queryText: string, params?: Record<string, any>) {
+  const pool = await getDbConnection();
+  const req = pool.request();
+  applyParams(req, params);
 
   const result = await req.query<T>(queryText);
   return result.recordset;
+}
+
+/**
+ * Raw helper for multi-select queries
+ * Returns: full mssql result object (recordset + recordsets + output + rowsAffected)
+ */
+export async function sqlQueryRaw<T = any>(queryText: string, params?: Record<string, any>) {
+  const pool = await getDbConnection();
+  const req = pool.request();
+  applyParams(req, params);
+
+  const result = await req.query<T>(queryText);
+  return result;
 }

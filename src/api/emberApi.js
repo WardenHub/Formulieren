@@ -79,7 +79,19 @@ export async function putEnergySupplies(code, items) {
   });
 }
 
-
 export function deleteEnergySupply(code, energySupplyId) {
   return apiDelete(`/installations/${encodeURIComponent(code)}/energy-supplies/${energySupplyId}`);
+}
+
+// NEN2535
+export function getNen2535Catalog() {
+  return apiGet("/installations/nen2535/catalog");
+}
+
+export function getPerformanceRequirements(code) {
+  return apiGet(`/installations/${encodeURIComponent(code)}/performance-requirements`);
+}
+
+export function putPerformanceRequirements(code, payload) {
+  return apiPut(`/installations/${encodeURIComponent(code)}/performance-requirements`, payload);
 }

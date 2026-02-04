@@ -6,14 +6,19 @@ import AtriumTab from "./AtriumTab.jsx";
 import DocumentsTab from "./DocumentsTab.jsx";
 import CustomFieldsTab from "./CustomFieldsTab.jsx";
 import EnergySupplyTab from "./EnergySupplyTab.jsx";
+import PerformanceRequirementsTab from "./PerformanceRequirementsTab.jsx";
+
 import SaveButton from "../../components/SaveButton.jsx";
+import Tabs from "../../components/Tabs.jsx";
+import InstallationTypeRequiredPanel from "../../components/InstallationTypeRequiredPanel.jsx";
+import InstallationTypeTag from "../../components/InstallationTypeTag.jsx";
 
 import { ChevronLeftIcon } from "@/components/ui/chevron-left";
 import { IdCardIcon } from "@/components/ui/id-card";
 import { TornadoIcon } from "@/components/ui/tornado";
 import { FileStackIcon } from "@/components/ui/file-stack";
 import { BatteryIcon } from "@/components/ui/battery";
-
+import { GaugeIcon } from "@/components/ui/gauge.jsx";
 import { ChevronsDownUpIcon } from "@/components/ui/chevrons-down-up";
 import { ChevronsUpDownIcon } from "@/components/ui/chevrons-up-down";
 
@@ -28,17 +33,20 @@ import {
   getEnergySupplyBrandTypes,
 } from "../../api/emberApi.js";
 
-import Tabs from "../../components/Tabs.jsx";
-import InstallationTypeRequiredPanel from "../../components/InstallationTypeRequiredPanel.jsx";
-import InstallationTypeTag from "../../components/InstallationTypeTag.jsx";
-
 export default function InstallationDetails() {
   const { code } = useParams();
   const navigate = useNavigate();
 
   const backIconRef = useRef(null);
 
-  // hover animation for collapse/expand-all icon
+  const atriumRef = useRef(null);
+  const customSaveRef = useRef(null);
+  const docsSaveRef = useRef(null);
+  const energySaveRef = useRef(null);
+  const perfRef = useRef(null);
+
+  const typePickerRef = useRef(null);
+
   const collapseAllIconRef = useRef(null);
 
   const [activeTab, setActiveTab] = useState("documents");
@@ -52,22 +60,16 @@ export default function InstallationDetails() {
   const [energyBrandTypes, setEnergyBrandTypes] = useState(null);
   const [error, setError] = useState(null);
 
-  const [customDirty, setCustomDirty] = useState(false);
-  const [customSaving, setCustomSaving] = useState(false);
-  const [customSaveOk, setCustomSaveOk] = useState(false);
-
   const [installationTypes, setInstallationTypesState] = useState([]);
   const [typeSaving, setTypeSaving] = useState(false);
 
   const [typePickerOpen, setTypePickerOpen] = useState(false);
-  const typePickerRef = useRef(null);
-
-  const customSaveRef = useRef(null);
-  const docsSaveRef = useRef(null);
-  const energySaveRef = useRef(null);
-  const atriumRef = useRef(null);
 
   const typeIsSet = Boolean(installation?.installation_type_key);
+
+  const [customDirty, setCustomDirty] = useState(false);
+  const [customSaving, setCustomSaving] = useState(false);
+  const [customSaveOk, setCustomSaveOk] = useState(false);
 
   const [docsDirty, setDocsDirty] = useState(false);
   const [docsSaving, setDocsSaving] = useState(false);
@@ -77,11 +79,15 @@ export default function InstallationDetails() {
   const [energySaving, setEnergySaving] = useState(false);
   const [energySaveOk, setEnergySaveOk] = useState(false);
 
-  // per-tab: staat er iets open?
+  const [perfDirty, setPerfDirty] = useState(false);
+  const [perfSaving, setPerfSaving] = useState(false);
+  const [perfSaveOk, setPerfSaveOk] = useState(false);
+
   const [anyOpenByTab, setAnyOpenByTab] = useState({
     atrium: false,
     custom: false,
     energy: false,
+    performance: false,
   });
 
   function setAnyOpen(tabKey, value) {
@@ -95,6 +101,7 @@ export default function InstallationDetails() {
     if (activeTab === "atrium") return atriumRef.current;
     if (activeTab === "custom") return customSaveRef.current;
     if (activeTab === "energy") return energySaveRef.current;
+    if (activeTab === "performance") return perfRef.current;
     return null;
   }
 
@@ -138,8 +145,12 @@ export default function InstallationDetails() {
 
       setCustomDirty(false);
       setCustomSaveOk(false);
+
       setEnergyDirty(false);
       setEnergySaveOk(false);
+
+      setPerfDirty(false);
+      setPerfSaveOk(false);
 
       setActiveTab("custom");
     } finally {
@@ -147,7 +158,6 @@ export default function InstallationDetails() {
     }
   }
 
-  // close popover on outside click + esc
   useEffect(() => {
     if (!typePickerOpen) return;
 
@@ -224,32 +234,69 @@ export default function InstallationDetails() {
 
   useEffect(() => {
     function onKeyDown(e) {
-      // alt + s
-      if (e.altKey && (e.key === "s" || e.key === "S")) {
+      const key = String(e.key || "");
+
+      if (e.altKey && (key === "s" || key === "S")) {
         e.preventDefault();
 
         if (activeTab === "custom") {
           if (customDirty && !customSaving) customSaveRef.current?.save?.();
-        }
-        if (activeTab === "documents") {
+        } else if (activeTab === "documents") {
           if (docsDirty && !docsSaving) docsSaveRef.current?.save?.();
-        }
-        if (activeTab === "energy") {
+        } else if (activeTab === "energy") {
           if (energyDirty && !energySaving) energySaveRef.current?.save?.();
+        } else if (activeTab === "performance") {
+          if (perfDirty && !perfSaving) perfRef.current?.save?.();
         }
+
+        return;
+      }
+
+      if (e.altKey && (key === "q" || key === "Q")) {
+        if (!showCollapseAllToggle) return;
+
+        e.preventDefault();
+
+        const api = getActiveExpandRef();
+        if (!api) return;
+
+        if (anyOpenInActiveTab) api.collapseAll?.();
+        else api.expandAll?.();
+
+        collapseAllIconRef.current?.startAnimation?.();
+        window.setTimeout(() => collapseAllIconRef.current?.stopAnimation?.(), 650);
+
+        return;
       }
     }
 
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [activeTab, customDirty, customSaving, docsDirty, docsSaving, energyDirty, energySaving]);
+  }, [
+    activeTab,
+
+    customDirty,
+    customSaving,
+    docsDirty,
+    docsSaving,
+    energyDirty,
+    energySaving,
+    perfDirty,
+    perfSaving,
+
+    showCollapseAllToggle,
+    anyOpenInActiveTab,
+  ]);
 
   const title = useMemo(() => {
-    const name = installation?.name || installation?.obj_naam || installation?.atrium_installation_code || code;
+    const name =
+      installation?.name ||
+      installation?.obj_naam ||
+      installation?.atrium_installation_code ||
+      code;
     return `Installatie ${name}`;
   }, [installation, code]);
 
-  // best-effort admin flag (pas aan als jij elders user info hebt)
   const isAdmin = Boolean(installation?.is_admin || installation?.isAdmin || installation?.user_is_admin);
 
   const tabs = useMemo(() => {
@@ -345,6 +392,28 @@ export default function InstallationDetails() {
           />
         ),
       },
+      {
+        key: "performance",
+        label: "Prestatie-eisen",
+        Icon: GaugeIcon,
+        content: (
+          <PerformanceRequirementsTab
+            ref={perfRef}
+            code={code}
+            onDirtyChange={setPerfDirty}
+            onSavingChange={setPerfSaving}
+            onSaveOk={() => {
+              setPerfSaveOk(true);
+              if (saveOkTimerRef.current) clearTimeout(saveOkTimerRef.current);
+              saveOkTimerRef.current = setTimeout(() => setPerfSaveOk(false), 2500);
+            }}
+            onSaved={async () => {
+              // PerformanceRequirementsTab doet zelf readback; hier hoeft niets.
+            }}
+            onAnyOpenChange={(v) => setAnyOpen("performance", v)}
+          />
+        ),
+      },
     ];
   }, [
     catalog,
@@ -364,7 +433,11 @@ export default function InstallationDetails() {
     return tabs.find((t) => t.key === activeTab)?.content ?? null;
   }, [tabs, activeTab]);
 
-  const showHeaderSave = (activeTab === "custom" && typeIsSet) || activeTab === "documents" || activeTab === "energy";
+  const showHeaderSave =
+    (activeTab === "custom" && typeIsSet) ||
+    activeTab === "documents" ||
+    activeTab === "energy" ||
+    activeTab === "performance";
 
   return (
     <div>
@@ -385,7 +458,10 @@ export default function InstallationDetails() {
             <div className="inst-title">
               <h1>{title}</h1>
 
-              <div className="muted" style={{ fontSize: 13, display: "flex", gap: 8, alignItems: "center" }}>
+              <div
+                className="muted"
+                style={{ fontSize: 13, display: "flex", gap: 8, alignItems: "center" }}
+              >
                 <span>code: {code}</span>
 
                 <div className="type-picker-wrap" ref={typePickerRef}>
@@ -420,7 +496,6 @@ export default function InstallationDetails() {
             </div>
           </div>
 
-          {/* rechts: collapse/expand all + save */}
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
             {showCollapseAllToggle && (
               <button
@@ -443,14 +518,47 @@ export default function InstallationDetails() {
 
             {showHeaderSave && (
               <SaveButton
-                disabled={activeTab === "custom" ? !customDirty : activeTab === "documents" ? !docsDirty : !energyDirty}
-                saving={activeTab === "custom" ? customSaving : activeTab === "documents" ? docsSaving : energySaving}
-                saved={activeTab === "custom" ? customSaveOk : activeTab === "documents" ? docsSaveOk : energySaveOk}
-                pulse={activeTab === "custom" ? customDirty : activeTab === "documents" ? docsDirty : energyDirty}
+                disabled={
+                  activeTab === "custom"
+                    ? !customDirty
+                    : activeTab === "documents"
+                      ? !docsDirty
+                      : activeTab === "energy"
+                        ? !energyDirty
+                        : !perfDirty
+                }
+                saving={
+                  activeTab === "custom"
+                    ? customSaving
+                    : activeTab === "documents"
+                      ? docsSaving
+                      : activeTab === "energy"
+                        ? energySaving
+                        : perfSaving
+                }
+                saved={
+                  activeTab === "custom"
+                    ? customSaveOk
+                    : activeTab === "documents"
+                      ? docsSaveOk
+                      : activeTab === "energy"
+                        ? energySaveOk
+                        : perfSaveOk
+                }
+                pulse={
+                  activeTab === "custom"
+                    ? customDirty
+                    : activeTab === "documents"
+                      ? docsDirty
+                      : activeTab === "energy"
+                        ? energyDirty
+                        : perfDirty
+                }
                 onClick={() => {
                   if (activeTab === "custom") customSaveRef.current?.save?.();
                   if (activeTab === "documents") docsSaveRef.current?.save?.();
                   if (activeTab === "energy") energySaveRef.current?.save?.();
+                  if (activeTab === "performance") perfRef.current?.save?.();
                 }}
               />
             )}
@@ -462,9 +570,13 @@ export default function InstallationDetails() {
 
       <div className="inst-body">
         {error && <p style={{ color: "salmon" }}>{error}</p>}
-        {!installation && !catalog && !customValues && !docs && !energySupplies && !energyBrandTypes && !error && (
-          <p>laden</p>
-        )}
+        {!installation &&
+          !catalog &&
+          !customValues &&
+          !docs &&
+          !energySupplies &&
+          !energyBrandTypes &&
+          !error && <p>laden</p>}
         {activeContent}
       </div>
     </div>

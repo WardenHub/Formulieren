@@ -217,3 +217,50 @@ export async function deleteEnergySupply(req: any, res: any) {
     return res.status(500).json({ error: "deleteEnergySupply failed" });
   }
 }
+
+export async function getNen2535Catalog(req: any, res: Response) {
+  try {
+    const data = await service.getNen2535Catalog();
+    return res.json(data);
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ error: "getNen2535Catalog failed" });
+  }
+}
+
+export async function getPerformanceRequirements(req: any, res: Response) {
+  try {
+    const code = String(req.params.code || "");
+    const data = await service.getInstallationPerformanceRequirements(code);
+    return res.json(data);
+  } catch (err: any) {
+    const msg = (err?.message || String(err)).toLowerCase();
+    if (msg.includes("installation not found")) return res.status(404).json({ error: "installation not found" });
+    console.error(err);
+    return res.status(500).json({ error: "getPerformanceRequirements failed" });
+  }
+}
+
+export async function putPerformanceRequirements(req: any, res: any) {
+  try {
+    const code = String(req.params.code || "");
+    const payload = req.body;
+
+    const result = await service.upsertInstallationPerformanceRequirements(code, payload, req.user);
+    if (result?.ok === false) return res.status(400).json(result);
+
+    return res.json(result);
+  } catch (err: any) {
+    const msg = (err?.message || String(err)).toLowerCase();
+
+    if (msg.includes("atrium installation not found")) {
+      return res.status(404).json({ error: "atrium installation not found" });
+    }
+    if (msg.includes("installation not found")) {
+      return res.status(404).json({ error: "installation not found" });
+    }
+
+    console.error(err);
+    return res.status(500).json({ error: "putPerformanceRequirements failed" });
+  }
+}

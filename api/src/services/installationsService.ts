@@ -1,6 +1,6 @@
 // api/src/services/installationsService.ts
 
-import { sqlQuery } from "../db/index.js";
+import { sqlQuery, sqlQueryRaw } from "../db/index.js";
 import {
   getInstallationSql,
   getCustomValuesSql,
@@ -30,6 +30,59 @@ import {
   upsertInstallationEnergySuppliesSql,
   deleteInstallationEnergySupplySql,
 } from "../db/queries/energySupplies.sql.js";
+
+import {
+  getNen2535CatalogSql,
+  getInstallationPerformanceRequirementSql,
+  upsertInstallationPerformanceRequirementSql,
+  getNen2535MatrixForNormSql,
+} from "../db/queries/nen2535.sql.js";
+
+function roundNen(value: number) {
+  if (value <= 1) return Math.ceil(value);
+  return Math.round(value);
+}
+
+function calcMaxAllowed(normering_key: string, countsByRisk: Record<string, number>, mode: "internal" | "external") {
+  const A = countsByRisk["A"] ?? 0;
+  const B = countsByRisk["B"] ?? 0;
+  const C = countsByRisk["C"] ?? 0;
+  const D = countsByRisk["D"] ?? 0;
+  const E = countsByRisk["E"] ?? 0;
+
+  let between = 0;
+
+  if (mode === "external") {
+    between = ((A / 100) * 0.5) + ((B / 100) * 1) + ((C / 100) * 1.5);
+    return roundNen(between);
+  }
+
+  if (normering_key === "NEN2535_2009_PLUS") {
+    between =
+      ((A / 100) * 0.5) +
+      ((B / 100) * 1) +
+      ((C / 100) * 1.5) +
+      ((D / 100) * 2) +
+      ((E / 100) * 3);
+    return roundNen(between);
+  }
+
+  if (normering_key === "NEN2535_1996_2008") {
+    between = ((A / 100) * 1) + ((B / 100) * 2) + ((C / 100) * 3);
+    return roundNen(between);
+  }
+
+  return null;
+}
+
+function weightedDetectorCount(row: any) {
+  const a = Number(row.automatic_detectors ?? 0);
+  const h = Number(row.manual_call_points ?? 0);
+  const v = Number(row.flame_detectors ?? 0);
+  const l = Number(row.linear_smoke_detectors ?? 0);
+  const asp = Number(row.aspirating_openings ?? 0);
+  return a + h + (v * 5) + (l * 10) + asp;
+}
 
 export async function getInstallationByCode(code: string) {
   const rows = await sqlQuery(getInstallationSql, { code });
@@ -343,7 +396,6 @@ export async function upsertInstallationEnergySupplies(code: string, items: any[
   return { ok: true, result };
 }
 
-
 export async function deleteInstallationEnergySupply(code: string, energy_supply_id: string, user: any) {
   const updatedBy = user?.name || user?.objectId || "unknown";
 
@@ -354,4 +406,189 @@ export async function deleteInstallationEnergySupply(code: string, energy_supply
   });
 
   return { ok: true, result };
+}
+
+export async function getNen2535Catalog() {
+const rs: any = await sqlQueryRaw(getNen2535CatalogSql);
+const recordsets = Array.isArray(rs?.recordsets) ? rs.recordsets : [];
+const normeringen = Array.isArray(recordsets[0]) ? recordsets[0] : [];
+const functies = Array.isArray(recordsets[1]) ? recordsets[1] : [];
+const matrix = Array.isArray(recordsets[2]) ? recordsets[2] : [];
+return { normeringen, functies, matrix };
+
+}
+
+export async function upsertInstallationPerformanceRequirements(code: string, payload: any, user: any) {
+  const normering_key = String(payload?.normering_key || "").trim();
+  const doormelding_mode = String(payload?.doormelding_mode || "").trim(); // header default/fallback
+  const remarks = payload?.remarks ?? null;
+  const rows = payload?.rows;
+
+  if (!normering_key) return { ok: false, error: "normering_key is verplicht" };
+  if (!["NEN2535_2009_PLUS", "NEN2535_1996_2008"].includes(normering_key)) {
+    return { ok: false, error: "normering_key is ongeldig" };
+  }
+
+  if (!["GEEN", "ZONDER_VERTRAGING", "MET_VERTRAGING"].includes(doormelding_mode)) {
+    return { ok: false, error: "doormelding_mode is ongeldig" };
+  }
+
+  if (!Array.isArray(rows)) return { ok: false, error: "rows must be an array" };
+
+  const normalizeMode = (v: any) => {
+    const s = String(v || "").trim();
+    if (s === "MET_VERTRAGING") return "MET_VERTRAGING";
+    if (s === "ZONDER_VERTRAGING") return "ZONDER_VERTRAGING";
+    return "GEEN";
+  };
+
+  const matrixRows = await sqlQuery(getNen2535MatrixForNormSql, { normering_key });
+  const allowedFunKeys = new Set((matrixRows as any[]).map((m) => String(m.gebruikersfunctie_key)));
+
+  const toInt = (v: any, idx: number) => {
+    const n = Number(v ?? 0);
+    if (!Number.isFinite(n) || n < 0) throw new Error(`row ${idx + 1}: aantallen moeten >= 0 zijn`);
+    return Math.trunc(n);
+  };
+
+  const cleaned = rows.map((r: any, idx: number) => {
+    const gebruikersfunctie_key = String(r?.gebruikersfunctie_key || "").trim();
+    if (!gebruikersfunctie_key) throw new Error(`row ${idx + 1}: gebruikersfunctie_key ontbreekt`);
+    if (!allowedFunKeys.has(gebruikersfunctie_key)) {
+      throw new Error(`row ${idx + 1}: gebruikersfunctie_key niet toegestaan voor normering`);
+    }
+
+    const row_label = r?.row_label == null ? null : String(r.row_label).trim();
+    const rowMode = normalizeMode(r?.doormelding_mode ?? doormelding_mode);
+
+    return {
+      // natuurlijke sleutel: (performance_requirement_id, gebruikersfunctie_key, row_label, doormelding_mode)
+      gebruikersfunctie_key,
+      row_label: row_label && row_label.length ? row_label : null,
+      doormelding_mode: rowMode,
+
+      automatic_detectors: toInt(r.automatic_detectors, idx),
+      manual_call_points: toInt(r.manual_call_points, idx),
+      flame_detectors: toInt(r.flame_detectors, idx),
+      linear_smoke_detectors: toInt(r.linear_smoke_detectors, idx),
+      aspirating_openings: toInt(r.aspirating_openings, idx),
+
+      sort_order: Number.isFinite(Number(r.sort_order)) ? Math.trunc(Number(r.sort_order)) : idx + 1,
+    };
+  });
+
+  const updatedBy = user?.name || user?.objectId || "unknown";
+  const rowsJson = JSON.stringify(cleaned);
+
+  const result = await sqlQuery(upsertInstallationPerformanceRequirementSql, {
+    code,
+    normering_key,
+    doormelding_mode, // header: blijft bestaan als default/overzicht
+    remarks,
+    updatedBy,
+    rowsJson,
+  });
+
+  const readback = await getInstallationPerformanceRequirements(code);
+
+  return { ok: true, result, readback };
+}
+
+export async function getInstallationPerformanceRequirements(code: string) {
+  const rs: any = await sqlQueryRaw(getInstallationPerformanceRequirementSql, { code });
+
+  const header = rs?.recordsets?.[0]?.[0] ?? null;
+  const rows = rs?.recordsets?.[1] ?? [];
+
+  if (!header) {
+    return { code, performanceRequirement: null, rows: [], calculated: null };
+  }
+
+  const normKey = String(header.normering_key || "").trim();
+
+  const matrixRows = await sqlQuery(getNen2535MatrixForNormSql, { normering_key: normKey });
+  const matrixByKey = new Map<string, any>();
+  for (const m of matrixRows as any[]) matrixByKey.set(String(m.gebruikersfunctie_key), m);
+
+  type Mode = "GEEN" | "ZONDER_VERTRAGING" | "MET_VERTRAGING";
+
+  const emptyRisk = () => ({ A: 0, B: 0, C: 0, D: 0, E: 0 });
+
+  const byMode: Record<
+    Mode,
+    { internal: Record<string, number>; external: Record<string, number> }
+  > = {
+    GEEN: { internal: emptyRisk(), external: emptyRisk() },
+    ZONDER_VERTRAGING: { internal: emptyRisk(), external: emptyRisk() },
+    MET_VERTRAGING: { internal: emptyRisk(), external: emptyRisk() },
+  };
+
+  const normalizeMode = (v: any): Mode => {
+    const s = String(v || "").trim();
+    if (s === "MET_VERTRAGING") return "MET_VERTRAGING";
+    if (s === "ZONDER_VERTRAGING") return "ZONDER_VERTRAGING";
+    return "GEEN";
+  };
+
+  const enrichedRows = (rows as any[]).map((r) => {
+    const m = matrixByKey.get(String(r.gebruikersfunctie_key)) || null;
+    const w = weightedDetectorCount(r);
+
+    const mode: Mode = normalizeMode(r.doormelding_mode);
+
+    const ri = m?.risk_internal ?? null;
+    const re = m?.risk_external ?? null;
+
+    // extern telt altijd mee (alle modes)
+    if (re && byMode[mode].external[re] !== undefined) byMode[mode].external[re] += w;
+
+    // intern telt alléén mee bij MET_VERTRAGING
+    if (mode === "MET_VERTRAGING") {
+      if (ri && byMode[mode].internal[ri] !== undefined) byMode[mode].internal[ri] += w;
+    }
+
+    return {
+      ...r,
+      doormelding_mode: mode,
+      matrix_name: m?.matrix_name ?? null,
+      risk_internal: ri,
+      risk_external: re,
+      weighted_count: w,
+      // handig voor UI: of intern relevant is voor deze regel
+      intern_enabled: mode === "MET_VERTRAGING",
+    };
+  });
+
+  const calcForMode = (mode: Mode) => {
+    const maxExtern = calcMaxAllowed(normKey, byMode[mode].external, "external");
+
+    // intern alleen bij MET_VERTRAGING
+    const maxIntern = mode === "MET_VERTRAGING"
+      ? calcMaxAllowed(normKey, byMode[mode].internal, "internal")
+      : null;
+
+    return {
+      riskTotals: {
+        internal: mode === "MET_VERTRAGING" ? byMode[mode].internal : null,
+        external: byMode[mode].external,
+      },
+      maxAllowed: {
+        internal: maxIntern,
+        external: maxExtern,
+      },
+    };
+  };
+
+  return {
+    code,
+    performanceRequirement: header,
+    rows: enrichedRows,
+    calculated: {
+      byMode: {
+        GEEN: calcForMode("GEEN"),
+        ZONDER_VERTRAGING: calcForMode("ZONDER_VERTRAGING"),
+        MET_VERTRAGING: calcForMode("MET_VERTRAGING"),
+      },
+    },
+  };
 }
