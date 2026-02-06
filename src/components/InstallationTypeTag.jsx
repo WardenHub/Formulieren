@@ -6,7 +6,7 @@ export default function InstallationTypeTag({ typeKey, label }) {
   const cls =
     typeKey === "BMI" ? "type-bmi" :
     typeKey === "BMI_OAI" ? "type-bmi-oai" :
-    typeKey === "OAI_TYPE_B" ? "type-oai" :
+    typeKey === "OAI_TYPE_A" ? "type-oai" :
     typeKey === "IBC" ? "type-ibc" :
     typeKey === "TELEFONIE" ? "type-telefonie" :
     typeKey === "CAMERA" ? "type-camera" :

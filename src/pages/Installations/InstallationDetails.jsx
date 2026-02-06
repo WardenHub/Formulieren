@@ -7,6 +7,7 @@ import DocumentsTab from "./DocumentsTab.jsx";
 import CustomFieldsTab from "./CustomFieldsTab.jsx";
 import EnergySupplyTab from "./EnergySupplyTab.jsx";
 import PerformanceRequirementsTab from "./PerformanceRequirementsTab.jsx";
+import FormsTab from "./FormsTab.jsx";
 
 import SaveButton from "../../components/SaveButton.jsx";
 import Tabs from "../../components/Tabs.jsx";
@@ -19,6 +20,7 @@ import { TornadoIcon } from "@/components/ui/tornado";
 import { FileStackIcon } from "@/components/ui/file-stack";
 import { BatteryIcon } from "@/components/ui/battery";
 import { GaugeIcon } from "@/components/ui/gauge.jsx";
+import { FileTextIcon } from "@/components/ui/file-text";
 import { ChevronsDownUpIcon } from "@/components/ui/chevrons-down-up";
 import { ChevronsUpDownIcon } from "@/components/ui/chevrons-up-down";
 
@@ -31,6 +33,8 @@ import {
   setInstallationType,
   getEnergySupplies,
   getEnergySupplyBrandTypes,
+  getFormStartPreflight,
+  startFormInstance,
 } from "../../api/emberApi.js";
 
 export default function InstallationDetails() {
@@ -38,6 +42,7 @@ export default function InstallationDetails() {
   const navigate = useNavigate();
 
   const backIconRef = useRef(null);
+  const collapseAllIconRef = useRef(null);
 
   const atriumRef = useRef(null);
   const customSaveRef = useRef(null);
@@ -46,11 +51,9 @@ export default function InstallationDetails() {
   const perfRef = useRef(null);
 
   const typePickerRef = useRef(null);
-
-  const collapseAllIconRef = useRef(null);
+  const saveOkTimerRef = useRef(null);
 
   const [activeTab, setActiveTab] = useState("documents");
-  const saveOkTimerRef = useRef(null);
 
   const [installation, setInstallation] = useState(null);
   const [catalog, setCatalogState] = useState(null);
@@ -62,7 +65,6 @@ export default function InstallationDetails() {
 
   const [installationTypes, setInstallationTypesState] = useState([]);
   const [typeSaving, setTypeSaving] = useState(false);
-
   const [typePickerOpen, setTypePickerOpen] = useState(false);
 
   const typeIsSet = Boolean(installation?.installation_type_key);
@@ -83,11 +85,22 @@ export default function InstallationDetails() {
   const [perfSaving, setPerfSaving] = useState(false);
   const [perfSaveOk, setPerfSaveOk] = useState(false);
 
+  // Formulieren state in parent, zodat tab-switch niet alles reset
+  const [selectedFormCode, setSelectedFormCode] = useState(null);
+  const [preflight, setPreflight] = useState(null);
+  const [preflightLoading, setPreflightLoading] = useState(false);
+  const [preflightError, setPreflightError] = useState(null);
+
+  // bump elke keer dat de forms-tab geopend wordt (robuste auto-refresh in FormsTab)
+  const [formsActivationToken, setFormsActivationToken] = useState(0);
+
   const [anyOpenByTab, setAnyOpenByTab] = useState({
     atrium: false,
     custom: false,
+    documents: false,
     energy: false,
     performance: false,
+    forms: false,
   });
 
   function setAnyOpen(tabKey, value) {
@@ -102,10 +115,11 @@ export default function InstallationDetails() {
     if (activeTab === "custom") return customSaveRef.current;
     if (activeTab === "energy") return energySaveRef.current;
     if (activeTab === "performance") return perfRef.current;
-    return null;
+    return null; // documenten + forms: toggle is verborgen
   }
 
-  const showCollapseAllToggle = activeTab !== "documents";
+  // toggle verborgen op Documents + Forms (zoals afgesproken)
+  const showCollapseAllToggle = activeTab !== "documents" && activeTab !== "forms";
   const anyOpenInActiveTab = Boolean(anyOpenByTab[activeTab]);
   const collapseBtnTitle = anyOpenInActiveTab ? "Alles inklappen" : "Alles uitklappen";
   const CollapseIcon = anyOpenInActiveTab ? ChevronsDownUpIcon : ChevronsUpDownIcon;
@@ -119,6 +133,26 @@ export default function InstallationDetails() {
     const [items, types] = await Promise.all([getEnergySupplies(code), getEnergySupplyBrandTypes()]);
     setEnergySupplies(items?.items || []);
     setEnergyBrandTypes(types?.types || []);
+  }
+
+  async function runPreflight(formCode) {
+    const clean = formCode ? String(formCode).trim() : "";
+
+    setSelectedFormCode(clean || null);
+    setPreflight(null);
+    setPreflightError(null);
+
+    if (!clean) return;
+
+    setPreflightLoading(true);
+    try {
+      const res = await getFormStartPreflight(code, clean);
+      setPreflight(res || null);
+    } catch (e) {
+      setPreflightError(e?.message || String(e));
+    } finally {
+      setPreflightLoading(false);
+    }
   }
 
   async function handleSetType(typeKey) {
@@ -146,11 +180,20 @@ export default function InstallationDetails() {
       setCustomDirty(false);
       setCustomSaveOk(false);
 
+      setDocsDirty(false);
+      setDocsSaveOk(false);
+
       setEnergyDirty(false);
       setEnergySaveOk(false);
 
       setPerfDirty(false);
       setPerfSaveOk(false);
+
+      // type change: formulierselectie/preflight resetten (formulier-aanbod kan veranderen)
+      setSelectedFormCode(null);
+      setPreflight(null);
+      setPreflightError(null);
+      setPreflightLoading(false);
 
       setActiveTab("custom");
     } finally {
@@ -231,6 +274,13 @@ export default function InstallationDetails() {
       }
     };
   }, []);
+
+  // Bump activation token telkens wanneer forms-tab actief wordt
+  useEffect(() => {
+    if (activeTab === "forms") {
+      setFormsActivationToken((n) => n + 1);
+    }
+  }, [activeTab]);
 
   useEffect(() => {
     function onKeyDown(e) {
@@ -356,6 +406,7 @@ export default function InstallationDetails() {
             ref={docsSaveRef}
             code={code}
             docs={docs}
+            catalog={catalog}
             onDirtyChange={setDocsDirty}
             onSavingChange={setDocsSaving}
             onSaveOk={() => {
@@ -367,6 +418,7 @@ export default function InstallationDetails() {
               const docData = await getDocuments(code);
               setDocs(docData || null);
             }}
+            onAnyOpenChange={(v) => setAnyOpen("documents", v)}
           />
         ),
       },
@@ -407,10 +459,54 @@ export default function InstallationDetails() {
               if (saveOkTimerRef.current) clearTimeout(saveOkTimerRef.current);
               saveOkTimerRef.current = setTimeout(() => setPerfSaveOk(false), 2500);
             }}
-            onSaved={async () => {
-              // PerformanceRequirementsTab doet zelf readback; hier hoeft niets.
-            }}
+            onSaved={async () => {}}
             onAnyOpenChange={(v) => setAnyOpen("performance", v)}
+          />
+        ),
+      },
+      {
+        key: "forms",
+        label: "Formulieren",
+        Icon: FileTextIcon,
+        content: (
+          <FormsTab
+            code={code}
+            installation={installation}
+            isActive={activeTab === "forms"}
+            activationToken={formsActivationToken}
+            selectedFormCode={selectedFormCode}
+            preflight={preflight}
+            preflightLoading={preflightLoading}
+            preflightError={preflightError}
+            onSelectForm={(formCode) => runPreflight(formCode)}
+            onStartChecklist={() => runPreflight(selectedFormCode)}
+            onOpenTab={(tabKey) => setActiveTab(tabKey)}
+            onOpenForm={async (formCode) => {
+              const clean = String(formCode || "").trim();
+              if (!clean) return;
+
+              const res = await startFormInstance(code, clean);
+
+              const id =
+                res?.item?.form_instance_id ||
+                res?.item?.instance_id ||
+                res?.form_instance_id ||
+                res?.instance_id ||
+                res?.instance?.form_instance_id ||
+                res?.instance?.instance_id ||
+                res?.formInstance?.form_instance_id ||
+                res?.formInstance?.instance_id;
+
+              if (!id) {
+                console.error("startFormInstance: missing instance id", res);
+                return;
+              }
+
+              navigate(
+                `/installaties/${encodeURIComponent(code)}/formulieren/${encodeURIComponent(id)}`
+              );
+            }}
+            onAnyOpenChange={(v) => setAnyOpen("forms", v)}
           />
         ),
       },
@@ -427,6 +523,12 @@ export default function InstallationDetails() {
     energySupplies,
     energyBrandTypes,
     isAdmin,
+    activeTab,
+    formsActivationToken,
+    selectedFormCode,
+    preflight,
+    preflightLoading,
+    preflightError,
   ]);
 
   const activeContent = useMemo(() => {
@@ -576,7 +678,7 @@ export default function InstallationDetails() {
           !docs &&
           !energySupplies &&
           !energyBrandTypes &&
-          !error && <p>laden</p>}
+          !error && <p className="muted">Laden…</p>}
         {activeContent}
       </div>
     </div>

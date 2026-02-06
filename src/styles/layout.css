@@ -849,3 +849,73 @@ input[type="date"].input{
 .icon-btn--danger:hover{
   background: rgba(239, 68, 68, 0.16);
 }
+
+
+/* =========================================================
+   FormsTab
+   ========================================================= */
+
+.forms-preflight{
+  display: grid;
+  gap: 12px;
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 16px;
+  padding: 14px;
+  background: rgba(255,255,255,0.02);
+}
+
+.forms-preflight-head{
+  display:flex;
+  align-items:baseline;
+  justify-content:space-between;
+  gap: 12px;
+}
+
+.forms-action-row{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap: 12px;
+
+  padding: 12px;
+  border-radius: 14px;
+  border: 1px solid rgba(255,255,255,0.10);
+  background: rgba(255,255,255,0.02);
+}
+
+.forms-action-row.clickable{
+  cursor: pointer;
+}
+
+.forms-action-row.clickable:hover{
+  background: rgba(255,255,255,0.05);
+  border-color: rgba(255,255,255,0.14);
+}
+
+.forms-action-main{
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.forms-action-title{
+  font-weight: 650;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.forms-action-sub{
+  font-size: 13px;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.forms-action-right{
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}

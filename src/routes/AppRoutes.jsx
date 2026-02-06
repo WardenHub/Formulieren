@@ -4,6 +4,8 @@ import Layout from "../layout/layout.jsx";
 import Home from "../pages/Home.jsx";
 import InstallationsIndex from "../pages/Installations/InstallationsIndex.jsx";
 import InstallationDetails from "../pages/Installations/InstallationDetails.jsx";
+import FormRunner from "../pages/Installations/FormRunner.jsx";
+import FormRunnerDebug from "../pages/Installations/FormRunnerDebug.jsx";
 import NotFound from "../pages/NotFound.jsx";
 
 export default function AppRoutes() {
@@ -13,14 +15,14 @@ export default function AppRoutes() {
         <Route path="/" element={<Home />} />
         <Route path="/installaties" element={<InstallationsIndex />} />
         <Route path="/installaties/:code" element={<InstallationDetails />} />
+
+        {/* Form runner (echte runner) */}
+        <Route path="/installaties/:code/formulieren/:instanceId" element={<FormRunner />} />
+
+        {/* Debug JSON runner (ruwe editor) */}
         <Route
-          path="/formulieren"
-          element={
-            <div>
-              <h1>Formulier invullen</h1>
-              <p>placeholder</p>
-            </div>
-          }
+          path="/installaties/:code/formulieren/:instanceId/debug"
+          element={<FormRunnerDebug />}
         />
 
         <Route path="*" element={<NotFound />} />

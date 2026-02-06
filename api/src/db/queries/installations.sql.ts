@@ -122,6 +122,8 @@ order by
 // note; no is_required in your table; we default to 0
 // ------------------------------
 export const getCatalogDocumentTypesSql = `
+-- expects: @installationTypeKey (nullable)
+
 select
   dt.document_type_key,
   dt.naam as document_type_name,
@@ -130,7 +132,28 @@ select
   dt.is_active,
   cast(0 as bit) as is_required
 from dbo.DocumentType dt
+where dt.is_active = 1
+and (
+  -- geen mappings => beschikbaar voor alle types (ook als installatietype nog null is)
+  not exists (
+    select 1
+    from dbo.DocumentTypeInstallationType x
+    where x.document_type_key = dt.document_type_key
+  )
+  -- wel mappings => alleen zichtbaar bij match (en alleen als type bekend is)
+  or (
+    @installationTypeKey is not null
+    and exists (
+      select 1
+      from dbo.DocumentTypeInstallationType x
+      where x.document_type_key = dt.document_type_key
+        and x.installation_type_key = @installationTypeKey
+    )
+  )
+)
 order by
+  case when dt.sectie_key is null then 1 else 0 end,
+  dt.sectie_key,
   case when dt.sort_order is null then 999999 else dt.sort_order end,
   dt.document_type_key
 `;
@@ -253,6 +276,15 @@ select
 `;
 
 export const getInstallationDocumentsSql = `
+-- expects: @code
+
+declare @installationTypeKey nvarchar(50) = null;
+
+select top 1
+  @installationTypeKey = i.installation_type_key
+from dbo.Installation i
+where i.atrium_installation_code = @code;
+
 select
   dt.document_type_key,
   dt.naam as document_type_name,
@@ -282,11 +314,32 @@ left join dbo.InstallationDocument d
   on d.document_type_key = dt.document_type_key
   and d.atrium_installation_code = @code
 where dt.is_active = 1
+and (
+  -- geen mappings => altijd zichtbaar
+  not exists (
+    select 1
+    from dbo.DocumentTypeInstallationType x
+    where x.document_type_key = dt.document_type_key
+  )
+  -- wel mappings => alleen zichtbaar bij match
+  or (
+    @installationTypeKey is not null
+    and exists (
+      select 1
+      from dbo.DocumentTypeInstallationType x
+      where x.document_type_key = dt.document_type_key
+        and x.installation_type_key = @installationTypeKey
+    )
+  )
+)
 order by
+  case when dt.sectie_key is null then 1 else 0 end,
+  dt.sectie_key,
   case when dt.sort_order is null then 999999 else dt.sort_order end,
   dt.document_type_key,
   d.created_at desc
 `;
+
 
 export const upsertInstallationDocumentsSql = `
 -- expects params: @code, @documentsJson, @updatedBy

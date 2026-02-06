@@ -19,6 +19,15 @@ export function apiDelete(path) {
   });
 }
 
+export function apiPost(path, bodyObj) {
+  return httpJson(path, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(bodyObj ?? {}),
+  });
+}
+
+
 export function getInstallation(code) {
   return apiGet(`/installations/${code}`);
 }
@@ -94,4 +103,65 @@ export function getPerformanceRequirements(code) {
 
 export function putPerformanceRequirements(code, payload) {
   return apiPut(`/installations/${encodeURIComponent(code)}/performance-requirements`, payload);
+}
+
+export function getFormStartPreflight(code, formCode) {
+  return apiGet(`/installations/${encodeURIComponent(code)}/forms/${encodeURIComponent(formCode)}/preflight`);
+}
+
+export function getFormsCatalog(code) {
+  return apiGet(`/installations/${encodeURIComponent(code)}/forms/catalog`);
+}
+
+// forms runtime
+export function startFormInstance(code, formCode) {
+  // backend: POST /:code/forms/:formCode/start
+  return apiPost(
+    `/installations/${encodeURIComponent(code)}/forms/${encodeURIComponent(formCode)}/start`,
+    {}
+  );
+}
+
+export function getFormInstance(code, formInstanceId) {
+  // backend: GET /:code/forms/instances/:instanceId
+  return apiGet(
+    `/installations/${encodeURIComponent(code)}/forms/instances/${encodeURIComponent(formInstanceId)}`
+  );
+}
+
+export function putFormAnswers(code, formInstanceId, payload) {
+  // backend: PUT /:code/forms/instances/:instanceId/answers
+  return apiPut(
+    `/installations/${encodeURIComponent(code)}/forms/instances/${encodeURIComponent(formInstanceId)}/answers`,
+    payload
+  );
+}
+
+export function submitFormInstance(code, formInstanceId) {
+  // backend: POST /:code/forms/instances/:instanceId/submit
+  return apiPost(
+    `/installations/${encodeURIComponent(code)}/forms/instances/${encodeURIComponent(formInstanceId)}/submit`,
+    {}
+  );
+}
+
+export function withdrawFormInstance(code, formInstanceId) {
+  // backend: POST /:code/forms/instances/:instanceId/withdraw
+  return apiPost(
+    `/installations/${encodeURIComponent(code)}/forms/instances/${encodeURIComponent(formInstanceId)}/withdraw`,
+    {}
+  );
+}
+
+export function importFormAnswers(code, payload) {
+  // backend: POST /:code/forms/import
+  return apiPost(`/installations/${encodeURIComponent(code)}/forms/import`, payload);
+}
+
+export function reopenFormInstance(code, formInstanceId) {
+  // backend (nieuw): POST /:code/forms/instances/:instanceId/reopen
+  return apiPost(
+    `/installations/${encodeURIComponent(code)}/forms/instances/${encodeURIComponent(formInstanceId)}/reopen`,
+    {}
+  );
 }

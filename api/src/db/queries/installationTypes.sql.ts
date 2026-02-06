@@ -32,7 +32,6 @@ begin
 end;
 `;
 
-
 export const getInstallationTypesSql = `
 select
   it.installation_type_key,

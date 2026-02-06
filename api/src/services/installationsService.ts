@@ -38,6 +38,9 @@ import {
   getNen2535MatrixForNormSql,
 } from "../db/queries/nen2535.sql.js";
 
+
+
+
 function roundNen(value: number) {
   if (value <= 1) return Math.ceil(value);
   return Math.round(value);
@@ -108,7 +111,7 @@ export async function getCatalog(code: string) {
     // belangrijk: param altijd meegeven (ook null)
     sqlQuery(getCatalogCustomFieldsSql, { installationTypeKey }),
 
-    sqlQuery(getCatalogDocumentTypesSql),
+    sqlQuery(getCatalogDocumentTypesSql, { installationTypeKey }),
   ]);
 
   const fields = [...externalFields, ...customFields];
@@ -238,7 +241,6 @@ export async function upsertInstallationDocuments(code: string, documents: any[]
 
   return { ok: true, result };
 }
-
 
 export async function getInstallationTypes() {
   const rows = await sqlQuery(getInstallationTypesSql);
@@ -592,3 +594,4 @@ export async function getInstallationPerformanceRequirements(code: string) {
     },
   };
 }
+
