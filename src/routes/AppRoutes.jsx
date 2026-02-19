@@ -6,7 +6,7 @@ import InstallationsIndex from "../pages/Installations/InstallationsIndex.jsx";
 import InstallationDetails from "../pages/Installations/InstallationDetails.jsx";
 import FormRunner from "../pages/Forms/FormRunner.jsx";
 import FormRunnerDebug from "../pages/Forms/FormRunnerDebug.jsx";
-import SurveyDesigner from "../pages/Dev/FormDesigner.jsx";
+import SurveyDesigner from "../pages/dev/FormDesigner.jsx";
 import NotFound from "../pages/NotFound.jsx";
 
 export default function AppRoutes() {
