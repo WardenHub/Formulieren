@@ -9,6 +9,88 @@ import { DefaultAzureCredential } from "@azure/identity";
 
 let pool: sql.ConnectionPool | undefined;
 
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+function isTransientSqlConnectError(err: any): boolean {
+  const code = err?.code ?? err?.originalError?.code ?? err?.cause?.code;
+  const message = String(err?.message ?? "").toLowerCase();
+
+  // Network/socket/transient connect issues that are usually safe to retry
+  return (
+    code === "ESOCKET" ||
+    code === "ECONNRESET" ||
+    code === "ETIMEDOUT" ||
+    code === "EPIPE" ||
+    code === "EAI_AGAIN" ||
+    message.includes("socket hang up") ||
+    message.includes("login timeout") ||
+    message.includes("failed to connect")
+  );
+}
+
+async function connectWithRetry(config: any) {
+  const maxAttempts = Number(process.env.SQL_CONNECT_MAX_ATTEMPTS || 6);
+  const baseDelayMs = Number(process.env.SQL_CONNECT_RETRY_BASE_DELAY_MS || 250);
+  const maxDelayMs = Number(process.env.SQL_CONNECT_RETRY_MAX_DELAY_MS || 5000);
+
+  let lastErr: any;
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      // Ensure we don't keep a broken pool around between attempts
+      if (pool) {
+        try {
+          await pool.close();
+        } catch {
+          // ignore
+        }
+        pool = undefined;
+      }
+
+      pool = await new sql.ConnectionPool(config).connect();
+
+      // If the pool errors later (e.g., serverless pause / network flap), drop it so next query reconnects.
+      pool.on("error", (e) => {
+        console.error("[SQL] pool error; dropping pool", e);
+        try {
+          pool?.close();
+        } catch {
+          // ignore
+        }
+        pool = undefined;
+      });
+
+      return pool;
+    } catch (err: any) {
+      lastErr = err;
+
+      const transient = isTransientSqlConnectError(err);
+      const canRetry = transient && attempt < maxAttempts;
+
+      console.error(
+        `[SQL] connect attempt ${attempt}/${maxAttempts} failed (${transient ? "transient" : "non-transient"})`,
+        err
+      );
+
+      if (!canRetry) throw err;
+
+      // Exponential backoff with a bit of jitter
+      const exp = Math.min(maxDelayMs, baseDelayMs * 2 ** (attempt - 1));
+      const jitter = Math.floor(Math.random() * Math.min(250, exp * 0.2));
+      const delay = exp + jitter;
+
+      await sleep(delay);
+    }
+  }
+
+  throw lastErr;
+}
+
+const ms = (v: string | undefined, fallback: number) => {
+  const n = Number(v);
+  return Number.isFinite(n) && n > 0 ? n : fallback;
+};
+
 function baseConfig({ server, database }: { server: string; database: string }) {
   return {
     server,
@@ -18,9 +100,19 @@ function baseConfig({ server, database }: { server: string; database: string }) 
       encrypt: true,
       trustServerCertificate: false,
       enableArithAbort: true,
+      // keepAlive can help with idle path drops (supported by tedious)
+      keepAlive: true,
     },
-    connectionTimeout: 30000,
-    requestTimeout: 30000,
+    // Serverless resume can exceed 30s; bump this.
+    connectionTimeout: ms(process.env.SQL_CONNECTION_TIMEOUT_MS, 60000),
+    requestTimeout: ms(process.env.SQL_REQUEST_TIMEOUT_MS, 30000),
+
+    // Optional: pool tuning (defaults are usually fine; this just makes it explicit)
+    pool: {
+      max: ms(process.env.SQL_POOL_MAX, 10),
+      min: ms(process.env.SQL_POOL_MIN, 0),
+      idleTimeoutMillis: ms(process.env.SQL_POOL_IDLE_TIMEOUT_MS, 30000),
+    },
   };
 }
 
@@ -65,8 +157,15 @@ export async function getDbConnection() {
     console.log("[SQL] auth mode: sql login (local)");
   }
 
-  pool = await sql.connect(config);
-  return pool;
+  try {
+    // Use retrying connect to survive serverless resume / transient network resets.
+    pool = await connectWithRetry(config);
+    return pool;
+  } catch (e) {
+    // Ensure callers don't get stuck with a bad pool reference
+    pool = undefined;
+    throw e;
+  }
 }
 
 function applyParams(req: sql.Request, params?: Record<string, any>) {

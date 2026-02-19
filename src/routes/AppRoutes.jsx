@@ -4,8 +4,9 @@ import Layout from "../layout/layout.jsx";
 import Home from "../pages/Home.jsx";
 import InstallationsIndex from "../pages/Installations/InstallationsIndex.jsx";
 import InstallationDetails from "../pages/Installations/InstallationDetails.jsx";
-import FormRunner from "../pages/Installations/FormRunner.jsx";
-import FormRunnerDebug from "../pages/Installations/FormRunnerDebug.jsx";
+import FormRunner from "../pages/Forms/FormRunner.jsx";
+import FormRunnerDebug from "../pages/Forms/FormRunnerDebug.jsx";
+import SurveyDesigner from "../pages/Dev/FormDesigner.jsx";
 import NotFound from "../pages/NotFound.jsx";
 
 export default function AppRoutes() {
@@ -24,7 +25,7 @@ export default function AppRoutes() {
           path="/installaties/:code/formulieren/:instanceId/debug"
           element={<FormRunnerDebug />}
         />
-
+        <Route path="/dev/formdev" element={<SurveyDesigner />} />
         <Route path="*" element={<NotFound />} />
       </Route>
     </Routes>

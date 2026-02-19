@@ -8,6 +8,7 @@ import {
   getCatalogExternalFieldsSql,
   getCatalogCustomFieldsSql,
   getCatalogDocumentTypesSql,
+  getCatalogCustomFieldOptionsSql,
   upsertCustomValuesSql,
   getInstallationDocumentsSql, 
   upsertInstallationDocumentsSql,
@@ -37,6 +38,10 @@ import {
   upsertInstallationPerformanceRequirementSql,
   getNen2535MatrixForNormSql,
 } from "../db/queries/nen2535.sql.js";
+
+import { 
+  getInstallationComponentsSql
+ } from "../db/queries/installationComponents.sql.js";
 
 
 
@@ -104,18 +109,38 @@ export async function getCatalog(code: string) {
 
   const installationTypeKey = instRows?.[0]?.installation_type_key ?? null;
 
-  const [sections, externalFields, customFields, documentTypes] = await Promise.all([
-    sqlQuery(getCatalogSectionsSql),
-    sqlQuery(getCatalogExternalFieldsSql),
+  const [sections, externalFields, customFields, documentTypes, optionRows] =
+    await Promise.all([
+      sqlQuery(getCatalogSectionsSql),
+      sqlQuery(getCatalogExternalFieldsSql),
 
-    // belangrijk: param altijd meegeven (ook null)
-    sqlQuery(getCatalogCustomFieldsSql, { installationTypeKey }),
+      // belangrijk: param altijd meegeven (ook null)
+      sqlQuery(getCatalogCustomFieldsSql, { installationTypeKey }),
 
-    sqlQuery(getCatalogDocumentTypesSql, { installationTypeKey }),
-  ]);
+      sqlQuery(getCatalogDocumentTypesSql, { installationTypeKey }),
+
+      // NEW: dropdown options
+      sqlQuery(getCatalogCustomFieldOptionsSql),
+    ]);
 
   const fields = [...externalFields, ...customFields];
-  return { sections, fields, documentTypes };
+
+  // group options by field_key -> [{value,label}]
+  const fieldOptions: Record<string, Array<{ value: string; label: string }>> =
+    {};
+
+  for (const r of optionRows || []) {
+    const fieldKey = r?.field_key;
+    if (!fieldKey) continue;
+
+    if (!fieldOptions[fieldKey]) fieldOptions[fieldKey] = [];
+    fieldOptions[fieldKey].push({
+      value: String(r.option_value ?? ""),
+      label: String(r.option_label ?? r.option_value ?? ""),
+    });
+  }
+
+  return { sections, fields, documentTypes, fieldOptions };
 }
 
 export async function getCustomValues(code: string) {
@@ -408,6 +433,11 @@ export async function deleteInstallationEnergySupply(code: string, energy_supply
   });
 
   return { ok: true, result };
+}
+
+export async function getInstallationComponents(code: string) {
+  const rows = await sqlQuery(getInstallationComponentsSql, { code });
+  return { items: rows };
 }
 
 export async function getNen2535Catalog() {

@@ -8,6 +8,7 @@ import CustomFieldsTab from "./CustomFieldsTab.jsx";
 import EnergySupplyTab from "./EnergySupplyTab.jsx";
 import PerformanceRequirementsTab from "./PerformanceRequirementsTab.jsx";
 import FormsTab from "./FormsTab.jsx";
+import ComponentsTab from "./ComponentsTab.jsx";
 
 import SaveButton from "../../components/SaveButton.jsx";
 import Tabs from "../../components/Tabs.jsx";
@@ -23,6 +24,8 @@ import { GaugeIcon } from "@/components/ui/gauge.jsx";
 import { FileTextIcon } from "@/components/ui/file-text";
 import { ChevronsDownUpIcon } from "@/components/ui/chevrons-down-up";
 import { ChevronsUpDownIcon } from "@/components/ui/chevrons-up-down";
+import { CogIcon } from "@/components/ui/cog";
+
 
 import {
   getInstallation,
@@ -49,7 +52,7 @@ export default function InstallationDetails() {
   const docsSaveRef = useRef(null);
   const energySaveRef = useRef(null);
   const perfRef = useRef(null);
-
+  const componentsRef = useRef(null);
   const typePickerRef = useRef(null);
   const saveOkTimerRef = useRef(null);
 
@@ -101,6 +104,7 @@ export default function InstallationDetails() {
     energy: false,
     performance: false,
     forms: false,
+    components: false,
   });
 
   function setAnyOpen(tabKey, value) {
@@ -112,13 +116,35 @@ export default function InstallationDetails() {
 
   function getActiveExpandRef() {
     if (activeTab === "atrium") return atriumRef.current;
+    if (activeTab === "components") return componentsRef.current;
     if (activeTab === "custom") return customSaveRef.current;
     if (activeTab === "energy") return energySaveRef.current;
     if (activeTab === "performance") return perfRef.current;
     return null; // documenten + forms: toggle is verborgen
   }
 
-  // toggle verborgen op Documents + Forms (zoals afgesproken)
+  function hasUnsavedChanges() {
+    if (activeTab === "custom") return typeIsSet && customDirty && !customSaving;
+    if (activeTab === "documents") return docsDirty && !docsSaving;
+    if (activeTab === "energy") return energyDirty && !energySaving;
+    if (activeTab === "performance") return perfDirty && !perfSaving;
+    return false;
+  }
+
+  function confirmLeaveTab(nextTabKey) {
+    // switching within same tab: allow
+    if (nextTabKey === activeTab) return true;
+
+    if (!hasUnsavedChanges()) return true;
+
+    return window.confirm("Je hebt niet-opgeslagen wijzigingen. Weet je zeker dat je wilt doorgaan?");
+  }
+
+  function handleTabChange(nextTabKey) {
+    if (!confirmLeaveTab(nextTabKey)) return;
+    setActiveTab(nextTabKey);
+  }
+
   const showCollapseAllToggle = activeTab !== "documents" && activeTab !== "forms";
   const anyOpenInActiveTab = Boolean(anyOpenByTab[activeTab]);
   const collapseBtnTitle = anyOpenInActiveTab ? "Alles inklappen" : "Alles uitklappen";
@@ -275,7 +301,17 @@ export default function InstallationDetails() {
     };
   }, []);
 
-  // Bump activation token telkens wanneer forms-tab actief wordt
+  useEffect(() => {
+    function onBeforeUnload(e) {
+      if (!hasUnsavedChanges()) return;
+      e.preventDefault();
+      e.returnValue = "";
+    }
+
+    window.addEventListener("beforeunload", onBeforeUnload);
+    return () => window.removeEventListener("beforeunload", onBeforeUnload);
+  }, [activeTab, typeIsSet, customDirty, customSaving, docsDirty, docsSaving, energyDirty, energySaving, perfDirty, perfSaving]);
+
   useEffect(() => {
     if (activeTab === "forms") {
       setFormsActivationToken((n) => n + 1);
@@ -364,6 +400,18 @@ export default function InstallationDetails() {
             installation={installation}
             isAdmin={isAdmin}
             onAnyOpenChange={(v) => setAnyOpen("atrium", v)}
+          />
+        ),
+      },
+      {
+        key: "components",
+        label: "Componenten",
+        Icon: CogIcon, 
+        content: (
+          <ComponentsTab
+            ref={componentsRef}                      
+            code={code}
+            onAnyOpenChange={(v) => setAnyOpen("components", v)} 
           />
         ),
       },
@@ -667,7 +715,7 @@ export default function InstallationDetails() {
           </div>
         </div>
 
-        <Tabs tabs={tabs} activeKey={activeTab} onChange={setActiveTab} />
+        <Tabs tabs={tabs} activeKey={activeTab} onChange={handleTabChange} />
       </div>
 
       <div className="inst-body">

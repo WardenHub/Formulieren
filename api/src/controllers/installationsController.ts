@@ -419,3 +419,42 @@ export async function importFormAnswerFile(req: any, res: any) {
     return res.status(500).json({ error: "importFormAnswerFile failed" });
   }
 }
+
+export async function getFormPrefill(req: any, res: Response) {
+  try {
+    const code = String(req.params.code || "");
+    const formCode = String(req.params.formCode || "");
+
+    const keys = req.body?.keys ?? req.body?.keysJson ?? req.body?.requested_keys ?? [];
+    if (!Array.isArray(keys)) {
+      return res.status(400).json({ ok: false, error: "keys must be an array" });
+    }
+
+    const data = await formsService.getFormPrefill(code, formCode, keys, req.user);
+    return res.json(data);
+  } catch (err: any) {
+    const msg = (err?.message || String(err)).toLowerCase();
+    if (msg.includes("atrium installation not found")) {
+      return res.status(404).json({ error: "atrium installation not found" });
+    }
+    console.error(err);
+    return res.status(500).json({ error: "getFormPrefill failed" });
+  }
+}
+
+export async function getInstallationComponents(req: any, res: Response) {
+  try {
+    const code = String(req.params.code || "");
+    const data = await service.getInstallationComponents(code);
+    return res.json(data);
+  } catch (err: any) {
+    const msg = (err?.message || String(err)).toLowerCase();
+
+    if (msg.includes("atrium installation not found")) {
+      return res.status(404).json({ error: "atrium installation not found" });
+    }
+
+    console.error(err);
+    return res.status(500).json({ error: "getInstallationComponents failed" });
+  }
+}

@@ -44,6 +44,36 @@ function formatDateForInput(value) {
   return s.length >= 10 ? s.slice(0, 10) : s;
 }
 
+function normStr(v) {
+  const s = v == null ? "" : String(v);
+  const t = s.trim();
+  return t.length ? t : "";
+}
+
+function lower(v) {
+  return normStr(v).toLowerCase();
+}
+
+function looksLikeInstallateurSectionName(name) {
+  return lower(name).includes("installateur");
+}
+
+function findFieldKeyByLabel(fields, predicate) {
+  for (const f of fields) {
+    const label = lower(f?.label || f?.field_key || "");
+    if (predicate(label)) return f.field_key;
+  }
+  return null;
+}
+
+function toOption(o) {
+  if (!o) return null;
+  const value = o.option_value ?? o.value ?? o.key ?? o.id ?? null;
+  const label = o.option_label ?? o.label ?? o.name ?? String(value ?? "");
+  if (value == null) return null;
+  return { value: String(value), label: String(label) };
+}
+
 const CustomFieldsTab = forwardRef(function CustomFieldsTab(
   { code, catalog, customValues, onSaved, onDirtyChange, onSavingChange, onSaveOk, onAnyOpenChange },
   ref
@@ -82,6 +112,77 @@ const CustomFieldsTab = forwardRef(function CustomFieldsTab(
     for (const v of customValues || []) map.set(v.field_key, v);
     return map;
   }, [customValues]);
+
+  // ─────────────────────────────────────────────────────────────
+  // Options support (dropdowns)
+  // We support multiple catalog shapes:
+  // 1) field.options (array)
+  // 2) catalog.*Options as array rows (field_key, option_value, option_label)
+  // 3) NEW backend: catalog.fieldOptions as OBJECT: { [field_key]: [{value,label}] }
+  // Result: Map(field_key -> [{value,label}...])
+  // ─────────────────────────────────────────────────────────────
+  const optionsByFieldKey = useMemo(() => {
+    const map = new Map();
+
+    // 1) opties direct op het veld
+    for (const f of catalog?.fields || []) {
+      if (!f?.field_key) continue;
+      const arr = Array.isArray(f.options) ? f.options : Array.isArray(f.option_list) ? f.option_list : null;
+      if (!arr || arr.length === 0) continue;
+
+      const normalized = arr.map(toOption).filter(Boolean);
+      if (normalized.length) map.set(f.field_key, normalized);
+    }
+
+    // 2) opties als losse lijst op de catalog (array rows)
+    const flatLists = [
+      catalog?.customFieldOptions,
+      catalog?.options,
+      catalog?.installationCustomFieldOptions,
+    ].filter((x) => Array.isArray(x));
+
+    for (const list of flatLists) {
+      for (const row of list) {
+        const fk = row?.field_key ?? row?.fieldKey ?? null;
+        if (!fk) continue;
+        const opt = toOption(row);
+        if (!opt) continue;
+
+        if (!map.has(fk)) map.set(fk, []);
+        map.get(fk).push(opt);
+      }
+    }
+
+    // 3) NEW: backend returns fieldOptions as object map
+    // { [field_key]: [{value,label}] }
+    const obj = catalog?.fieldOptions;
+    if (obj && typeof obj === "object" && !Array.isArray(obj)) {
+      for (const [fk, arr] of Object.entries(obj)) {
+        if (!fk) continue;
+        if (!Array.isArray(arr)) continue;
+
+        const normalized = arr.map(toOption).filter(Boolean);
+        if (!normalized.length) continue;
+
+        if (!map.has(fk)) map.set(fk, []);
+        map.get(fk).push(...normalized);
+      }
+    }
+
+    // sort & dedupe per field (by value)
+    for (const [fk, opts] of map.entries()) {
+      const byValue = new Map();
+      for (const o of opts) {
+        // laatste wint; label uit backend is leading
+        byValue.set(o.value, o.label);
+      }
+      const unique = Array.from(byValue.entries()).map(([value, label]) => ({ value, label }));
+      unique.sort((a, b) => a.label.localeCompare(b.label));
+      map.set(fk, unique);
+    }
+
+    return map;
+  }, [catalog]);
 
   useEffect(() => {
     const next = {};
@@ -202,6 +303,64 @@ const CustomFieldsTab = forwardRef(function CustomFieldsTab(
     clearSaved(fieldKey);
   }
 
+  function applyCompanyPreset(sectionFields, preset) {
+    const fields = Array.isArray(sectionFields) ? sectionFields : [];
+
+    const keyAddress = findFieldKeyByLabel(fields, (l) => l.includes("adres"));
+    const keyPcPlaats = findFieldKeyByLabel(fields, (l) => l.includes("pc") || l.includes("postcode") || (l.includes("plaats") && l.includes("pc")));
+    const keyPlaats = keyPcPlaats ? null : findFieldKeyByLabel(fields, (l) => l.includes("plaats"));
+    const keyPostcode = keyPcPlaats ? null : findFieldKeyByLabel(fields, (l) => l.includes("postcode"));
+
+    const keyPhone = findFieldKeyByLabel(fields, (l) => l.includes("telefoon"));
+    const keyEmail = findFieldKeyByLabel(fields, (l) => l.includes("e-mail") || l.includes("email"));
+    const keyName = findFieldKeyByLabel(fields, (l) => l === "naam" || l.includes("bedrijfsnaam") || l.includes("organisatie"));
+
+    setDraft((prev) => {
+      const next = { ...prev };
+      const touched = [];
+
+      if (keyName) {
+        next[keyName] = preset.name ?? prev[keyName] ?? null;
+        touched.push(keyName);
+      }
+
+      if (keyAddress) {
+        next[keyAddress] = preset.addressLine ?? null;
+        touched.push(keyAddress);
+      }
+
+      if (keyPcPlaats) {
+        next[keyPcPlaats] = preset.pcPlaats ?? null;
+        touched.push(keyPcPlaats);
+      } else {
+        if (keyPostcode) {
+          next[keyPostcode] = preset.postcode ?? null;
+          touched.push(keyPostcode);
+        }
+        if (keyPlaats) {
+          next[keyPlaats] = preset.plaats ?? null;
+          touched.push(keyPlaats);
+        }
+      }
+
+      if (keyPhone) {
+        next[keyPhone] = preset.phone ?? null;
+        touched.push(keyPhone);
+      }
+
+      if (keyEmail) {
+        next[keyEmail] = preset.email ?? null;
+        touched.push(keyEmail);
+      }
+
+      for (const k of touched) clearSaved(k);
+
+      return next;
+    });
+
+    setSaveError(null);
+  }
+
   async function save() {
     if (saving) return;
 
@@ -284,6 +443,27 @@ const CustomFieldsTab = forwardRef(function CustomFieldsTab(
     return true;
   }
 
+  const PRESETS = {
+    wardenburg: {
+      name: "Wardenburg",
+      addressLine: "W.A. Scholtenlaan 21",
+      pcPlaats: "9615 TG Kolham",
+      postcode: "9615 TG",
+      plaats: "Kolham",
+      phone: "0598 397 497",
+      email: "info@wardenburg.nl",
+    },
+    hefas: {
+      name: "Hefas",
+      addressLine: "Impact 27",
+      pcPlaats: "6921 RZ Duiven",
+      postcode: "6921 RZ",
+      plaats: "Duiven",
+      phone: "026 750 5000",
+      email: null,
+    },
+  };
+
   return (
     <div style={{ display: "grid", gap: 12 }}>
       {saveError && <div style={{ color: "salmon" }}>{saveError}</div>}
@@ -299,6 +479,9 @@ const CustomFieldsTab = forwardRef(function CustomFieldsTab(
             if (isFilledValue(val)) filledCount++;
           }
 
+          const sectionName = g.section?.section_name || g.section_key;
+          const showInstallateurPresets = looksLikeInstallateurSectionName(sectionName);
+
           return (
             <div
               key={g.section_key}
@@ -308,10 +491,17 @@ const CustomFieldsTab = forwardRef(function CustomFieldsTab(
                 borderRadius: 12,
               }}
             >
-              {/* summary row */}
-              <button
-                type="button"
+              {/* summary row (NO nested button issue) */}
+              <div
+                role="button"
+                tabIndex={0}
                 onClick={() => toggleSection(g.section_key)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    toggleSection(g.section_key);
+                  }
+                }}
                 onMouseEnter={() => animateSectionIcon(g.section_key)}
                 onMouseLeave={() => stopSectionIcon(g.section_key)}
                 style={{
@@ -325,11 +515,12 @@ const CustomFieldsTab = forwardRef(function CustomFieldsTab(
                   padding: 0,
                   cursor: "pointer",
                   textAlign: "left",
+                  outline: "none",
                 }}
                 title={isOpen ? "inklappen" : "uitklappen"}
               >
                 <div style={{ display: "flex", alignItems: "baseline", gap: 12, minWidth: 0, flexWrap: "wrap" }}>
-                  <div style={{ fontWeight: 600 }}>{g.section?.section_name || g.section_key}</div>
+                  <div style={{ fontWeight: 600 }}>{sectionName}</div>
 
                   <div className="muted" style={{ whiteSpace: "nowrap" }}>
                     {totalCount} velden
@@ -338,6 +529,42 @@ const CustomFieldsTab = forwardRef(function CustomFieldsTab(
                   <div className="muted" style={{ whiteSpace: "nowrap" }}>
                     {filledCount} met waarde
                   </div>
+
+                  {showInstallateurPresets && (
+                    <div
+                      style={{
+                        display: "inline-flex",
+                        gap: 8,
+                        alignItems: "center",
+                        flexWrap: "wrap",
+                        marginLeft: 4,
+                      }}
+                      onClick={(e) => e.stopPropagation()}
+                      onMouseDown={(e) => e.stopPropagation()}
+                    >
+                      <span className="muted" style={{ fontSize: 13, whiteSpace: "nowrap" }}>
+                        Vul bedrijf:
+                      </span>
+
+                      <button
+                        type="button"
+                        className="btn"
+                        title="Vul Installateur met Wardenburg"
+                        onClick={() => applyCompanyPreset(g.fields, PRESETS.wardenburg)}
+                      >
+                        Wardenburg
+                      </button>
+
+                      <button
+                        type="button"
+                        className="btn"
+                        title="Vul Installateur met Hefas"
+                        onClick={() => applyCompanyPreset(g.fields, PRESETS.hefas)}
+                      >
+                        Hefas
+                      </button>
+                    </div>
+                  )}
                 </div>
 
                 <div style={{ flex: "0 0 auto", display: "inline-flex", alignItems: "center" }}>
@@ -359,7 +586,7 @@ const CustomFieldsTab = forwardRef(function CustomFieldsTab(
                     />
                   )}
                 </div>
-              </button>
+              </div>
 
               {/* details */}
               {isOpen && (
@@ -369,7 +596,12 @@ const CustomFieldsTab = forwardRef(function CustomFieldsTab(
                     const label = f.label || f.field_key;
                     const dirty = dirtyKeys.has(f.field_key);
                     const saved = savedKeys.has(f.field_key);
+
+                    const opts = optionsByFieldKey.get(f.field_key) || [];
+                    const hasOptions = opts.length > 0;
+
                     const isWide = f.data_type === "json";
+                    const showAsDropdown = hasOptions && f.data_type === "string";
 
                     return (
                       <div key={f.field_key} className={isWide ? "cf-row wide" : "cf-row"}>
@@ -402,6 +634,19 @@ const CustomFieldsTab = forwardRef(function CustomFieldsTab(
                                 Nee
                               </button>
                             </div>
+                          ) : showAsDropdown ? (
+                            <select
+                              className="input"
+                              value={val ?? ""}
+                              onChange={(e) => setField(f.field_key, e.target.value)}
+                            >
+                              <option value="">— kies —</option>
+                              {opts.map((o) => (
+                                <option key={o.value} value={o.value}>
+                                  {o.label}
+                                </option>
+                              ))}
+                            </select>
                           ) : f.data_type === "number" ? (
                             <input
                               type="number"
@@ -428,7 +673,7 @@ const CustomFieldsTab = forwardRef(function CustomFieldsTab(
                               type="text"
                               value={val ?? ""}
                               onChange={(e) => setField(f.field_key, e.target.value)}
-                              className="cf-input"
+                              className="input"
                             />
                           )}
                         </div>

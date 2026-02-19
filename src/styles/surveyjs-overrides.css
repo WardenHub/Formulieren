@@ -1,0 +1,53 @@
+/* src/styles/surveyjs-overrides.css */
+
+/* Scope to SurveyJS root to avoid affecting the rest of Ember */
+.sd-root-modern {
+  /* Base */
+  --sjs-general-backcolor: var(--surface);
+  --sjs-general-backcolor-dim: var(--surface-2);
+  --sjs-general-backcolor-dim-light: rgba(255,255,255,0.03);
+
+  --sjs-general-forecolor: var(--text);
+  --sjs-general-forecolor-dim: var(--muted);
+
+  /* Borders */
+  --sjs-border-default: rgba(255,255,255,0.10);
+  --sjs-border-light: rgba(255,255,255,0.08);
+
+  /* Inputs */
+  --sjs-editor-background: rgba(255,255,255,0.03);
+  --sjs-editor-border: rgba(255,255,255,0.14);
+  --sjs-editor-forecolor: var(--text);
+
+  /* Primary / accent */
+  --sjs-primary-backcolor: rgba(59, 130, 246, 0.65);
+  --sjs-primary-backcolor-light: rgba(59, 130, 246, 0.35);
+  --sjs-primary-forecolor: rgba(255,255,255,0.95);
+
+  /* Shadows */
+  --sjs-shadow-small: 0 10px 30px rgba(0,0,0,0.35);
+}
+
+/* Panels / cards */
+.sd-root-modern .sd-container-modern__title {
+  color: var(--text);
+}
+
+/* Make sure inputs look like Ember */
+.sd-root-modern input,
+.sd-root-modern textarea,
+.sd-root-modern select {
+  color: var(--text);
+  background: rgba(255,255,255,0.03);
+  border-color: rgba(255,255,255,0.12);
+}
+
+/* Labels */
+.sd-root-modern .sd-question__title {
+  color: var(--text);
+}
+
+/* Description text */
+.sd-root-modern .sd-question__description {
+  color: var(--muted);
+}

@@ -159,6 +159,26 @@ order by
 `;
 
 // ------------------------------
+// catalog; custom field options (dropdowns)
+// ------------------------------
+export const getCatalogCustomFieldOptionsSql = `
+select
+  o.field_key,
+  o.option_value,
+  o.option_label,
+  o.sort_order,
+  o.is_active
+from dbo.InstallationCustomFieldOption o
+where o.is_active = 1
+order by
+  o.field_key,
+  case when o.sort_order is null then 999999 else o.sort_order end,
+  o.option_label,
+  o.option_value;
+`;
+
+
+// ------------------------------
 // custom values; installation-bound
 // note; values table has no value_datetime; and value_json exists
 // ------------------------------

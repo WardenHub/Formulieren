@@ -919,3 +919,116 @@ input[type="date"].input{
   align-items: center;
   justify-content: center;
 }
+
+/* =========================================================
+   ComponentsTab
+   ========================================================= */
+
+.comp-row{
+  padding: 12px;
+  border: 1px solid rgba(255,255,255,0.12);
+  border-radius: 12px;
+  background: rgba(255,255,255,0.02);
+}
+
+.comp-head{
+  width: 100%;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  background: transparent;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+  text-align: left;
+}
+
+.comp-head-left{
+  min-width: 0;
+  display: grid;
+  gap: 6px;
+}
+
+.comp-title-row{
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+.comp-title{
+  font-weight: 750;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.comp-meta{
+  font-size: 13px;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
+.comp-pill{
+  display: inline-flex;
+  align-items: center;
+  height: 22px;
+  padding: 0 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 750;
+  border: 1px solid rgba(255,255,255,0.12);
+  background: rgba(255,255,255,0.06);
+  color: rgba(255,255,255,.88);
+}
+
+.comp-pill--nr{
+  background: rgba(255,255,255,0.04);
+  color: rgba(255,255,255,.72);
+}
+
+.comp-pill--qty{
+  background: rgba(255,255,255,0.08);
+}
+
+.comp-badge{
+  display:inline-flex;
+  align-items:center;
+  height: 22px;
+  padding: 0 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 650;
+  border: 1px solid rgba(255,255,255,0.12);
+  background: rgba(255,255,255,0.06);
+  color: rgba(255,255,255,.90);
+}
+
+.comp-badge--m{
+  border-color: rgba(255,255,255,0.14);
+  background: rgba(255,255,255,0.06);
+  color: rgba(255,255,255,.78);
+}
+
+.comp-badge--k{
+  border-color: rgba(59,130,246,.28);
+  background: rgba(59,130,246,.14);
+}
+
+.comp-badge--r{
+  border-color: rgba(34,197,94,.26);
+  background: rgba(34,197,94,.12);
+}
+
+.comp-head-right{
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+
+@media (max-width: 640px){
+  .comp-title{ white-space: normal; }
+}

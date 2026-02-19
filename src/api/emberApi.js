@@ -165,3 +165,14 @@ export function reopenFormInstance(code, formInstanceId) {
     {}
   );
 }
+
+export function getFormPrefill(code, formCode, keys) {
+  return apiPost(
+    `/installations/${encodeURIComponent(code)}/forms/${encodeURIComponent(formCode)}/prefill`,
+    { keys }
+  );
+}
+
+export function getInstallationComponents(code) {
+  return apiGet(`/installations/${encodeURIComponent(code)}/components`);
+}

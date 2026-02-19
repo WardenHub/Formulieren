@@ -1,5 +1,12 @@
+// src/pages/Forms/FormRunnerBase.jsx
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
+
+import { Survey } from "survey-react-ui";
+import { Model } from "survey-core";
+import "survey-core/survey-core.min.css";
+import "../../styles/surveyjs-overrides.css";
+
 
 import { ChevronLeftIcon } from "@/components/ui/chevron-left";
 import { FileCogIcon } from "@/components/ui/file-cog";
@@ -109,7 +116,26 @@ function translateApiError(err, currentStatus) {
   return raw;
 }
 
-export default function FormRunner() {
+function getDraftRev(inst) {
+  const v = inst?.draft_rev ?? inst?.draftRev ?? 0;
+  return Number.isFinite(Number(v)) ? Number(v) : 0;
+}
+
+function getAnswersObject(inst) {
+  const nextAnswers = inst?.answers_json ?? inst?.answersJson ?? null;
+
+  if (typeof nextAnswers === "string") {
+    const parsed = safeJsonParse(nextAnswers);
+    return parsed.ok ? parsed.value : null;
+  }
+
+  if (nextAnswers && typeof nextAnswers === "object") return nextAnswers;
+  return null;
+}
+
+export default function FormRunnerBase({ mode }) {
+  const isDebug = mode === "debug";
+
   const { code, instanceId } = useParams();
   const navigate = useNavigate();
 
@@ -119,12 +145,13 @@ export default function FormRunner() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
 
-  const [answersText, setAnswersText] = useState("{\n  \n}\n");
   const [dirty, setDirty] = useState(false);
 
   const [saveOk, setSaveOk] = useState(false);
   const [submitOk, setSubmitOk] = useState(false);
   const [lastSavedAt, setLastSavedAt] = useState(null);
+
+  const [debugAnswersText, setDebugAnswersText] = useState("{\n  \n}\n");
 
   const backIconRef = useRef(null);
 
@@ -142,6 +169,10 @@ export default function FormRunner() {
 
   const lastLoadedKeyRef = useRef("");
 
+  const surveyModelRef = useRef(null);
+  const suppressDirtyRef = useRef(false);
+  const canEditRef = useRef(false);
+
   const status = useMemo(() => String(instance?.status || ""), [instance]);
   const statusLbl = useMemo(() => statusLabel(status), [status]);
 
@@ -151,25 +182,89 @@ export default function FormRunner() {
     return formCode ? `Formulier: ${formCode}` : "Formulier";
   }, [instance]);
 
-  const survey = useMemo(() => {
-    const parsed = safeSurveyParse(instance?.survey_json);
-    return parsed.ok ? parsed.value : null;
-  }, [instance]);
-
+  const surveyParsed = useMemo(() => safeSurveyParse(instance?.survey_json), [instance]);
   const surveyTitle = useMemo(() => {
-    const t = survey?.title;
-    return t ? String(t) : instance?.form_name || "";
-  }, [survey, instance]);
+    if (surveyParsed.ok) {
+      const t = surveyParsed.value?.title;
+      if (t) return String(t);
+    }
+    return instance?.form_name || "";
+  }, [surveyParsed, instance]);
 
-  // =========================
-  // UI regels volgens jouw lijst
-  // =========================
-  const showSave = status === "CONCEPT";
-  const showReopen = status !== "CONCEPT" && status !== "AFGEHANDELD";
-  const showSubmit = status !== "INGEDIEND" && status !== "AFGEHANDELD";
-  const showWithdraw = status !== "INGETROKKEN" && status !== "AFGEHANDELD";
+  function allowedActions(s) {
+    const st = String(s || "");
 
-  const canEditAnswers = showSave; // alleen bewerken in CONCEPT
+    // UX regels:
+    // - CONCEPT: opslaan + indienen + intrekken
+    // - INGEDIEND: intrekken + terug naar concept
+    // - INGETROKKEN: terug naar concept
+    // - AFGEHANDELD / IN_BEHANDELING: niets (read-only)
+    if (st === "CONCEPT") return { save: true, submit: true, withdraw: true, reopen: false };
+    if (st === "INGEDIEND") return { save: false, submit: false, withdraw: true, reopen: true };
+    if (st === "INGETROKKEN") return { save: false, submit: false, withdraw: false, reopen: true };
+
+    return { save: false, submit: false, withdraw: false, reopen: false };
+  }
+
+  const actions = useMemo(() => allowedActions(status), [status]);
+
+  const showSave = actions.save;
+  const showSubmit = actions.submit;
+  const showWithdraw = actions.withdraw;
+  const showReopen = actions.reopen;
+
+  const canEditAnswers = actions.save; // alleen in CONCEPT
+
+  useEffect(() => {
+    canEditRef.current = canEditAnswers;
+  }, [canEditAnswers]);
+
+  function createSurveyModel(surveyJsonObj) {
+    const m = new Model(surveyJsonObj);
+
+    m.onValueChanged.add(() => {
+      if (!canEditRef.current) return;
+      if (suppressDirtyRef.current) return;
+      setDirty(true);
+    });
+
+    m.onMatrixRowAdded.add(() => {
+      if (!canEditRef.current) return;
+      if (suppressDirtyRef.current) return;
+      setDirty(true);
+    });
+
+    m.onMatrixRowRemoved.add(() => {
+      if (!canEditRef.current) return;
+      if (suppressDirtyRef.current) return;
+      setDirty(true);
+    });
+
+    return m;
+  }
+
+  function setSurveyData(model, answersObj) {
+    suppressDirtyRef.current = true;
+    try {
+      model.data = answersObj && typeof answersObj === "object" ? answersObj : {};
+    } finally {
+      suppressDirtyRef.current = false;
+    }
+  }
+
+  function getCurrentAnswersObject() {
+    if (isDebug) {
+      const parsed = safeJsonParse(debugAnswersText);
+      if (!parsed.ok) return { ok: false, error: `JSON is ongeldig: ${parsed.error}` };
+      return { ok: true, value: parsed.value };
+    }
+
+    if (!surveyModelRef.current) {
+      return { ok: false, error: "Survey model ontbreekt. (survey_json niet geladen?)" };
+    }
+
+    return { ok: true, value: surveyModelRef.current.data || {} };
+  }
 
   async function reload({ forceEditor } = {}) {
     setLoading(true);
@@ -180,31 +275,48 @@ export default function FormRunner() {
       const inst = normalizeInstanceResponse(res);
       setInstance(inst || null);
 
-      const nextDraftRev = inst?.draft_rev ?? inst?.draftRev ?? null;
-      const nextAnswers = inst?.answers_json ?? inst?.answersJson ?? null;
+      const nextDraftRev = getDraftRev(inst);
+      const answersObj = getAnswersObject(inst);
 
-      const answersObj =
-        typeof nextAnswers === "string"
-          ? safeJsonParse(nextAnswers).ok
-            ? safeJsonParse(nextAnswers).value
-            : null
-          : nextAnswers;
-
-      const key = `${String(instanceId)}::${String(nextDraftRev ?? "")}`;
+      const key = `${String(instanceId)}::${String(nextDraftRev)}`;
       const alreadyLoaded = lastLoadedKeyRef.current === key;
 
-      if (forceEditor || (!dirty && !alreadyLoaded)) {
-        if (answersObj && typeof answersObj === "object") {
-          setAnswersText(JSON.stringify(answersObj, null, 2));
-        } else {
-          setAnswersText("{\n  \n}\n");
+      if (isDebug) {
+        if (forceEditor || (!dirty && !alreadyLoaded)) {
+          setDebugAnswersText(JSON.stringify(answersObj || {}, null, 2));
+          setDirty(false);
+          lastLoadedKeyRef.current = key;
         }
+        return;
+      }
+
+      const parsedSurvey = safeSurveyParse(inst?.survey_json);
+      if (!parsedSurvey.ok) {
+        surveyModelRef.current = null;
+        return;
+      }
+
+      const shouldOverwrite = forceEditor || (!dirty && !alreadyLoaded);
+
+      if (!surveyModelRef.current) {
+        const model = createSurveyModel(parsedSurvey.value);
+        surveyModelRef.current = model;
+        setSurveyData(model, answersObj);
+
+        setDirty(false);
+        lastLoadedKeyRef.current = key;
+        return;
+      }
+
+      if (shouldOverwrite) {
+        setSurveyData(surveyModelRef.current, answersObj);
         setDirty(false);
         lastLoadedKeyRef.current = key;
       }
     } catch (e) {
-      setError(translateApiError(e, status));
+      setError(translateApiError(e, null));
       setInstance(null);
+      surveyModelRef.current = null;
     } finally {
       setLoading(false);
     }
@@ -215,6 +327,7 @@ export default function FormRunner() {
 
     async function boot() {
       if (!code || !instanceId) return;
+
       await reload({ forceEditor: true });
       if (cancelled) return;
     }
@@ -224,7 +337,7 @@ export default function FormRunner() {
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [code, instanceId]);
+  }, [code, instanceId, mode]);
 
   useEffect(() => {
     return () => {
@@ -233,7 +346,6 @@ export default function FormRunner() {
     };
   }, []);
 
-  // Alt+S -> opslaan (alleen als opslaan zichtbaar is)
   useEffect(() => {
     function onKeyDown(e) {
       const key = String(e.key || "");
@@ -251,7 +363,7 @@ export default function FormRunner() {
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [showSave, busy, dirty, answersText, instance]);
+  }, [showSave, busy, dirty, instance, mode]);
 
   async function save() {
     if (!showSave) {
@@ -262,21 +374,18 @@ export default function FormRunner() {
     setBusy(true);
     setError(null);
 
-    const parsed = safeJsonParse(answersText);
-    if (!parsed.ok) {
+    const cur = getCurrentAnswersObject();
+    if (!cur.ok) {
       setBusy(false);
-      setError(`JSON is ongeldig: ${parsed.error}`);
+      setError(cur.error);
       return;
     }
 
     try {
-      const expectedDraftRevRaw = instance?.draft_rev ?? instance?.draftRev;
-      const expectedDraftRev = Number.isFinite(Number(expectedDraftRevRaw))
-        ? Number(expectedDraftRevRaw)
-        : 0;
+      const expectedDraftRev = getDraftRev(instance);
 
       await putFormAnswers(code, instanceId, {
-        answers_json: parsed.value,
+        answers_json: cur.value,
         expected_draft_rev: expectedDraftRev,
       });
 
@@ -295,9 +404,9 @@ export default function FormRunner() {
     } catch (e) {
       const msg = String(e?.message || e || "").toLowerCase();
 
-      if (msg.includes("draft_rev")) {
+      if (msg.includes("draft_rev") || msg.includes("expected_draft_rev")) {
         setError("Opslaan conflict. Ik heb de nieuwste versie opgehaald. Probeer opnieuw.");
-        await reload({ forceEditor: false });
+        await reload({ forceEditor: true });
       } else {
         setError(translateApiError(e, status));
       }
@@ -307,10 +416,45 @@ export default function FormRunner() {
   }
 
   async function submit() {
+    if (!showSubmit) {
+      setError(`Indienen is niet toegestaan in status (${statusLbl}).`);
+      return;
+    }
+
     setBusy(true);
     setError(null);
 
     try {
+      // indien nodig: eerst opslaan, zodat je nooit oude antwoorden indient
+      if (dirty) {
+        const cur = getCurrentAnswersObject();
+        if (!cur.ok) {
+          setBusy(false);
+          setError(cur.error);
+          return;
+        }
+
+        const expectedDraftRev = getDraftRev(instance);
+
+        await putFormAnswers(code, instanceId, {
+          answers_json: cur.value,
+          expected_draft_rev: expectedDraftRev,
+        });
+
+        setLastSavedAt(new Date().toISOString());
+        setDirty(false);
+
+        setSaveOk(true);
+        saveOkIconRef.current?.startAnimation?.();
+        if (saveOkTimerRef.current) clearTimeout(saveOkTimerRef.current);
+        saveOkTimerRef.current = setTimeout(() => {
+          setSaveOk(false);
+          saveOkIconRef.current?.stopAnimation?.();
+        }, 1500);
+
+        await reload({ forceEditor: false });
+      }
+
       await submitFormInstance(code, instanceId);
 
       setSubmitOk(true);
@@ -323,13 +467,25 @@ export default function FormRunner() {
 
       await reload({ forceEditor: false });
     } catch (e) {
-      setError(translateApiError(e, status));
+      const msg = String(e?.message || e || "").toLowerCase();
+
+      if (msg.includes("draft_rev") || msg.includes("expected_draft_rev")) {
+        setError("Opslaan conflict. Ik heb de nieuwste versie opgehaald. Probeer opnieuw.");
+        await reload({ forceEditor: true });
+      } else {
+        setError(translateApiError(e, status));
+      }
     } finally {
       setBusy(false);
     }
   }
 
   async function withdraw() {
+    if (!showWithdraw) {
+      setError(`Intrekken is niet toegestaan in status (${statusLbl}).`);
+      return;
+    }
+
     const ok = window.confirm("Weet je zeker dat je dit formulier wilt intrekken?");
     if (!ok) return;
 
@@ -347,6 +503,11 @@ export default function FormRunner() {
   }
 
   async function reopenToConcept() {
+    if (!showReopen) {
+      setError(`Terug naar concept is niet toegestaan in status (${statusLbl}).`);
+      return;
+    }
+
     setBusy(true);
     setError(null);
 
@@ -359,6 +520,8 @@ export default function FormRunner() {
       setBusy(false);
     }
   }
+
+  const model = !isDebug ? surveyModelRef.current : null;
 
   if (loading) return <div className="muted">Laden…</div>;
 
@@ -389,32 +552,52 @@ export default function FormRunner() {
           <div style={{ minWidth: 0 }}>
             <div style={{ fontWeight: 900, fontSize: 16, lineHeight: 1.2 }}>
               {headerTitle}
+              {isDebug ? " (debug)" : ""}
             </div>
 
             <div className="muted" style={{ fontSize: 12 }}>
               installatie: {code} · status: {statusLbl}
               {lastSavedAt ? ` · laatst opgeslagen: ${formatNlDateTime(lastSavedAt)}` : ""}
+              {dirty ? " · wijzigingen niet opgeslagen" : ""}
             </div>
           </div>
         </div>
 
         <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
-          <button
-            type="button"
-            className="btn btn-secondary"
-            disabled={busy}
-            onClick={() =>
-              navigate(
-                `/installaties/${encodeURIComponent(code)}/formulieren/${encodeURIComponent(
-                  instanceId
-                )}/debug`
-              )
-            }
-          >
-            Debug JSON
-          </button>
+          {!isDebug && (
+            <button
+              type="button"
+              className="btn btn-secondary"
+              disabled={busy}
+              onClick={() =>
+                navigate(
+                  `/installaties/${encodeURIComponent(code)}/formulieren/${encodeURIComponent(
+                    instanceId
+                  )}/debug`
+                )
+              }
+            >
+              Debug JSON
+            </button>
+          )}
 
-          {/* Terug naar concept */}
+          {isDebug && (
+            <button
+              type="button"
+              className="btn btn-secondary"
+              disabled={busy}
+              onClick={() =>
+                navigate(
+                  `/installaties/${encodeURIComponent(code)}/formulieren/${encodeURIComponent(
+                    instanceId
+                  )}`
+                )
+              }
+            >
+              Terug naar formulier
+            </button>
+          )}
+
           {showReopen && (
             <button
               type="button"
@@ -431,7 +614,6 @@ export default function FormRunner() {
             </button>
           )}
 
-          {/* Intrekken */}
           {showWithdraw && (
             <button
               type="button"
@@ -448,7 +630,6 @@ export default function FormRunner() {
             </button>
           )}
 
-          {/* Indienen */}
           {showSubmit && (
             <button
               type="button"
@@ -462,7 +643,7 @@ export default function FormRunner() {
                 if (!submitOk) submitIconRef.current?.stopAnimation?.();
               }}
               style={{ display: "inline-flex", alignItems: "center", gap: 8 }}
-              title="Indienen"
+              title={dirty ? "Indienen (slaat eerst op)" : "Indienen"}
             >
               {submitOk ? (
                 <FileCheck2Icon ref={submitOkIconRef} size={18} />
@@ -473,7 +654,6 @@ export default function FormRunner() {
             </button>
           )}
 
-          {/* Opslaan (alleen CONCEPT) */}
           {showSave && (
             <button
               type="button"
@@ -502,45 +682,70 @@ export default function FormRunner() {
 
       {error && <div style={{ color: "salmon" }}>{error}</div>}
 
-      <div className="card" style={{ padding: 12, display: "grid", gap: 8 }}>
-        <div style={{ fontWeight: 900, fontSize: 18 }}>{surveyTitle || "Formulier"}</div>
+      {!isDebug && (
+        <div className="card" style={{ padding: 12, display: "grid", gap: 10 }}>
+          <div style={{ fontWeight: 900, fontSize: 18 }}>{surveyTitle || "Formulier"}</div>
 
-        {!survey ? (
-          <div className="muted" style={{ fontSize: 13 }}>
-            Geen survey_json gevonden (of niet te parsen). Open Debug JSON om de instance payload te zien.
-          </div>
-        ) : (
-          <div className="muted" style={{ fontSize: 13 }}>
-            survey_json bevat nog geen pages (seed heeft pages: [])
-          </div>
-        )}
-      </div>
+          {!surveyParsed.ok ? (
+            <div className="muted" style={{ fontSize: 13 }}>
+              survey_json niet beschikbaar: {surveyParsed.error}
+            </div>
+          ) : !model ? (
+            <div className="muted" style={{ fontSize: 13 }}>
+              Survey model kon niet worden opgebouwd.
+            </div>
+          ) : (
+            <div style={{ opacity: canEditAnswers ? 1 : 0.7 }}>
+              {!canEditAnswers && (
+                <div className="muted" style={{ fontSize: 12, marginBottom: 8 }}>
+                  Bewerken kan alleen in status: Concept.
+                </div>
+              )}
 
-      <div className="card" style={{ padding: 12 }}>
-        <div className="muted" style={{ fontSize: 12, marginBottom: 8 }}>
-          Antwoorden (tijdelijk JSON) — later vervangen door echte form UI
+              <Survey model={model} />
+            </div>
+          )}
         </div>
+      )}
 
-        <textarea
-          className="input"
-          style={{
-            width: "100%",
-            minHeight: 320,
-            fontFamily:
-              "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace",
-            fontSize: 12,
-            opacity: canEditAnswers ? 1 : 0.6,
-          }}
-          value={answersText}
-          onChange={(e) => {
-            setAnswersText(e.target.value);
-            setDirty(true);
-          }}
-          spellCheck={false}
-          disabled={!canEditAnswers}
-          title={!canEditAnswers ? "Bewerken kan alleen in status: Concept." : undefined}
-        />
-      </div>
+      {isDebug && (
+        <>
+          <div className="card" style={{ padding: 12 }}>
+            <div className="muted" style={{ fontSize: 12, marginBottom: 8 }}>
+              Antwoorden (debug JSON) — bewerken alleen in Concept
+            </div>
+
+            <textarea
+              className="input"
+              style={{
+                width: "100%",
+                minHeight: 360,
+                fontFamily:
+                  "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace",
+                fontSize: 12,
+                opacity: canEditAnswers ? 1 : 0.6,
+              }}
+              value={debugAnswersText}
+              onChange={(e) => {
+                setDebugAnswersText(e.target.value);
+                if (canEditAnswers) setDirty(true);
+              }}
+              spellCheck={false}
+              disabled={!canEditAnswers}
+              title={!canEditAnswers ? "Bewerken kan alleen in status: Concept." : undefined}
+            />
+          </div>
+
+          <div className="card" style={{ padding: 12 }}>
+            <div className="muted" style={{ fontSize: 12, marginBottom: 6 }}>
+              Instance (debug)
+            </div>
+            <pre style={{ margin: 0, fontSize: 12, whiteSpace: "pre-wrap" }}>
+              {JSON.stringify(instance, null, 2)}
+            </pre>
+          </div>
+        </>
+      )}
     </div>
   );
 }

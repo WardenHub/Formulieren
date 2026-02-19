@@ -14,8 +14,10 @@ import {
   startFormInstanceSql,
   getFormsCatalogForInstallationSql,
   getFormStartPreflightSql,
-  reopenFormInstanceSql, // NEW
+  reopenFormInstanceSql,
 } from "../db/queries/forms.sql.js";
+
+import { getFormPrefillSql } from "../db/queries/prefill.sql.js";
 
 function getUserDisplayName(user: any) {
   return user?.name || user?.upn || user?.objectId || "unknown";
@@ -295,3 +297,71 @@ export async function importFormAnswerFile(code: string, file: any, user: any) {
 
   return { ok: true, result: rows?.[0] ?? null };
 }
+
+export async function getFormPrefill(code: string, formCode: string, keys: string[], user: any) {
+  const cleanCode = String(code || "").trim();
+  const cleanFormCode = String(formCode || "").trim();
+
+  const requestedKeys = (Array.isArray(keys) ? keys : [])
+    .map((k) => String(k || "").trim())
+    .filter((k) => k.length > 0);
+
+  const uniqueKeys = Array.from(new Set(requestedKeys));
+
+  if (uniqueKeys.length === 0) {
+    return { ok: true, code: cleanCode, form_code: cleanFormCode, prefill: { values: {}, choices: {} }, warnings: [] };
+  }
+
+  const rows = await sqlQuery(getFormPrefillSql, {
+    code: cleanCode,
+    formCode: cleanFormCode,
+    keysJson: JSON.stringify(uniqueKeys),
+  });
+
+  const values: any = {};
+  const choices: any = {};
+  const returnedValueKeys = new Set<string>();
+
+  for (const r of rows || []) {
+    const k = r?.key ? String(r.key) : null;
+    if (!k) continue;
+
+    const kind = String(r?.kind || "value").toLowerCase();
+    const vj = r?.value_json;
+
+    let parsed: any = null;
+    try {
+      parsed = vj == null ? null : JSON.parse(vj);
+    } catch {
+      parsed = vj;
+    }
+
+    if (kind === "choices") {
+      // expected: array of {value,text}
+      choices[k] = parsed;
+    } else {
+      returnedValueKeys.add(k);
+      values[k] = parsed;
+    }
+  }
+
+  const unknown_keys = uniqueKeys.filter((k) => !returnedValueKeys.has(k));
+
+  return {
+    ok: true,
+    code: cleanCode,
+    form_code: cleanFormCode,
+    prefill: { values, choices },
+    warnings:
+      unknown_keys.length > 0
+        ? [
+            {
+              type: "unknown_keys",
+              message: "Niet alle gevraagde prefill-keys zijn bekend.",
+              unknown_keys,
+            },
+          ]
+        : [],
+  };
+}
+

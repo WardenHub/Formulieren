@@ -27,6 +27,8 @@ import {
   submitFormInstance,
   putFormAnswers,
   reopenFormInstance,
+  getFormPrefill,
+  getInstallationComponents,
 } from "../controllers/installationsController.js";
 
 
@@ -52,16 +54,18 @@ router.put("/:code/performance-requirements", requireRole("admin", "monteur"), p
 router.get("/:code/forms/catalog", requireRole("admin", "monteur"), getFormsCatalog);
 router.get("/:code/forms/:formCode/preflight", requireRole("admin", "monteur"), getFormStartPreflight);
 
-
 // basis installatie data
 router.get("/:code", getInstallation);
 router.get("/:code/catalog", getCatalog);
 router.get("/:code/custom-values", getCustomValues);
+router.get("/:code/components", requireRole("admin", "monteur"), getInstallationComponents);
 router.put("/:code/custom-values", requireRole("admin", "monteur"), putCustomValues);
 router.get("/:code/documents", requireRole("admin", "monteur"), getDocuments);
 router.put("/:code/type", requireRole("admin", "monteur"), putInstallationType);
 router.put("/:code/documents", requireRole("admin", "monteur"), putDocuments);
 
+// prefill (SurveyJS ember.bind kind="prefill")
+router.post("/:code/forms/:formCode/prefill", requireRole("admin", "monteur"), getFormPrefill);
 // forms runtime
 router.post("/:code/forms/:formCode/start", requireRole("admin", "monteur"), startFormInstance);
 router.get("/:code/forms/instances/:instanceId", requireRole("admin", "monteur"), getFormInstance);
