@@ -1,53 +1,235 @@
 /* src/styles/surveyjs-overrides.css */
-
 /* Scope to SurveyJS root to avoid affecting the rest of Ember */
-.sd-root-modern {
-  /* Base */
-  --sjs-general-backcolor: var(--surface);
-  --sjs-general-backcolor-dim: var(--surface-2);
-  --sjs-general-backcolor-dim-light: rgba(255,255,255,0.03);
 
-  --sjs-general-forecolor: var(--text);
-  --sjs-general-forecolor-dim: var(--muted);
+.sd-root-modern {
+  /* =========================
+     Theme tokens (warm/dark + orange accent)
+     ========================= */
+
+  /* Base (warmer, minder blauw) */
+  --sjs-general-backcolor: rgba(12, 12, 12, 1);
+  --sjs-general-backcolor-dim: rgba(16, 16, 16, 1);
+  --sjs-general-backcolor-dim-light: rgba(255, 255, 255, 0.03);
+
+  --sjs-general-forecolor: rgba(255, 255, 255, 0.92);
+  --sjs-general-forecolor-dim: rgba(255, 255, 255, 0.62);
 
   /* Borders */
-  --sjs-border-default: rgba(255,255,255,0.10);
-  --sjs-border-light: rgba(255,255,255,0.08);
+  --sjs-border-default: rgba(255, 255, 255, 0.10);
+  --sjs-border-light: rgba(255, 255, 255, 0.07);
 
   /* Inputs */
-  --sjs-editor-background: rgba(255,255,255,0.03);
-  --sjs-editor-border: rgba(255,255,255,0.14);
-  --sjs-editor-forecolor: var(--text);
+  --sjs-editor-background: rgba(255, 255, 255, 0.035);
+  --sjs-editor-border: rgba(255, 255, 255, 0.14);
+  --sjs-editor-forecolor: rgba(255, 255, 255, 0.92);
 
-  /* Primary / accent */
-  --sjs-primary-backcolor: rgba(59, 130, 246, 0.65);
-  --sjs-primary-backcolor-light: rgba(59, 130, 246, 0.35);
-  --sjs-primary-forecolor: rgba(255,255,255,0.95);
+  /* Primary / accent (fire / NL: oranje) */
+  --sjs-primary-backcolor: rgba(249, 115, 22, 0.60);
+  --sjs-primary-backcolor-light: rgba(249, 115, 22, 0.28);
+  --sjs-primary-forecolor: rgba(255, 255, 255, 0.96);
 
   /* Shadows */
-  --sjs-shadow-small: 0 10px 30px rgba(0,0,0,0.35);
+  --sjs-shadow-small: 0 10px 30px rgba(0, 0, 0, 0.35);
 }
 
-/* Panels / cards */
+/* =========================
+   Global text + headings inside Survey
+   (fixes black text in e.g. Documenten)
+   ========================= */
+.sd-root-modern,
+.sd-root-modern .sd-body,
+.sd-root-modern .sd-panel,
+.sd-root-modern .sd-panel__content,
+.sd-root-modern .sd-question,
+.sd-root-modern .sd-description,
+.sd-root-modern .sd-question__description,
+.sd-root-modern .sd-element__title,
+.sd-root-modern .sd-title,
 .sd-root-modern .sd-container-modern__title {
-  color: var(--text);
+  color: var(--sjs-general-forecolor) !important;
 }
 
-/* Make sure inputs look like Ember */
+/* Muted text */
+.sd-root-modern .sd-question__description,
+.sd-root-modern .sd-description {
+  color: var(--sjs-general-forecolor-dim) !important;
+}
+
+/* =========================
+   Inputs (keep them "Ember-like")
+   ========================= */
 .sd-root-modern input,
 .sd-root-modern textarea,
-.sd-root-modern select {
-  color: var(--text);
-  background: rgba(255,255,255,0.03);
-  border-color: rgba(255,255,255,0.12);
+.sd-root-modern select,
+.sd-root-modern .sd-input,
+.sd-root-modern .sd-dropdown,
+.sd-root-modern .sd-text {
+  color: var(--sjs-editor-forecolor) !important;
+  background: var(--sjs-editor-background) !important;
+  border-color: var(--sjs-editor-border) !important;
 }
 
-/* Labels */
-.sd-root-modern .sd-question__title {
-  color: var(--text);
+/* Focus ring (orange) */
+.sd-root-modern .sd-input:focus,
+.sd-root-modern .sd-dropdown:focus-within,
+.sd-root-modern .sd-text:focus-within {
+  outline: none !important;
+  box-shadow: 0 0 0 2px rgba(249, 115, 22, 0.22) !important;
 }
 
-/* Description text */
-.sd-root-modern .sd-question__description {
-  color: var(--muted);
+/* =========================
+   Dropdown: closed value ellipsis
+   ========================= */
+.sd-root-modern .sd-dropdown .sd-dropdown__value {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
+}
+
+/* =========================
+   Dropdown popup: background + wrapping + NO white flash
+   IMPORTANT:
+   SurveyJS popups can render in a portal outside .sd-root-modern,
+   so we style both scoped (.sd-root-modern ...) and global (.sv-popup--menu-...)
+   ========================= */
+
+/* Popup container background (scoped) */
+.sd-root-modern .sd-dropdown__popup,
+.sd-root-modern .sd-list,
+.sd-root-modern .sd-list__container,
+.sd-root-modern .sv-popup__container,
+.sd-root-modern .sv-popup__body-content {
+  background: rgba(18, 18, 18, 0.98) !important;
+  color: rgba(255, 255, 255, 0.92) !important;
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+  overflow-x: hidden;
+}
+
+/* Popup items: allow wrapping */
+.sd-root-modern .sd-dropdown__popup .sd-item__control-label,
+.sd-root-modern .sv-popup__container .sd-item__control-label {
+  white-space: normal !important;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  line-height: 1.25;
+}
+
+/* Popup items default */
+.sd-root-modern .sv-list__item-body,
+.sd-root-modern .sd-list__item-body {
+  background: transparent !important;
+  color: rgba(255, 255, 255, 0.90) !important;
+}
+
+/* Hover/focus state (scoped) */
+.sd-root-modern .sv-list__item:hover .sv-list__item-body,
+.sd-root-modern .sv-list__item:focus .sv-list__item-body,
+.sd-root-modern .sv-list__item--focused .sv-list__item-body,
+.sd-root-modern .sd-list__item:hover .sd-list__item-body,
+.sd-root-modern .sd-list__item:focus .sd-list__item-body,
+.sd-root-modern .sd-list__item--focused .sd-list__item-body {
+  background: rgba(249, 115, 22, 0.18) !important;
+  color: rgba(255, 255, 255, 0.96) !important;
+}
+
+/* Selected item (scoped) */
+.sd-root-modern .sv-list__item--selected .sv-list__item-body,
+.sd-root-modern .sd-list__item--selected .sd-list__item-body {
+  background: rgba(249, 115, 22, 0.28) !important;
+  color: rgba(255, 255, 255, 0.96) !important;
+}
+
+/* ----- Portal fallback (UNSCOPED) ----- */
+/* These selectors match SurveyJS built-in rules that cause the "white hover" */
+.sv-popup--menu-phone .sv-list__item:hover .sv-list__item-body,
+.sv-popup--menu-phone .sv-list__item:focus .sv-list__item-body,
+.sv-popup--menu-phone .sv-list__item--focused .sv-list__item-body,
+.sv-popup--menu-tablet .sv-list__item:hover .sv-list__item-body,
+.sv-popup--menu-tablet .sv-list__item:focus .sv-list__item-body,
+.sv-popup--menu-tablet .sv-list__item--focused .sv-list__item-body {
+  background: rgba(249, 115, 22, 0.18) !important;
+  color: rgba(255, 255, 255, 0.96) !important;
+}
+
+/* Selected + hover (also override multi-select special case that can flip colors) */
+.sv-popup--menu-phone .sv-list__item--selected .sv-list__item-body,
+.sv-popup--menu-tablet .sv-list__item--selected .sv-list__item-body,
+.sv-popup--menu-phone .sv-list__item:hover.sv-list__item--selected .sv-list__item-body,
+.sv-popup--menu-tablet .sv-list__item:hover.sv-list__item--selected .sv-list__item-body {
+  background: rgba(249, 115, 22, 0.28) !important;
+  color: rgba(255, 255, 255, 0.96) !important;
+}
+
+/* Popup background (portal fallback) */
+.sv-popup--menu-phone > .sv-popup__container,
+.sv-popup--menu-tablet > .sv-popup__container,
+.sv-popup--menu-phone > .sv-popup__container > .sv-popup__body-content,
+.sv-popup--menu-tablet > .sv-popup__container > .sv-popup__body-content {
+  background: rgba(18, 18, 18, 0.98) !important;
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+}
+
+/* =========================
+   MatrixDynamic: calmer spacing, alignment
+   ========================= */
+.sd-root-modern .sd-matrixdynamic__table {
+  border-collapse: separate;
+  border-spacing: 0 10px;
+}
+
+.sd-root-modern .sd-matrixdynamic__row td {
+  vertical-align: middle;
+  padding-top: 10px;
+  padding-bottom: 10px;
+}
+
+.sd-root-modern .sd-matrixdynamic__row td:first-child {
+  padding-left: 8px;
+  padding-right: 8px;
+  white-space: nowrap;
+}
+
+.sd-root-modern .sd-matrixdynamic__row td:nth-child(2) {
+  vertical-align: top;
+  padding-top: 12px;
+}
+
+.sd-root-modern .sd-matrixdynamic__row textarea {
+  min-height: 62px;
+  resize: vertical;
+}
+
+/* Radio group layout in matrix */
+.sd-root-modern .sd-matrixdynamic__row .sd-selectbase {
+  display: flex;
+  justify-content: flex-start;
+  gap: 14px;
+}
+
+.sd-root-modern .sd-matrixdynamic__row .sd-item {
+  min-width: 56px;
+}
+
+.sd-root-modern .sd-matrixdynamic__row .sd-item__text {
+  font-size: 13px;
+  opacity: 0.92;
+}
+
+.sd-root-modern .sd-matrixdynamic__row .sd-item__decorator {
+  opacity: 0.9;
+}
+
+/* =========================
+   Wrap helper (only when you add .wrap-topic on a parent)
+   ========================= */
+.wrap-topic .sd-table__cell,
+.wrap-topic .sd-matrix__cell,
+.wrap-topic .sd-matrixdropdown__cell,
+.wrap-topic .sd-table__cell span,
+.wrap-topic .sd-item__control-label {
+  white-space: normal !important;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  line-height: 1.25;
 }

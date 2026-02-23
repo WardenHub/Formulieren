@@ -53,7 +53,7 @@ atrium_json as (
       select top 1 a.*
       from dbo.AtriumInstallationBase a
       where a.installatie_code = (select code from p)
-      for json path, without_array_wrapper
+      for json path, without_array_wrapper, include_null_values
     ) as js
 ),
 
@@ -133,7 +133,7 @@ custom_fields as (
     and r.req_key = d.field_key COLLATE SQL_Latin1_General_CP1_CI_AS
 ),
 
--- NEW: custom field choices (options) for requested keys
+-- custom field choices (options) for requested keys
 custom_field_choices as (
   select
     N'choices' as kind,
@@ -218,6 +218,112 @@ doc_rows as (
     ), N'[]') as value_json
   from req r
   where r.req_key = N'doc_regels' COLLATE SQL_Latin1_General_CP1_CI_AS
+),
+
+-- applicable document types for this installation (respect DocumentTypeInstallationType; unmapped => always)
+doc_applicable_types as (
+  select
+    dt.document_type_key,
+    dt.naam as document_type_naam,
+    dt.sectie_key,
+    isnull(dt.sort_order, 999999) as type_sort_order
+  from dbo.DocumentType dt
+  where dt.is_active = 1
+    and (
+      exists (
+        select 1
+        from dbo.DocumentTypeInstallationType m
+        where m.document_type_key = dt.document_type_key
+          and m.installation_type_key = (select installation_type_key from inst)
+      )
+      or not exists (
+        select 1
+        from dbo.DocumentTypeInstallationType m
+        where m.document_type_key = dt.document_type_key
+      )
+    )
+),
+
+-- active docs (only those that are also applicable for the installation type)
+doc_active_docs as (
+  select
+    t.sectie_key,
+    t.document_type_key,
+    t.document_type_naam,
+    t.type_sort_order,
+    d.title as doc_titel,
+    d.document_number as doc_nummer,
+    convert(nvarchar(10), d.document_date, 23) as doc_datum,
+    d.revision as doc_revisie
+  from dbo.InstallationDocument d
+  join inst i on i.installation_id = d.installation_id
+  join doc_applicable_types t on t.document_type_key = d.document_type_key
+  where d.is_active = 1
+),
+
+-- doc_groepen: group by DocumentType.sectie_key
+-- Optie 3A: per groep subgroepen op doc_type_naam met documents[] per type
+doc_groups as (
+  select
+    N'value' as kind,
+    N'doc_groepen' as [key],
+    coalesce((
+      select
+        groep_key   = g.sectie_key,
+        groep_naam  = coalesce(fs.naam, g.sectie_key),
+
+        -- handig voor UI (samenvatting / badges)
+        count_total = (
+          select count(1)
+          from doc_active_docs x
+          where x.sectie_key = g.sectie_key
+        ),
+
+        types = (
+          select
+            doc_type      = t.document_type_key,
+            doc_type_naam = t.document_type_naam,
+
+            count = (
+              select count(1)
+              from doc_active_docs x
+              where x.sectie_key = g.sectie_key
+                and x.document_type_key = t.document_type_key
+            ),
+
+            documents = (
+              select
+                r.doc_titel,
+                r.doc_nummer,
+                r.doc_datum,
+                r.doc_revisie
+              from doc_active_docs r
+              where r.sectie_key = g.sectie_key
+                and r.document_type_key = t.document_type_key
+              order by r.type_sort_order, r.doc_titel
+              for json path
+            )
+          from (
+            select
+              document_type_key,
+              document_type_naam,
+              min(type_sort_order) as type_sort_order
+            from doc_active_docs
+            where sectie_key = g.sectie_key
+            group by document_type_key, document_type_naam
+          ) t
+          order by t.type_sort_order, t.document_type_naam
+          for json path
+        )
+      from (select distinct sectie_key from doc_active_docs) g
+      left join dbo.FormulierSectie fs
+        on fs.sectie_key COLLATE SQL_Latin1_General_CP1_CI_AS
+         = g.sectie_key  COLLATE SQL_Latin1_General_CP1_CI_AS
+      order by isnull(fs.sort_order, 999999), g.sectie_key
+      for json path
+    ), N'[]') as value_json
+  from req r
+  where r.req_key = N'doc_groepen' COLLATE SQL_Latin1_General_CP1_CI_AS
 ),
 
 -- performance header (always return row if requested; null when no header or no inst)
@@ -347,6 +453,8 @@ select kind, [key], value_json from energy_rows
 union all
 select kind, [key], value_json from doc_rows
 union all
+select kind, [key], value_json from doc_groups
+union all
 select kind, [key], value_json from perf_header
 union all
 select kind, [key], value_json from perf_rows
@@ -359,4 +467,3 @@ select kind, [key], value_json from k_nen_normeringen
 union all
 select kind, [key], value_json from k_nen_gebruikersfuncties;
 `;
-

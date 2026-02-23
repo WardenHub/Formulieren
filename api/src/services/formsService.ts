@@ -298,18 +298,43 @@ export async function importFormAnswerFile(code: string, file: any, user: any) {
   return { ok: true, result: rows?.[0] ?? null };
 }
 
-export async function getFormPrefill(code: string, formCode: string, keys: string[], user: any) {
+export async function getFormPrefill(
+  code: string,
+  formCode: string,
+  keys: string[],
+  user: any
+) {
   const cleanCode = String(code || "").trim();
   const cleanFormCode = String(formCode || "").trim();
 
-  const requestedKeys = (Array.isArray(keys) ? keys : [])
+    const requestedKeys = (Array.isArray(keys) ? keys : [])
     .map((k) => String(k || "").trim())
     .filter((k) => k.length > 0);
 
-  const uniqueKeys = Array.from(new Set(requestedKeys));
+  // IMPORTANT:
+  // Sommige panels (zoals Documenten) renderen pas goed als zowel
+  // data (doc_groepen) als catalog keuzes (k_document_types) aanwezig zijn.
+  // We forceren deze keys hier zodat de caller ze niet hoeft te weten.
+  const requiredKeys = [
+    "doc_groepen",
+    "k_document_types",
+    "doc_regels",
+  ];
+
+  const uniqueKeys = Array.from(new Set([...requestedKeys, ...requiredKeys]));
+  const runtimeKnownKeys = new Set<string>([
+    "form_instance_id",
+    // voeg hier evt later meer aan toe
+  ]);
 
   if (uniqueKeys.length === 0) {
-    return { ok: true, code: cleanCode, form_code: cleanFormCode, prefill: { values: {}, choices: {} }, warnings: [] };
+    return {
+      ok: true,
+      code: cleanCode,
+      form_code: cleanFormCode,
+      prefill: { values: {}, choices: {} },
+      warnings: [],
+    };
   }
 
   const rows = await sqlQuery(getFormPrefillSql, {
@@ -320,11 +345,16 @@ export async function getFormPrefill(code: string, formCode: string, keys: strin
 
   const values: any = {};
   const choices: any = {};
-  const returnedValueKeys = new Set<string>();
+
+  // FIX: track *all* returned keys (both value + choices),
+  // so "choices-only" keys do not become false "unknown_keys".
+  const returnedKeys = new Set<string>();
 
   for (const r of rows || []) {
     const k = r?.key ? String(r.key) : null;
     if (!k) continue;
+
+    returnedKeys.add(k);
 
     const kind = String(r?.kind || "value").toLowerCase();
     const vj = r?.value_json;
@@ -340,12 +370,13 @@ export async function getFormPrefill(code: string, formCode: string, keys: strin
       // expected: array of {value,text}
       choices[k] = parsed;
     } else {
-      returnedValueKeys.add(k);
       values[k] = parsed;
     }
   }
 
-  const unknown_keys = uniqueKeys.filter((k) => !returnedValueKeys.has(k));
+  const unknown_keys = uniqueKeys.filter(
+    (k) => !returnedKeys.has(k) && !runtimeKnownKeys.has(k)
+  );
 
   return {
     ok: true,
@@ -364,4 +395,3 @@ export async function getFormPrefill(code: string, formCode: string, keys: strin
         : [],
   };
 }
-

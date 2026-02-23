@@ -54,15 +54,72 @@ function lower(v) {
   return normStr(v).toLowerCase();
 }
 
-function looksLikeInstallateurSectionName(name) {
-  return lower(name).includes("installateur");
+/**
+ * Section heuristics for showing company preset buttons.
+ * We want presets on:
+ * - Installateur sections
+ * - Onderhouder sections
+ *
+ * We use the section_name primarily, but also allow section_key fallback,
+ * because new sections often follow inst_installateurs_* / inst_onderhoudsbedrijf_* naming.
+ */
+function looksLikeCompanyPresetSection(sectionNameOrKey) {
+  const s = lower(sectionNameOrKey);
+  if (!s) return false;
+
+  // Cover Dutch variants and common typos/spacing
+  return (
+    s.includes("installateur") ||
+    s.includes("installateurs") ||
+    s.includes("onderhouder") ||
+    s.includes("onderhoud") || // catches "onderhoudsbedrijf"
+    s.includes("onderhoudsbedrijf")
+  );
 }
 
 function findFieldKeyByLabel(fields, predicate) {
   for (const f of fields) {
-    const label = lower(f?.label || f?.field_key || "");
-    if (predicate(label)) return f.field_key;
+    const label = lower(f?.label || "");
+    const key = lower(f?.field_key || "");
+    if (predicate(label) || predicate(key)) return f.field_key;
   }
+  return null;
+}
+
+function findAddressFieldKey(fields) {
+  const arr = Array.isArray(fields) ? fields : [];
+
+  // Build normalized candidates once
+  const candidates = arr
+    .map((f) => {
+      const label = lower(f?.label || "");
+      const key = lower(f?.field_key || "");
+      return { field_key: f?.field_key ?? null, label, key };
+    })
+    .filter((x) => x.field_key);
+
+  // 1) Prefer *_straat keys (new canonical naming)
+  for (const c of candidates) {
+    if (c.key.includes("_straat") || c.key.endsWith("straat")) return c.field_key;
+  }
+
+  // 2) Then accept legacy adres keys
+  for (const c of candidates) {
+    if (c.key.includes("adres1") || c.key.includes("_adres") || c.key.endsWith("adres")) return c.field_key;
+  }
+
+  // 3) Finally fall back to label matching (covers display-only changes)
+  for (const c of candidates) {
+    if (
+      c.label.includes("straat") ||
+      c.label.includes("straatnaam") ||
+      c.label.includes("huisnummer") ||
+      c.label.includes("adres")
+    ) {
+      return c.field_key;
+    }
+  }
+
   return null;
 }
 
@@ -303,17 +360,30 @@ const CustomFieldsTab = forwardRef(function CustomFieldsTab(
     clearSaved(fieldKey);
   }
 
+  /**
+   * Preset logic review:
+   * - Works by locating keys within the current section by label heuristics.
+   * - Safe for both installateur & onderhouder sections because labels are the same (Naam/Adres/PC+Plaats/etc).
+   * - It does overwrite existing values with preset values (and clears saved markers).
+   */
   function applyCompanyPreset(sectionFields, preset) {
     const fields = Array.isArray(sectionFields) ? sectionFields : [];
 
-    const keyAddress = findFieldKeyByLabel(fields, (l) => l.includes("adres"));
-    const keyPcPlaats = findFieldKeyByLabel(fields, (l) => l.includes("pc") || l.includes("postcode") || (l.includes("plaats") && l.includes("pc")));
+    const keyAddress = findAddressFieldKey(fields);
+
+    const keyPcPlaats = findFieldKeyByLabel(fields, (l) => {
+      return l.includes("pc") || l.includes("postcode") || (l.includes("plaats") && l.includes("pc"));
+    });
+
     const keyPlaats = keyPcPlaats ? null : findFieldKeyByLabel(fields, (l) => l.includes("plaats"));
     const keyPostcode = keyPcPlaats ? null : findFieldKeyByLabel(fields, (l) => l.includes("postcode"));
 
     const keyPhone = findFieldKeyByLabel(fields, (l) => l.includes("telefoon"));
     const keyEmail = findFieldKeyByLabel(fields, (l) => l.includes("e-mail") || l.includes("email"));
-    const keyName = findFieldKeyByLabel(fields, (l) => l === "naam" || l.includes("bedrijfsnaam") || l.includes("organisatie"));
+
+    const keyName = findFieldKeyByLabel(fields, (l) => {
+      return l === "naam" || l.includes("bedrijfsnaam") || l.includes("organisatie");
+    });
 
     setDraft((prev) => {
       const next = { ...prev };
@@ -444,6 +514,15 @@ const CustomFieldsTab = forwardRef(function CustomFieldsTab(
   }
 
   const PRESETS = {
+    hefas: {
+      name: "Hefas",
+      addressLine: "Impact 27",
+      pcPlaats: "6921 RZ Duiven",
+      postcode: "6921 RZ",
+      plaats: "Duiven",
+      phone: "026 750 5000",
+      email: "info@hefas.nl",
+    },
     wardenburg: {
       name: "Wardenburg",
       addressLine: "W.A. Scholtenlaan 21",
@@ -453,15 +532,7 @@ const CustomFieldsTab = forwardRef(function CustomFieldsTab(
       phone: "0598 397 497",
       email: "info@wardenburg.nl",
     },
-    hefas: {
-      name: "Hefas",
-      addressLine: "Impact 27",
-      pcPlaats: "6921 RZ Duiven",
-      postcode: "6921 RZ",
-      plaats: "Duiven",
-      phone: "026 750 5000",
-      email: null,
-    },
+    
   };
 
   return (
@@ -480,7 +551,10 @@ const CustomFieldsTab = forwardRef(function CustomFieldsTab(
           }
 
           const sectionName = g.section?.section_name || g.section_key;
-          const showInstallateurPresets = looksLikeInstallateurSectionName(sectionName);
+
+          // Updated: show presets for installateur OR onderhouder sections
+          const showCompanyPresets =
+            looksLikeCompanyPresetSection(sectionName) || looksLikeCompanyPresetSection(g.section_key);
 
           return (
             <div
@@ -530,7 +604,7 @@ const CustomFieldsTab = forwardRef(function CustomFieldsTab(
                     {filledCount} met waarde
                   </div>
 
-                  {showInstallateurPresets && (
+                  {showCompanyPresets && (
                     <div
                       style={{
                         display: "inline-flex",
@@ -545,28 +619,23 @@ const CustomFieldsTab = forwardRef(function CustomFieldsTab(
                       <span className="muted" style={{ fontSize: 13, whiteSpace: "nowrap" }}>
                         Vul bedrijf:
                       </span>
-
-                      <button
-                        type="button"
-                        className="btn"
-                        title="Vul Installateur met Wardenburg"
-                        onClick={() => applyCompanyPreset(g.fields, PRESETS.wardenburg)}
-                      >
-                        Wardenburg
-                      </button>
-
-                      <button
-                        type="button"
-                        className="btn"
-                        title="Vul Installateur met Hefas"
-                        onClick={() => applyCompanyPreset(g.fields, PRESETS.hefas)}
-                      >
-                        Hefas
-                      </button>
+                      {Object.entries(PRESETS)
+                      .map(([key, preset]) => ({ key, ...preset }))
+                      .sort((a, b) => a.name.localeCompare(b.name, "nl"))
+                      .map((preset) => (
+                        <button
+                          key={preset.key}
+                          type="button"
+                          className="btn"
+                          title={`Vul met ${preset.name}`}
+                          onClick={() => applyCompanyPreset(g.fields, preset)}
+                        >
+                          {preset.name}
+                        </button>
+                      ))}
                     </div>
                   )}
                 </div>
-
                 <div style={{ flex: "0 0 auto", display: "inline-flex", alignItems: "center" }}>
                   {!isOpen ? (
                     <PlusIcon
@@ -635,11 +704,7 @@ const CustomFieldsTab = forwardRef(function CustomFieldsTab(
                               </button>
                             </div>
                           ) : showAsDropdown ? (
-                            <select
-                              className="input"
-                              value={val ?? ""}
-                              onChange={(e) => setField(f.field_key, e.target.value)}
-                            >
+                            <select className="input" value={val ?? ""} onChange={(e) => setField(f.field_key, e.target.value)}>
                               <option value="">— kies —</option>
                               {opts.map((o) => (
                                 <option key={o.value} value={o.value}>
