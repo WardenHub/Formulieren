@@ -319,6 +319,8 @@ export async function getFormPrefill(
     "doc_groepen",
     "k_document_types",
     "doc_regels",
+    // ✅ energie catalog voor merk/type dropdown
+    "k_energy_brand_types",
   ];
 
   const uniqueKeys = Array.from(new Set([...requestedKeys, ...requiredKeys]));

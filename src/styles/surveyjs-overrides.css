@@ -233,3 +233,41 @@
   word-break: break-word;
   line-height: 1.25;
 }
+
+/* ===== Matrixdynamic: Onderwerp-kolom (2e) altijd volledig leesbaar ===== */
+
+/* Zorg dat de tabel itself wrappen logisch maakt */
+.sd-root-modern .sd-matrixdynamic__table {
+  width: 100%;
+}
+
+/* 2e kolom: geen ellipsis/no-wrap meer */
+.sd-root-modern .sd-matrixdynamic__row td:nth-child(2),
+.sd-root-modern .sd-matrixdynamic__row td:nth-child(2) * {
+  white-space: normal !important;
+  overflow: visible !important;
+  text-overflow: clip !important;
+  word-break: break-word !important;
+  overflow-wrap: anywhere !important;
+}
+
+/* SurveyJS gebruikt soms specifieke text containers; pak die ook hard */
+.sd-root-modern .sd-matrixdynamic__row td:nth-child(2) .sd-string-viewer,
+.sd-root-modern .sd-matrixdynamic__row td:nth-child(2) .sd-table__cell,
+.sd-root-modern .sd-matrixdynamic__row td:nth-child(2) .sd-table__cell-content,
+.sd-root-modern .sd-matrixdynamic__row td:nth-child(2) .sd-item__control-label {
+  white-space: normal !important;
+  overflow: visible !important;
+  text-overflow: clip !important;
+  word-break: break-word !important;
+  overflow-wrap: anywhere !important;
+  line-height: 1.25;
+}
+
+/* Kleine screens: extra ruimte voor onderwerp, radiogroup mag wrappen */
+@media (max-width: 820px) {
+  .sd-root-modern .sd-matrixdynamic__row .sd-selectbase {
+    flex-wrap: wrap;
+    row-gap: 8px;
+  }
+}

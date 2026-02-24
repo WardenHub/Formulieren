@@ -2,7 +2,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { Survey } from "survey-react-ui";
-import { ItemValue, Model } from "survey-core";
+import { ItemValue, Model , FunctionFactory } from "survey-core";
 import "survey-core/survey-core.min.css";
 import "survey-core/i18n/dutch";
 
@@ -11,6 +11,36 @@ import { getFormInstance, getFormPrefill, getFormsCatalog } from "@/api/emberApi
 
 import { PlusIcon } from "@/components/ui/plus";
 import { ChevronUpIcon } from "@/components/ui/chevron-up";
+
+let emberFnsRegistered = false;
+FunctionFactory.Instance.register("toNumber", (params) => {
+  const v = params && params.length ? params[0] : null;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : 0;
+});
+
+function registerEmberSurveyFunctions() {
+  if (emberFnsRegistered) return;
+  emberFnsRegistered = true;
+
+  // toNumber(x) - accepteert "12", "12.5", "12,5", null, undefined
+  FunctionFactory.Instance.register("toNumber", (params) => {
+    const v = params?.[0];
+
+    if (v === null || v === undefined) return 0;
+
+    if (typeof v === "number") return Number.isFinite(v) ? v : 0;
+
+    const s = String(v).trim();
+    if (!s) return 0;
+
+    // NL comma -> dot
+    const normalized = s.replace(",", ".");
+    const n = Number(normalized);
+
+    return Number.isFinite(n) ? n : 0;
+  });
+}
 
 function safeJsonParse(text) {
   const s = String(text || "").trim();
@@ -570,6 +600,8 @@ function ToggleRow({ title, meta, isOpen, onToggle, iconRef, onIconEnter, onIcon
 }
 
 export default function FormDesigner() {
+  registerEmberSurveyFunctions();
+  const answersRafRef = useRef(null);
   const [editorText, setEditorText] = useState(() => {
     const fromLs = localStorage.getItem("dev.formdesigner.editorText");
     return fromLs || '{\n  "title": "Preview",\n  "pages": []\n}\n';
@@ -1103,10 +1135,23 @@ export default function FormDesigner() {
     const seed = answersRef.current && typeof answersRef.current === "object" ? answersRef.current : {};
     m.data = { ...(m.data || {}), ...seed };
 
+    const pendingRef = { current: null };
+    const rafRef = { current: 0 };
+
     m.onValueChanged.add(() => {
       const next = { ...(m.data || {}) };
       answersRef.current = next;
-      setAnswersPreview(next);
+
+      // coalesce updates outside render
+      pendingRef.current = next;
+      if (rafRef.current) return;
+
+      rafRef.current = requestAnimationFrame(() => {
+        rafRef.current = 0;
+        const snap = pendingRef.current;
+        pendingRef.current = null;
+        if (snap) setAnswersPreview(snap);
+      });
     });
 
     modelRef.current = m;
@@ -1125,6 +1170,13 @@ export default function FormDesigner() {
       applyPrefill({ onlyRefreshable: false });
     });
   }, [prefillPayload, previewJson]);
+
+  useEffect(() => {
+    return () => {
+      if (answersRafRef.current) cancelAnimationFrame(answersRafRef.current);
+      answersRafRef.current = null;
+    };
+  }, []);
 
   function applyPrefill({ onlyRefreshable, payloadOverride } = {}) {
     const payload = payloadOverride || prefillPayload;
