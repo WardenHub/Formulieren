@@ -375,6 +375,229 @@ perf_rows as (
   where r.req_key = N'pr_regels' COLLATE SQL_Latin1_General_CP1_CI_AS
 ),
 
+-- performance enriched base for generic readonly reporting
+perf_calc_base as (
+  select
+    h.normering_key,
+    n.display_name as normering_label,
+
+    r.performance_requirement_row_id,
+    r.gebruikersfunctie_key,
+    coalesce(m.display_name, g.display_name, r.gebruikersfunctie_key) as gebruikersfunctie_naam,
+    r.row_label,
+    r.doormelding_mode,
+
+    isnull(r.automatic_detectors, 0) as automatic_detectors,
+    isnull(r.manual_call_points, 0) as manual_call_points,
+    isnull(r.flame_detectors, 0) as flame_detectors,
+    isnull(r.linear_smoke_detectors, 0) as linear_smoke_detectors,
+    isnull(r.aspirating_openings, 0) as aspirating_openings,
+
+    m.risk_internal,
+    m.risk_external,
+
+    (
+      isnull(r.automatic_detectors, 0) +
+      isnull(r.manual_call_points, 0) +
+      (isnull(r.flame_detectors, 0) * 5) +
+      (isnull(r.linear_smoke_detectors, 0) * 10) +
+      isnull(r.aspirating_openings, 0)
+    ) as weighted_count,
+
+    r.sort_order,
+    r.created_at
+  from dbo.InstallationPerformanceRequirement h
+  join inst i
+    on i.installation_id = h.installation_id
+  join dbo.InstallationPerformanceRequirementRow r
+    on r.performance_requirement_id = h.performance_requirement_id
+  left join dbo.Nen2535RiskClassMatrix m
+    on m.normering_key = h.normering_key
+   and m.gebruikersfunctie_key = r.gebruikersfunctie_key
+   and m.is_active = 1
+  left join dbo.Nen2535Gebruikersfunctie g
+    on g.gebruikersfunctie_key = r.gebruikersfunctie_key
+   and g.is_active = 1
+  left join dbo.Nen2535Normering n
+    on n.normering_key = h.normering_key
+   and n.is_active = 1
+  where h.is_active = 1
+),
+
+perf_calc as (
+  select
+    b.*,
+
+    cast(
+      round(
+        case
+          when b.doormelding_mode = N'MET_VERTRAGING'
+           and b.risk_internal is not null
+          then
+            (cast(b.weighted_count as decimal(18, 4)) / 100.0) *
+            case
+              when b.normering_key = N'NEN2535_2009_PLUS' then
+                case b.risk_internal
+                  when 'A' then 0.5
+                  when 'B' then 1.0
+                  when 'C' then 1.5
+                  when 'D' then 2.0
+                  when 'E' then 3.0
+                  else 0.0
+                end
+              else
+                case b.risk_internal
+                  when 'A' then 1.0
+                  when 'B' then 2.0
+                  when 'C' then 3.0
+                  else 0.0
+                end
+            end
+          else null
+        end,
+        2
+      ) as decimal(18, 2)
+    ) as max_intern,
+
+    cast(
+      round(
+        case
+          when b.doormelding_mode in (N'MET_VERTRAGING', N'ZONDER_VERTRAGING')
+           and b.risk_external is not null
+          then
+            (cast(b.weighted_count as decimal(18, 4)) / 100.0) *
+            case
+              when b.normering_key = N'NEN2535_2009_PLUS' then
+                case b.risk_external
+                  when 'A' then 0.5
+                  when 'B' then 1.0
+                  when 'C' then 1.5
+                  when 'D' then 2.0
+                  when 'E' then 3.0
+                  else 0.0
+                end
+              else
+                case b.risk_external
+                  when 'A' then 0.5
+                  when 'B' then 1.0
+                  when 'C' then 1.5
+                  else 0.0
+                end
+            end
+          else null
+        end,
+        2
+      ) as decimal(18, 2)
+    ) as max_extern
+  from perf_calc_base b
+),
+
+performance_data as (
+  select
+    N'value' as kind,
+    N'performance_data' as [key],
+    coalesce((
+      select
+        p.gebruikersfunctie_key as pr_gebruikersfunctie_key,
+        p.gebruikersfunctie_naam as pr_gebruikersfunctie_naam,
+        p.row_label as pr_label,
+        p.doormelding_mode as pr_doormelding,
+        case
+          when p.doormelding_mode = N'MET_VERTRAGING' then N'met vertraging'
+          when p.doormelding_mode = N'ZONDER_VERTRAGING' then N'zonder vertraging'
+          else N'geen'
+        end as pr_doormelding_label,
+        p.automatic_detectors as pr_aantal_auto,
+        p.manual_call_points as pr_aantal_hand,
+        p.flame_detectors as pr_aantal_vlam,
+        p.linear_smoke_detectors as pr_aantal_lijn,
+        p.aspirating_openings as pr_aantal_asp,
+        p.weighted_count as pr_gewogen_aantal,
+        p.risk_internal as pr_risico_intern,
+        p.risk_external as pr_risico_extern,
+        p.max_intern as pr_max_intern,
+        p.max_extern as pr_max_extern
+      from perf_calc p
+      order by isnull(p.sort_order, 999999), p.created_at asc
+      for json path
+    ), N'[]') as value_json
+  from req r
+  where r.req_key = N'performance_data' COLLATE SQL_Latin1_General_CP1_CI_AS
+),
+
+performance_label as (
+  select
+    N'value' as kind,
+    N'performance_label' as [key],
+    N'"Prestatie-eisen"' as value_json
+  from req r
+  where r.req_key = N'performance_label' COLLATE SQL_Latin1_General_CP1_CI_AS
+),
+
+performance_normering as (
+  select
+    N'value' as kind,
+    N'performance_normering' as [key],
+    coalesce((
+      select top 1
+        N'"' + string_escape(cast(p.normering_label as nvarchar(max)), 'json') + N'"'
+      from perf_calc p
+    ), N'null') as value_json
+  from req r
+  where r.req_key = N'performance_normering' COLLATE SQL_Latin1_General_CP1_CI_AS
+),
+
+performance_total_max_met_intern as (
+  select
+    N'value' as kind,
+    N'performance_total_max_met_intern' as [key],
+    coalesce((
+      select cast(
+        cast(round(sum(cast(p.max_intern as decimal(18, 4))), 2) as decimal(18, 2))
+        as nvarchar(100)
+      )
+      from perf_calc p
+      where p.doormelding_mode = N'MET_VERTRAGING'
+        and p.max_intern is not null
+    ), N'null') as value_json
+  from req r
+  where r.req_key = N'performance_total_max_met_intern' COLLATE SQL_Latin1_General_CP1_CI_AS
+),
+
+performance_total_max_met_extern as (
+  select
+    N'value' as kind,
+    N'performance_total_max_met_extern' as [key],
+    coalesce((
+      select cast(
+        cast(round(sum(cast(p.max_extern as decimal(18, 4))), 2) as decimal(18, 2))
+        as nvarchar(100)
+      )
+      from perf_calc p
+      where p.doormelding_mode = N'MET_VERTRAGING'
+        and p.max_extern is not null
+    ), N'null') as value_json
+  from req r
+  where r.req_key = N'performance_total_max_met_extern' COLLATE SQL_Latin1_General_CP1_CI_AS
+),
+
+performance_total_max_zonder_extern as (
+  select
+    N'value' as kind,
+    N'performance_total_max_zonder_extern' as [key],
+    coalesce((
+      select cast(
+        cast(round(sum(cast(p.max_extern as decimal(18, 4))), 2) as decimal(18, 2))
+        as nvarchar(100)
+      )
+      from perf_calc p
+      where p.doormelding_mode = N'ZONDER_VERTRAGING'
+        and p.max_extern is not null
+    ), N'null') as value_json
+  from req r
+  where r.req_key = N'performance_total_max_zonder_extern' COLLATE SQL_Latin1_General_CP1_CI_AS
+),
+
 -- catalogs (always return row if requested; [] if none)
 k_energy_brand_types as (
   select
@@ -458,6 +681,18 @@ union all
 select kind, [key], value_json from perf_header
 union all
 select kind, [key], value_json from perf_rows
+union all
+select kind, [key], value_json from performance_data
+union all
+select kind, [key], value_json from performance_label
+union all
+select kind, [key], value_json from performance_normering
+union all
+select kind, [key], value_json from performance_total_max_met_intern
+union all
+select kind, [key], value_json from performance_total_max_met_extern
+union all
+select kind, [key], value_json from performance_total_max_zonder_extern
 union all
 select kind, [key], value_json from k_energy_brand_types
 union all

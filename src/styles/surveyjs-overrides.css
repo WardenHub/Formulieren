@@ -315,7 +315,7 @@
 .sd-root-modern .sd-html span,
 .sd-root-modern .sd-html li,
 .sd-root-modern .sd-html sup {
-  color: rgba(255, 255, 255, 0.92) !important;
+  color: rgba(255, 255, 255, 0.78) !important;
 }
 
 /* Optional: links in html blocks */
@@ -328,4 +328,88 @@
 /* Optional: footnote-like html blocks a bit softer */
 .sd-root-modern .sd-question__html {
   font-size: 0.95rem;
+}
+
+/* =========================
+   Matrix / MatrixDynamic dark row styling
+   - houdt alternate rows bruikbaar in dark theme
+   ========================= */
+
+/* Algemene tabeltekst altijd goed leesbaar */
+.sd-root-modern .sd-table__cell,
+.sd-root-modern .sd-table__cell .sd-input,
+.sd-root-modern .sd-table__cell .sd-string-viewer,
+.sd-root-modern .sd-table__cell span,
+.sd-root-modern .sd-table__cell div,
+.sd-root-modern .sd-matrixdynamic__cell,
+.sd-root-modern .sd-matrixdynamic__cell .sd-input,
+.sd-root-modern .sd-matrixdynamic__cell .sd-string-viewer,
+.sd-root-modern .sd-matrixdynamic__cell span,
+.sd-root-modern .sd-matrixdynamic__cell div {
+  color: rgba(255, 255, 255, 0.92) !important;
+}
+
+/* Basis rij */
+.sd-root-modern .sd-table__row,
+.sd-root-modern .sd-matrixdynamic__row {
+  background: transparent !important;
+}
+
+/* Alternate rows; donker i.p.v. wit */
+.sd-root-modern .sd-table__row:nth-child(even) td,
+.sd-root-modern .sd-matrixdynamic__row:nth-child(even) td {
+  background: rgba(255, 255, 255, 0.025) !important;
+}
+
+/* Oneven rijen ook expliciet donker houden */
+.sd-root-modern .sd-table__row:nth-child(odd) td,
+.sd-root-modern .sd-matrixdynamic__row:nth-child(odd) td {
+  background: rgba(255, 255, 255, 0.012) !important;
+}
+
+/* Hover niet wit laten worden */
+.sd-root-modern .sd-table__row:hover td,
+.sd-root-modern .sd-matrixdynamic__row:hover td {
+  background: rgba(255, 255, 255, 0.04) !important;
+}
+
+/* Readonly viewers in matrixen expliciet leesbaar */
+.sd-root-modern .sd-table__cell .sd-string-viewer,
+.sd-root-modern .sd-matrixdynamic__cell .sd-string-viewer {
+  color: rgba(255, 255, 255, 0.92) !important;
+  opacity: 1 !important;
+}
+
+/* =========================
+   Percentage suffix voor A2 velden
+   - netjes binnen het inputveld uitgelijnd
+   ========================= */
+
+.sd-root-modern [data-name="a2_systeembeschikbaarheid_pve"] .sd-input,
+.sd-root-modern [data-name="a2_systeembeschikbaarheid_geconstateerd"] .sd-input,
+.sd-root-modern [data-name="a2_systeembeschikbaarheid_pve"] input,
+.sd-root-modern [data-name="a2_systeembeschikbaarheid_geconstateerd"] input {
+  padding-right: 2.6rem !important;
+}
+
+.sd-root-modern [data-name="a2_systeembeschikbaarheid_pve"] .sd-input-wrapper,
+.sd-root-modern [data-name="a2_systeembeschikbaarheid_geconstateerd"] .sd-input-wrapper,
+.sd-root-modern [data-name="a2_systeembeschikbaarheid_pve"] .sd-text__content,
+.sd-root-modern [data-name="a2_systeembeschikbaarheid_geconstateerd"] .sd-text__content {
+  position: relative;
+}
+
+.sd-root-modern [data-name="a2_systeembeschikbaarheid_pve"] .sd-input-wrapper::after,
+.sd-root-modern [data-name="a2_systeembeschikbaarheid_geconstateerd"] .sd-input-wrapper::after,
+.sd-root-modern [data-name="a2_systeembeschikbaarheid_pve"] .sd-text__content::after,
+.sd-root-modern [data-name="a2_systeembeschikbaarheid_geconstateerd"] .sd-text__content::after {
+  content: "%";
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: rgba(255, 255, 255, 0.68);
+  pointer-events: none;
+  font-weight: 600;
+  line-height: 1;
 }

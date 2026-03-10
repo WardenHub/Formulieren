@@ -707,6 +707,87 @@ function ToggleRow({ title, meta, isOpen, onToggle, iconRef, onIconEnter, onIcon
   );
 }
 
+function parseTimeToMinutes(v) {
+  const s = String(v || "").trim();
+  if (!s) return null;
+
+  const m = s.match(/^(\d{1,2}):(\d{2})$/);
+  if (!m) return null;
+
+  const hh = Number(m[1]);
+  const mm = Number(m[2]);
+
+  if (!Number.isFinite(hh) || !Number.isFinite(mm)) return null;
+  if (hh < 0 || hh > 23) return null;
+  if (mm < 0 || mm > 59) return null;
+
+  return hh * 60 + mm;
+}
+
+function computeHoursBetween(startTime, endTime) {
+  const startMin = parseTimeToMinutes(startTime);
+  const endMin = parseTimeToMinutes(endTime);
+
+  if (startMin === null || endMin === null) return null;
+  if (endMin < startMin) return null;
+
+  const diffMinutes = endMin - startMin;
+  return formatMaybeNumber(diffMinutes / 60, 3);
+}
+
+function computeMeldurenNietBeschikbaar(urenPerDag, meldersNietBeschikbaar, tijdsduurDagen) {
+  const uren = toNumberOrNull(urenPerDag);
+  const melders = toNumberOrNull(meldersNietBeschikbaar);
+  const dagen = toNumberOrNull(tijdsduurDagen);
+
+  if (uren === null || melders === null || dagen === null) return null;
+  if (uren < 0 || melders < 0 || dagen < 0) return null;
+
+  return formatMaybeNumber(uren * melders * dagen, 3);
+}
+
+function sumAvailabilityMelduren(rows) {
+  if (!Array.isArray(rows)) return 0;
+
+  let total = 0;
+  for (const row of rows) {
+    const n = toNumberOrNull(row?.melduren_niet_beschikbaar);
+    if (n !== null) total += n;
+  }
+
+  return formatMaybeNumber(total, 3) ?? 0;
+}
+
+function sumAantalMeldersFromPerformanceRows(rows) {
+  if (!Array.isArray(rows)) return 0;
+
+  let total = 0;
+
+  for (const row of rows) {
+    total += toNumberOrNull(row?.pr_aantal_auto) ?? 0;
+    total += toNumberOrNull(row?.pr_aantal_hand) ?? 0;
+    total += toNumberOrNull(row?.pr_aantal_vlam) ?? 0;
+    total += toNumberOrNull(row?.pr_aantal_lijn) ?? 0;
+    total += toNumberOrNull(row?.pr_aantal_asp) ?? 0;
+  }
+
+  return formatMaybeNumber(total, 3) ?? 0;
+}
+
+function computeGeconstateerdeSysteembeschikbaarheid(aantalMelders, meldurenBuitenWerking) {
+  const melders = toNumberOrNull(aantalMelders);
+  const melduren = toNumberOrNull(meldurenBuitenWerking);
+
+  if (melders === null || melduren === null) return null;
+  if (melders <= 0) return 0;
+
+  const maxMelduren = 8760 * melders;
+  if (maxMelduren <= 0) return 0;
+
+  const pct = ((maxMelduren - melduren) / maxMelduren) * 100;
+  return formatMaybeNumber(pct, 2);
+}
+
 export default function FormDesigner() {
   registerEmberSurveyFunctions();
   const answersRafRef = useRef(null);
@@ -755,6 +836,7 @@ export default function FormDesigner() {
   const modelRef = useRef(null);
   const editorRef = useRef(null);
   const energyAutoStateRef = useRef({});
+  const availabilityAutoStateRef = useRef({});
 
   const [editorScrollTop, setEditorScrollTop] = useState(0);
   const [lineHeightPx, setLineHeightPx] = useState(17);
@@ -1236,11 +1318,13 @@ export default function FormDesigner() {
   }, [leftWidth, editorHeight]);
 
   // Build model from previewJson; seed with answersRef.current (no “state echo” that can revert user edits)
- const model = useMemo(() => {
+  const model = useMemo(() => {
   if (!previewJson) return null;
 
   const m = new Model(previewJson);
   energyAutoStateRef.current = {};
+  availabilityAutoStateRef.current = {};
+
   const seed =
     answersRef.current && typeof answersRef.current === "object"
       ? answersRef.current
@@ -1290,106 +1374,225 @@ export default function FormDesigner() {
     });
   }
 
-function normalizeEnergyRows() {
-  const rows = Array.isArray(m.getValue("es_regels")) ? m.getValue("es_regels") : [];
-  if (!rows.length) return;
+    function applyAvailabilityWarnings() {
+    const geconstateerd = toNumberOrNull(m.getValue("a2_systeembeschikbaarheid_geconstateerd"));
+    const pve = toNumberOrNull(m.getValue("a2_systeembeschikbaarheid_pve"));
 
-  const agingFactor = m.getValue("es_verouderingsfactor");
-  const brandTypeMap = buildBrandTypeMap(prefillPayload);
+    const shouldWarn =
+      geconstateerd !== null &&
+      pve !== null &&
+      geconstateerd < pve;
 
-  let changed = false;
-
-  const nextRows = rows.map((r, rowIndex) => {
-    const row = r && typeof r === "object" ? { ...r } : {};
-    const stateKey = String(rowIndex);
-
-    const prevState = energyAutoStateRef.current[stateKey] || {
-      lastMerkType: null,
-      autoCapaciteitAh: null,
-      autoEffectieveAh: null,
-    };
-
-    const nextState = { ...prevState };
-
-    const merkType = row.es_merk_type ? String(row.es_merk_type) : "";
-    const brand = merkType ? brandTypeMap.get(merkType) : null;
-    const merkTypeChanged = prevState.lastMerkType !== merkType;
-
-    // 1) merk/type -> cap per accu
-    // Alleen automatisch:
-    // - als merk/type gewijzigd is
-    // - of cap per accu leeg is
-    if (brand?.default_capacity_ah != null) {
-      const defaultCap = formatMaybeNumber(brand.default_capacity_ah, 3);
-      const currentCap = toNumberOrNull(row.es_capaciteit_ah);
-
-      if (merkTypeChanged || currentCap === null) {
-        if (!valuesEqualLoose(row.es_capaciteit_ah, defaultCap)) {
-          row.es_capaciteit_ah = defaultCap;
-          changed = true;
-        }
-        nextState.autoCapaciteitAh = defaultCap;
-      }
-    }
-
-    // 2) cap per accu + aantal + schakeling -> aanwezige cap
-    // Alleen automatisch invullen als:
-    // - veld leeg is
-    // - of huidige waarde nog gelijk is aan de laatst auto-berekende waarde
-    const computedEffectiveAh = formatMaybeNumber(
-      computeEffectiveAh(row.es_capaciteit_ah, row.es_aantal, row.es_schakeling),
-      3
+    const input = document.querySelector(
+      '[data-name="a2_systeembeschikbaarheid_geconstateerd"] input, [data-name="a2_systeembeschikbaarheid_geconstateerd"] textarea'
     );
 
-    const currentEffective = row.es_effectieve_ah;
-    const effectiveIsEmpty = toNumberOrNull(currentEffective) === null;
-    const effectiveStillAuto =
-      prevState.autoEffectieveAh != null &&
-      valuesEqualLoose(currentEffective, prevState.autoEffectieveAh);
+    if (input) {
+      input.style.color = shouldWarn ? "red" : "";
+      input.style.borderColor = shouldWarn ? "red" : "";
+      input.style.boxShadow = shouldWarn ? "0 0 0 1px red inset" : "";
+    }
+  }
 
-    if (effectiveIsEmpty || effectiveStillAuto || merkTypeChanged) {
-      if (!valuesEqualLoose(currentEffective, computedEffectiveAh)) {
-        row.es_effectieve_ah = computedEffectiveAh;
+  function normalizeAvailabilityRows() {
+    const rows = Array.isArray(m.getValue("a2_buitenbedrijfstellingen"))
+      ? m.getValue("a2_buitenbedrijfstellingen")
+      : [];
+
+    const perfRows = Array.isArray(m.getValue("performance_data_view"))
+      ? m.getValue("performance_data_view")
+      : [];
+
+    let changed = false;
+
+    const nextRows = rows.map((r, rowIndex) => {
+      const row = r && typeof r === "object" ? { ...r } : {};
+      const stateKey = String(rowIndex);
+
+      const prevState = availabilityAutoStateRef.current[stateKey] || {};
+      const nextState = { ...prevState };
+
+      const urenPerDag = formatMaybeNumber(
+        computeHoursBetween(row.tijd_begin, row.tijd_einde),
+        3
+      );
+
+      if (!valuesEqualLoose(row.uren_pd_niet_beschikbaar, urenPerDag)) {
+        row.uren_pd_niet_beschikbaar = urenPerDag;
         changed = true;
       }
-      nextState.autoEffectieveAh = computedEffectiveAh;
-    }
 
-    // 3) benodigd Ah altijd herberekenen
-    const requiredAh = formatMaybeNumber(
-      computeRequiredAh(
-        row.es_ruststroom_ma,
-        row.es_alarmstroom_ma,
-        row.es_overbrugging_uren,
-        agingFactor
-      ),
-      3
+      const meldurenNietBeschikbaar = formatMaybeNumber(
+        computeMeldurenNietBeschikbaar(
+          row.uren_pd_niet_beschikbaar,
+          row.melders_niet_beschikbaar,
+          row.tijdsduur_dagen
+        ),
+        3
+      );
+
+      if (!valuesEqualLoose(row.melduren_niet_beschikbaar, meldurenNietBeschikbaar)) {
+        row.melduren_niet_beschikbaar = meldurenNietBeschikbaar;
+        changed = true;
+      }
+
+      availabilityAutoStateRef.current[stateKey] = nextState;
+      return row;
+    });
+
+    const totaalMeldurenBuitenWerking = sumAvailabilityMelduren(nextRows);
+    const totaalAantalMelders = sumAantalMeldersFromPerformanceRows(perfRows);
+    const geconstateerd = computeGeconstateerdeSysteembeschikbaarheid(
+      totaalAantalMelders,
+      totaalMeldurenBuitenWerking
     );
 
-    if (!valuesEqualLoose(row.es_benodigd_ah, requiredAh)) {
-      row.es_benodigd_ah = requiredAh;
-      changed = true;
+    if (changed) {
+      m.setValue("a2_buitenbedrijfstellingen", nextRows);
+      return;
     }
 
-    nextState.lastMerkType = merkType;
-    energyAutoStateRef.current[stateKey] = nextState;
+    if (!valuesEqualLoose(m.getValue("a2_melduren_buiten_werking"), totaalMeldurenBuitenWerking)) {
+      m.setValue("a2_melduren_buiten_werking", totaalMeldurenBuitenWerking);
+    }
 
-    return row;
-  });
+    if (!valuesEqualLoose(m.getValue("a2_aantal_melders"), totaalAantalMelders)) {
+      m.setValue("a2_aantal_melders", totaalAantalMelders);
+    }
 
-  if (changed) {
-    m.setValue("es_regels", nextRows);
-  } else {
-    requestAnimationFrame(() => applyCapWarnings());
+    if (!valuesEqualLoose(m.getValue("a2_systeembeschikbaarheid_geconstateerd"), geconstateerd)) {
+      m.setValue("a2_systeembeschikbaarheid_geconstateerd", geconstateerd);
+    }
+
+    const a2Rows = Array.isArray(m.getValue("a2_items")) ? m.getValue("a2_items") : [];
+    if (a2Rows.length > 0) {
+      const nextA2Rows = a2Rows.map((row, idx) => {
+        if (idx !== 0) return row;
+        const rr = row && typeof row === "object" ? { ...row } : {};
+        rr.eis = "NEN 2535:1996 & 2009 §4.4";
+        return rr;
+      });
+
+      if (JSON.stringify(nextA2Rows) !== JSON.stringify(a2Rows)) {
+        m.setValue("a2_items", nextA2Rows);
+      }
+    }
+
+    requestAnimationFrame(() => {
+      applyAvailabilityWarnings();
+    });
   }
-}
+
+  function normalizeEnergyRows() {
+    const rows = Array.isArray(m.getValue("es_regels")) ? m.getValue("es_regels") : [];
+    if (!rows.length) return;
+
+    const agingFactor = m.getValue("es_verouderingsfactor");
+    const brandTypeMap = buildBrandTypeMap(prefillPayload);
+
+    let changed = false;
+
+    const nextRows = rows.map((r, rowIndex) => {
+      const row = r && typeof r === "object" ? { ...r } : {};
+      const stateKey = String(rowIndex);
+
+      const prevState = energyAutoStateRef.current[stateKey] || {
+        lastMerkType: null,
+        autoCapaciteitAh: null,
+        autoEffectieveAh: null,
+      };
+
+      const nextState = { ...prevState };
+
+      const merkType = row.es_merk_type ? String(row.es_merk_type) : "";
+      const brand = merkType ? brandTypeMap.get(merkType) : null;
+      const merkTypeChanged = prevState.lastMerkType !== merkType;
+
+      // 1) merk/type -> cap per accu
+      // Alleen automatisch:
+      // - als merk/type gewijzigd is
+      // - of cap per accu leeg is
+      if (brand?.default_capacity_ah != null) {
+        const defaultCap = formatMaybeNumber(brand.default_capacity_ah, 3);
+        const currentCap = toNumberOrNull(row.es_capaciteit_ah);
+
+        if (merkTypeChanged || currentCap === null) {
+          if (!valuesEqualLoose(row.es_capaciteit_ah, defaultCap)) {
+            row.es_capaciteit_ah = defaultCap;
+            changed = true;
+          }
+          nextState.autoCapaciteitAh = defaultCap;
+        }
+      }
+
+      // 2) cap per accu + aantal + schakeling -> aanwezige cap
+      // Alleen automatisch invullen als:
+      // - veld leeg is
+      // - of huidige waarde nog gelijk is aan de laatst auto-berekende waarde
+      const computedEffectiveAh = formatMaybeNumber(
+        computeEffectiveAh(row.es_capaciteit_ah, row.es_aantal, row.es_schakeling),
+        3
+      );
+
+      const currentEffective = row.es_effectieve_ah;
+      const effectiveIsEmpty = toNumberOrNull(currentEffective) === null;
+      const effectiveStillAuto =
+        prevState.autoEffectieveAh != null &&
+        valuesEqualLoose(currentEffective, prevState.autoEffectieveAh);
+
+      if (effectiveIsEmpty || effectiveStillAuto || merkTypeChanged) {
+        if (!valuesEqualLoose(currentEffective, computedEffectiveAh)) {
+          row.es_effectieve_ah = computedEffectiveAh;
+          changed = true;
+        }
+        nextState.autoEffectieveAh = computedEffectiveAh;
+      }
+
+      // 3) benodigd Ah altijd herberekenen
+      const requiredAh = formatMaybeNumber(
+        computeRequiredAh(
+          row.es_ruststroom_ma,
+          row.es_alarmstroom_ma,
+          row.es_overbrugging_uren,
+          agingFactor
+        ),
+        3
+      );
+
+      if (!valuesEqualLoose(row.es_benodigd_ah, requiredAh)) {
+        row.es_benodigd_ah = requiredAh;
+        changed = true;
+      }
+
+      nextState.lastMerkType = merkType;
+      energyAutoStateRef.current[stateKey] = nextState;
+
+      return row;
+    });
+
+    if (changed) {
+      m.setValue("es_regels", nextRows);
+    } else {
+      requestAnimationFrame(() => applyCapWarnings());
+    }
+  }
   const pendingRef = { current: null };
   const rafRef = { current: 0 };
   const normalizeRafRef = { current: 0 };
 
   m.onAfterRenderQuestion.add((sender, options) => {
-    if (options?.question?.name === "es_regels") {
+    const qname = String(options?.question?.name || "");
+
+    if (qname === "es_regels") {
       requestAnimationFrame(() => applyCapWarnings());
+    }
+
+    if (
+      qname === "a2_buitenbedrijfstellingen" ||
+      qname === "a2_resultaat_panel" ||
+      qname === "a2_systeembeschikbaarheid_geconstateerd"
+    ) {
+      requestAnimationFrame(() => applyAvailabilityWarnings());
     }
   });
 
@@ -1412,12 +1615,25 @@ function normalizeEnergyRows() {
       name === "es_verouderingsfactor" ||
       name.startsWith("es_regels");
 
-    if (isEnergyRelevant) {
+    const isAvailabilityRelevant =
+      name === "a2_systeembeschikbaarheid_pve" ||
+      name.startsWith("a2_buitenbedrijfstellingen") ||
+      name.startsWith("performance_data_view") ||
+      name.startsWith("a2_items");
+
+    if (isEnergyRelevant || isAvailabilityRelevant) {
       if (normalizeRafRef.current) cancelAnimationFrame(normalizeRafRef.current);
 
-        normalizeRafRef.current = requestAnimationFrame(() => {
+      normalizeRafRef.current = requestAnimationFrame(() => {
         normalizeRafRef.current = 0;
-        normalizeEnergyRows();
+
+        if (isEnergyRelevant) {
+          normalizeEnergyRows();
+        }
+
+        if (isAvailabilityRelevant) {
+          normalizeAvailabilityRows();
+        }
       });
     }
   });
@@ -1425,6 +1641,9 @@ function normalizeEnergyRows() {
   requestAnimationFrame(() => {
     normalizeEnergyRows();
     applyCapWarnings();
+
+    normalizeAvailabilityRows();
+    applyAvailabilityWarnings();
   });
 
   modelRef.current = m;
