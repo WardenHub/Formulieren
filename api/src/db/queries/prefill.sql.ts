@@ -378,12 +378,12 @@ perf_rows as (
 -- catalogs (always return row if requested; [] if none)
 k_energy_brand_types as (
   select
-    N'value' as kind,
+    N'choices' as kind,
     N'k_energy_brand_types' as [key],
     coalesce((
       select
         bt.brand_type_key as value,
-        bt.display_name as label,
+        bt.display_name as text,
         bt.default_capacity_ah as default_capacity_ah
       from dbo.EnergySupplyBrandType bt
       where bt.is_active = 1

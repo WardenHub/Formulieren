@@ -271,3 +271,61 @@
     row-gap: 8px;
   }
 }
+
+
+/* Rood voor meetresultaten */
+.ember-warn-cap {
+  outline: 2px solid rgba(255, 80, 80, 0.9);
+  outline-offset: 2px;
+  border-radius: 8px;
+}
+
+.ember-warn-cap input,
+.ember-warn-cap .sd-input,
+.ember-warn-cap .sd-dropdown {
+  color: rgba(255, 120, 120, 1) !important;
+  font-weight: 700;
+}
+
+.sd-table__cell.ember-cap-too-low,
+.sd-matrix__cell.ember-cap-too-low {
+  outline: 2px solid rgba(255, 80, 80, 0.95);
+  outline-offset: -2px;
+  border-radius: 6px;
+}
+
+.sd-table__cell.ember-cap-too-low input,
+.sd-matrix__cell.ember-cap-too-low input,
+.sd-table__cell.ember-cap-too-low .sd-input,
+.sd-matrix__cell.ember-cap-too-low .sd-input {
+  color: rgba(255, 110, 110, 1) !important;
+  font-weight: 700;
+}
+
+/* HTML/content blocks in SurveyJS readable on dark background */
+.sd-root-modern .sd-html,
+.sd-root-modern .sd-question__html,
+.sd-root-modern .sd-question__html p,
+.sd-root-modern .sd-question__html div,
+.sd-root-modern .sd-question__html span,
+.sd-root-modern .sd-question__html li,
+.sd-root-modern .sd-question__html sup,
+.sd-root-modern .sd-html p,
+.sd-root-modern .sd-html div,
+.sd-root-modern .sd-html span,
+.sd-root-modern .sd-html li,
+.sd-root-modern .sd-html sup {
+  color: rgba(255, 255, 255, 0.92) !important;
+}
+
+/* Optional: links in html blocks */
+.sd-root-modern .sd-question__html a,
+.sd-root-modern .sd-html a {
+  color: rgba(255, 255, 255, 0.92) !important;
+  text-decoration: underline;
+}
+
+/* Optional: footnote-like html blocks a bit softer */
+.sd-root-modern .sd-question__html {
+  font-size: 0.95rem;
+}

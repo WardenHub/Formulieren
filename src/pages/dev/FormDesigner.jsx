@@ -12,6 +12,8 @@ import { getFormInstance, getFormPrefill, getFormsCatalog } from "@/api/emberApi
 import { PlusIcon } from "@/components/ui/plus";
 import { ChevronUpIcon } from "@/components/ui/chevron-up";
 
+
+
 let emberFnsRegistered = false;
 FunctionFactory.Instance.register("toNumber", (params) => {
   const v = params && params.length ? params[0] : null;
@@ -113,20 +115,24 @@ function deepClone(obj) {
  * Traverse survey JSON elements recursively.
  */
 function walkElements(node, fn) {
-  if (!node) return;
+  if (!node || typeof node !== "object") return;
+
+  fn(node);
 
   const visitArray = (arr) => {
     if (!Array.isArray(arr)) return;
     for (const el of arr) {
-      fn(el);
       walkElements(el, fn);
     }
   };
 
-  if (Array.isArray(node.pages)) visitArray(node.pages);
-  if (Array.isArray(node.elements)) visitArray(node.elements);
-  if (Array.isArray(node.templateElements)) visitArray(node.templateElements);
-  if (Array.isArray(node.questions)) visitArray(node.questions);
+  visitArray(node.pages);
+  visitArray(node.elements);
+  visitArray(node.templateElements);
+  visitArray(node.questions);
+  visitArray(node.columns);
+  visitArray(node.rows);
+  visitArray(node.choices);
 }
 
 /**
@@ -147,13 +153,37 @@ function injectChoicesIntoSurveyJson(surveyJson, prefillPayload) {
     const raw = payloadChoices[key];
     if (!Array.isArray(raw)) return;
 
+    const valueField = String(cfg.valueField || "value");
+    const textField = String(cfg.textField || "text");
+
     const normalized = raw
       .map((x) => {
-        if (!x) return null;
-        const value = x.value ?? x.key ?? x.code ?? x.option_value ?? x.optionValue ?? null;
-        const text = x.text ?? x.label ?? x.name ?? x.display_name ?? x.displayName ?? null;
+        if (!x || typeof x !== "object") return null;
+
+        const value =
+          x[valueField] ??
+          x.value ??
+          x.key ??
+          x.code ??
+          x.option_value ??
+          x.optionValue ??
+          null;
+
+        const text =
+          x[textField] ??
+          x.text ??
+          x.label ??
+          x.name ??
+          x.display_name ??
+          x.displayName ??
+          null;
+
         if (value === null || value === undefined) return null;
-        return { value, text: text != null ? String(text) : String(value) };
+
+        return {
+          value,
+          text: text != null ? String(text) : String(value),
+        };
       })
       .filter(Boolean);
 
@@ -363,6 +393,84 @@ function normalizeChoiceItems(raw) {
       return { value, text: text != null ? String(text) : String(value) };
     })
     .filter(Boolean);
+}
+
+function toNumberOrNull(v) {
+  if (v === null || v === undefined) return null;
+  const s = String(v).trim().replace(",", ".");
+  if (!s) return null;
+  const n = Number(s);
+  return Number.isFinite(n) ? n : null;
+}
+
+function formatMaybeNumber(v, digits = 3) {
+  const n = toNumberOrNull(v);
+  if (n === null) return null;
+  return Number(n.toFixed(digits));
+}
+
+function computeEffectiveAh(capacityAh, quantity, configuration) {
+  const cap = toNumberOrNull(capacityAh);
+  const qty = toNumberOrNull(quantity);
+
+  if (cap === null || qty === null || qty <= 0) return null;
+
+  const cfg = String(configuration || "").trim().toLowerCase();
+
+  if (!cfg || cfg === "single" || cfg === "unknown") return cap;
+  if (cfg === "series") return cap;
+  if (cfg === "parallel") return cap * qty;
+
+  return cap;
+}
+
+function computeRequiredAh(rustMa, alarmMa, bridgingHours, agingFactor) {
+  const ir = toNumberOrNull(rustMa);
+  const ia = toNumberOrNull(alarmMa);
+  const t = toNumberOrNull(bridgingHours);
+  const vf = toNumberOrNull(agingFactor);
+
+  if (ir === null || ia === null || t === null || vf === null) return null;
+  if (t < 0.5) return null;
+
+  const calc = (((ir / 1000) * (t - 0.5)) + ((ia / 1000) * 0.5)) * vf;
+  return formatMaybeNumber(calc, 3);
+}
+
+function buildBrandTypeMap(prefillPayload) {
+  const raw =
+    prefillPayload?.choices?.k_energy_brand_types ||
+    prefillPayload?.prefill?.choices?.k_energy_brand_types ||
+    [];
+
+  const map = new Map();
+
+  for (const item of raw) {
+    if (!item) continue;
+    const key = item.value ?? item.key ?? item.brand_type_key ?? null;
+    if (key === null || key === undefined) continue;
+
+    map.set(String(key), {
+      value: String(key),
+      text:
+        item.text ??
+        item.label ??
+        item.display_name ??
+        String(key),
+      default_capacity_ah: toNumberOrNull(item.default_capacity_ah),
+    });
+  }
+
+  return map;
+}
+
+function valuesEqualLoose(a, b) {
+  const na = toNumberOrNull(a);
+  const nb = toNumberOrNull(b);
+
+  if (na !== null && nb !== null) return na === nb;
+
+  return String(a ?? "").trim() === String(b ?? "").trim();
 }
 
 /**
@@ -646,6 +754,7 @@ export default function FormDesigner() {
   const fileInputRef = useRef(null);
   const modelRef = useRef(null);
   const editorRef = useRef(null);
+  const energyAutoStateRef = useRef({});
 
   const [editorScrollTop, setEditorScrollTop] = useState(0);
   const [lineHeightPx, setLineHeightPx] = useState(17);
@@ -1127,49 +1236,200 @@ export default function FormDesigner() {
   }, [leftWidth, editorHeight]);
 
   // Build model from previewJson; seed with answersRef.current (no “state echo” that can revert user edits)
-  const model = useMemo(() => {
-    if (!previewJson) return null;
+ const model = useMemo(() => {
+  if (!previewJson) return null;
 
-    const m = new Model(previewJson);
+  const m = new Model(previewJson);
+  energyAutoStateRef.current = {};
+  const seed =
+    answersRef.current && typeof answersRef.current === "object"
+      ? answersRef.current
+      : {};
 
-    const seed = answersRef.current && typeof answersRef.current === "object" ? answersRef.current : {};
-    m.data = { ...(m.data || {}), ...seed };
+  m.data = { ...(m.data || {}), ...seed };
 
-    const pendingRef = { current: null };
-    const rafRef = { current: 0 };
+  function applyCapWarnings() {
+    const matrixRoot = document.querySelector('[data-name="es_regels"]');
+    if (!matrixRoot) return;
 
-    m.onValueChanged.add(() => {
-      const next = { ...(m.data || {}) };
-      answersRef.current = next;
+    const rows = Array.isArray(m.getValue("es_regels")) ? m.getValue("es_regels") : [];
+    const trList = matrixRoot.querySelectorAll("tbody tr");
 
-      // coalesce updates outside render
-      pendingRef.current = next;
-      if (rafRef.current) return;
+    trList.forEach((tr, rowIndex) => {
+      const row = rows[rowIndex];
+      if (!row || typeof row !== "object") return;
 
+      const aanwezige = toNumberOrNull(row.es_effectieve_ah);
+      const benodigd = toNumberOrNull(row.es_benodigd_ah);
+
+      const shouldWarn =
+        aanwezige !== null &&
+        benodigd !== null &&
+        aanwezige < benodigd;
+
+      const cells = tr.querySelectorAll("td");
+
+      // huidige volgorde:
+      // 0 datum
+      // 1 aantal
+      // 2 cap per accu
+      // 3 schakeling
+      // 4 merk/type
+      // 5 aanwezige cap
+      // 6 rust
+      // 7 alarm
+      // 8 benodigd
+      // 9 opmerking
+      // 10 overbrugging
+
+      const aanwezigeCell = cells[5];
+      const benodigdCell = cells[8];
+
+      if (aanwezigeCell) aanwezigeCell.classList.toggle("ember-cap-too-low", shouldWarn);
+      if (benodigdCell) benodigdCell.classList.toggle("ember-cap-too-low", shouldWarn);
+    });
+  }
+
+function normalizeEnergyRows() {
+  const rows = Array.isArray(m.getValue("es_regels")) ? m.getValue("es_regels") : [];
+  if (!rows.length) return;
+
+  const agingFactor = m.getValue("es_verouderingsfactor");
+  const brandTypeMap = buildBrandTypeMap(prefillPayload);
+
+  let changed = false;
+
+  const nextRows = rows.map((r, rowIndex) => {
+    const row = r && typeof r === "object" ? { ...r } : {};
+    const stateKey = String(rowIndex);
+
+    const prevState = energyAutoStateRef.current[stateKey] || {
+      lastMerkType: null,
+      autoCapaciteitAh: null,
+      autoEffectieveAh: null,
+    };
+
+    const nextState = { ...prevState };
+
+    const merkType = row.es_merk_type ? String(row.es_merk_type) : "";
+    const brand = merkType ? brandTypeMap.get(merkType) : null;
+    const merkTypeChanged = prevState.lastMerkType !== merkType;
+
+    // 1) merk/type -> cap per accu
+    // Alleen automatisch:
+    // - als merk/type gewijzigd is
+    // - of cap per accu leeg is
+    if (brand?.default_capacity_ah != null) {
+      const defaultCap = formatMaybeNumber(brand.default_capacity_ah, 3);
+      const currentCap = toNumberOrNull(row.es_capaciteit_ah);
+
+      if (merkTypeChanged || currentCap === null) {
+        if (!valuesEqualLoose(row.es_capaciteit_ah, defaultCap)) {
+          row.es_capaciteit_ah = defaultCap;
+          changed = true;
+        }
+        nextState.autoCapaciteitAh = defaultCap;
+      }
+    }
+
+    // 2) cap per accu + aantal + schakeling -> aanwezige cap
+    // Alleen automatisch invullen als:
+    // - veld leeg is
+    // - of huidige waarde nog gelijk is aan de laatst auto-berekende waarde
+    const computedEffectiveAh = formatMaybeNumber(
+      computeEffectiveAh(row.es_capaciteit_ah, row.es_aantal, row.es_schakeling),
+      3
+    );
+
+    const currentEffective = row.es_effectieve_ah;
+    const effectiveIsEmpty = toNumberOrNull(currentEffective) === null;
+    const effectiveStillAuto =
+      prevState.autoEffectieveAh != null &&
+      valuesEqualLoose(currentEffective, prevState.autoEffectieveAh);
+
+    if (effectiveIsEmpty || effectiveStillAuto || merkTypeChanged) {
+      if (!valuesEqualLoose(currentEffective, computedEffectiveAh)) {
+        row.es_effectieve_ah = computedEffectiveAh;
+        changed = true;
+      }
+      nextState.autoEffectieveAh = computedEffectiveAh;
+    }
+
+    // 3) benodigd Ah altijd herberekenen
+    const requiredAh = formatMaybeNumber(
+      computeRequiredAh(
+        row.es_ruststroom_ma,
+        row.es_alarmstroom_ma,
+        row.es_overbrugging_uren,
+        agingFactor
+      ),
+      3
+    );
+
+    if (!valuesEqualLoose(row.es_benodigd_ah, requiredAh)) {
+      row.es_benodigd_ah = requiredAh;
+      changed = true;
+    }
+
+    nextState.lastMerkType = merkType;
+    energyAutoStateRef.current[stateKey] = nextState;
+
+    return row;
+  });
+
+  if (changed) {
+    m.setValue("es_regels", nextRows);
+  } else {
+    requestAnimationFrame(() => applyCapWarnings());
+  }
+}
+  const pendingRef = { current: null };
+  const rafRef = { current: 0 };
+  const normalizeRafRef = { current: 0 };
+
+  m.onAfterRenderQuestion.add((sender, options) => {
+    if (options?.question?.name === "es_regels") {
+      requestAnimationFrame(() => applyCapWarnings());
+    }
+  });
+
+  m.onValueChanged.add((sender, options) => {
+    const name = String(options?.name || "");
+    const next = { ...(m.data || {}) };
+    answersRef.current = next;
+
+    pendingRef.current = next;
+    if (!rafRef.current) {
       rafRef.current = requestAnimationFrame(() => {
         rafRef.current = 0;
         const snap = pendingRef.current;
         pendingRef.current = null;
         if (snap) setAnswersPreview(snap);
       });
-    });
+    }
 
-    modelRef.current = m;
-    return m;
-  }, [previewJson]);
+    const isEnergyRelevant =
+      name === "es_verouderingsfactor" ||
+      name.startsWith("es_regels");
 
-  useEffect(() => {
-    if (!autoApplyAfterLoadRef.current) return;
-    if (!prefillPayload) return;
+    if (isEnergyRelevant) {
+      if (normalizeRafRef.current) cancelAnimationFrame(normalizeRafRef.current);
 
-    requestAnimationFrame(() => {
-      if (!autoApplyAfterLoadRef.current) return;
-      if (!modelRef.current) return;
+        normalizeRafRef.current = requestAnimationFrame(() => {
+        normalizeRafRef.current = 0;
+        normalizeEnergyRows();
+      });
+    }
+  });
 
-      autoApplyAfterLoadRef.current = false;
-      applyPrefill({ onlyRefreshable: false });
-    });
-  }, [prefillPayload, previewJson]);
+  requestAnimationFrame(() => {
+    normalizeEnergyRows();
+    applyCapWarnings();
+  });
+
+  modelRef.current = m;
+  return m;
+}, [previewJson, prefillPayload]);
 
   useEffect(() => {
     return () => {
