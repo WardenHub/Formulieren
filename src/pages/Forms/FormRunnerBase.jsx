@@ -1,4 +1,3 @@
-// src/pages/Forms/FormRunnerBase.jsx
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 
@@ -6,7 +5,6 @@ import { Survey } from "survey-react-ui";
 import { Model } from "survey-core";
 import "survey-core/survey-core.min.css";
 import "../../styles/surveyjs-overrides.css";
-
 
 import { ChevronLeftIcon } from "@/components/ui/chevron-left";
 import { FileCogIcon } from "@/components/ui/file-cog";
@@ -20,6 +18,7 @@ import {
   getFormInstance,
   putFormAnswers,
   submitFormInstance,
+  previewSubmitFormInstance,
   withdrawFormInstance,
   reopenFormInstance,
 } from "../../api/emberApi.js";
@@ -105,6 +104,10 @@ function translateApiError(err, currentStatus) {
     return "Opslaan conflict: dit formulier is ondertussen gewijzigd. Probeer opnieuw.";
   }
 
+  if (lower.includes("preview") && lower.includes("not found")) {
+    return "De indiencontrole kon niet worden uitgevoerd omdat het formulier niet is gevonden.";
+  }
+
   if (
     lower.includes("forbidden") ||
     lower.includes("not authorized") ||
@@ -133,6 +136,137 @@ function getAnswersObject(inst) {
   return null;
 }
 
+function buildSubmitConfirmText(previewRes) {
+  const items = Array.isArray(previewRes?.follow_ups?.items)
+    ? previewRes.follow_ups.items
+    : [];
+
+  const workflowCount = items.filter((x) => x?.kind === "workflow").length;
+  const reportOnlyCount = items.filter((x) => x?.kind === "report-only").length;
+
+  const lines = [];
+
+  lines.push("Weet je zeker dat je dit formulier wilt indienen?");
+  lines.push("");
+
+  if (workflowCount > 0 || reportOnlyCount > 0) {
+    lines.push("Bij indienen worden opvolgregistraties aangemaakt of bijgewerkt:");
+    lines.push(`- Workflowacties: ${workflowCount}`);
+    lines.push(`- Informatieve rapportopmerkingen: ${reportOnlyCount}`);
+
+    const previewTitles = items
+      .map((x) => String(x?.workflowTitle || "").trim())
+      .filter(Boolean)
+      .slice(0, 8);
+
+    if (previewTitles.length > 0) {
+      lines.push("");
+      lines.push("Voorbeeld:");
+      for (const title of previewTitles) {
+        lines.push(`- ${title}`);
+      }
+
+      if (items.length > previewTitles.length) {
+        lines.push(`- ... en nog ${items.length - previewTitles.length}`);
+      }
+    }
+  } else {
+    lines.push("Er zijn geen opvolgregistraties gevonden voor dit formulier.");
+  }
+
+  return lines.join("\n");
+}
+
+function normalizeText(value) {
+  const s = String(value || "").trim();
+  return s.length ? s : null;
+}
+
+function getQuestionTitle(question) {
+  const t =
+    question?.fullTitle ||
+    question?.title ||
+    question?.locTitle?.renderedHtml ||
+    question?.name ||
+    "";
+  return normalizeText(t) || "Onbenoemde vraag";
+}
+
+function getPageTitle(page, fallbackIndex = 0) {
+  const t =
+    page?.title ||
+    page?.locTitle?.renderedHtml ||
+    page?.name ||
+    "";
+  return normalizeText(t) || `Pagina ${fallbackIndex + 1}`;
+}
+
+function getQuestionElement(question) {
+  if (!question?.name) return null;
+
+  const escaped = typeof CSS !== "undefined" && CSS.escape
+    ? CSS.escape(String(question.name))
+    : String(question.name);
+
+  return document.querySelector(`[data-name="${escaped}"]`);
+}
+
+function scrollToQuestion(question) {
+  const el = getQuestionElement(question);
+  if (!el) return false;
+
+  el.scrollIntoView({
+    behavior: "smooth",
+    block: "center",
+  });
+
+  return true;
+}
+
+function collectValidationSummary(model) {
+  const items = [];
+  const pages = Array.isArray(model?.pages) ? model.pages : [];
+
+  pages.forEach((page, pageIndex) => {
+    const pageTitle = getPageTitle(page, pageIndex);
+    const questions = Array.isArray(page?.questions) ? page.questions : [];
+
+    questions.forEach((question) => {
+      const questionErrors = Array.isArray(question?.errors) ? question.errors : [];
+      if (!questionErrors.length) return;
+
+      const questionName = String(question?.name || "");
+      const questionTitle = getQuestionTitle(question);
+
+      questionErrors.forEach((err, errorIndex) => {
+        const message =
+          normalizeText(err?.text) ||
+          normalizeText(err?.locText?.renderedHtml) ||
+          "Ongeldige invoer.";
+
+        if (!message) return;
+
+        items.push({
+          id: `${pageIndex}::${questionName}::${errorIndex}`,
+          pageIndex,
+          pageTitle,
+          questionName,
+          questionTitle,
+          message,
+        });
+      });
+    });
+  });
+
+  const seen = new Set();
+  return items.filter((item) => {
+    const key = `${item.pageIndex}|${item.questionName}|${item.message}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
 export default function FormRunnerBase({ mode }) {
   const isDebug = mode === "debug";
 
@@ -144,6 +278,7 @@ export default function FormRunnerBase({ mode }) {
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
+  const [validationSummary, setValidationSummary] = useState([]);
 
   const [dirty, setDirty] = useState(false);
 
@@ -194,11 +329,6 @@ export default function FormRunnerBase({ mode }) {
   function allowedActions(s) {
     const st = String(s || "");
 
-    // UX regels:
-    // - CONCEPT: opslaan + indienen + intrekken
-    // - INGEDIEND: intrekken + terug naar concept
-    // - INGETROKKEN: terug naar concept
-    // - AFGEHANDELD / IN_BEHANDELING: niets (read-only)
     if (st === "CONCEPT") return { save: true, submit: true, withdraw: true, reopen: false };
     if (st === "INGEDIEND") return { save: false, submit: false, withdraw: true, reopen: true };
     if (st === "INGETROKKEN") return { save: false, submit: false, withdraw: false, reopen: true };
@@ -213,7 +343,7 @@ export default function FormRunnerBase({ mode }) {
   const showWithdraw = actions.withdraw;
   const showReopen = actions.reopen;
 
-  const canEditAnswers = actions.save; // alleen in CONCEPT
+  const canEditAnswers = actions.save;
 
   useEffect(() => {
     canEditRef.current = canEditAnswers;
@@ -266,9 +396,87 @@ export default function FormRunnerBase({ mode }) {
     return { ok: true, value: surveyModelRef.current.data || {} };
   }
 
+  function validateBeforeSubmit() {
+    if (isDebug) return { ok: true, summary: [] };
+
+    const model = surveyModelRef.current;
+    if (!model) {
+      if (!surveyParsed.ok) return { ok: true, summary: [] };
+      return {
+        ok: false,
+        error: "Survey model ontbreekt. (survey_json niet geladen?)",
+        summary: [],
+      };
+    }
+
+    try {
+      const valid = model.validate();
+      if (!valid) {
+        const summary = collectValidationSummary(model);
+
+        return {
+          ok: false,
+          error:
+            "Het formulier is nog niet volledig of bevat ongeldige invoer. Controleer de gemarkeerde velden voordat je indient.",
+          summary,
+        };
+      }
+
+      return { ok: true, summary: [] };
+    } catch (e) {
+      return {
+        ok: false,
+        error: `Validatie mislukt: ${String(e?.message || e || "onbekende fout")}`,
+        summary: [],
+      };
+    }
+  }
+
+  function openValidationItem(item) {
+    if (isDebug) return;
+
+    const model = surveyModelRef.current;
+    if (!model) return;
+
+    const targetPage = Array.isArray(model.pages) ? model.pages[item?.pageIndex] : null;
+    if (targetPage) {
+      model.currentPage = targetPage;
+    }
+
+    const question = model.getQuestionByName?.(item?.questionName);
+    if (!question) return;
+
+    requestAnimationFrame(() => {
+      scrollToQuestion(question);
+    });
+  }
+
+  async function saveCurrentAnswers(curValue) {
+    const expectedDraftRev = getDraftRev(instance);
+
+    await putFormAnswers(code, instanceId, {
+      answers_json: curValue,
+      expected_draft_rev: expectedDraftRev,
+    });
+
+    setLastSavedAt(new Date().toISOString());
+    setDirty(false);
+
+    setSaveOk(true);
+    saveOkIconRef.current?.startAnimation?.();
+    if (saveOkTimerRef.current) clearTimeout(saveOkTimerRef.current);
+    saveOkTimerRef.current = setTimeout(() => {
+      setSaveOk(false);
+      saveOkIconRef.current?.stopAnimation?.();
+    }, 1500);
+
+    await reload({ forceEditor: false });
+  }
+
   async function reload({ forceEditor } = {}) {
     setLoading(true);
     setError(null);
+    setValidationSummary([]);
 
     try {
       const res = await getFormInstance(code, instanceId);
@@ -382,25 +590,7 @@ export default function FormRunnerBase({ mode }) {
     }
 
     try {
-      const expectedDraftRev = getDraftRev(instance);
-
-      await putFormAnswers(code, instanceId, {
-        answers_json: cur.value,
-        expected_draft_rev: expectedDraftRev,
-      });
-
-      setLastSavedAt(new Date().toISOString());
-      setSaveOk(true);
-      setDirty(false);
-
-      saveOkIconRef.current?.startAnimation?.();
-      if (saveOkTimerRef.current) clearTimeout(saveOkTimerRef.current);
-      saveOkTimerRef.current = setTimeout(() => {
-        setSaveOk(false);
-        saveOkIconRef.current?.stopAnimation?.();
-      }, 2000);
-
-      await reload({ forceEditor: false });
+      await saveCurrentAnswers(cur.value);
     } catch (e) {
       const msg = String(e?.message || e || "").toLowerCase();
 
@@ -423,36 +613,39 @@ export default function FormRunnerBase({ mode }) {
 
     setBusy(true);
     setError(null);
+    setValidationSummary([]);
 
     try {
-      // indien nodig: eerst opslaan, zodat je nooit oude antwoorden indient
+      const cur = getCurrentAnswersObject();
+      if (!cur.ok) {
+        setError(cur.error);
+        return;
+      }
+
+      const validation = validateBeforeSubmit();
+      if (!validation.ok) {
+        setValidationSummary(Array.isArray(validation.summary) ? validation.summary : []);
+        setError(validation.error);
+        return;
+      }
+
+      const preview = await previewSubmitFormInstance(code, instanceId, {
+        answers_json: cur.value,
+      });
+
+      if (preview?.can_submit === false) {
+        setError(
+          preview?.message ||
+            "Indienen is nog niet mogelijk. Controleer het formulier en probeer opnieuw."
+        );
+        return;
+      }
+
+      const confirmed = window.confirm(buildSubmitConfirmText(preview));
+      if (!confirmed) return;
+
       if (dirty) {
-        const cur = getCurrentAnswersObject();
-        if (!cur.ok) {
-          setBusy(false);
-          setError(cur.error);
-          return;
-        }
-
-        const expectedDraftRev = getDraftRev(instance);
-
-        await putFormAnswers(code, instanceId, {
-          answers_json: cur.value,
-          expected_draft_rev: expectedDraftRev,
-        });
-
-        setLastSavedAt(new Date().toISOString());
-        setDirty(false);
-
-        setSaveOk(true);
-        saveOkIconRef.current?.startAnimation?.();
-        if (saveOkTimerRef.current) clearTimeout(saveOkTimerRef.current);
-        saveOkTimerRef.current = setTimeout(() => {
-          setSaveOk(false);
-          saveOkIconRef.current?.stopAnimation?.();
-        }, 1500);
-
-        await reload({ forceEditor: false });
+        await saveCurrentAnswers(cur.value);
       }
 
       await submitFormInstance(code, instanceId);
@@ -643,7 +836,11 @@ export default function FormRunnerBase({ mode }) {
                 if (!submitOk) submitIconRef.current?.stopAnimation?.();
               }}
               style={{ display: "inline-flex", alignItems: "center", gap: 8 }}
-              title={dirty ? "Indienen (slaat eerst op)" : "Indienen"}
+              title={
+                dirty
+                  ? "Indienen (controleert, toont opvolgingen en slaat eerst op)"
+                  : "Indienen"
+              }
             >
               {submitOk ? (
                 <FileCheck2Icon ref={submitOkIconRef} size={18} />
@@ -681,6 +878,52 @@ export default function FormRunnerBase({ mode }) {
       </div>
 
       {error && <div style={{ color: "salmon" }}>{error}</div>}
+
+      {!isDebug && validationSummary.length > 0 && (
+        <div
+          className="card"
+          style={{
+            padding: 12,
+            display: "grid",
+            gap: 8,
+            border: "1px solid rgba(250, 128, 114, 0.35)",
+          }}
+        >
+          <div style={{ fontWeight: 800 }}>
+            Controleer eerst de volgende velden
+          </div>
+
+          <div className="muted" style={{ fontSize: 12 }}>
+            Klik op een regel om naar het betreffende onderdeel te gaan.
+          </div>
+
+          <div style={{ display: "grid", gap: 6 }}>
+            {validationSummary.map((item) => (
+              <button
+                key={item.id}
+                type="button"
+                className="btn btn-secondary"
+                onClick={() => openValidationItem(item)}
+                style={{
+                  textAlign: "left",
+                  justifyContent: "flex-start",
+                  whiteSpace: "normal",
+                  lineHeight: 1.35,
+                }}
+                title={`${item.pageTitle} · ${item.questionTitle}`}
+              >
+                <span>
+                  <strong>{item.pageTitle}</strong>
+                  {" · "}
+                  {item.questionTitle}
+                  {" — "}
+                  {item.message}
+                </span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       {!isDebug && (
         <div className="card" style={{ padding: 12, display: "grid", gap: 10 }}>

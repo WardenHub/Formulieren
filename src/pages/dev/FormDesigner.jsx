@@ -2,41 +2,36 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { Survey } from "survey-react-ui";
-import { ItemValue, Model , FunctionFactory } from "survey-core";
+import { ItemValue, Model, FunctionFactory } from "survey-core";
 import "survey-core/survey-core.min.css";
 import "survey-core/i18n/dutch";
 
 import "@/styles/surveyjs-overrides.css";
-import { getFormInstance, getFormPrefill, getFormsCatalog } from "@/api/emberApi.js";
+import {
+  getFormInstance,
+  getFormPrefill,
+  getFormsCatalog,
+  previewSubmitFormInstance,
+} from "@/api/emberApi.js";
 
 import { PlusIcon } from "@/components/ui/plus";
 import { ChevronUpIcon } from "@/components/ui/chevron-up";
 
-
-
 let emberFnsRegistered = false;
-FunctionFactory.Instance.register("toNumber", (params) => {
-  const v = params && params.length ? params[0] : null;
-  const n = Number(v);
-  return Number.isFinite(n) ? n : 0;
-});
 
 function registerEmberSurveyFunctions() {
   if (emberFnsRegistered) return;
   emberFnsRegistered = true;
 
-  // toNumber(x) - accepteert "12", "12.5", "12,5", null, undefined
   FunctionFactory.Instance.register("toNumber", (params) => {
     const v = params?.[0];
 
     if (v === null || v === undefined) return 0;
-
     if (typeof v === "number") return Number.isFinite(v) ? v : 0;
 
     const s = String(v).trim();
     if (!s) return 0;
 
-    // NL comma -> dot
     const normalized = s.replace(",", ".");
     const n = Number(normalized);
 
@@ -65,6 +60,244 @@ function normalizeInstanceResponse(res) {
     res ||
     null
   );
+}
+
+function normalizeNullableString(value) {
+  if (value === null || value === undefined) return null;
+  const s = String(value).trim();
+  return s.length ? s : null;
+}
+
+function normalizeComparable(value) {
+  if (value === null || value === undefined) return "";
+  if (typeof value === "boolean") return value ? "true" : "false";
+  return String(value).trim().toLowerCase();
+}
+
+function valuesEqualLooseForFollowUp(actual, expected) {
+  if (actual === expected) return true;
+  return normalizeComparable(actual) === normalizeComparable(expected);
+}
+
+function followUpTruthyYes(value) {
+  const v = normalizeComparable(value);
+  return v === "ja" || v === "yes" || v === "true" || v === "1" || v === "y";
+}
+
+function walkSurveyNodes(node, fn) {
+  if (!node || typeof node !== "object") return;
+  fn(node);
+
+  const visitArray = (arr) => {
+    if (!Array.isArray(arr)) return;
+    for (const item of arr) {
+      walkSurveyNodes(item, fn);
+    }
+  };
+
+  visitArray(node.pages);
+  visitArray(node.elements);
+  visitArray(node.templateElements);
+  visitArray(node.questions);
+  visitArray(node.rows);
+}
+
+function collectFollowUpDefinitionsFromSurvey(surveyJson) {
+  const defs = [];
+
+  walkSurveyNodes(surveyJson, (node) => {
+    const followUp = node?.ember?.followUp;
+    if (!followUp) return;
+
+    const name = String(node?.name || "").trim();
+    if (!name) return;
+
+    defs.push({
+      name,
+      type: normalizeNullableString(node?.type),
+      followUp,
+    });
+  });
+
+  return defs;
+}
+
+function shouldCreateLocalFollowUp(followUp, rowOrContext) {
+  const mode = String(followUp?.mode || "on-condition").trim();
+
+  if (mode === "always") return true;
+  if (mode !== "on-condition") return false;
+
+  const condition = followUp?.condition;
+  if (!condition || !condition.field) return false;
+
+  const field = String(condition.field).trim();
+  const expected = condition.equals;
+  const actual = rowOrContext?.[field];
+
+  return valuesEqualLooseForFollowUp(actual, expected);
+}
+
+function resolveLocalCertificateImpact(followUp, rowOrContext) {
+  const cfg = followUp?.certificateImpact;
+  if (!cfg || typeof cfg !== "object") return null;
+
+  const mode = String(cfg.mode || "").trim();
+
+  if (mode === "fixed") {
+    return cfg.value === "yes" ? "yes" : "no";
+  }
+
+  if (mode === "field") {
+    const field = String(cfg.field || "").trim();
+    if (!field) return null;
+    return followUpTruthyYes(rowOrContext?.[field]) ? "yes" : "no";
+  }
+
+  if (mode === "none") {
+    return "no";
+  }
+
+  return null;
+}
+
+function getOptionalFollowUpField(data, fieldName) {
+  const key = String(fieldName || "").trim();
+  if (!key) return null;
+  return normalizeNullableString(data?.[key]);
+}
+
+function buildLocalFollowUpTitle(followUp, rowOrContext, itemCode) {
+  const workflowTitleField = String(followUp?.workflowtitleField || "").trim();
+  const titleValue = workflowTitleField
+    ? getOptionalFollowUpField(rowOrContext, workflowTitleField)
+    : null;
+
+  if (itemCode && titleValue) return `${itemCode} - ${titleValue}`;
+  if (titleValue) return titleValue;
+  if (itemCode) return itemCode;
+  return "Opvolgingsactie";
+}
+
+function buildSingleQuestionContext(questionName, answerValue, answers) {
+  const base = answers && typeof answers === "object" ? { ...answers } : {};
+  base[questionName] = answerValue;
+  base.value = answerValue;
+  return base;
+}
+
+function buildLocalFollowUpFingerprint({ questionName, rowIndex, itemCode }) {
+  return [
+    normalizeNullableString(questionName) || "",
+    rowIndex == null ? "" : String(rowIndex),
+    normalizeNullableString(itemCode) || "",
+  ].join("|");
+}
+
+function dedupeLocalFollowUps(items) {
+  const map = new Map();
+
+  for (const item of items || []) {
+    const fp = String(item?.fingerprint || "").trim();
+    if (!fp) continue;
+
+    const existing = map.get(fp);
+    if (!existing) {
+      map.set(fp, item);
+      continue;
+    }
+
+    const existingScore =
+      (existing.workflowTitle ? 2 : 0) +
+      (existing.workflowDescription ? 2 : 0) +
+      (existing.category ? 1 : 0) +
+      (existing.certificateImpact ? 1 : 0) +
+      (existing.itemCode ? 1 : 0);
+
+    const nextScore =
+      (item.workflowTitle ? 2 : 0) +
+      (item.workflowDescription ? 2 : 0) +
+      (item.category ? 1 : 0) +
+      (item.certificateImpact ? 1 : 0) +
+      (item.itemCode ? 1 : 0);
+
+    if (nextScore >= existingScore) {
+      map.set(fp, item);
+    }
+  }
+
+  return Array.from(map.values());
+}
+
+function evaluateLocalFollowUps(surveyJson, answers) {
+  const defs = collectFollowUpDefinitionsFromSurvey(surveyJson || {});
+  const allAnswers = answers && typeof answers === "object" ? answers : {};
+  const found = [];
+
+  for (const def of defs) {
+    const questionName = def.name;
+    const questionType = def.type;
+    const followUp = def.followUp;
+    const answerValue = allAnswers?.[questionName];
+
+    if (questionType === "matrixdynamic") {
+      const rows = Array.isArray(answerValue) ? answerValue : [];
+
+      rows.forEach((row, zeroBasedIndex) => {
+        const rowData = row && typeof row === "object" ? row : {};
+        if (!shouldCreateLocalFollowUp(followUp, rowData)) return;
+
+        const rowIndex = zeroBasedIndex + 1;
+        const itemCode = getOptionalFollowUpField(rowData, followUp.itemCodeField);
+
+        found.push({
+          kind: String(followUp?.kind || "").trim() || "workflow",
+          questionName,
+          questionType,
+          rowIndex,
+          itemCode,
+          workflowTitle: buildLocalFollowUpTitle(followUp, rowData, itemCode),
+          workflowDescription: getOptionalFollowUpField(rowData, followUp.descriptionField),
+          category: normalizeNullableString(followUp?.category),
+          certificateImpact: resolveLocalCertificateImpact(followUp, rowData),
+          fingerprint: buildLocalFollowUpFingerprint({
+            questionName,
+            rowIndex,
+            itemCode,
+          }),
+        });
+      });
+
+      continue;
+    }
+
+    const ctx = buildSingleQuestionContext(questionName, answerValue, allAnswers);
+    if (!shouldCreateLocalFollowUp(followUp, ctx)) continue;
+
+    const itemCode = getOptionalFollowUpField(ctx, followUp.itemCodeField);
+
+    found.push({
+      kind: String(followUp?.kind || "").trim() || "workflow",
+      questionName,
+      questionType,
+      rowIndex: null,
+      itemCode,
+      workflowTitle: buildLocalFollowUpTitle(followUp, ctx, itemCode),
+      workflowDescription: getOptionalFollowUpField(ctx, followUp.descriptionField),
+      category: normalizeNullableString(followUp?.category),
+      certificateImpact: resolveLocalCertificateImpact(followUp, ctx),
+      fingerprint: buildLocalFollowUpFingerprint({
+        questionName,
+        rowIndex: null,
+        itemCode,
+      }),
+    });
+  }
+
+  return {
+    definitions: defs,
+    items: dedupeLocalFollowUps(found),
+  };
 }
 
 function clamp(n, min, max) {
@@ -111,9 +344,6 @@ function deepClone(obj) {
   return JSON.parse(JSON.stringify(obj));
 }
 
-/**
- * Traverse survey JSON elements recursively.
- */
 function walkElements(node, fn) {
   if (!node || typeof node !== "object") return;
 
@@ -135,9 +365,6 @@ function walkElements(node, fn) {
   visitArray(node.choices);
 }
 
-/**
- * Inject ember.choices into the survey JSON itself, so SurveyModel is built with choices present.
- */
 function injectChoicesIntoSurveyJson(surveyJson, prefillPayload) {
   const payloadChoices = prefillPayload?.choices || prefillPayload?.prefill?.choices || {};
   const next = deepClone(surveyJson);
@@ -202,14 +429,12 @@ function injectChoicesIntoSurveyJson(surveyJson, prefillPayload) {
   return next;
 }
 
-/**
- * Extract ember bindings + ember choices keys (+ ember.filter) from a SurveyJS model.
- */
 function collectEmberMeta(model) {
   const binds = [];
   const choices = [];
+  const followUps = [];
 
-  if (!model) return { binds, choices };
+  if (!model) return { binds, choices, followUps };
 
   const questions = model.getAllQuestions?.() || [];
   for (const q of questions) {
@@ -223,10 +448,20 @@ function collectEmberMeta(model) {
       });
     }
 
-    if (ember?.choices) choices.push({ name: q.name, choices: ember.choices });
+    if (ember?.choices) {
+      choices.push({ name: q.name, choices: ember.choices });
+    }
+
+    if (ember?.followUp) {
+      followUps.push({
+        name: q.name,
+        type: q.getType?.() || q?.jsonObj?.type || null,
+        followUp: ember.followUp,
+      });
+    }
   }
 
-  return { binds, choices };
+  return { binds, choices, followUps };
 }
 
 function applyArrayFilter(value, filterCfg) {
@@ -256,9 +491,6 @@ function applyArrayFilter(value, filterCfg) {
   });
 }
 
-/**
- * Apply bindings to model.data based on mode.
- */
 function applyBindings({ model, prefillPayload, lastAppliedMap, onlyRefreshable, isRefresh }) {
   const nextApplied = { ...(lastAppliedMap || {}) };
   const data = { ...(model.data || {}) };
@@ -310,11 +542,6 @@ function applyBindings({ model, prefillPayload, lastAppliedMap, onlyRefreshable,
   return nextApplied;
 }
 
-/**
- * Build prefill keys list from survey model:
- * - ember.bind kind="prefill" => bind.key
- * - ember.choices => choices.key
- */
 function collectRequestedPrefillKeys(model) {
   const keys = new Set();
   const { binds, choices } = collectEmberMeta(model);
@@ -352,7 +579,6 @@ function applyEmberFilterToArray(rows, filter) {
     const v = r?.[field];
 
     if (hasEquals) return String(v ?? "") === String(filter.equals ?? "");
-
     if (hasEqualsAny) {
       const set = new Set(filter.equalsAny.map((x) => String(x)));
       return set.has(String(v ?? ""));
@@ -373,9 +599,7 @@ function resolveBindValue(bind, prefillPayload, emberFilter) {
 
   if (kind === "prefill") {
     const raw = prefillPayload?.values?.[key] ?? prefillPayload?.prefill?.values?.[key];
-
     if (Array.isArray(raw)) return applyEmberFilterToArray(raw, emberFilter);
-
     return raw;
   }
 
@@ -452,11 +676,7 @@ function buildBrandTypeMap(prefillPayload) {
 
     map.set(String(key), {
       value: String(key),
-      text:
-        item.text ??
-        item.label ??
-        item.display_name ??
-        String(key),
+      text: item.text ?? item.label ?? item.display_name ?? String(key),
       default_capacity_ah: toNumberOrNull(item.default_capacity_ah),
     });
   }
@@ -469,14 +689,9 @@ function valuesEqualLoose(a, b) {
   const nb = toNumberOrNull(b);
 
   if (na !== null && nb !== null) return na === nb;
-
   return String(a ?? "").trim() === String(b ?? "").trim();
 }
 
-/**
- * Apply ember.choices from prefill payload to SurveyJS questions.
- * Use ItemValue so dropdowns render + keep values stable.
- */
 function applyChoices(model, prefillPayload) {
   if (!model) return;
 
@@ -788,8 +1003,217 @@ function computeGeconstateerdeSysteembeschikbaarheid(aantalMelders, meldurenBuit
   return formatMaybeNumber(pct, 2);
 }
 
+function getQuestionTitle(question) {
+  const t =
+    question?.fullTitle ||
+    question?.title ||
+    question?.locTitle?.renderedHtml ||
+    question?.name ||
+    "";
+  return normalizeNullableString(t) || "Onbenoemde vraag";
+}
+
+function getPageTitle(page, fallbackIndex = 0) {
+  const t =
+    page?.title ||
+    page?.locTitle?.renderedHtml ||
+    page?.name ||
+    "";
+  return normalizeNullableString(t) || `Pagina ${fallbackIndex + 1}`;
+}
+
+function isQuestionReportOnly(question) {
+  const kind = String(question?.jsonObj?.ember?.followUp?.kind || "").trim().toLowerCase();
+  return kind === "report-only";
+}
+
+function isQuestionBlocking(question) {
+  return !isQuestionReportOnly(question);
+}
+
+function isBlankValue(value) {
+  return (
+    value == null ||
+    (typeof value === "string" && value.trim() === "") ||
+    (Array.isArray(value) && value.length === 0)
+  );
+}
+
+function getMatrixColumnTitle(column) {
+  return String(column?.title || column?.name || "Veld").trim();
+}
+
+function getQuestionElementByName(questionName) {
+  if (!questionName) return null;
+
+  return (
+    document.querySelector(`[data-name="${CSS.escape(String(questionName))}"]`) ||
+    document.querySelector(`[name="${CSS.escape(String(questionName))}"]`) ||
+    null
+  );
+}
+
+function scrollToDesignerQuestion(questionName, attempt = 0) {
+  const el = getQuestionElementByName(questionName);
+
+  if (el) {
+    el.scrollIntoView({
+      behavior: "smooth",
+      block: "center",
+      inline: "nearest",
+    });
+    return true;
+  }
+
+  if (attempt < 16) {
+    window.setTimeout(() => {
+      scrollToDesignerQuestion(questionName, attempt + 1);
+    }, 120);
+  }
+
+  return false;
+}
+
+function collectMatrixValidationSummary(model) {
+  const items = [];
+  const pages = Array.isArray(model?.pages) ? model.pages : [];
+
+  pages.forEach((page, pageIndex) => {
+    const pageTitle = getPageTitle(page, pageIndex);
+    const questions = Array.isArray(page?.questions) ? page.questions : [];
+
+    questions.forEach((question) => {
+      if (question?.getType?.() !== "matrixdynamic") return;
+      if (!isQuestionBlocking(question)) return;
+
+      const questionName = String(question?.name || "").trim();
+      if (!questionName) return;
+
+      const questionTitle = getQuestionTitle(question);
+      const rows = Array.isArray(question.value) ? question.value : [];
+      const columns = Array.isArray(question.columns) ? question.columns : [];
+
+      rows.forEach((row, rowIndex) => {
+        const rowData = row && typeof row === "object" ? row : {};
+
+        columns.forEach((column) => {
+          if (!column?.isRequired) return;
+
+          const cellValue = rowData?.[column.name];
+          if (!isBlankValue(cellValue)) return;
+
+          items.push({
+            id: `matrix-required::${pageIndex}::${questionName}::${rowIndex}::${column.name}`,
+            pageIndex,
+            pageTitle,
+            questionName,
+            questionTitle,
+            rowIndex: rowIndex + 1,
+            columnName: String(column.name || ""),
+            message:
+              String(column.requiredErrorText || "").trim() ||
+              `${getMatrixColumnTitle(column)} is verplicht.`,
+            kind: "required",
+          });
+        });
+
+        const heeftVoldoet = Object.prototype.hasOwnProperty.call(rowData, "voldoet");
+        const heeftOpmerking = Object.prototype.hasOwnProperty.call(rowData, "opmerking");
+
+        if (heeftVoldoet && heeftOpmerking) {
+          const voldoet = String(rowData.voldoet || "").trim();
+          const opmerking = String(rowData.opmerking || "").trim();
+
+          if (voldoet === "Nee" && !opmerking) {
+            items.push({
+              id: `matrix-opmerking-bij-nee::${pageIndex}::${questionName}::${rowIndex}`,
+              pageIndex,
+              pageTitle,
+              questionName,
+              questionTitle,
+              rowIndex: rowIndex + 1,
+              columnName: "opmerking",
+              message: "Bij 'Nee' is een opmerking verplicht.",
+              kind: "rule",
+            });
+          }
+        }
+      });
+    });
+  });
+
+  return items;
+}
+
+function dedupeValidationSummary(items) {
+  const map = new Map();
+
+  for (const item of Array.isArray(items) ? items : []) {
+    const key = [
+      item.pageIndex ?? "",
+      item.questionName ?? "",
+      item.rowIndex ?? "",
+      item.columnName ?? "",
+      item.message ?? "",
+    ].join("|");
+
+    if (!map.has(key)) {
+      map.set(key, item);
+    }
+  }
+
+  return Array.from(map.values());
+}
+
+function collectValidationSummary(model) {
+  if (!model) return [];
+
+  const items = [];
+  const pages = Array.isArray(model.pages) ? model.pages : [];
+
+  pages.forEach((page, pageIndex) => {
+    const pageTitle = getPageTitle(page, pageIndex);
+    const questions = Array.isArray(page?.questions) ? page.questions : [];
+
+    questions.forEach((question) => {
+      const questionType = question?.getType?.() || "";
+
+      if (!isQuestionBlocking(question)) return;
+      if (questionType === "matrixdynamic") return;
+
+      const errors = Array.isArray(question?.errors) ? question.errors : [];
+      if (!errors.length) return;
+
+      const questionName = String(question?.name || "").trim();
+      const questionTitle = getQuestionTitle(question);
+
+      errors.forEach((err, errIndex) => {
+        const message = String(err?.text || err || "").trim();
+        if (!message) return;
+
+        items.push({
+          id: `question-error::${pageIndex}::${questionName}::${errIndex}`,
+          pageIndex,
+          pageTitle,
+          questionName,
+          questionTitle,
+          rowIndex: null,
+          columnName: null,
+          message,
+          kind: "question",
+        });
+      });
+    });
+  });
+
+  const matrixItems = collectMatrixValidationSummary(model);
+
+  return dedupeValidationSummary([...items, ...matrixItems]);
+}
+
 export default function FormDesigner() {
   registerEmberSurveyFunctions();
+
   const answersRafRef = useRef(null);
   const [editorText, setEditorText] = useState(() => {
     const fromLs = localStorage.getItem("dev.formdesigner.editorText");
@@ -850,18 +1274,37 @@ export default function FormDesigner() {
   const [braceMatch, setBraceMatch] = useState(null);
   const [braceFlash, setBraceFlash] = useState(null);
 
+  const [localFollowUpPreview, setLocalFollowUpPreview] = useState(null);
+  const [backendSubmitPreview, setBackendSubmitPreview] = useState(null);
+  const [submitPreviewBusy, setSubmitPreviewBusy] = useState(false);
+  const [validationSummary, setValidationSummary] = useState([]);
+
   const [openCards, setOpenCards] = useState(() => {
     const raw = localStorage.getItem("dev.formdesigner.openCards");
-    if (!raw) return { answers: false, lastApplied: false, prefill: false };
+    if (!raw) {
+      return {
+        answers: false,
+        lastApplied: false,
+        prefill: false,
+        followUpPreview: true,
+      };
+    }
+
     try {
       const v = JSON.parse(raw);
       return {
         answers: Boolean(v?.answers),
         lastApplied: Boolean(v?.lastApplied),
         prefill: Boolean(v?.prefill),
+        followUpPreview: v?.followUpPreview !== false,
       };
     } catch {
-      return { answers: false, lastApplied: false, prefill: false };
+      return {
+        answers: false,
+        lastApplied: false,
+        prefill: false,
+        followUpPreview: true,
+      };
     }
   });
 
@@ -869,11 +1312,13 @@ export default function FormDesigner() {
     answers: null,
     lastApplied: null,
     prefill: null,
+    followUpPreview: null,
   });
 
   function animateIcon(key) {
     toggleIconRef.current[key]?.startAnimation?.();
   }
+
   function stopIcon(key) {
     toggleIconRef.current[key]?.stopAnimation?.();
   }
@@ -1053,6 +1498,9 @@ export default function FormDesigner() {
     setPreviewError(null);
     setPreviewJson(parsed.value);
     setShowPreview(true);
+    setLocalFollowUpPreview(null);
+    setBackendSubmitPreview(null);
+    setValidationSummary([]);
   }
 
   async function loadPreviewFromBackend() {
@@ -1087,6 +1535,9 @@ export default function FormDesigner() {
 
       setPreviewJson(surveyObj);
       setShowPreview(true);
+      setLocalFollowUpPreview(null);
+      setBackendSubmitPreview(null);
+      setValidationSummary([]);
     } catch (e) {
       setPreviewError(String(e?.message || e || "Backend load faalde."));
     } finally {
@@ -1254,6 +1705,9 @@ export default function FormDesigner() {
       answers_json: answersPreview ?? {},
       lastApplied: lastAppliedMap ?? {},
       prefillPayload: prefillPayload ?? null,
+      localFollowUpPreview: localFollowUpPreview ?? null,
+      backendSubmitPreview: backendSubmitPreview ?? null,
+      validationSummary: validationSummary ?? [],
     };
 
     downloadJsonFile(`ember_debug_bundle_${stamp}.json`, bundle);
@@ -1317,338 +1771,315 @@ export default function FormDesigner() {
     };
   }, [leftWidth, editorHeight]);
 
-  // Build model from previewJson; seed with answersRef.current (no “state echo” that can revert user edits)
   const model = useMemo(() => {
-  if (!previewJson) return null;
+    if (!previewJson) return null;
 
-  const m = new Model(previewJson);
-  energyAutoStateRef.current = {};
-  availabilityAutoStateRef.current = {};
+    const m = new Model(previewJson);
+    energyAutoStateRef.current = {};
+    availabilityAutoStateRef.current = {};
 
-  const seed =
-    answersRef.current && typeof answersRef.current === "object"
-      ? answersRef.current
-      : {};
+    const seed =
+      answersRef.current && typeof answersRef.current === "object"
+        ? answersRef.current
+        : {};
 
-  m.data = { ...(m.data || {}), ...seed };
+    m.data = { ...(m.data || {}), ...seed };
 
-  function applyCapWarnings() {
-    const matrixRoot = document.querySelector('[data-name="es_regels"]');
-    if (!matrixRoot) return;
+    function applyCapWarnings() {
+      const matrixRoot = document.querySelector('[data-name="es_regels"]');
+      if (!matrixRoot) return;
 
-    const rows = Array.isArray(m.getValue("es_regels")) ? m.getValue("es_regels") : [];
-    const trList = matrixRoot.querySelectorAll("tbody tr");
+      const rows = Array.isArray(m.getValue("es_regels")) ? m.getValue("es_regels") : [];
+      const trList = matrixRoot.querySelectorAll("tbody tr");
 
-    trList.forEach((tr, rowIndex) => {
-      const row = rows[rowIndex];
-      if (!row || typeof row !== "object") return;
+      trList.forEach((tr, rowIndex) => {
+        const row = rows[rowIndex];
+        if (!row || typeof row !== "object") return;
 
-      const aanwezige = toNumberOrNull(row.es_effectieve_ah);
-      const benodigd = toNumberOrNull(row.es_benodigd_ah);
+        const aanwezige = toNumberOrNull(row.es_effectieve_ah);
+        const benodigd = toNumberOrNull(row.es_benodigd_ah);
 
-      const shouldWarn =
-        aanwezige !== null &&
-        benodigd !== null &&
-        aanwezige < benodigd;
+        const shouldWarn =
+          aanwezige !== null &&
+          benodigd !== null &&
+          aanwezige < benodigd;
 
-      const cells = tr.querySelectorAll("td");
+        const cells = tr.querySelectorAll("td");
+        const aanwezigeCell = cells[5];
+        const benodigdCell = cells[8];
 
-      // huidige volgorde:
-      // 0 datum
-      // 1 aantal
-      // 2 cap per accu
-      // 3 schakeling
-      // 4 merk/type
-      // 5 aanwezige cap
-      // 6 rust
-      // 7 alarm
-      // 8 benodigd
-      // 9 opmerking
-      // 10 overbrugging
-
-      const aanwezigeCell = cells[5];
-      const benodigdCell = cells[8];
-
-      if (aanwezigeCell) aanwezigeCell.classList.toggle("ember-cap-too-low", shouldWarn);
-      if (benodigdCell) benodigdCell.classList.toggle("ember-cap-too-low", shouldWarn);
-    });
-  }
+        if (aanwezigeCell) aanwezigeCell.classList.toggle("ember-cap-too-low", shouldWarn);
+        if (benodigdCell) benodigdCell.classList.toggle("ember-cap-too-low", shouldWarn);
+      });
+    }
 
     function applyAvailabilityWarnings() {
-    const geconstateerd = toNumberOrNull(m.getValue("a2_systeembeschikbaarheid_geconstateerd"));
-    const pve = toNumberOrNull(m.getValue("a2_systeembeschikbaarheid_pve"));
+      const geconstateerd = toNumberOrNull(m.getValue("a2_systeembeschikbaarheid_geconstateerd"));
+      const pve = toNumberOrNull(m.getValue("a2_systeembeschikbaarheid_pve"));
 
-    const shouldWarn =
-      geconstateerd !== null &&
-      pve !== null &&
-      geconstateerd < pve;
+      const shouldWarn =
+        geconstateerd !== null &&
+        pve !== null &&
+        geconstateerd < pve;
 
-    const input = document.querySelector(
-      '[data-name="a2_systeembeschikbaarheid_geconstateerd"] input, [data-name="a2_systeembeschikbaarheid_geconstateerd"] textarea'
-    );
-
-    if (input) {
-      input.style.color = shouldWarn ? "red" : "";
-      input.style.borderColor = shouldWarn ? "red" : "";
-      input.style.boxShadow = shouldWarn ? "0 0 0 1px red inset" : "";
-    }
-  }
-
-  function normalizeAvailabilityRows() {
-    const rows = Array.isArray(m.getValue("a2_buitenbedrijfstellingen"))
-      ? m.getValue("a2_buitenbedrijfstellingen")
-      : [];
-
-    const perfRows = Array.isArray(m.getValue("performance_data_view"))
-      ? m.getValue("performance_data_view")
-      : [];
-
-    let changed = false;
-
-    const nextRows = rows.map((r, rowIndex) => {
-      const row = r && typeof r === "object" ? { ...r } : {};
-      const stateKey = String(rowIndex);
-
-      const prevState = availabilityAutoStateRef.current[stateKey] || {};
-      const nextState = { ...prevState };
-
-      const urenPerDag = formatMaybeNumber(
-        computeHoursBetween(row.tijd_begin, row.tijd_einde),
-        3
+      const input = document.querySelector(
+        '[data-name="a2_systeembeschikbaarheid_geconstateerd"] input, [data-name="a2_systeembeschikbaarheid_geconstateerd"] textarea'
       );
 
-      if (!valuesEqualLoose(row.uren_pd_niet_beschikbaar, urenPerDag)) {
-        row.uren_pd_niet_beschikbaar = urenPerDag;
-        changed = true;
-      }
-
-      const meldurenNietBeschikbaar = formatMaybeNumber(
-        computeMeldurenNietBeschikbaar(
-          row.uren_pd_niet_beschikbaar,
-          row.melders_niet_beschikbaar,
-          row.tijdsduur_dagen
-        ),
-        3
-      );
-
-      if (!valuesEqualLoose(row.melduren_niet_beschikbaar, meldurenNietBeschikbaar)) {
-        row.melduren_niet_beschikbaar = meldurenNietBeschikbaar;
-        changed = true;
-      }
-
-      availabilityAutoStateRef.current[stateKey] = nextState;
-      return row;
-    });
-
-    const totaalMeldurenBuitenWerking = sumAvailabilityMelduren(nextRows);
-    const totaalAantalMelders = sumAantalMeldersFromPerformanceRows(perfRows);
-    const geconstateerd = computeGeconstateerdeSysteembeschikbaarheid(
-      totaalAantalMelders,
-      totaalMeldurenBuitenWerking
-    );
-
-    if (changed) {
-      m.setValue("a2_buitenbedrijfstellingen", nextRows);
-      return;
-    }
-
-    if (!valuesEqualLoose(m.getValue("a2_melduren_buiten_werking"), totaalMeldurenBuitenWerking)) {
-      m.setValue("a2_melduren_buiten_werking", totaalMeldurenBuitenWerking);
-    }
-
-    if (!valuesEqualLoose(m.getValue("a2_aantal_melders"), totaalAantalMelders)) {
-      m.setValue("a2_aantal_melders", totaalAantalMelders);
-    }
-
-    if (!valuesEqualLoose(m.getValue("a2_systeembeschikbaarheid_geconstateerd"), geconstateerd)) {
-      m.setValue("a2_systeembeschikbaarheid_geconstateerd", geconstateerd);
-    }
-
-    const a2Rows = Array.isArray(m.getValue("a2_items")) ? m.getValue("a2_items") : [];
-    if (a2Rows.length > 0) {
-      const nextA2Rows = a2Rows.map((row, idx) => {
-        if (idx !== 0) return row;
-        const rr = row && typeof row === "object" ? { ...row } : {};
-        rr.eis = "NEN 2535:1996 & 2009 §4.4";
-        return rr;
-      });
-
-      if (JSON.stringify(nextA2Rows) !== JSON.stringify(a2Rows)) {
-        m.setValue("a2_items", nextA2Rows);
+      if (input) {
+        input.style.color = shouldWarn ? "red" : "";
+        input.style.borderColor = shouldWarn ? "red" : "";
+        input.style.boxShadow = shouldWarn ? "0 0 0 1px red inset" : "";
       }
     }
 
-    requestAnimationFrame(() => {
-      applyAvailabilityWarnings();
-    });
-  }
+    function normalizeAvailabilityRows() {
+      const rows = Array.isArray(m.getValue("a2_buitenbedrijfstellingen"))
+        ? m.getValue("a2_buitenbedrijfstellingen")
+        : [];
 
-  function normalizeEnergyRows() {
-    const rows = Array.isArray(m.getValue("es_regels")) ? m.getValue("es_regels") : [];
-    if (!rows.length) return;
+      const perfRows = Array.isArray(m.getValue("performance_data_view"))
+        ? m.getValue("performance_data_view")
+        : [];
 
-    const agingFactor = m.getValue("es_verouderingsfactor");
-    const brandTypeMap = buildBrandTypeMap(prefillPayload);
+      let changed = false;
 
-    let changed = false;
+      const nextRows = rows.map((r, rowIndex) => {
+        const row = r && typeof r === "object" ? { ...r } : {};
+        const stateKey = String(rowIndex);
 
-    const nextRows = rows.map((r, rowIndex) => {
-      const row = r && typeof r === "object" ? { ...r } : {};
-      const stateKey = String(rowIndex);
+        const prevState = availabilityAutoStateRef.current[stateKey] || {};
+        const nextState = { ...prevState };
 
-      const prevState = energyAutoStateRef.current[stateKey] || {
-        lastMerkType: null,
-        autoCapaciteitAh: null,
-        autoEffectieveAh: null,
-      };
+        const urenPerDag = formatMaybeNumber(
+          computeHoursBetween(row.tijd_begin, row.tijd_einde),
+          3
+        );
 
-      const nextState = { ...prevState };
-
-      const merkType = row.es_merk_type ? String(row.es_merk_type) : "";
-      const brand = merkType ? brandTypeMap.get(merkType) : null;
-      const merkTypeChanged = prevState.lastMerkType !== merkType;
-
-      // 1) merk/type -> cap per accu
-      // Alleen automatisch:
-      // - als merk/type gewijzigd is
-      // - of cap per accu leeg is
-      if (brand?.default_capacity_ah != null) {
-        const defaultCap = formatMaybeNumber(brand.default_capacity_ah, 3);
-        const currentCap = toNumberOrNull(row.es_capaciteit_ah);
-
-        if (merkTypeChanged || currentCap === null) {
-          if (!valuesEqualLoose(row.es_capaciteit_ah, defaultCap)) {
-            row.es_capaciteit_ah = defaultCap;
-            changed = true;
-          }
-          nextState.autoCapaciteitAh = defaultCap;
-        }
-      }
-
-      // 2) cap per accu + aantal + schakeling -> aanwezige cap
-      // Alleen automatisch invullen als:
-      // - veld leeg is
-      // - of huidige waarde nog gelijk is aan de laatst auto-berekende waarde
-      const computedEffectiveAh = formatMaybeNumber(
-        computeEffectiveAh(row.es_capaciteit_ah, row.es_aantal, row.es_schakeling),
-        3
-      );
-
-      const currentEffective = row.es_effectieve_ah;
-      const effectiveIsEmpty = toNumberOrNull(currentEffective) === null;
-      const effectiveStillAuto =
-        prevState.autoEffectieveAh != null &&
-        valuesEqualLoose(currentEffective, prevState.autoEffectieveAh);
-
-      if (effectiveIsEmpty || effectiveStillAuto || merkTypeChanged) {
-        if (!valuesEqualLoose(currentEffective, computedEffectiveAh)) {
-          row.es_effectieve_ah = computedEffectiveAh;
+        if (!valuesEqualLoose(row.uren_pd_niet_beschikbaar, urenPerDag)) {
+          row.uren_pd_niet_beschikbaar = urenPerDag;
           changed = true;
         }
-        nextState.autoEffectieveAh = computedEffectiveAh;
-      }
 
-      // 3) benodigd Ah altijd herberekenen
-      const requiredAh = formatMaybeNumber(
-        computeRequiredAh(
-          row.es_ruststroom_ma,
-          row.es_alarmstroom_ma,
-          row.es_overbrugging_uren,
-          agingFactor
-        ),
-        3
+        const meldurenNietBeschikbaar = formatMaybeNumber(
+          computeMeldurenNietBeschikbaar(
+            row.uren_pd_niet_beschikbaar,
+            row.melders_niet_beschikbaar,
+            row.tijdsduur_dagen
+          ),
+          3
+        );
+
+        if (!valuesEqualLoose(row.melduren_niet_beschikbaar, meldurenNietBeschikbaar)) {
+          row.melduren_niet_beschikbaar = meldurenNietBeschikbaar;
+          changed = true;
+        }
+
+        availabilityAutoStateRef.current[stateKey] = nextState;
+        return row;
+      });
+
+      const totaalMeldurenBuitenWerking = sumAvailabilityMelduren(nextRows);
+      const totaalAantalMelders = sumAantalMeldersFromPerformanceRows(perfRows);
+      const geconstateerd = computeGeconstateerdeSysteembeschikbaarheid(
+        totaalAantalMelders,
+        totaalMeldurenBuitenWerking
       );
 
-      if (!valuesEqualLoose(row.es_benodigd_ah, requiredAh)) {
-        row.es_benodigd_ah = requiredAh;
-        changed = true;
+      if (changed) {
+        m.setValue("a2_buitenbedrijfstellingen", nextRows);
+        return;
       }
 
-      nextState.lastMerkType = merkType;
-      energyAutoStateRef.current[stateKey] = nextState;
+      if (!valuesEqualLoose(m.getValue("a2_melduren_buiten_werking"), totaalMeldurenBuitenWerking)) {
+        m.setValue("a2_melduren_buiten_werking", totaalMeldurenBuitenWerking);
+      }
 
-      return row;
+      if (!valuesEqualLoose(m.getValue("a2_aantal_melders"), totaalAantalMelders)) {
+        m.setValue("a2_aantal_melders", totaalAantalMelders);
+      }
+
+      if (!valuesEqualLoose(m.getValue("a2_systeembeschikbaarheid_geconstateerd"), geconstateerd)) {
+        m.setValue("a2_systeembeschikbaarheid_geconstateerd", geconstateerd);
+      }
+
+      const a2Rows = Array.isArray(m.getValue("a2_items")) ? m.getValue("a2_items") : [];
+      if (a2Rows.length > 0) {
+        const nextA2Rows = a2Rows.map((row, idx) => {
+          if (idx !== 0) return row;
+          const rr = row && typeof row === "object" ? { ...row } : {};
+          rr.eis = "NEN 2535:1996 & 2009 §4.4";
+          return rr;
+        });
+
+        if (JSON.stringify(nextA2Rows) !== JSON.stringify(a2Rows)) {
+          m.setValue("a2_items", nextA2Rows);
+        }
+      }
+
+      requestAnimationFrame(() => {
+        applyAvailabilityWarnings();
+      });
+    }
+
+    function normalizeEnergyRows() {
+      const rows = Array.isArray(m.getValue("es_regels")) ? m.getValue("es_regels") : [];
+      if (!rows.length) return;
+
+      const agingFactor = m.getValue("es_verouderingsfactor");
+      const brandTypeMap = buildBrandTypeMap(prefillPayload);
+
+      let changed = false;
+
+      const nextRows = rows.map((r, rowIndex) => {
+        const row = r && typeof r === "object" ? { ...r } : {};
+        const stateKey = String(rowIndex);
+
+        const prevState = energyAutoStateRef.current[stateKey] || {
+          lastMerkType: null,
+          autoCapaciteitAh: null,
+          autoEffectieveAh: null,
+        };
+
+        const nextState = { ...prevState };
+
+        const merkType = row.es_merk_type ? String(row.es_merk_type) : "";
+        const brand = merkType ? brandTypeMap.get(merkType) : null;
+        const merkTypeChanged = prevState.lastMerkType !== merkType;
+
+        if (brand?.default_capacity_ah != null) {
+          const defaultCap = formatMaybeNumber(brand.default_capacity_ah, 3);
+          const currentCap = toNumberOrNull(row.es_capaciteit_ah);
+
+          if (merkTypeChanged || currentCap === null) {
+            if (!valuesEqualLoose(row.es_capaciteit_ah, defaultCap)) {
+              row.es_capaciteit_ah = defaultCap;
+              changed = true;
+            }
+            nextState.autoCapaciteitAh = defaultCap;
+          }
+        }
+
+        const computedEffectiveAh = formatMaybeNumber(
+          computeEffectiveAh(row.es_capaciteit_ah, row.es_aantal, row.es_schakeling),
+          3
+        );
+
+        const currentEffective = row.es_effectieve_ah;
+        const effectiveIsEmpty = toNumberOrNull(currentEffective) === null;
+        const effectiveStillAuto =
+          prevState.autoEffectieveAh != null &&
+          valuesEqualLoose(currentEffective, prevState.autoEffectieveAh);
+
+        if (effectiveIsEmpty || effectiveStillAuto || merkTypeChanged) {
+          if (!valuesEqualLoose(currentEffective, computedEffectiveAh)) {
+            row.es_effectieve_ah = computedEffectiveAh;
+            changed = true;
+          }
+          nextState.autoEffectieveAh = computedEffectiveAh;
+        }
+
+        const requiredAh = formatMaybeNumber(
+          computeRequiredAh(
+            row.es_ruststroom_ma,
+            row.es_alarmstroom_ma,
+            row.es_overbrugging_uren,
+            agingFactor
+          ),
+          3
+        );
+
+        if (!valuesEqualLoose(row.es_benodigd_ah, requiredAh)) {
+          row.es_benodigd_ah = requiredAh;
+          changed = true;
+        }
+
+        nextState.lastMerkType = merkType;
+        energyAutoStateRef.current[stateKey] = nextState;
+
+        return row;
+      });
+
+      if (changed) {
+        m.setValue("es_regels", nextRows);
+      } else {
+        requestAnimationFrame(() => applyCapWarnings());
+      }
+    }
+
+    const pendingRef = { current: null };
+    const rafRef = { current: 0 };
+    const normalizeRafRef = { current: 0 };
+
+    m.onAfterRenderQuestion.add((sender, options) => {
+      const qname = String(options?.question?.name || "");
+
+      if (qname === "es_regels") {
+        requestAnimationFrame(() => applyCapWarnings());
+      }
+
+      if (
+        qname === "a2_buitenbedrijfstellingen" ||
+        qname === "a2_resultaat_panel" ||
+        qname === "a2_systeembeschikbaarheid_geconstateerd"
+      ) {
+        requestAnimationFrame(() => applyAvailabilityWarnings());
+      }
     });
 
-    if (changed) {
-      m.setValue("es_regels", nextRows);
-    } else {
-      requestAnimationFrame(() => applyCapWarnings());
-    }
-  }
-  const pendingRef = { current: null };
-  const rafRef = { current: 0 };
-  const normalizeRafRef = { current: 0 };
+    m.onValueChanged.add((sender, options) => {
+      const name = String(options?.name || "");
+      const next = { ...(m.data || {}) };
+      answersRef.current = next;
 
-  m.onAfterRenderQuestion.add((sender, options) => {
-    const qname = String(options?.question?.name || "");
+      pendingRef.current = next;
+      if (!rafRef.current) {
+        rafRef.current = requestAnimationFrame(() => {
+          rafRef.current = 0;
+          const snap = pendingRef.current;
+          pendingRef.current = null;
+          if (snap) setAnswersPreview(snap);
+        });
+      }
 
-    if (qname === "es_regels") {
-      requestAnimationFrame(() => applyCapWarnings());
-    }
+      const isEnergyRelevant =
+        name === "es_verouderingsfactor" ||
+        name.startsWith("es_regels");
 
-    if (
-      qname === "a2_buitenbedrijfstellingen" ||
-      qname === "a2_resultaat_panel" ||
-      qname === "a2_systeembeschikbaarheid_geconstateerd"
-    ) {
-      requestAnimationFrame(() => applyAvailabilityWarnings());
-    }
-  });
+      const isAvailabilityRelevant =
+        name === "a2_systeembeschikbaarheid_pve" ||
+        name.startsWith("a2_buitenbedrijfstellingen") ||
+        name.startsWith("performance_data_view") ||
+        name.startsWith("a2_items");
 
-  m.onValueChanged.add((sender, options) => {
-    const name = String(options?.name || "");
-    const next = { ...(m.data || {}) };
-    answersRef.current = next;
+      if (isEnergyRelevant || isAvailabilityRelevant) {
+        if (normalizeRafRef.current) cancelAnimationFrame(normalizeRafRef.current);
 
-    pendingRef.current = next;
-    if (!rafRef.current) {
-      rafRef.current = requestAnimationFrame(() => {
-        rafRef.current = 0;
-        const snap = pendingRef.current;
-        pendingRef.current = null;
-        if (snap) setAnswersPreview(snap);
-      });
-    }
+        normalizeRafRef.current = requestAnimationFrame(() => {
+          normalizeRafRef.current = 0;
 
-    const isEnergyRelevant =
-      name === "es_verouderingsfactor" ||
-      name.startsWith("es_regels");
+          if (isEnergyRelevant) {
+            normalizeEnergyRows();
+          }
 
-    const isAvailabilityRelevant =
-      name === "a2_systeembeschikbaarheid_pve" ||
-      name.startsWith("a2_buitenbedrijfstellingen") ||
-      name.startsWith("performance_data_view") ||
-      name.startsWith("a2_items");
+          if (isAvailabilityRelevant) {
+            normalizeAvailabilityRows();
+          }
+        });
+      }
+    });
 
-    if (isEnergyRelevant || isAvailabilityRelevant) {
-      if (normalizeRafRef.current) cancelAnimationFrame(normalizeRafRef.current);
+    requestAnimationFrame(() => {
+      normalizeEnergyRows();
+      applyCapWarnings();
 
-      normalizeRafRef.current = requestAnimationFrame(() => {
-        normalizeRafRef.current = 0;
+      normalizeAvailabilityRows();
+      applyAvailabilityWarnings();
+    });
 
-        if (isEnergyRelevant) {
-          normalizeEnergyRows();
-        }
-
-        if (isAvailabilityRelevant) {
-          normalizeAvailabilityRows();
-        }
-      });
-    }
-  });
-
-  requestAnimationFrame(() => {
-    normalizeEnergyRows();
-    applyCapWarnings();
-
-    normalizeAvailabilityRows();
-    applyAvailabilityWarnings();
-  });
-
-  modelRef.current = m;
-  return m;
-}, [previewJson, prefillPayload]);
+    modelRef.current = m;
+    return m;
+  }, [previewJson, prefillPayload]);
 
   useEffect(() => {
     return () => {
@@ -1656,6 +2087,15 @@ export default function FormDesigner() {
       answersRafRef.current = null;
     };
   }, []);
+
+  useEffect(() => {
+    if (!prefillPayload || !autoApplyAfterLoadRef.current) return;
+    if (!modelRef.current) return;
+
+    autoApplyAfterLoadRef.current = false;
+    applyPrefill({ onlyRefreshable: false, payloadOverride: prefillPayload });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [prefillPayload, model]);
 
   function applyPrefill({ onlyRefreshable, payloadOverride } = {}) {
     const payload = payloadOverride || prefillPayload;
@@ -1687,6 +2127,8 @@ export default function FormDesigner() {
     answersRef.current = nextAnswers;
     setAnswersPreview(nextAnswers);
     settingAnswersProgrammaticallyRef.current = false;
+
+    setValidationSummary([]);
   }
 
   async function loadPrefillFromBackend() {
@@ -1725,7 +2167,11 @@ export default function FormDesigner() {
         return;
       }
 
-      const res = await getFormPrefill(String(installCode).trim(), String(prefillFormCode || "DEV"), keys);
+      const res = await getFormPrefill(
+        String(installCode).trim(),
+        String(prefillFormCode || "DEV"),
+        keys
+      );
 
       const prefill = res?.prefill || {};
       const warnings = Array.isArray(res?.warnings) ? res.warnings : [];
@@ -1743,18 +2189,133 @@ export default function FormDesigner() {
         },
         _raw: res,
       };
+
       autoApplyAfterLoadRef.current = true;
       setPrefillPayload(payload);
 
-      // Keep dropdowns visually correct even before Apply:
       if (previewJson && payload?.choices) {
         const nextSurvey = injectChoicesIntoSurveyJson(previewJson, payload);
         setPreviewJson(nextSurvey);
       }
+
+      setValidationSummary([]);
+      setBackendSubmitPreview(null);
     } catch (e) {
       setPreviewError(String(e?.message || e || "Prefill load faalde."));
     } finally {
       setPrefillBusy(false);
+    }
+  }
+
+  function runLocalFollowUpPreview() {
+    if (!previewJson || typeof previewJson !== "object") {
+      setPreviewError("Geen preview survey geladen.");
+      return;
+    }
+
+    setPreviewError(null);
+
+    const result = evaluateLocalFollowUps(previewJson, answersPreview || {});
+    setLocalFollowUpPreview({
+      generated_at: new Date().toISOString(),
+      definition_count: Array.isArray(result?.definitions) ? result.definitions.length : 0,
+      item_count: Array.isArray(result?.items) ? result.items.length : 0,
+      items: result?.items || [],
+      definitions: result?.definitions || [],
+    });
+  }
+
+  function runLocalValidationPreview() {
+    if (!modelRef.current) {
+      setPreviewError("Geen preview model geladen.");
+      return false;
+    }
+
+    setPreviewError(null);
+
+    try {
+      const valid = modelRef.current.validate();
+
+      if (valid) {
+        setValidationSummary([]);
+        setNotice(
+          { kind: "ok", text: "Geen openstaande required/validatieproblemen gevonden." },
+          { autoClearMs: 1500 }
+        );
+        return true;
+      }
+
+      const summary = collectValidationSummary(modelRef.current);
+      setValidationSummary(summary);
+
+      setNotice({
+        kind: "error",
+        text: `Er zijn nog ${summary.length} validatieprobleem/problemen.`,
+      });
+
+      return false;
+    } catch (e) {
+      setPreviewError(`Validatie mislukt: ${String(e?.message || e || "onbekende fout")}`);
+      return false;
+    }
+  }
+
+  function openValidationItem(item) {
+    const model = modelRef.current;
+    if (!model || !item) return;
+
+    const targetPageIndex = Number(item.pageIndex);
+    if (!Number.isFinite(targetPageIndex) || targetPageIndex < 0) return;
+
+    if (model.currentPageNo !== targetPageIndex) {
+      model.currentPageNo = targetPageIndex;
+    }
+
+    window.setTimeout(() => {
+      scrollToDesignerQuestion(item.questionName);
+    }, 250);
+  }
+
+  async function runBackendSubmitPreview() {
+    if (!backendCode || !String(backendCode).trim()) {
+      setPreviewError("Vul backend code in voor backend submit preview.");
+      return;
+    }
+
+    if (!backendInstanceId || !String(backendInstanceId).trim()) {
+      setPreviewError("Vul backend instanceId in voor backend submit preview.");
+      return;
+    }
+
+    if (!modelRef.current) {
+      setPreviewError("Geen preview model geladen.");
+      return;
+    }
+
+    const isValid = runLocalValidationPreview();
+    if (!isValid) {
+      setBackendSubmitPreview(null);
+      return;
+    }
+
+    setSubmitPreviewBusy(true);
+    setPreviewError(null);
+
+    try {
+      const res = await previewSubmitFormInstance(
+        String(backendCode).trim(),
+        String(backendInstanceId).trim(),
+        {
+          answers_json: answersPreview || {},
+        }
+      );
+
+      setBackendSubmitPreview(res || null);
+      setOpenCards((prev) => ({ ...prev, followUpPreview: true }));
+    } catch (e) {
+      setPreviewError(String(e?.message || e || "Backend submit preview faalde."));
+    } finally {
+      setSubmitPreviewBusy(false);
     }
   }
 
@@ -1764,6 +2325,11 @@ export default function FormDesigner() {
     const uk = w?.unknown_keys;
     return Array.isArray(uk) ? uk.map(String) : [];
   }, [prefillPayload]);
+
+  const followUpMeta = useMemo(() => {
+    const { followUps } = collectEmberMeta(modelRef.current);
+    return followUps;
+  }, [model]);
 
   const splitStyle = useMemo(() => {
     if (!showEditor) return { display: "grid", gridTemplateColumns: "1fr", gap: 12 };
@@ -1804,7 +2370,6 @@ export default function FormDesigner() {
 
   return (
     <div style={{ display: "grid", gap: 12 }}>
-      {/* Local SurveyJS “clean Ember” overrides (fix: dropdown hover + remove blue dividers) */}
       <style>{`
         .sd-list__item:hover,
         .sd-list__item.sd-list__item--selected:hover,
@@ -1967,6 +2532,61 @@ export default function FormDesigner() {
         </div>
       </div>
 
+      <div
+        className="card"
+        style={{ padding: 12, display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}
+      >
+        <div className="muted" style={{ fontSize: 12 }}>
+          Follow-ups / validatie
+        </div>
+
+        <button
+          type="button"
+          className="btn btn-secondary"
+          onClick={runLocalValidationPreview}
+          disabled={!previewJson || !modelRef.current}
+          title="Controleert required fields en SurveyJS validators lokaal"
+        >
+          Check validatie (local)
+        </button>
+
+        <button
+          type="button"
+          className="btn"
+          onClick={runLocalFollowUpPreview}
+          disabled={!previewJson || !modelRef.current}
+          title="Evalueert ember.followUp lokaal op basis van de huidige preview + live answers"
+        >
+          Preview follow-ups (local)
+        </button>
+
+        <button
+          type="button"
+          className="btn btn-secondary"
+          onClick={runBackendSubmitPreview}
+          disabled={submitPreviewBusy || !backendCode || !backendInstanceId || !modelRef.current}
+          title="Roept de echte backend submit-preview endpoint aan, maar pas na lokale validatie"
+        >
+          {submitPreviewBusy ? "Bezig..." : "Preview submit (backend)"}
+        </button>
+
+        <div className="muted" style={{ fontSize: 12 }}>
+          ember.followUp vragen: {followUpMeta.length}
+        </div>
+
+        <div className="muted" style={{ fontSize: 12 }}>
+          validatie issues: {validationSummary.length}
+        </div>
+
+        <div className="muted" style={{ fontSize: 12 }}>
+          local items: {localFollowUpPreview?.item_count ?? 0}
+        </div>
+
+        <div className="muted" style={{ fontSize: 12 }}>
+          backend items: {backendSubmitPreview?.count ?? 0}
+        </div>
+      </div>
+
       {unknownKeys.length > 0 && (
         <div className="card" style={{ padding: 12, border: "1px solid rgba(250,128,114,0.5)" }}>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
@@ -2012,7 +2632,7 @@ export default function FormDesigner() {
                   type="button"
                   className="btn"
                   onClick={onDownloadDebugBundle}
-                  title="Download 1 bestand met survey_json + answers_json + lastApplied + prefill payload"
+                  title="Download 1 bestand met survey_json + answers_json + lastApplied + prefill payload + followUp preview + validation summary"
                 >
                   Debug
                 </button>
@@ -2197,11 +2817,127 @@ export default function FormDesigner() {
         )}
 
         <div style={{ display: "grid", gap: 12 }}>
+          {validationSummary.length > 0 && (
+            <div
+              className="card"
+              style={{
+                padding: 12,
+                display: "grid",
+                gap: 8,
+                border: "1px solid rgba(250, 128, 114, 0.35)",
+              }}
+            >
+              <div style={{ fontWeight: 700 }}>
+                Controleer eerst de volgende velden
+              </div>
+
+              <div className="muted" style={{ fontSize: 12 }}>
+                Klik op een regel om naar het betreffende onderdeel te gaan.
+              </div>
+
+              <div style={{ display: "grid", gap: 6 }}>
+                {validationSummary.map((item) => (
+                  <button
+                    key={item.id}
+                    type="button"
+                    className="btn btn-secondary"
+                    onClick={() => openValidationItem(item)}
+                    style={{
+                      textAlign: "left",
+                      justifyContent: "flex-start",
+                      whiteSpace: "normal",
+                      lineHeight: 1.35,
+                    }}
+                    title={`${item.pageTitle} · ${item.questionTitle}`}
+                  >
+                    <span>
+                      <strong>{item.pageTitle}</strong>
+                      {" · "}
+                      {item.questionTitle}
+                      {" — "}
+                      {item.message}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
           {showPreview && (
             <div className="card" style={{ padding: 12, minHeight: 420 }}>
               {!model ? <div className="muted">Geen preview geladen.</div> : <Survey model={model} />}
             </div>
           )}
+
+          <div className="card" style={{ padding: 12 }}>
+            <ToggleRow
+              title="follow-up debug"
+              meta={
+                openCards.followUpPreview
+                  ? null
+                  : `local: ${localFollowUpPreview?.item_count ?? 0} · backend: ${backendSubmitPreview?.count ?? 0}`
+              }
+              isOpen={openCards.followUpPreview}
+              onToggle={() => toggleCard("followUpPreview")}
+              iconRef={(el) => {
+                toggleIconRef.current.followUpPreview = el;
+              }}
+              onIconEnter={() => animateIcon("followUpPreview")}
+              onIconLeave={() => stopIcon("followUpPreview")}
+            />
+
+            {openCards.followUpPreview && (
+              <div style={{ marginTop: 10, display: "grid", gap: 12 }}>
+                <div className="muted" style={{ fontSize: 12 }}>
+                  ember.followUp vragen in huidige preview: {followUpMeta.length}
+                </div>
+
+                {followUpMeta.length > 0 && (
+                  <pre style={{ margin: 0, fontSize: 12, whiteSpace: "pre-wrap" }}>
+                    {JSON.stringify(followUpMeta, null, 2)}
+                  </pre>
+                )}
+
+                {localFollowUpPreview ? (
+                  <div className="card" style={{ padding: 12 }}>
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
+                      <div style={{ fontWeight: 600 }}>Local follow-up preview</div>
+                      <div className="muted" style={{ fontSize: 12 }}>
+                        definities: {localFollowUpPreview.definition_count} · resultaten: {localFollowUpPreview.item_count}
+                      </div>
+                    </div>
+
+                    <pre style={{ margin: "10px 0 0 0", fontSize: 12, whiteSpace: "pre-wrap" }}>
+                      {JSON.stringify(localFollowUpPreview, null, 2)}
+                    </pre>
+                  </div>
+                ) : (
+                  <div className="muted" style={{ fontSize: 12 }}>
+                    Nog geen local follow-up preview geladen.
+                  </div>
+                )}
+
+                {backendSubmitPreview ? (
+                  <div className="card" style={{ padding: 12 }}>
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
+                      <div style={{ fontWeight: 600 }}>Backend submit preview</div>
+                      <div className="muted" style={{ fontSize: 12 }}>
+                        echte endpoint response
+                      </div>
+                    </div>
+
+                    <pre style={{ margin: "10px 0 0 0", fontSize: 12, whiteSpace: "pre-wrap" }}>
+                      {JSON.stringify(backendSubmitPreview, null, 2)}
+                    </pre>
+                  </div>
+                ) : (
+                  <div className="muted" style={{ fontSize: 12 }}>
+                    Nog geen backend submit preview geladen.
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
 
           <div className="card" style={{ padding: 12 }}>
             <ToggleRow

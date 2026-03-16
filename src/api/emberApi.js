@@ -145,6 +145,13 @@ export function submitFormInstance(code, formInstanceId) {
   );
 }
 
+export function previewSubmitFormInstance(code, formInstanceId, payload) {
+  return apiPost(
+    `/installations/${encodeURIComponent(code)}/forms/instances/${encodeURIComponent(formInstanceId)}/submit-preview`,
+    payload ?? {}
+  );
+}
+
 export function withdrawFormInstance(code, formInstanceId) {
   // backend: POST /:code/forms/instances/:instanceId/withdraw
   return apiPost(

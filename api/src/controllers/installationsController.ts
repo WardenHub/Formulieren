@@ -356,6 +356,22 @@ export async function putFormAnswers(req: any, res: any) {
   }
 }
 
+export async function previewSubmitFormInstance(req: any, res: Response) {
+  try {
+    const code = String(req.params.code || "");
+    const instanceId = String(req.params.instanceId || "");
+    const payload = req.body || {};
+
+    const result = await formsService.previewSubmitFormInstance(code, instanceId, payload, req.user);
+    if (result?.error === "not found") return res.status(404).json({ error: "not found" });
+
+    return res.json(result);
+  } catch (err: any) {
+    console.error(err);
+    return res.status(500).json({ error: "previewSubmitFormInstance failed" });
+  }
+}
+
 export async function submitFormInstance(req: any, res: any) {
   try {
     const code = String(req.params.code || "");

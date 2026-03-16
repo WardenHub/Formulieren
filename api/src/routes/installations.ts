@@ -29,6 +29,7 @@ import {
   reopenFormInstance,
   getFormPrefill,
   getInstallationComponents,
+  previewSubmitFormInstance,
 } from "../controllers/installationsController.js";
 
 
@@ -70,6 +71,7 @@ router.post("/:code/forms/:formCode/prefill", requireRole("admin", "monteur"), g
 router.post("/:code/forms/:formCode/start", requireRole("admin", "monteur"), startFormInstance);
 router.get("/:code/forms/instances/:instanceId", requireRole("admin", "monteur"), getFormInstance);
 router.put("/:code/forms/instances/:instanceId/answers", requireRole("admin", "monteur"), putFormAnswers);
+router.post("/:code/forms/instances/:instanceId/submit-preview", requireRole("admin", "monteur"), previewSubmitFormInstance);
 router.post("/:code/forms/instances/:instanceId/submit", requireRole("admin", "monteur"), submitFormInstance);
 router.post("/:code/forms/instances/:instanceId/withdraw", requireRole("admin", "monteur"), withdrawFormInstance);
 router.post("/:code/forms/instances/:instanceId/reopen", requireRole("admin", "monteur"), reopenFormInstance);

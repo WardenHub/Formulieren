@@ -18,9 +18,41 @@ import {
 } from "../db/queries/forms.sql.js";
 
 import { getFormPrefillSql } from "../db/queries/prefill.sql.js";
+import {
+  previewFormFollowUps,
+  syncFormFollowUps,
+} from "./followUpService.js";
 
 function getUserDisplayName(user: any) {
   return user?.name || user?.upn || user?.objectId || "unknown";
+}
+
+function parseJsonObject(value: any, fallback: any = {}) {
+  if (value == null) return fallback;
+  if (typeof value === "object") return value;
+
+  const txt = String(value || "").trim();
+  if (!txt) return fallback;
+
+  try {
+    return JSON.parse(txt);
+  } catch {
+    return fallback;
+  }
+}
+
+function parseSurveyJson(value: any) {
+  if (value == null) return null;
+  if (typeof value === "object") return value;
+
+  const txt = String(value || "").trim();
+  if (!txt) return null;
+
+  try {
+    return JSON.parse(txt);
+  } catch {
+    return null;
+  }
 }
 
 export async function getFormStartPreflight(code: string, formCode: string, user: any) {
@@ -182,7 +214,6 @@ export async function startFormInstance(code: string, formCode: string, user: an
   const row: any = rows?.[0] ?? null;
   if (!row) return { error: "not found" };
 
-  // return full instance payload
   return await getFormInstance(cleanCode, row.form_instance_id);
 }
 
@@ -224,10 +255,146 @@ export async function saveFormAnswers(code: string, instanceId: string, payload:
   return { ok: true, result: r };
 }
 
+export async function previewSubmitFormInstance(
+  code: string,
+  instanceId: string,
+  payload: any,
+  user: any
+) {
+  const cleanCode = String(code || "").trim();
+  const id = String(instanceId || "").trim();
+
+  const instanceRes = await getFormInstance(cleanCode, id);
+  if (instanceRes?.error === "not found") return { error: "not found" };
+
+  const item: any = instanceRes?.item ?? null;
+  if (!item) return { error: "not found" };
+
+  const status = String(item.status || "").trim();
+  const surveyJson = parseSurveyJson(item.survey_json);
+  const storedAnswers = parseJsonObject(item.answers_json, {});
+  const overrideAnswers =
+    payload?.answers_json ?? payload?.answersJson ?? payload?.answers ?? null;
+
+  const effectiveAnswers =
+    overrideAnswers && typeof overrideAnswers === "object"
+      ? overrideAnswers
+      : storedAnswers;
+
+  if (status !== "CONCEPT") {
+    return {
+      ok: true,
+      can_submit: false,
+      form_instance_id: item.form_instance_id,
+      status,
+      validation: {
+        has_errors: true,
+        errors: [
+          {
+            code: "invalid_status",
+            message: `Indienen is niet toegestaan in status '${status || "onbekend"}'.`,
+          },
+        ],
+      },
+      follow_ups: {
+        ok: true,
+        count: 0,
+        counts_by_kind: {
+          workflow: 0,
+          report_only: 0,
+          total: 0,
+        },
+        items: [],
+      },
+    };
+  }
+
+  if (!surveyJson || typeof surveyJson !== "object") {
+    return {
+      ok: true,
+      can_submit: false,
+      form_instance_id: item.form_instance_id,
+      status,
+      validation: {
+        has_errors: true,
+        errors: [
+          {
+            code: "survey_json_invalid",
+            message: "survey_json ontbreekt of is ongeldig.",
+          },
+        ],
+      },
+      follow_ups: {
+        ok: true,
+        count: 0,
+        counts_by_kind: {
+          workflow: 0,
+          report_only: 0,
+          total: 0,
+        },
+        items: [],
+      },
+    };
+  }
+
+  const preview = await previewFormFollowUps({
+    surveyJson,
+    answers: effectiveAnswers || {},
+  });
+
+  const followUpItems = Array.isArray(preview?.items) ? preview.items : [];
+  const workflowCount = followUpItems.filter(
+    (x: any) => String(x?.kind || "") === "workflow"
+  ).length;
+  const reportOnlyCount = followUpItems.filter(
+    (x: any) => String(x?.kind || "") === "report-only"
+  ).length;
+
+  return {
+    ok: true,
+    can_submit: true,
+    form_instance_id: item.form_instance_id,
+    status,
+    validation: {
+      has_errors: false,
+      errors: [],
+    },
+    follow_ups: {
+      ok: true,
+      count: followUpItems.length,
+      counts_by_kind: {
+        workflow: workflowCount,
+        report_only: reportOnlyCount,
+        total: followUpItems.length,
+      },
+      items: followUpItems,
+    },
+    meta: {
+      atrium_installation_code: item.atrium_installation_code,
+      installation_id: item.installation_id,
+      form_code: item.form_code ?? null,
+      form_name: item.form_name ?? null,
+      draft_rev: item.draft_rev ?? 0,
+      previewed_by: getUserDisplayName(user),
+      used_override_answers:
+        !!overrideAnswers && typeof overrideAnswers === "object",
+    },
+  };
+}
+
 export async function submitFormInstance(code: string, instanceId: string, user: any) {
   const cleanCode = String(code || "").trim();
   const id = String(instanceId || "").trim();
   const submittedBy = getUserDisplayName(user);
+
+  const instanceRes = await getFormInstance(cleanCode, id);
+  if (instanceRes?.error === "not found") return { error: "not found" };
+
+  const item: any = instanceRes?.item ?? null;
+  if (!item) return { error: "not found" };
+
+  const surveyJson = parseSurveyJson(item.survey_json);
+  const answers = parseJsonObject(item.answers_json, {});
 
   const rows = await sqlQuery(submitFormInstanceSql, {
     code: cleanCode,
@@ -235,7 +402,24 @@ export async function submitFormInstance(code: string, instanceId: string, user:
     submittedBy,
   });
 
-  return { ok: true, result: rows?.[0] ?? null };
+  const submitResult = rows?.[0] ?? null;
+
+  const followUpSync = await syncFormFollowUps({
+    formInstance: {
+      form_instance_id: String(item.form_instance_id || id),
+      installation_id: String(item.installation_id || ""),
+      atrium_installation_code: String(item.atrium_installation_code || cleanCode),
+    },
+    surveyJson: surveyJson || {},
+    answers: answers || {},
+    user,
+  });
+
+  return {
+    ok: true,
+    result: submitResult,
+    follow_up_sync: followUpSync,
+  };
 }
 
 export async function withdrawFormInstance(code: string, instanceId: string, user: any) {
@@ -307,26 +491,20 @@ export async function getFormPrefill(
   const cleanCode = String(code || "").trim();
   const cleanFormCode = String(formCode || "").trim();
 
-    const requestedKeys = (Array.isArray(keys) ? keys : [])
+  const requestedKeys = (Array.isArray(keys) ? keys : [])
     .map((k) => String(k || "").trim())
     .filter((k) => k.length > 0);
 
-  // IMPORTANT:
-  // Sommige panels (zoals Documenten) renderen pas goed als zowel
-  // data (doc_groepen) als catalog keuzes (k_document_types) aanwezig zijn.
-  // We forceren deze keys hier zodat de caller ze niet hoeft te weten.
   const requiredKeys = [
     "doc_groepen",
     "k_document_types",
     "doc_regels",
-    // ✅ energie catalog voor merk/type dropdown
     "k_energy_brand_types",
   ];
 
   const uniqueKeys = Array.from(new Set([...requestedKeys, ...requiredKeys]));
   const runtimeKnownKeys = new Set<string>([
     "form_instance_id",
-    // voeg hier evt later meer aan toe
   ]);
 
   if (uniqueKeys.length === 0) {
@@ -347,9 +525,6 @@ export async function getFormPrefill(
 
   const values: any = {};
   const choices: any = {};
-
-  // FIX: track *all* returned keys (both value + choices),
-  // so "choices-only" keys do not become false "unknown_keys".
   const returnedKeys = new Set<string>();
 
   for (const r of rows || []) {
@@ -369,7 +544,6 @@ export async function getFormPrefill(
     }
 
     if (kind === "choices") {
-      // expected: array of {value,text}
       choices[k] = parsed;
     } else {
       values[k] = parsed;
