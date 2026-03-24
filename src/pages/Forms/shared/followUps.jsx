@@ -1,5 +1,3 @@
-// src/pages/Forms/shared/followUps.jsx
-
 import {
   normalizeComparable,
   normalizeNullableString,
@@ -34,21 +32,40 @@ export function walkSurveyNodes(node, fn) {
   visitArray(node.rows);
 }
 
+function normalizeFollowUpConfigs(raw) {
+  const arr = Array.isArray(raw) ? raw : raw ? [raw] : [];
+
+  return arr
+    .map((cfg) => {
+      const kind = String(cfg?.kind || "").trim();
+      if (kind !== "workflow" && kind !== "report-only") return null;
+
+      return {
+        kind,
+        config: cfg,
+      };
+    })
+    .filter(Boolean);
+}
+
 export function collectFollowUpDefinitionsFromSurvey(surveyJson) {
   const defs = [];
 
   walkSurveyNodes(surveyJson, (node) => {
-    const followUp = node?.ember?.followUp;
-    if (!followUp) return;
-
     const name = String(node?.name || "").trim();
     if (!name) return;
 
-    defs.push({
-      name,
-      type: normalizeNullableString(node?.type),
-      followUp,
-    });
+    const normalized = normalizeFollowUpConfigs(node?.ember?.followUp);
+    if (normalized.length === 0) return;
+
+    for (const item of normalized) {
+      defs.push({
+        name,
+        type: normalizeNullableString(node?.type),
+        followUp: item.config,
+        kind: item.kind,
+      });
+    }
   });
 
   return defs;
@@ -118,8 +135,9 @@ export function buildSingleQuestionContext(questionName, answerValue, answers) {
   return base;
 }
 
-export function buildLocalFollowUpFingerprint({ questionName, rowIndex, itemCode }) {
+export function buildLocalFollowUpFingerprint({ questionName, rowIndex, itemCode, kind }) {
   return [
+    normalizeNullableString(kind) || "",
     normalizeNullableString(questionName) || "",
     rowIndex == null ? "" : String(rowIndex),
     normalizeNullableString(itemCode) || "",
@@ -171,6 +189,7 @@ export function evaluateLocalFollowUps(surveyJson, answers) {
     const questionType = def.type;
     const followUp = def.followUp;
     const answerValue = allAnswers?.[questionName];
+    const kind = String(def.kind || followUp?.kind || "").trim() || "workflow";
 
     if (questionType === "matrixdynamic") {
       const rows = Array.isArray(answerValue) ? answerValue : [];
@@ -183,7 +202,7 @@ export function evaluateLocalFollowUps(surveyJson, answers) {
         const itemCode = getOptionalFollowUpField(rowData, followUp.itemCodeField);
 
         found.push({
-          kind: String(followUp?.kind || "").trim() || "workflow",
+          kind,
           questionName,
           questionType,
           rowIndex,
@@ -196,6 +215,7 @@ export function evaluateLocalFollowUps(surveyJson, answers) {
             questionName,
             rowIndex,
             itemCode,
+            kind,
           }),
         });
       });
@@ -209,7 +229,7 @@ export function evaluateLocalFollowUps(surveyJson, answers) {
     const itemCode = getOptionalFollowUpField(ctx, followUp.itemCodeField);
 
     found.push({
-      kind: String(followUp?.kind || "").trim() || "workflow",
+      kind,
       questionName,
       questionType,
       rowIndex: null,
@@ -222,6 +242,7 @@ export function evaluateLocalFollowUps(surveyJson, answers) {
         questionName,
         rowIndex: null,
         itemCode,
+        kind,
       }),
     });
   }

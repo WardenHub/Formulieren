@@ -44,6 +44,7 @@ const AdminFormsConfigTab = forwardRef(function AdminFormsConfigTab(
     selectedFormId,
     selectedForm,
     installationTypes,
+    loading,
     onSelectForm,
     onDirtyChange,
     onSavingChange,
@@ -113,9 +114,7 @@ const AdminFormsConfigTab = forwardRef(function AdminFormsConfigTab(
     setSaving(true);
 
     try {
-      await Promise.resolve();
-
-      onSaveConfig({
+      await onSaveConfig?.({
         ...draft,
         preflight: {
           ...draft.preflight,
@@ -132,6 +131,10 @@ const AdminFormsConfigTab = forwardRef(function AdminFormsConfigTab(
   }
 
   useImperativeHandle(ref, () => ({ save }));
+
+  if (loading && !selectedForm) {
+    return <div className="muted">laden; formulierconfiguratie</div>;
+  }
 
   return (
     <div style={{ display: "grid", gap: 12 }}>
@@ -152,7 +155,7 @@ const AdminFormsConfigTab = forwardRef(function AdminFormsConfigTab(
         </div>
 
         <div style={{ display: "grid", gap: 10 }}>
-          {forms.map((form) => {
+          {(Array.isArray(forms) ? forms : []).map((form) => {
             const isSelected = form.form_id === selectedFormId;
 
             return (
@@ -160,11 +163,11 @@ const AdminFormsConfigTab = forwardRef(function AdminFormsConfigTab(
                 key={form.form_id}
                 role="button"
                 tabIndex={0}
-                onClick={() => onSelectForm(form.form_id)}
+                onClick={() => onSelectForm?.(form.form_id)}
                 onKeyDown={(e) => {
                   if (e.key === "Enter" || e.key === " ") {
                     e.preventDefault();
-                    onSelectForm(form.form_id);
+                    onSelectForm?.(form.form_id);
                   }
                 }}
                 style={{
@@ -300,7 +303,7 @@ const AdminFormsConfigTab = forwardRef(function AdminFormsConfigTab(
               </div>
 
               <div style={{ display: "grid", gap: 8 }}>
-                {installationTypes.map((type) => {
+                {(Array.isArray(installationTypes) ? installationTypes : []).map((type) => {
                   const checked = selectedTypeKeysSet.has(type.installation_type_key);
 
                   return (

@@ -39,6 +39,11 @@ type FollowUpElement = {
   };
 };
 
+type NormalizedFollowUpConfig = {
+  kind: FollowUpKind;
+  config: any;
+};
+
 export function extractFollowUps(input: ExtractInput): FollowUpCandidate[] {
   const survey = input?.surveyJson || {};
   const answers = isPlainObject(input?.answers) ? input.answers : {};
@@ -47,42 +52,59 @@ export function extractFollowUps(input: ExtractInput): FollowUpCandidate[] {
   const results: FollowUpCandidate[] = [];
 
   for (const element of elements) {
-    const followUp = element?.ember?.followUp;
-    if (!followUp) continue;
-
-    const kind = normalizeKind(followUp.kind);
-    if (!kind) continue;
-
     const questionName = String(element.name || "").trim();
     if (!questionName) continue;
 
     const questionType = normalizeNullableString(element.type);
     const answerValue = answers[questionName];
 
+    const followUps = normalizeFollowUpConfigs(element?.ember?.followUp);
+    if (followUps.length === 0) continue;
+
     if (questionType === "matrixdynamic") {
-      extractFromMatrixQuestion({
-        kind,
-        questionName,
-        questionType,
-        followUp,
-        answerValue,
-        results,
-      });
+      for (const followUp of followUps) {
+        extractFromMatrixQuestion({
+          kind: followUp.kind,
+          questionName,
+          questionType,
+          followUp: followUp.config,
+          answerValue,
+          results,
+        });
+      }
       continue;
     }
 
-    extractFromSingleQuestion({
-      kind,
-      questionName,
-      questionType,
-      followUp,
-      answers,
-      answerValue,
-      results,
-    });
+    for (const followUp of followUps) {
+      extractFromSingleQuestion({
+        kind: followUp.kind,
+        questionName,
+        questionType,
+        followUp: followUp.config,
+        answers,
+        answerValue,
+        results,
+      });
+    }
   }
 
   return dedupeCandidates(results);
+}
+
+function normalizeFollowUpConfigs(raw: any): NormalizedFollowUpConfig[] {
+  const arr = Array.isArray(raw) ? raw : raw ? [raw] : [];
+
+  return arr
+    .map((cfg) => {
+      const kind = normalizeKind(cfg?.kind);
+      if (!kind) return null;
+
+      return {
+        kind,
+        config: cfg,
+      };
+    })
+    .filter(Boolean) as NormalizedFollowUpConfig[];
 }
 
 function extractFromMatrixQuestion(args: {
@@ -339,7 +361,7 @@ function dedupeCandidates(items: FollowUpCandidate[]) {
   const map = new Map<string, FollowUpCandidate>();
 
   for (const item of items) {
-    const key = String(item?.fingerprint || "").trim();
+    const key = `${String(item?.kind || "").trim()}::${String(item?.fingerprint || "").trim()}`;
     if (!key) continue;
 
     const existing = map.get(key);

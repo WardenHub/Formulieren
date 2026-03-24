@@ -6,7 +6,7 @@ import { requireRole } from "./middleware/roleMiddleware.js";
 import { getDbConnection } from "./db/index.js";
 import installationsRouter from "./routes/installations.js";
 import installationTypesRouter from "./routes/installationTypes.js";
-
+import adminFormsRouter from "./routes/adminForms.js";
 
 const app = express();
 const RAW_ORIGINS = (process.env.CORS_ORIGINS || "")
@@ -75,6 +75,7 @@ app.get("/health", async (req, res) => {
 app.use(authMiddleware);
 app.use("/installations", installationsRouter);
 app.use("/installation-types", installationTypesRouter);
+app.use("/admin/forms", adminFormsRouter);
 
 app.get("/me", (req: any, res) => {
   res.json({ user: req.user, roles: req.roles || [] });

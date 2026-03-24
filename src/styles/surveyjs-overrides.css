@@ -2,11 +2,6 @@
 /* Scope to SurveyJS root to avoid affecting the rest of Ember */
 
 .sd-root-modern {
-  /* =========================
-     Theme tokens (warm/dark + orange accent)
-     ========================= */
-
-  /* Base (warmer, minder blauw) */
   --sjs-general-backcolor: rgba(12, 12, 12, 1);
   --sjs-general-backcolor-dim: rgba(16, 16, 16, 1);
   --sjs-general-backcolor-dim-light: rgba(255, 255, 255, 0.03);
@@ -14,28 +9,20 @@
   --sjs-general-forecolor: rgba(255, 255, 255, 0.92);
   --sjs-general-forecolor-dim: rgba(255, 255, 255, 0.62);
 
-  /* Borders */
   --sjs-border-default: rgba(255, 255, 255, 0.10);
   --sjs-border-light: rgba(255, 255, 255, 0.07);
 
-  /* Inputs */
   --sjs-editor-background: rgba(255, 255, 255, 0.035);
   --sjs-editor-border: rgba(255, 255, 255, 0.14);
   --sjs-editor-forecolor: rgba(255, 255, 255, 0.92);
 
-  /* Primary / accent (fire / NL: oranje) */
   --sjs-primary-backcolor: rgba(249, 115, 22, 0.60);
   --sjs-primary-backcolor-light: rgba(249, 115, 22, 0.28);
   --sjs-primary-forecolor: rgba(255, 255, 255, 0.96);
 
-  /* Shadows */
   --sjs-shadow-small: 0 10px 30px rgba(0, 0, 0, 0.35);
 }
 
-/* =========================
-   Global text + headings inside Survey
-   (fixes black text in e.g. Documenten)
-   ========================= */
 .sd-root-modern,
 .sd-root-modern .sd-body,
 .sd-root-modern .sd-panel,
@@ -49,15 +36,11 @@
   color: var(--sjs-general-forecolor) !important;
 }
 
-/* Muted text */
 .sd-root-modern .sd-question__description,
 .sd-root-modern .sd-description {
   color: var(--sjs-general-forecolor-dim) !important;
 }
 
-/* =========================
-   Inputs (keep them "Ember-like")
-   ========================= */
 .sd-root-modern input,
 .sd-root-modern textarea,
 .sd-root-modern select,
@@ -69,7 +52,6 @@
   border-color: var(--sjs-editor-border) !important;
 }
 
-/* Focus ring (orange) */
 .sd-root-modern .sd-input:focus,
 .sd-root-modern .sd-dropdown:focus-within,
 .sd-root-modern .sd-text:focus-within {
@@ -77,9 +59,6 @@
   box-shadow: 0 0 0 2px rgba(249, 115, 22, 0.22) !important;
 }
 
-/* =========================
-   Dropdown: closed value ellipsis
-   ========================= */
 .sd-root-modern .sd-dropdown .sd-dropdown__value {
   overflow: hidden;
   text-overflow: ellipsis;
@@ -87,14 +66,6 @@
   max-width: 100%;
 }
 
-/* =========================
-   Dropdown popup: background + wrapping + NO white flash
-   IMPORTANT:
-   SurveyJS popups can render in a portal outside .sd-root-modern,
-   so we style both scoped (.sd-root-modern ...) and global (.sv-popup--menu-...)
-   ========================= */
-
-/* Popup container background (scoped) */
 .sd-root-modern .sd-dropdown__popup,
 .sd-root-modern .sd-list,
 .sd-root-modern .sd-list__container,
@@ -106,7 +77,6 @@
   overflow-x: hidden;
 }
 
-/* Popup items: allow wrapping */
 .sd-root-modern .sd-dropdown__popup .sd-item__control-label,
 .sd-root-modern .sv-popup__container .sd-item__control-label {
   white-space: normal !important;
@@ -115,14 +85,12 @@
   line-height: 1.25;
 }
 
-/* Popup items default */
 .sd-root-modern .sv-list__item-body,
 .sd-root-modern .sd-list__item-body {
   background: transparent !important;
   color: rgba(255, 255, 255, 0.90) !important;
 }
 
-/* Hover/focus state (scoped) */
 .sd-root-modern .sv-list__item:hover .sv-list__item-body,
 .sd-root-modern .sv-list__item:focus .sv-list__item-body,
 .sd-root-modern .sv-list__item--focused .sv-list__item-body,
@@ -133,15 +101,12 @@
   color: rgba(255, 255, 255, 0.96) !important;
 }
 
-/* Selected item (scoped) */
 .sd-root-modern .sv-list__item--selected .sv-list__item-body,
 .sd-root-modern .sd-list__item--selected .sd-list__item-body {
   background: rgba(249, 115, 22, 0.28) !important;
   color: rgba(255, 255, 255, 0.96) !important;
 }
 
-/* ----- Portal fallback (UNSCOPED) ----- */
-/* These selectors match SurveyJS built-in rules that cause the "white hover" */
 .sv-popup--menu-phone .sv-list__item:hover .sv-list__item-body,
 .sv-popup--menu-phone .sv-list__item:focus .sv-list__item-body,
 .sv-popup--menu-phone .sv-list__item--focused .sv-list__item-body,
@@ -152,7 +117,6 @@
   color: rgba(255, 255, 255, 0.96) !important;
 }
 
-/* Selected + hover (also override multi-select special case that can flip colors) */
 .sv-popup--menu-phone .sv-list__item--selected .sv-list__item-body,
 .sv-popup--menu-tablet .sv-list__item--selected .sv-list__item-body,
 .sv-popup--menu-phone .sv-list__item:hover.sv-list__item--selected .sv-list__item-body,
@@ -161,7 +125,6 @@
   color: rgba(255, 255, 255, 0.96) !important;
 }
 
-/* Popup background (portal fallback) */
 .sv-popup--menu-phone > .sv-popup__container,
 .sv-popup--menu-tablet > .sv-popup__container,
 .sv-popup--menu-phone > .sv-popup__container > .sv-popup__body-content,
@@ -170,9 +133,39 @@
   border: 1px solid rgba(255, 255, 255, 0.08) !important;
 }
 
-/* =========================
-   MatrixDynamic: calmer spacing, alignment
-   ========================= */
+/* Inline dropdown override for runtime;
+   this forces the phone/tablet popup variant to anchor near the field instead of center screen */
+.sv-popup--menu-phone.ember-dropdown-popup-inline,
+.sv-popup--menu-tablet.ember-dropdown-popup-inline {
+  position: fixed !important;
+  inset: auto !important;
+  right: auto !important;
+  bottom: auto !important;
+  transform: none !important;
+  margin: 0 !important;
+  width: auto !important;
+  height: auto !important;
+  display: block !important;
+  padding: 0 !important;
+  z-index: 1200 !important;
+  background: transparent !important;
+}
+
+.sv-popup--menu-phone.ember-dropdown-popup-inline > .sv-popup__container,
+.sv-popup--menu-tablet.ember-dropdown-popup-inline > .sv-popup__container {
+  width: 100% !important;
+  max-width: 100% !important;
+  overflow: hidden !important;
+  border-radius: 10px !important;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.45) !important;
+}
+
+.sv-popup--menu-phone.ember-dropdown-popup-inline > .sv-popup__container > .sv-popup__body-content,
+.sv-popup--menu-tablet.ember-dropdown-popup-inline > .sv-popup__container > .sv-popup__body-content {
+  max-height: inherit !important;
+  overflow: auto !important;
+}
+
 .sd-root-modern .sd-matrixdynamic__table {
   border-collapse: separate;
   border-spacing: 0 10px;
@@ -200,7 +193,6 @@
   resize: vertical;
 }
 
-/* Radio group layout in matrix */
 .sd-root-modern .sd-matrixdynamic__row .sd-selectbase {
   display: flex;
   justify-content: flex-start;
@@ -220,9 +212,6 @@
   opacity: 0.9;
 }
 
-/* =========================
-   Wrap helper (only when you add .wrap-topic on a parent)
-   ========================= */
 .wrap-topic .sd-table__cell,
 .wrap-topic .sd-matrix__cell,
 .wrap-topic .sd-matrixdropdown__cell,
@@ -234,14 +223,10 @@
   line-height: 1.25;
 }
 
-/* ===== Matrixdynamic: Onderwerp-kolom (2e) altijd volledig leesbaar ===== */
-
-/* Zorg dat de tabel itself wrappen logisch maakt */
 .sd-root-modern .sd-matrixdynamic__table {
   width: 100%;
 }
 
-/* 2e kolom: geen ellipsis/no-wrap meer */
 .sd-root-modern .sd-matrixdynamic__row td:nth-child(2),
 .sd-root-modern .sd-matrixdynamic__row td:nth-child(2) * {
   white-space: normal !important;
@@ -251,7 +236,6 @@
   overflow-wrap: anywhere !important;
 }
 
-/* SurveyJS gebruikt soms specifieke text containers; pak die ook hard */
 .sd-root-modern .sd-matrixdynamic__row td:nth-child(2) .sd-string-viewer,
 .sd-root-modern .sd-matrixdynamic__row td:nth-child(2) .sd-table__cell,
 .sd-root-modern .sd-matrixdynamic__row td:nth-child(2) .sd-table__cell-content,
@@ -264,7 +248,6 @@
   line-height: 1.25;
 }
 
-/* Kleine screens: extra ruimte voor onderwerp, radiogroup mag wrappen */
 @media (max-width: 820px) {
   .sd-root-modern .sd-matrixdynamic__row .sd-selectbase {
     flex-wrap: wrap;
@@ -272,8 +255,6 @@
   }
 }
 
-
-/* Rood voor meetresultaten */
 .ember-warn-cap {
   outline: 2px solid rgba(255, 80, 80, 0.9);
   outline-offset: 2px;
@@ -302,7 +283,6 @@
   font-weight: 700;
 }
 
-/* HTML/content blocks in SurveyJS readable on dark background */
 .sd-root-modern .sd-html,
 .sd-root-modern .sd-question__html,
 .sd-root-modern .sd-question__html p,
@@ -318,24 +298,16 @@
   color: rgba(255, 255, 255, 0.78) !important;
 }
 
-/* Optional: links in html blocks */
 .sd-root-modern .sd-question__html a,
 .sd-root-modern .sd-html a {
   color: rgba(255, 255, 255, 0.92) !important;
   text-decoration: underline;
 }
 
-/* Optional: footnote-like html blocks a bit softer */
 .sd-root-modern .sd-question__html {
   font-size: 0.95rem;
 }
 
-/* =========================
-   Matrix / MatrixDynamic dark row styling
-   - houdt alternate rows bruikbaar in dark theme
-   ========================= */
-
-/* Algemene tabeltekst altijd goed leesbaar */
 .sd-root-modern .sd-table__cell,
 .sd-root-modern .sd-table__cell .sd-input,
 .sd-root-modern .sd-table__cell .sd-string-viewer,
@@ -349,41 +321,31 @@
   color: rgba(255, 255, 255, 0.92) !important;
 }
 
-/* Basis rij */
 .sd-root-modern .sd-table__row,
 .sd-root-modern .sd-matrixdynamic__row {
   background: transparent !important;
 }
 
-/* Alternate rows; donker i.p.v. wit */
 .sd-root-modern .sd-table__row:nth-child(even) td,
 .sd-root-modern .sd-matrixdynamic__row:nth-child(even) td {
   background: rgba(255, 255, 255, 0.025) !important;
 }
 
-/* Oneven rijen ook expliciet donker houden */
 .sd-root-modern .sd-table__row:nth-child(odd) td,
 .sd-root-modern .sd-matrixdynamic__row:nth-child(odd) td {
   background: rgba(255, 255, 255, 0.012) !important;
 }
 
-/* Hover niet wit laten worden */
 .sd-root-modern .sd-table__row:hover td,
 .sd-root-modern .sd-matrixdynamic__row:hover td {
   background: rgba(255, 255, 255, 0.04) !important;
 }
 
-/* Readonly viewers in matrixen expliciet leesbaar */
 .sd-root-modern .sd-table__cell .sd-string-viewer,
 .sd-root-modern .sd-matrixdynamic__cell .sd-string-viewer {
   color: rgba(255, 255, 255, 0.92) !important;
   opacity: 1 !important;
 }
-
-/* =========================
-   Percentage suffix voor A2 velden
-   - netjes binnen het inputveld uitgelijnd
-   ========================= */
 
 .sd-root-modern [data-name="a2_systeembeschikbaarheid_pve"] .sd-input,
 .sd-root-modern [data-name="a2_systeembeschikbaarheid_geconstateerd"] .sd-input,

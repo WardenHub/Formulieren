@@ -183,3 +183,28 @@ export function getFormPrefill(code, formCode, keys) {
 export function getInstallationComponents(code) {
   return apiGet(`/installations/${encodeURIComponent(code)}/components`);
 }
+
+// admin forms
+export function getAdminForms() {
+  return apiGet("/admin/forms");
+}
+
+export function getAdminForm(formId) {
+  return apiGet(`/admin/forms/${encodeURIComponent(formId)}`);
+}
+
+export function createAdminForm(payload) {
+  return apiPost("/admin/forms", payload ?? {});
+}
+
+export function saveAdminFormsOrder(items) {
+  return apiPut("/admin/forms/order", { items: items ?? [] });
+}
+
+export function saveAdminFormConfig(formId, payload) {
+  return apiPut(`/admin/forms/${encodeURIComponent(formId)}/config`, payload ?? {});
+}
+
+export function createAdminFormVersion(formId, payload) {
+  return apiPost(`/admin/forms/${encodeURIComponent(formId)}/versions`, payload ?? {});
+}

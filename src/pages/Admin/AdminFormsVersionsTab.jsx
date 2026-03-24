@@ -49,6 +49,8 @@ const AdminFormsVersionsTab = forwardRef(function AdminFormsVersionsTab(
   {
     forms,
     selectedFormId,
+    selectedForm,
+    loading,
     onSelectForm,
     onDirtyChange,
     onSavingChange,
@@ -63,7 +65,7 @@ const AdminFormsVersionsTab = forwardRef(function AdminFormsVersionsTab(
   const upIconRefs = useRef({});
   const downIconRefs = useRef({});
 
-  const [orderDraft, setOrderDraft] = useState(forms);
+  const [orderDraft, setOrderDraft] = useState(Array.isArray(forms) ? forms : []);
   const [saving, setSaving] = useState(false);
 
   const [showCreateForm, setShowCreateForm] = useState(false);
@@ -77,16 +79,18 @@ const AdminFormsVersionsTab = forwardRef(function AdminFormsVersionsTab(
   const [uploadOk, setUploadOk] = useState(false);
 
   useEffect(() => {
-    setOrderDraft(forms);
+    setOrderDraft(Array.isArray(forms) ? forms : []);
   }, [forms]);
 
-  const selectedForm = useMemo(() => {
-    return orderDraft.find((x) => x.form_id === selectedFormId) ?? null;
-  }, [orderDraft, selectedFormId]);
-
   const isDirty = useMemo(() => {
-    const a = orderDraft.map((x) => x.form_id);
-    const b = forms.map((x) => x.form_id);
+    const a = orderDraft.map((x) => ({
+      form_id: x.form_id,
+      sort_order: Number(x?.sort_order ?? 0),
+    }));
+    const b = (Array.isArray(forms) ? forms : []).map((x) => ({
+      form_id: x.form_id,
+      sort_order: Number(x?.sort_order ?? 0),
+    }));
     return JSON.stringify(a) !== JSON.stringify(b);
   }, [orderDraft, forms]);
 
@@ -123,8 +127,7 @@ const AdminFormsVersionsTab = forwardRef(function AdminFormsVersionsTab(
 
     setSaving(true);
     try {
-      await Promise.resolve();
-      onPersistFormOrder(orderDraft);
+      await onPersistFormOrder?.(orderDraft);
       onSaveOk?.();
     } finally {
       setSaving(false);
@@ -140,7 +143,7 @@ const AdminFormsVersionsTab = forwardRef(function AdminFormsVersionsTab(
     setNewFormDescription("");
   }
 
-  function handleConfirmCreateForm() {
+  async function handleConfirmCreateForm() {
     const code = String(newFormCode || "").trim();
     const name = String(newFormName || "").trim();
     const description = String(newFormDescription || "").trim();
@@ -150,7 +153,7 @@ const AdminFormsVersionsTab = forwardRef(function AdminFormsVersionsTab(
       return;
     }
 
-    onCreateForm({
+    await onCreateForm?.({
       code,
       name,
       description,
@@ -184,7 +187,7 @@ const AdminFormsVersionsTab = forwardRef(function AdminFormsVersionsTab(
     setUploadOk(true);
   }
 
-  function handleConfirmUpload() {
+  async function handleConfirmUpload() {
     if (!selectedForm) return;
 
     const parsed = safeJsonParse(uploadText);
@@ -194,11 +197,21 @@ const AdminFormsVersionsTab = forwardRef(function AdminFormsVersionsTab(
       return;
     }
 
-    onCreateVersionFromJsonText(selectedForm, uploadText);
-    setUploadText("");
-    setUploadError(null);
-    setUploadOk(false);
-    setShowUpload(false);
+    try {
+      await onCreateVersionFromJsonText?.(selectedForm, uploadText);
+
+      setUploadText("");
+      setUploadError(null);
+      setUploadOk(false);
+      setShowUpload(false);
+    } catch (e) {
+      setUploadError(e?.message || String(e));
+      setUploadOk(false);
+    }
+  }
+
+  if (loading && (!forms || forms.length === 0)) {
+    return <div className="muted">laden; formulieren</div>;
   }
 
   return (
@@ -244,7 +257,7 @@ const AdminFormsVersionsTab = forwardRef(function AdminFormsVersionsTab(
               type="button"
               className="btn btn-secondary"
               disabled={!selectedForm}
-              onClick={() => selectedForm && onOpenFormDev(selectedForm)}
+              onClick={() => selectedForm && onOpenFormDev?.(selectedForm)}
             >
               Open formdev
             </button>
@@ -403,11 +416,11 @@ const AdminFormsVersionsTab = forwardRef(function AdminFormsVersionsTab(
                 key={form.form_id}
                 role="button"
                 tabIndex={0}
-                onClick={() => onSelectForm(form.form_id)}
+                onClick={() => onSelectForm?.(form.form_id)}
                 onKeyDown={(e) => {
                   if (e.key === "Enter" || e.key === " ") {
                     e.preventDefault();
-                    onSelectForm(form.form_id);
+                    onSelectForm?.(form.form_id);
                   }
                 }}
                 style={{
@@ -518,7 +531,7 @@ const AdminFormsVersionsTab = forwardRef(function AdminFormsVersionsTab(
 
         {!selectedForm ? (
           <div className="muted">Geen formulier geselecteerd.</div>
-        ) : selectedForm.versions?.length ? (
+        ) : Array.isArray(selectedForm.versions) && selectedForm.versions.length > 0 ? (
           <div style={{ display: "grid", gap: 10 }}>
             {selectedForm.versions.map((version) => (
               <div

@@ -18,7 +18,7 @@ import {
 
 type SyncFollowUpsInput = {
   formInstance: {
-    form_instance_id: string;
+    form_instance_id: number | string;
     installation_id: string;
     atrium_installation_code: string;
   };
@@ -34,7 +34,7 @@ type PreviewFollowUpsInput = {
 
 type ExistingFollowUpRow = {
   follow_up_action_id: string;
-  form_instance_id: string;
+  form_instance_id: number;
   source_fingerprint: string;
   source_question_name: string;
   source_question_type: string | null;
@@ -69,12 +69,12 @@ export async function previewFormFollowUps(input: PreviewFollowUpsInput) {
 }
 
 export async function syncFormFollowUps(input: SyncFollowUpsInput) {
-  const formInstanceId = String(input?.formInstance?.form_instance_id || "").trim();
+  const formInstanceId = parseFormInstanceId(input?.formInstance?.form_instance_id);
   const installationId = String(input?.formInstance?.installation_id || "").trim();
   const atriumCode = String(input?.formInstance?.atrium_installation_code || "").trim();
   const actor = getActor(input?.user);
 
-  if (!formInstanceId) {
+  if (formInstanceId == null) {
     throw new Error("syncFormFollowUps: form_instance_id ontbreekt");
   }
   if (!installationId) {
@@ -159,7 +159,7 @@ export async function syncFormFollowUps(input: SyncFollowUpsInput) {
   };
 }
 
-async function getExistingFollowUps(formInstanceId: string): Promise<ExistingFollowUpRow[]> {
+async function getExistingFollowUps(formInstanceId: number): Promise<ExistingFollowUpRow[]> {
   const rows = await sqlQuery(getFormFollowUpsByInstanceSql, {
     formInstanceId,
   });
@@ -168,7 +168,7 @@ async function getExistingFollowUps(formInstanceId: string): Promise<ExistingFol
 }
 
 async function insertFollowUp(args: {
-  formInstanceId: string;
+  formInstanceId: number;
   installationId: string;
   atriumCode: string;
   actor: string;
@@ -279,6 +279,17 @@ function normalizeNumber(v: unknown) {
   if (v === null || v === undefined) return null;
   const n = Number(v);
   return Number.isFinite(n) ? n : null;
+}
+
+function parseFormInstanceId(value: unknown): number | null {
+  if (value === null || value === undefined) return null;
+  const n =
+    typeof value === "number"
+      ? value
+      : Number(String(value).trim());
+
+  if (!Number.isInteger(n) || n <= 0) return null;
+  return n;
 }
 
 function getActor(user: any) {
