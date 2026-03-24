@@ -10,30 +10,31 @@ import { LogoutIcon } from "@/components/ui/logout";
 import { HomeIcon } from "@/components/ui/home";
 import { SearchIcon } from "@/components/ui/search";
 import { FileTextIcon } from "@/components/ui/file-text";
+import { BrainIcon } from "@/components/ui/brain";
 
 export default function Layout() {
   const [navOpen, setNavOpen] = useState(false);
   const [avatarOpen, setAvatarOpen] = useState(false);
-  const [roles, setRoles] = useState([]); 
+  const [roles, setRoles] = useState([]);
   const menuRef = useRef(null);
   const location = useLocation();
 
   function AnimatedMenuItem({ onClick, Icon, children, className = "menu-item" }) {
-  const iconRef = useRef(null);
+    const iconRef = useRef(null);
 
-  return (
-    <button
-      type="button"
-      className={className}
-      onClick={onClick}
-      onMouseEnter={() => iconRef.current?.startAnimation?.()}
-      onMouseLeave={() => iconRef.current?.stopAnimation?.()}
-    >
-      <Icon ref={iconRef} size={18} className="nav-anim-icon" />
-      <span>{children}</span>
-    </button>
-  );
-}
+    return (
+      <button
+        type="button"
+        className={className}
+        onClick={onClick}
+        onMouseEnter={() => iconRef.current?.startAnimation?.()}
+        onMouseLeave={() => iconRef.current?.stopAnimation?.()}
+      >
+        <Icon ref={iconRef} size={18} className="nav-anim-icon" />
+        <span>{children}</span>
+      </button>
+    );
+  }
 
   function AnimatedNavLink({ to, end, Icon, children }) {
     const iconRef = useRef(null);
@@ -52,13 +53,11 @@ export default function Layout() {
     );
   }
 
-  // sluit menus bij navigatie
   useEffect(() => {
     setNavOpen(false);
     setAvatarOpen(false);
   }, [location.pathname]);
 
-  // sluit avatar menu bij klik buiten menu
   useEffect(() => {
     function onDocClick(e) {
       if (!menuRef.current) return;
@@ -69,7 +68,6 @@ export default function Layout() {
     return () => document.removeEventListener("mousedown", onDocClick);
   }, []);
 
-    // haal rollen op
   useEffect(() => {
     let cancelled = false;
 
@@ -78,14 +76,15 @@ export default function Layout() {
         const data = await httpJson("/me");
         if (!cancelled) setRoles(data.roles ?? []);
       } catch (err) {
-        // auth is handled by AuthGate; here we only log and keep UI stable
         console.error("me fetch failed", err);
         if (!cancelled) setRoles([]);
       }
     }
 
     loadMe();
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   return (
@@ -122,6 +121,7 @@ export default function Layout() {
               >
                 Help
               </a>
+
               <AnimatedMenuItem
                 className="menu-item danger"
                 Icon={LogoutIcon}
@@ -141,7 +141,8 @@ export default function Layout() {
 
       <aside className={`sidebar ${navOpen ? "open" : ""}`}>
         <nav className="nav">
-          <AnimatedNavLink to="/" end Icon={HomeIcon}> Home
+          <AnimatedNavLink to="/" end Icon={HomeIcon}>
+            Home
           </AnimatedNavLink>
 
           <AnimatedNavLink to="/installaties" Icon={SearchIcon}>
@@ -153,9 +154,9 @@ export default function Layout() {
           </AnimatedNavLink>
 
           {roles.includes("admin") && (
-            <NavLink to="/beheer" className="nav-link">
+            <AnimatedNavLink to="/admin" Icon={BrainIcon}>
               Beheer
-            </NavLink>
+            </AnimatedNavLink>
           )}
         </nav>
       </aside>

@@ -8,7 +8,7 @@ export const importAnswerFileSql = `
 --   @code nvarchar(...)
 --   @formCode nvarchar(...)
 --   @versionLabel nvarchar(...)
---   @formInstanceId uniqueidentifier (nullable)
+--   @formInstanceId bigint (nullable)
 --   @draftRev int (nullable)
 --   @answersJson nvarchar(max)
 --   @calculatedJson nvarchar(max) (nullable)
@@ -49,7 +49,7 @@ declare @formId uniqueidentifier;
 select top 1 @formId = form_id
 from dbo.FormDefinition
 where code = @formCode
-  and is_active = 1;
+  and status = 'A';
 
 if @formId is null throw 50000, 'form not found', 1;
 
@@ -61,15 +61,11 @@ where form_id = @formId
 
 if @formVersionId is null throw 50000, 'form version not found', 1;
 
-declare @instanceId uniqueidentifier = @formInstanceId;
+declare @instanceId bigint = @formInstanceId;
 
 if @instanceId is null
 begin
-  -- create new instance
-  set @instanceId = newid();
-
   insert into dbo.FormInstance (
-    form_instance_id,
     form_version_id,
     installation_id,
     atrium_installation_code,
@@ -81,7 +77,6 @@ begin
     updated_by
   )
   values (
-    @instanceId,
     @formVersionId,
     @installationId,
     @code,
@@ -92,6 +87,8 @@ begin
     sysutcdatetime(),
     @updatedBy
   );
+
+  set @instanceId = cast(scope_identity() as bigint);
 end
 else
 begin
@@ -176,7 +173,6 @@ select
   @instanceId as form_instance_id;
 `;
 
-
 // =========================================================
 // forms catalog for an installation (data-driven)
 // - returns forms + whether applicable for current installation_type_key
@@ -204,9 +200,11 @@ forms as (
     fd.form_id,
     fd.code,
     fd.name,
-    fd.is_active
+    fd.description,
+    fd.status,
+    fd.sort_order
   from dbo.FormDefinition fd
-  where fd.is_active = 1
+  where fd.status = 'A'
 ),
 form_map_counts as (
   select
@@ -221,7 +219,7 @@ app as (
   select
     f.form_id,
     case
-      when f.is_active = 0 then 0
+      when f.status <> 'A' then 0
       when isnull(mc.mapping_count, 0) = 0 then 1
       when exists (
         select 1
@@ -240,11 +238,14 @@ select
   f.form_id,
   f.code,
   f.name,
+  f.description,
+  f.status,
+  f.sort_order,
   a.is_applicable,
   a.mapping_count
 from forms f
 left join app a on a.form_id = f.form_id
-order by f.name asc;
+order by f.sort_order asc, f.name asc;
 `;
 
 // =========================================================
@@ -254,7 +255,7 @@ order by f.name asc;
 export const getFormInstanceSql = `
 -- expects:
 --   @code nvarchar(...)
---   @instanceId uniqueidentifier
+--   @instanceId bigint
 
 if not exists (select 1 from dbo.AtriumInstallationBase where installatie_code = @code)
 begin
@@ -279,6 +280,9 @@ select top 1
 
   fd.code as form_code,
   fd.name as form_name,
+  fd.description as form_description,
+  fd.status as form_status,
+  fd.sort_order as form_sort_order,
 
   fv.version,
   fv.version_label,
@@ -301,7 +305,6 @@ left join dbo.FormAnswer fa
 where fi.form_instance_id = @instanceId
   and fi.atrium_installation_code = @code;
 `;
-
 
 // =========================================================
 // forms runtime - start (create or resume concept instance)
@@ -348,7 +351,7 @@ declare @formId uniqueidentifier;
 select top 1 @formId = fd.form_id
 from dbo.FormDefinition fd
 where fd.code = @formCode
-  and fd.is_active = 1;
+  and fd.status = 'A';
 
 if @formId is null
 begin
@@ -368,7 +371,7 @@ begin
 end;
 
 -- resume: if an existing CONCEPT instance exists for this installation + form_version -> return it
-declare @existingInstanceId uniqueidentifier;
+declare @existingInstanceId bigint;
 select top 1 @existingInstanceId = fi.form_instance_id
 from dbo.FormInstance fi
 where fi.installation_id = @installationId
@@ -385,10 +388,7 @@ begin
   return;
 end;
 
-declare @instanceId uniqueidentifier = newid();
-
 insert into dbo.FormInstance (
-  form_instance_id,
   form_version_id,
   installation_id,
   atrium_installation_code,
@@ -404,7 +404,6 @@ insert into dbo.FormInstance (
   submitted_by
 )
 values (
-  @instanceId,
   @formVersionId,
   @installationId,
   @code,
@@ -419,6 +418,8 @@ values (
   null,
   null
 );
+
+declare @instanceId bigint = cast(scope_identity() as bigint);
 
 insert into dbo.FormAnswer (
   form_instance_id,
@@ -440,7 +441,6 @@ select
   @formVersionId as form_version_id,
   @formId as form_id;
 `;
-
 
 // =========================================================
 // form start preflight (data-driven; 1 rule row per form_id)
@@ -470,7 +470,9 @@ form_def as (
     fd.form_id,
     fd.code,
     fd.name,
-    fd.is_active
+    fd.description,
+    fd.status,
+    fd.sort_order
   from dbo.FormDefinition fd
   where fd.code = @formCode
 ),
@@ -488,7 +490,7 @@ form_app as (
     fd.form_id,
     case
       when fd.form_id is null then 0
-      when fd.is_active = 0 then 0
+      when fd.status <> 'A' then 0
       when isnull(mc.mapping_count, 0) = 0 then 1
       when exists (
         select 1
@@ -503,7 +505,6 @@ form_app as (
   left join form_map_counts mc on mc.form_id = fd.form_id
 ),
 rules as (
-  -- 1 row per form_id; optional (kan ontbreken -> defaults)
   select top 1
     r.form_id,
     r.requires_type,
@@ -522,7 +523,6 @@ rules as (
     and r.is_active = 1
 ),
 perf_counts as (
-  -- 0 als er geen installation record is
   select
     count(*) as perf_row_count
   from dbo.InstallationPerformanceRequirementRow prr
@@ -541,7 +541,6 @@ energy_counts as (
   where es.is_active = 1
 ),
 custom_counts as (
-  -- aantal toepasselijke custom fields (op basis van type) + hoeveel gevuld
   select
     count(*) as custom_applicable_count,
     sum(case
@@ -563,27 +562,22 @@ custom_counts as (
    and v.field_key = d.field_key
   where d.is_active = 1
     and (
-      -- als er geen mappings bestaan voor dit field -> altijd applicable
       not exists (
         select 1
         from dbo.InstallationCustomFieldDefinitionType dt2
         where dt2.field_key = d.field_key
       )
-      -- of mapping bestaat en matcht huidig type
       or dt.field_key is not null
     )
 )
 select
-  -- installation
   @code as atrium_installation_code,
   i.installation_id,
   i.installation_type_key,
 
-  -- form
   case when fd.form_id is null then 0 else 1 end as form_exists,
   fa.form_is_applicable,
 
-  -- rule defaults (als rule ontbreekt)
   cast(isnull(r.requires_type, 1) as bit) as requires_type,
 
   r.perf_min_rows,
@@ -595,7 +589,6 @@ select
   r.custom_min_filled,
   isnull(r.custom_severity, N'warning') as custom_severity,
 
-  -- counts
   isnull(p.perf_row_count, 0) as perf_row_count,
   isnull(e.energy_row_count, 0) as energy_row_count,
   isnull(c.custom_applicable_count, 0) as custom_applicable_count,
@@ -616,7 +609,7 @@ left join custom_counts c on 1=1;
 // =========================================================
 
 export const reopenFormInstanceSql = `
--- expects: @code, @instanceId, @updatedBy
+-- expects: @code, @instanceId bigint, @updatedBy
 
 declare @status nvarchar(30);
 select top 1 @status = status
@@ -626,12 +619,8 @@ where form_instance_id = @instanceId
 
 if @status is null throw 50000, 'form instance not found', 1;
 
--- disallow reopen when AFGEHANDELD
 if @status = N'AFGEHANDELD' throw 50000, 'invalid status transition', 1;
 
--- only show button for statuses != CONCEPT and != AFGEHANDELD (frontend rule),
--- but backend stays safe:
--- allow from INGEDIEND / IN_BEHANDELING / INGETROKKEN back to CONCEPT
 if @status not in (N'INGEDIEND', N'IN_BEHANDELING', N'INGETROKKEN')
 begin
   throw 50000, 'invalid status transition', 1;

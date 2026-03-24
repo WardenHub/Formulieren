@@ -6,7 +6,7 @@
 export const saveFormAnswersSql = `
 -- expects:
 --   @code nvarchar(...)
---   @instanceId uniqueidentifier
+--   @instanceId bigint
 --   @answersJson nvarchar(max)
 --   @calculatedJson nvarchar(max)  (nullable)
 --   @expectedDraftRev int
@@ -84,7 +84,7 @@ select
 // /api/src/db/queries/formsAnswers.sql.ts
 
 export const submitFormInstanceSql = `
--- expects: @code, @instanceId, @submittedBy
+-- expects: @code, @instanceId bigint, @submittedBy
 
 declare @status nvarchar(30);
 select top 1 @status = status
@@ -109,7 +109,7 @@ select @instanceId as form_instance_id, N'INGEDIEND' as status;
 `;
 
 export const withdrawFormInstanceSql = `
--- expects: @code, @instanceId, @updatedBy
+-- expects: @code, @instanceId bigint, @updatedBy
 
 declare @status nvarchar(30);
 select top 1 @status = status

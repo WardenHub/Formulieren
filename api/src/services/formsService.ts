@@ -55,6 +55,18 @@ function parseSurveyJson(value: any) {
   }
 }
 
+function parseInstanceId(value: any): number | null {
+  if (value == null) return null;
+
+  const n =
+    typeof value === "number"
+      ? value
+      : Number(String(value).trim());
+
+  if (!Number.isInteger(n) || n <= 0) return null;
+  return n;
+}
+
 export async function getFormStartPreflight(code: string, formCode: string, user: any) {
   const cleanCode = String(code || "").trim();
   const cleanFormCode = String(formCode || "").trim();
@@ -192,6 +204,9 @@ export async function getFormsCatalog(code: string) {
         form_id: r.form_id,
         code: r.code,
         label: r.name,
+        description: r.description ?? null,
+        status: r.status ?? null,
+        sort_order: r.sort_order == null ? null : Number(r.sort_order),
         is_applicable: Number(r.is_applicable ?? 0) === 1,
         mapping_count: Number(r.mapping_count ?? 0),
       }))
@@ -217,9 +232,11 @@ export async function startFormInstance(code: string, formCode: string, user: an
   return await getFormInstance(cleanCode, row.form_instance_id);
 }
 
-export async function getFormInstance(code: string, instanceId: string) {
+export async function getFormInstance(code: string, instanceId: number | string) {
   const cleanCode = String(code || "").trim();
-  const id = String(instanceId || "").trim();
+  const id = parseInstanceId(instanceId);
+
+  if (id == null) return { error: "not found" };
 
   const rows = await sqlQuery(getFormInstanceSql, { code: cleanCode, instanceId: id });
 
@@ -229,10 +246,14 @@ export async function getFormInstance(code: string, instanceId: string) {
   return { item: row };
 }
 
-export async function saveFormAnswers(code: string, instanceId: string, payload: any, user: any) {
+export async function saveFormAnswers(code: string, instanceId: number | string, payload: any, user: any) {
   const cleanCode = String(code || "").trim();
-  const id = String(instanceId || "").trim();
+  const id = parseInstanceId(instanceId);
   const updatedBy = getUserDisplayName(user);
+
+  if (id == null) {
+    return { ok: false, error: "ongeldige form_instance_id" };
+  }
 
   const answers_json = payload?.answers_json ?? payload?.answersJson ?? {};
   const calculated_json = payload?.calculated_json ?? payload?.calculatedJson ?? null;
@@ -257,12 +278,14 @@ export async function saveFormAnswers(code: string, instanceId: string, payload:
 
 export async function previewSubmitFormInstance(
   code: string,
-  instanceId: string,
+  instanceId: number | string,
   payload: any,
   user: any
 ) {
   const cleanCode = String(code || "").trim();
-  const id = String(instanceId || "").trim();
+  const id = parseInstanceId(instanceId);
+
+  if (id == null) return { error: "not found" };
 
   const instanceRes = await getFormInstance(cleanCode, id);
   if (instanceRes?.error === "not found") return { error: "not found" };
@@ -382,10 +405,12 @@ export async function previewSubmitFormInstance(
   };
 }
 
-export async function submitFormInstance(code: string, instanceId: string, user: any) {
+export async function submitFormInstance(code: string, instanceId: number | string, user: any) {
   const cleanCode = String(code || "").trim();
-  const id = String(instanceId || "").trim();
+  const id = parseInstanceId(instanceId);
   const submittedBy = getUserDisplayName(user);
+
+  if (id == null) return { error: "not found" };
 
   const instanceRes = await getFormInstance(cleanCode, id);
   if (instanceRes?.error === "not found") return { error: "not found" };
@@ -406,7 +431,7 @@ export async function submitFormInstance(code: string, instanceId: string, user:
 
   const followUpSync = await syncFormFollowUps({
     formInstance: {
-      form_instance_id: String(item.form_instance_id || id),
+      form_instance_id: String(item.form_instance_id ?? id),
       installation_id: String(item.installation_id || ""),
       atrium_installation_code: String(item.atrium_installation_code || cleanCode),
     },
@@ -422,10 +447,12 @@ export async function submitFormInstance(code: string, instanceId: string, user:
   };
 }
 
-export async function withdrawFormInstance(code: string, instanceId: string, user: any) {
+export async function withdrawFormInstance(code: string, instanceId: number | string, user: any) {
   const cleanCode = String(code || "").trim();
-  const id = String(instanceId || "").trim();
+  const id = parseInstanceId(instanceId);
   const updatedBy = getUserDisplayName(user);
+
+  if (id == null) return { error: "not found" };
 
   const rows = await sqlQuery(withdrawFormInstanceSql, {
     code: cleanCode,
@@ -436,10 +463,12 @@ export async function withdrawFormInstance(code: string, instanceId: string, use
   return { ok: true, result: rows?.[0] ?? null };
 }
 
-export async function reopenFormInstance(code: string, instanceId: string, user: any) {
+export async function reopenFormInstance(code: string, instanceId: number | string, user: any) {
   const cleanCode = String(code || "").trim();
-  const id = String(instanceId || "").trim();
+  const id = parseInstanceId(instanceId);
   const updatedBy = getUserDisplayName(user);
+
+  if (id == null) return { error: "not found" };
 
   const rows = await sqlQuery(reopenFormInstanceSql, {
     code: cleanCode,
@@ -462,7 +491,7 @@ export async function importFormAnswerFile(code: string, file: any, user: any) {
   if (!formCode) return { ok: false, error: "form.code ontbreekt" };
   if (!versionLabel) return { ok: false, error: "form.version_label ontbreekt" };
 
-  const formInstanceId = file?.instance?.form_instance_id ?? null;
+  const formInstanceId = parseInstanceId(file?.instance?.form_instance_id);
   const draftRev = file?.instance?.draft_rev ?? null;
 
   const answers = file?.payload?.answers_json ?? {};
