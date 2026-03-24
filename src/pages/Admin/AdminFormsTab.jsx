@@ -1,7 +1,6 @@
 // /src/pages/Admin/AdminFormsTab.jsx
 
-import { useEffect, useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
 import Tabs from "../../components/Tabs.jsx";
 import AdminFormsVersionsTab from "./AdminFormsVersionsTab.jsx";
 import AdminFormsConfigTab from "./AdminFormsConfigTab.jsx";
@@ -15,10 +14,14 @@ const MOCK_FORMS = [
     name: "Onderhoud BMI + OAI (type B)",
     description: "POC formulier voor onderhoud BMI/OAI",
     status: "A",
-    sort_order: 10,
+    sort_order: 20,
     latest_version: 3,
     latest_version_label: "1.2",
     version_count: 3,
+    active_survey_json: {
+      title: "Onderhoud BMI + OAI (type B)",
+      pages: [],
+    },
     versions: [
       {
         form_version_id: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1",
@@ -27,6 +30,10 @@ const MOCK_FORMS = [
         published_at: "2026-03-24T08:30:00Z",
         published_by: "admin@ember.local",
         is_latest: true,
+        survey_json: {
+          title: "Onderhoud BMI + OAI (type B)",
+          pages: [],
+        },
       },
       {
         form_version_id: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa2",
@@ -35,6 +42,10 @@ const MOCK_FORMS = [
         published_at: "2026-03-10T11:00:00Z",
         published_by: "admin@ember.local",
         is_latest: false,
+        survey_json: {
+          title: "Onderhoud BMI + OAI (type B) v1.1",
+          pages: [],
+        },
       },
       {
         form_version_id: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa3",
@@ -43,6 +54,10 @@ const MOCK_FORMS = [
         published_at: null,
         published_by: null,
         is_latest: false,
+        survey_json: {
+          title: "Onderhoud BMI + OAI (type B) v1.0",
+          pages: [],
+        },
       },
     ],
     applicability_type_keys: ["BMI", "BMI_OAI"],
@@ -63,10 +78,14 @@ const MOCK_FORMS = [
     name: "Meetresultaten (B)",
     description: "Meetresultaten batterij en melders",
     status: "M",
-    sort_order: 20,
+    sort_order: 10,
     latest_version: 2,
     latest_version_label: "2.0",
     version_count: 2,
+    active_survey_json: {
+      title: "Meetresultaten (B)",
+      pages: [],
+    },
     versions: [
       {
         form_version_id: "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbb1",
@@ -75,6 +94,10 @@ const MOCK_FORMS = [
         published_at: "2026-03-22T12:00:00Z",
         published_by: "admin@ember.local",
         is_latest: true,
+        survey_json: {
+          title: "Meetresultaten (B)",
+          pages: [],
+        },
       },
       {
         form_version_id: "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbb2",
@@ -83,6 +106,10 @@ const MOCK_FORMS = [
         published_at: null,
         published_by: null,
         is_latest: false,
+        survey_json: {
+          title: "Meetresultaten (B) v1.0",
+          pages: [],
+        },
       },
     ],
     applicability_type_keys: [],
@@ -106,12 +133,33 @@ const MOCK_INSTALLATION_TYPES = [
   { installation_type_key: "IBC", display_name: "IBC", is_active: false },
 ];
 
-export default function AdminFormsTab() {
-  const navigate = useNavigate();
+function sortForms(items) {
+  return [...items].sort((a, b) => {
+    const sa = Number(a?.sort_order ?? 0);
+    const sb = Number(b?.sort_order ?? 0);
+    if (sa !== sb) return sa - sb;
+    return String(a?.name || "").localeCompare(String(b?.name || ""));
+  });
+}
+
+const AdminFormsTab = forwardRef(function AdminFormsTab(
+  { onHeaderSaveStateChange },
+  ref
+) {
+  const versionsRef = useRef(null);
+  const configRef = useRef(null);
 
   const [activeTab, setActiveTab] = useState("versions");
-  const [forms, setForms] = useState(MOCK_FORMS);
+  const [forms, setForms] = useState(sortForms(MOCK_FORMS));
   const [selectedFormId, setSelectedFormId] = useState(MOCK_FORMS[0]?.form_id ?? null);
+
+  const [versionsDirty, setVersionsDirty] = useState(false);
+  const [versionsSaving, setVersionsSaving] = useState(false);
+  const [versionsSaveOk, setVersionsSaveOk] = useState(false);
+
+  const [configDirty, setConfigDirty] = useState(false);
+  const [configSaving, setConfigSaving] = useState(false);
+  const [configSaveOk, setConfigSaveOk] = useState(false);
 
   const installationTypes = useMemo(() => {
     return MOCK_INSTALLATION_TYPES.filter((x) => x.is_active);
@@ -127,6 +175,76 @@ export default function AdminFormsTab() {
     }
   }, [forms, selectedFormId]);
 
+  function hasUnsavedChanges() {
+    if (activeTab === "versions") return versionsDirty && !versionsSaving;
+    if (activeTab === "config") return configDirty && !configSaving;
+    return false;
+  }
+
+  function canSaveActiveTab() {
+    if (activeTab === "versions") return versionsDirty && !versionsSaving;
+    if (activeTab === "config") return configDirty && !configSaving;
+    return false;
+  }
+
+  function saveActiveTab() {
+    if (activeTab === "versions") {
+      versionsRef.current?.save?.();
+      return;
+    }
+    if (activeTab === "config") {
+      configRef.current?.save?.();
+    }
+  }
+
+  useImperativeHandle(ref, () => ({
+    hasUnsavedChanges,
+    canSaveActiveTab,
+    saveActiveTab,
+  }));
+
+  function confirmLeaveTab(nextTabKey) {
+    if (nextTabKey === activeTab) return true;
+    if (!hasUnsavedChanges()) return true;
+
+    return window.confirm("Je hebt niet-opgeslagen wijzigingen. Weet je zeker dat je wilt doorgaan?");
+  }
+
+  function handleTabChange(nextTabKey) {
+    if (!confirmLeaveTab(nextTabKey)) return;
+    setActiveTab(nextTabKey);
+  }
+
+  useEffect(() => {
+    const nextState =
+      activeTab === "versions"
+        ? {
+            visible: true,
+            disabled: !versionsDirty,
+            saving: versionsSaving,
+            saved: versionsSaveOk,
+            pulse: versionsDirty,
+          }
+        : {
+            visible: true,
+            disabled: !configDirty,
+            saving: configSaving,
+            saved: configSaveOk,
+            pulse: configDirty,
+          };
+
+    onHeaderSaveStateChange?.(nextState);
+  }, [
+    activeTab,
+    versionsDirty,
+    versionsSaving,
+    versionsSaveOk,
+    configDirty,
+    configSaving,
+    configSaveOk,
+    onHeaderSaveStateChange,
+  ]);
+
   const tabs = useMemo(() => {
     return [
       {
@@ -135,45 +253,101 @@ export default function AdminFormsTab() {
         Icon: FileTextIcon,
         content: (
           <AdminFormsVersionsTab
+            ref={versionsRef}
             forms={forms}
             selectedFormId={selectedFormId}
             onSelectForm={setSelectedFormId}
-            onOpenFormDev={(form) => {
-              navigate("/dev/formdev", {
-                state: {
-                  source: "admin",
-                  form_id: form?.form_id ?? null,
-                  form_code: form?.code ?? null,
-                },
-              });
+            onDirtyChange={setVersionsDirty}
+            onSavingChange={setVersionsSaving}
+            onSaveOk={() => {
+              setVersionsSaveOk(true);
+              window.setTimeout(() => setVersionsSaveOk(false), 2000);
             }}
-            onCreateVersion={(form) => {
-              const latestVersion = Number(form?.latest_version || 0);
-              const nextVersion = latestVersion + 1;
+            onPersistFormOrder={(orderedItems) => {
+              setForms(sortForms(orderedItems));
+            }}
+            onOpenFormDev={(form) => {
+              const bootstrap = {
+                source: "admin",
+                form_id: form?.form_id ?? null,
+                form_code: form?.code ?? null,
+                form_name: form?.name ?? null,
+                survey_json: form?.active_survey_json ?? null,
+                opened_at: new Date().toISOString(),
+              };
+
+              sessionStorage.setItem("admin.formdev.bootstrap", JSON.stringify(bootstrap));
+              window.open("/dev/formdev", "_blank", "noopener,noreferrer");
+            }}
+            onCreateForm={(payload) => {
+              const nextId = crypto.randomUUID();
+              const nextItem = {
+                form_id: nextId,
+                code: payload.code,
+                name: payload.name,
+                description: payload.description || "",
+                status: "M",
+                sort_order: (forms.length + 1) * 10,
+                latest_version: 0,
+                latest_version_label: "-",
+                version_count: 0,
+                active_survey_json: {
+                  title: payload.name,
+                  pages: [],
+                },
+                versions: [],
+                applicability_type_keys: [],
+                preflight: {
+                  requires_type: true,
+                  perf_min_rows: null,
+                  perf_severity: "warning",
+                  energy_min_rows: null,
+                  energy_severity: "warning",
+                  custom_min_filled: null,
+                  custom_severity: "warning",
+                  is_active: true,
+                },
+              };
+
+              setForms((prev) => sortForms([...prev, nextItem]));
+              setSelectedFormId(nextId);
+            }}
+            onCreateVersionFromJsonText={(form, jsonText) => {
+              const parsed = JSON.parse(String(jsonText || "{}"));
 
               setForms((prev) =>
-                prev.map((item) => {
-                  if (item.form_id !== form.form_id) return item;
+                sortForms(
+                  prev.map((item) => {
+                    if (item.form_id !== form.form_id) return item;
 
-                  const nextVersionRow = {
-                    form_version_id: crypto.randomUUID(),
-                    version: nextVersion,
-                    version_label: `${nextVersion}.0`,
-                    published_at: null,
-                    published_by: null,
-                    is_latest: true,
-                  };
+                    const nextVersion = Number(item.latest_version || 0) + 1;
+                    const nextVersionLabel = `${nextVersion}.0`;
 
-                  const older = (item.versions || []).map((v) => ({ ...v, is_latest: false }));
+                    const newVersionRow = {
+                      form_version_id: crypto.randomUUID(),
+                      version: nextVersion,
+                      version_label: nextVersionLabel,
+                      published_at: new Date().toISOString(),
+                      published_by: "admin@ember.local",
+                      is_latest: true,
+                      survey_json: parsed,
+                    };
 
-                  return {
-                    ...item,
-                    latest_version: nextVersion,
-                    latest_version_label: nextVersionRow.version_label,
-                    version_count: older.length + 1,
-                    versions: [nextVersionRow, ...older],
-                  };
-                })
+                    const olderVersions = (item.versions || []).map((v) => ({
+                      ...v,
+                      is_latest: false,
+                    }));
+
+                    return {
+                      ...item,
+                      latest_version: nextVersion,
+                      latest_version_label: nextVersionLabel,
+                      version_count: olderVersions.length + 1,
+                      active_survey_json: parsed,
+                      versions: [newVersionRow, ...olderVersions],
+                    };
+                  })
+                )
               );
             }}
           />
@@ -185,35 +359,43 @@ export default function AdminFormsTab() {
         Icon: CogIcon,
         content: (
           <AdminFormsConfigTab
+            ref={configRef}
             forms={forms}
             selectedFormId={selectedFormId}
             selectedForm={selectedForm}
             installationTypes={installationTypes}
             onSelectForm={setSelectedFormId}
+            onDirtyChange={setConfigDirty}
+            onSavingChange={setConfigSaving}
+            onSaveOk={() => {
+              setConfigSaveOk(true);
+              window.setTimeout(() => setConfigSaveOk(false), 2000);
+            }}
             onSaveConfig={(nextConfig) => {
               setForms((prev) =>
-                prev.map((item) => {
-                  if (item.form_id !== nextConfig.form_id) return item;
-                  return {
-                    ...item,
-                    name: nextConfig.name,
-                    description: nextConfig.description,
-                    status: nextConfig.status,
-                    sort_order: nextConfig.sort_order,
-                    applicability_type_keys: nextConfig.applicability_type_keys,
-                    preflight: {
-                      ...item.preflight,
-                      ...nextConfig.preflight,
-                    },
-                  };
-                })
+                sortForms(
+                  prev.map((item) => {
+                    if (item.form_id !== nextConfig.form_id) return item;
+                    return {
+                      ...item,
+                      name: nextConfig.name,
+                      description: nextConfig.description,
+                      status: nextConfig.status,
+                      applicability_type_keys: nextConfig.applicability_type_keys,
+                      preflight: {
+                        ...item.preflight,
+                        ...nextConfig.preflight,
+                      },
+                    };
+                  })
+                )
               );
             }}
           />
         ),
       },
     ];
-  }, [forms, navigate, selectedFormId, selectedForm, installationTypes]);
+  }, [forms, selectedFormId, selectedForm, installationTypes]);
 
   const activeContent = useMemo(() => {
     return tabs.find((t) => t.key === activeTab)?.content ?? null;
@@ -221,8 +403,10 @@ export default function AdminFormsTab() {
 
   return (
     <div style={{ display: "grid", gap: 12 }}>
-      <Tabs tabs={tabs} activeKey={activeTab} onChange={setActiveTab} />
+      <Tabs tabs={tabs} activeKey={activeTab} onChange={handleTabChange} />
       {activeContent}
     </div>
   );
-}
+});
+
+export default AdminFormsTab;

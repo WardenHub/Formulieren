@@ -1,5 +1,6 @@
 // src/pages/dev/FormDesigner.jsx
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useLocation } from "react-router-dom";
 
 import { Survey } from "survey-react-ui";
 import { ItemValue, Model } from "survey-core";
@@ -310,10 +311,65 @@ function readOpenCardsFromStorage() {
   }
 }
 
+function normalizeAdminBootstrap(raw) {
+  if (!raw || typeof raw !== "object") return null;
+
+  let surveyJson = raw.survey_json ?? null;
+
+  if (typeof surveyJson === "string") {
+    const parsed = safeJsonParse(surveyJson);
+    if (!parsed.ok || !parsed.value || typeof parsed.value !== "object") return null;
+    surveyJson = parsed.value;
+  }
+
+  if (!surveyJson || typeof surveyJson !== "object") return null;
+
+  return {
+    source: raw.source ?? "admin",
+    form_id: raw.form_id ?? null,
+    form_code: raw.form_code ?? null,
+    form_name: raw.form_name ?? null,
+    survey_json: surveyJson,
+    opened_at: raw.opened_at ?? null,
+  };
+}
+
+function readAdminFormDevBootstrap(locationState) {
+  const fromLocation = normalizeAdminBootstrap(locationState);
+  if (fromLocation) {
+    return { ...fromLocation, _fromStorage: false };
+  }
+
+  try {
+    const raw = sessionStorage.getItem("admin.formdev.bootstrap");
+    if (!raw) return null;
+
+    const parsed = JSON.parse(raw);
+    const normalized = normalizeAdminBootstrap(parsed);
+    if (!normalized) return null;
+
+    return { ...normalized, _fromStorage: true };
+  } catch {
+    return null;
+  }
+}
+
 export default function FormDesigner() {
   registerEmberSurveyFunctions();
 
-  const [editorText, setEditorText] = useState(() => {
+  const location = useLocation();
+
+  const adminBootstrap = useMemo(() => {
+    return readAdminFormDevBootstrap(location.state);
+  }, [location.state]);
+
+  const didApplyAdminBootstrapRef = useRef(false);
+
+    const [editorText, setEditorText] = useState(() => {
+    if (adminBootstrap?.survey_json && typeof adminBootstrap.survey_json === "object") {
+      return JSON.stringify(adminBootstrap.survey_json, null, 2) + "\n";
+    }
+
     const fromLs = localStorage.getItem("dev.formdesigner.editorText");
     return fromLs || '{\n  "title": "Preview",\n  "pages": []\n}\n';
   });
@@ -346,6 +402,10 @@ export default function FormDesigner() {
 
   const [installCode, setInstallCode] = useState("");
   const [prefillFormCode, setPrefillFormCode] = useState(() => {
+    if (adminBootstrap?.form_code) {
+      return String(adminBootstrap.form_code);
+    }
+
     const v = localStorage.getItem("dev.formdesigner.prefillFormCode");
     return v || "DEV";
   });
@@ -613,6 +673,35 @@ export default function FormDesigner() {
     setShowPreview(true);
     resetPreviewSideStates();
   }
+
+  useEffect(() => {
+    if (!adminBootstrap?.survey_json) return;
+    if (didApplyAdminBootstrapRef.current) return;
+
+    didApplyAdminBootstrapRef.current = true;
+
+    setPreviewError(null);
+    setLoadFromBackend(false);
+    setBackendBusy(false);
+    setShowEditor(true);
+    setShowPreview(true);
+    setForcedPageNo(0);
+    resetPreviewSideStates();
+
+    if (adminBootstrap?.form_code) {
+      setPrefillFormCode(String(adminBootstrap.form_code));
+    }
+
+    buildPreviewFromEditor();
+
+    setNotice(
+      {
+        kind: "ok",
+        text: `Admin bootstrap geladen${adminBootstrap.form_name ? `; ${adminBootstrap.form_name}` : ""}`,
+      },
+      { autoClearMs: 1800 }
+    );
+  }, [adminBootstrap, buildPreviewFromEditor]);
 
   async function loadPreviewFromBackend() {
     if (!backendCode || !backendInstanceId) {
@@ -1149,6 +1238,16 @@ export default function FormDesigner() {
   useEffect(() => {
     localStorage.setItem("dev.formdesigner.openCards", JSON.stringify(openCards));
   }, [openCards]);
+
+  useEffect(() => {
+    if (!adminBootstrap?._fromStorage) return;
+
+    try {
+      sessionStorage.removeItem("admin.formdev.bootstrap");
+    } catch {
+      // stil
+    }
+  }, [adminBootstrap]);
 
   useEffect(() => {
     let cancelled = false;

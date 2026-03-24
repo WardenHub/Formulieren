@@ -1,6 +1,35 @@
 // /src/pages/Admin/AdminFormsConfigTab.jsx
 
-import { useEffect, useMemo, useState } from "react";
+import { forwardRef, useEffect, useImperativeHandle, useMemo, useState } from "react";
+
+function normalizeNullableNumber(value) {
+  if (value === "" || value === null || value === undefined) return null;
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
+}
+
+function normalizeDraftFromForm(selectedForm) {
+  if (!selectedForm) return null;
+
+  return {
+    form_id: selectedForm.form_id,
+    code: selectedForm.code,
+    name: selectedForm.name ?? "",
+    description: selectedForm.description ?? "",
+    status: selectedForm.status ?? "A",
+    applicability_type_keys: [...(selectedForm.applicability_type_keys || [])],
+    preflight: {
+      requires_type: Boolean(selectedForm.preflight?.requires_type),
+      perf_min_rows: selectedForm.preflight?.perf_min_rows ?? null,
+      perf_severity: selectedForm.preflight?.perf_severity ?? "warning",
+      energy_min_rows: selectedForm.preflight?.energy_min_rows ?? null,
+      energy_severity: selectedForm.preflight?.energy_severity ?? "warning",
+      custom_min_filled: selectedForm.preflight?.custom_min_filled ?? null,
+      custom_severity: selectedForm.preflight?.custom_severity ?? "warning",
+      is_active: selectedForm.preflight?.is_active ?? true,
+    },
+  };
+}
 
 function statusLabel(status) {
   if (status === "A") return "Actief";
@@ -9,52 +38,43 @@ function statusLabel(status) {
   return status || "Onbekend";
 }
 
-function normalizeNullableNumber(value) {
-  if (value === "" || value === null || value === undefined) return null;
-  const n = Number(value);
-  return Number.isFinite(n) ? n : null;
-}
-
-export default function AdminFormsConfigTab({
-  forms,
-  selectedFormId,
-  selectedForm,
-  installationTypes,
-  onSelectForm,
-  onSaveConfig,
-}) {
+const AdminFormsConfigTab = forwardRef(function AdminFormsConfigTab(
+  {
+    forms,
+    selectedFormId,
+    selectedForm,
+    installationTypes,
+    onSelectForm,
+    onDirtyChange,
+    onSavingChange,
+    onSaveOk,
+    onSaveConfig,
+  },
+  ref
+) {
   const [draft, setDraft] = useState(null);
   const [saving, setSaving] = useState(false);
-  const [saveOk, setSaveOk] = useState(false);
 
   useEffect(() => {
-    if (!selectedForm) {
-      setDraft(null);
-      return;
-    }
-
-    setDraft({
-      form_id: selectedForm.form_id,
-      code: selectedForm.code,
-      name: selectedForm.name ?? "",
-      description: selectedForm.description ?? "",
-      status: selectedForm.status ?? "A",
-      sort_order: selectedForm.sort_order ?? 0,
-      applicability_type_keys: [...(selectedForm.applicability_type_keys || [])],
-      preflight: {
-        requires_type: Boolean(selectedForm.preflight?.requires_type),
-        perf_min_rows: selectedForm.preflight?.perf_min_rows ?? null,
-        perf_severity: selectedForm.preflight?.perf_severity ?? "warning",
-        energy_min_rows: selectedForm.preflight?.energy_min_rows ?? null,
-        energy_severity: selectedForm.preflight?.energy_severity ?? "warning",
-        custom_min_filled: selectedForm.preflight?.custom_min_filled ?? null,
-        custom_severity: selectedForm.preflight?.custom_severity ?? "warning",
-        is_active: selectedForm.preflight?.is_active ?? true,
-      },
-    });
-
-    setSaveOk(false);
+    setDraft(normalizeDraftFromForm(selectedForm));
   }, [selectedForm]);
+
+  const baseSnapshot = useMemo(() => {
+    return normalizeDraftFromForm(selectedForm);
+  }, [selectedForm]);
+
+  const isDirty = useMemo(() => {
+    if (!draft && !baseSnapshot) return false;
+    return JSON.stringify(draft) !== JSON.stringify(baseSnapshot);
+  }, [draft, baseSnapshot]);
+
+  useEffect(() => {
+    onDirtyChange?.(isDirty);
+  }, [isDirty, onDirtyChange]);
+
+  useEffect(() => {
+    onSavingChange?.(saving);
+  }, [saving, onSavingChange]);
 
   const selectedTypeKeysSet = useMemo(() => {
     return new Set(draft?.applicability_type_keys || []);
@@ -62,7 +82,6 @@ export default function AdminFormsConfigTab({
 
   function setField(key, value) {
     setDraft((prev) => ({ ...prev, [key]: value }));
-    setSaveOk(false);
   }
 
   function setPreflightField(key, value) {
@@ -73,7 +92,6 @@ export default function AdminFormsConfigTab({
         [key]: value,
       },
     }));
-    setSaveOk(false);
   }
 
   function toggleType(typeKey) {
@@ -87,21 +105,18 @@ export default function AdminFormsConfigTab({
         applicability_type_keys: Array.from(set),
       };
     });
-    setSaveOk(false);
   }
 
-  async function handleSave() {
-    if (!draft || saving) return;
+  async function save() {
+    if (!draft || saving || !isDirty) return;
 
     setSaving(true);
-    setSaveOk(false);
 
     try {
       await Promise.resolve();
 
       onSaveConfig({
         ...draft,
-        sort_order: normalizeNullableNumber(draft.sort_order) ?? 0,
         preflight: {
           ...draft.preflight,
           perf_min_rows: normalizeNullableNumber(draft.preflight.perf_min_rows),
@@ -110,11 +125,13 @@ export default function AdminFormsConfigTab({
         },
       });
 
-      setSaveOk(true);
+      onSaveOk?.();
     } finally {
       setSaving(false);
     }
   }
+
+  useImperativeHandle(ref, () => ({ save }));
 
   return (
     <div style={{ display: "grid", gap: 12 }}>
@@ -127,7 +144,12 @@ export default function AdminFormsConfigTab({
           gap: 10,
         }}
       >
-        <div style={{ fontWeight: 600 }}>Formulieren</div>
+        <div>
+          <div style={{ fontWeight: 600 }}>Formulieren</div>
+          <div className="muted" style={{ fontSize: 13 }}>
+            Alt+S slaat wijzigingen in deze tab op.
+          </div>
+        </div>
 
         <div style={{ display: "grid", gap: 10 }}>
           {forms.map((form) => {
@@ -136,6 +158,15 @@ export default function AdminFormsConfigTab({
             return (
               <div
                 key={form.form_id}
+                role="button"
+                tabIndex={0}
+                onClick={() => onSelectForm(form.form_id)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    onSelectForm(form.form_id);
+                  }
+                }}
                 style={{
                   padding: 12,
                   border: isSelected
@@ -148,7 +179,10 @@ export default function AdminFormsConfigTab({
                   gap: 12,
                   alignItems: "center",
                   flexWrap: "wrap",
+                  cursor: "pointer",
+                  outline: "none",
                 }}
+                title="Selecteer formulier"
               >
                 <div style={{ minWidth: 0 }}>
                   <div style={{ fontWeight: 600 }}>{form.name}</div>
@@ -157,13 +191,8 @@ export default function AdminFormsConfigTab({
                   </div>
                 </div>
 
-                <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-                  <span className="muted" style={{ fontSize: 13 }}>
-                    {statusLabel(form.status)}
-                  </span>
-                  <button type="button" className="btn" onClick={() => onSelectForm(form.form_id)}>
-                    {isSelected ? "Geselecteerd" : "Selecteer"}
-                  </button>
+                <div className="muted" style={{ fontSize: 13 }}>
+                  {statusLabel(form.status)}
                 </div>
               </div>
             );
@@ -180,25 +209,8 @@ export default function AdminFormsConfigTab({
           gap: 12,
         }}
       >
-        <div
-          style={{
-            display: "flex",
-            justifyContent: "space-between",
-            gap: 12,
-            alignItems: "center",
-            flexWrap: "wrap",
-          }}
-        >
-          <div style={{ fontWeight: 600 }}>
-            Configuratie {selectedForm ? `; ${selectedForm.name}` : ""}
-          </div>
-
-          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-            {saveOk && <span className="muted">Opgeslagen</span>}
-            <button type="button" className="btn" onClick={handleSave} disabled={!draft || saving}>
-              {saving ? "Opslaan..." : "Opslaan"}
-            </button>
-          </div>
+        <div style={{ fontWeight: 600 }}>
+          Configuratie {selectedForm ? `; ${selectedForm.name}` : ""}
         </div>
 
         {!draft ? (
@@ -267,20 +279,6 @@ export default function AdminFormsConfigTab({
                       <option value="M">Alleen beheer</option>
                       <option value="I">Niet actief</option>
                     </select>
-                  </div>
-                </div>
-
-                <div className="cf-row">
-                  <div className="cf-label">
-                    <div className="cf-label-text">Sorteervolgorde</div>
-                  </div>
-                  <div className="cf-control">
-                    <input
-                      type="number"
-                      className="input"
-                      value={draft.sort_order ?? 0}
-                      onChange={(e) => setField("sort_order", e.target.value)}
-                    />
                   </div>
                 </div>
               </div>
@@ -473,4 +471,6 @@ export default function AdminFormsConfigTab({
       </div>
     </div>
   );
-}
+});
+
+export default AdminFormsConfigTab;
