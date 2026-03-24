@@ -1,3 +1,5 @@
+// src/pages/Forms/FormRunnerBase.jsx
+// This is a base component for running a form instance, used by both the regular runner and the debug view.
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 
@@ -13,6 +15,7 @@ import { FileCheck2Icon } from "@/components/ui/file-check-2";
 import { FolderInputIcon } from "@/components/ui/folder-input";
 import { FolderXIcon } from "@/components/ui/folder-x";
 import { HistoryIcon } from "@/components/ui/history";
+import { CheckCheckIcon } from "@/components/ui/check-check";
 
 import {
   getFormInstance,
@@ -23,248 +26,60 @@ import {
   reopenFormInstance,
 } from "../../api/emberApi.js";
 
-function normalizeInstanceResponse(res) {
-  return (
-    res?.item ||
-    res?.instance ||
-    res?.formInstance ||
-    res?.data?.item ||
-    res?.data?.instance ||
-    res?.data?.formInstance ||
-    res ||
-    null
-  );
-}
+import {
+  normalizeInstanceResponse,
+  safeJsonParse,
+  safeSurveyParse,
+  formatNlDateTime,
+  statusLabel,
+  translateApiError,
+  getDraftRev,
+  getAnswersObject,
+  buildSubmitConfirmText,
+} from "./shared/surveyCore.jsx";
 
-function safeJsonParse(text) {
-  const s = String(text || "").trim();
-  if (!s) return { ok: true, value: {} };
+import {
+  collectValidationSummary,
+  syncAllMatrixQuestionVisualErrors,
+} from "./shared/validation.jsx";
 
-  try {
-    return { ok: true, value: JSON.parse(s) };
-  } catch (e) {
-    return { ok: false, error: e?.message || String(e) };
-  }
-}
+import { scrollToQuestionByName } from "./shared/navigation.jsx";
 
-function safeSurveyParse(surveyJson) {
-  if (!surveyJson) return { ok: false, error: "survey_json ontbreekt" };
-  if (typeof surveyJson === "object") return { ok: true, value: surveyJson };
+function createRunnerSurveyModel(surveyJsonObj, { onDirtyChange, canEditRef, suppressDirtyRef }) {
+  const model = new Model(surveyJsonObj);
 
-  const txt = String(surveyJson || "").trim();
-  if (!txt) return { ok: false, error: "survey_json is leeg" };
+  const markDirty = () => {
+    if (!canEditRef.current) return;
+    if (suppressDirtyRef.current) return;
+    onDirtyChange?.(true);
+  };
 
-  try {
-    return { ok: true, value: JSON.parse(txt) };
-  } catch (e) {
-    return { ok: false, error: e?.message || String(e) };
-  }
-}
-
-function formatNlDateTime(iso) {
-  if (!iso) return "";
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return String(iso);
-
-  try {
-    return new Intl.DateTimeFormat("nl-NL", {
-      dateStyle: "short",
-      timeStyle: "medium",
-    }).format(d);
-  } catch {
-    return d.toISOString();
-  }
-}
-
-const STATUS_LABELS = {
-  CONCEPT: "Concept",
-  INGEDIEND: "Ingediend",
-  IN_BEHANDELING: "In behandeling",
-  AFGEHANDELD: "Afgehandeld",
-  INGETROKKEN: "Ingetrokken",
-};
-
-function statusLabel(status) {
-  const s = String(status || "");
-  return STATUS_LABELS[s] || s || "(onbekend)";
-}
-
-function translateApiError(err, currentStatus) {
-  const raw = String(err?.message || err || "").trim();
-  if (!raw) return "Er is iets misgegaan.";
-
-  const lower = raw.toLowerCase();
-
-  if (lower.includes("invalid status transition")) {
-    const lbl = statusLabel(currentStatus);
-    return `Deze actie is niet toegestaan in de huidige status (${lbl}).`;
-  }
-
-  if (lower.includes("expected_draft_rev")) {
-    return "Opslaan conflict: dit formulier is ondertussen gewijzigd. Probeer opnieuw.";
-  }
-
-  if (lower.includes("preview") && lower.includes("not found")) {
-    return "De indiencontrole kon niet worden uitgevoerd omdat het formulier niet is gevonden.";
-  }
-
-  if (
-    lower.includes("forbidden") ||
-    lower.includes("not authorized") ||
-    lower.includes("unauthorized")
-  ) {
-    return "Je hebt geen rechten om deze actie uit te voeren.";
-  }
-
-  return raw;
-}
-
-function getDraftRev(inst) {
-  const v = inst?.draft_rev ?? inst?.draftRev ?? 0;
-  return Number.isFinite(Number(v)) ? Number(v) : 0;
-}
-
-function getAnswersObject(inst) {
-  const nextAnswers = inst?.answers_json ?? inst?.answersJson ?? null;
-
-  if (typeof nextAnswers === "string") {
-    const parsed = safeJsonParse(nextAnswers);
-    return parsed.ok ? parsed.value : null;
-  }
-
-  if (nextAnswers && typeof nextAnswers === "object") return nextAnswers;
-  return null;
-}
-
-function buildSubmitConfirmText(previewRes) {
-  const items = Array.isArray(previewRes?.follow_ups?.items)
-    ? previewRes.follow_ups.items
-    : [];
-
-  const workflowCount = items.filter((x) => x?.kind === "workflow").length;
-  const reportOnlyCount = items.filter((x) => x?.kind === "report-only").length;
-
-  const lines = [];
-
-  lines.push("Weet je zeker dat je dit formulier wilt indienen?");
-  lines.push("");
-
-  if (workflowCount > 0 || reportOnlyCount > 0) {
-    lines.push("Bij indienen worden opvolgregistraties aangemaakt of bijgewerkt:");
-    lines.push(`- Workflowacties: ${workflowCount}`);
-    lines.push(`- Informatieve rapportopmerkingen: ${reportOnlyCount}`);
-
-    const previewTitles = items
-      .map((x) => String(x?.workflowTitle || "").trim())
-      .filter(Boolean)
-      .slice(0, 8);
-
-    if (previewTitles.length > 0) {
-      lines.push("");
-      lines.push("Voorbeeld:");
-      for (const title of previewTitles) {
-        lines.push(`- ${title}`);
-      }
-
-      if (items.length > previewTitles.length) {
-        lines.push(`- ... en nog ${items.length - previewTitles.length}`);
-      }
-    }
-  } else {
-    lines.push("Er zijn geen opvolgregistraties gevonden voor dit formulier.");
-  }
-
-  return lines.join("\n");
-}
-
-function normalizeText(value) {
-  const s = String(value || "").trim();
-  return s.length ? s : null;
-}
-
-function getQuestionTitle(question) {
-  const t =
-    question?.fullTitle ||
-    question?.title ||
-    question?.locTitle?.renderedHtml ||
-    question?.name ||
-    "";
-  return normalizeText(t) || "Onbenoemde vraag";
-}
-
-function getPageTitle(page, fallbackIndex = 0) {
-  const t =
-    page?.title ||
-    page?.locTitle?.renderedHtml ||
-    page?.name ||
-    "";
-  return normalizeText(t) || `Pagina ${fallbackIndex + 1}`;
-}
-
-function getQuestionElement(question) {
-  if (!question?.name) return null;
-
-  const escaped = typeof CSS !== "undefined" && CSS.escape
-    ? CSS.escape(String(question.name))
-    : String(question.name);
-
-  return document.querySelector(`[data-name="${escaped}"]`);
-}
-
-function scrollToQuestion(question) {
-  const el = getQuestionElement(question);
-  if (!el) return false;
-
-  el.scrollIntoView({
-    behavior: "smooth",
-    block: "center",
+  model.onValueChanged.add(() => {
+    markDirty();
+    syncAllMatrixQuestionVisualErrors(model);
   });
 
-  return true;
+  model.onMatrixRowAdded.add(() => {
+    markDirty();
+    syncAllMatrixQuestionVisualErrors(model);
+  });
+
+  model.onMatrixRowRemoved.add(() => {
+    markDirty();
+    syncAllMatrixQuestionVisualErrors(model);
+  });
+
+  return model;
 }
 
-function collectValidationSummary(model) {
-  const items = [];
-  const pages = Array.isArray(model?.pages) ? model.pages : [];
-
-  pages.forEach((page, pageIndex) => {
-    const pageTitle = getPageTitle(page, pageIndex);
-    const questions = Array.isArray(page?.questions) ? page.questions : [];
-
-    questions.forEach((question) => {
-      const questionErrors = Array.isArray(question?.errors) ? question.errors : [];
-      if (!questionErrors.length) return;
-
-      const questionName = String(question?.name || "");
-      const questionTitle = getQuestionTitle(question);
-
-      questionErrors.forEach((err, errorIndex) => {
-        const message =
-          normalizeText(err?.text) ||
-          normalizeText(err?.locText?.renderedHtml) ||
-          "Ongeldige invoer.";
-
-        if (!message) return;
-
-        items.push({
-          id: `${pageIndex}::${questionName}::${errorIndex}`,
-          pageIndex,
-          pageTitle,
-          questionName,
-          questionTitle,
-          message,
-        });
-      });
-    });
-  });
-
-  const seen = new Set();
-  return items.filter((item) => {
-    const key = `${item.pageIndex}|${item.questionName}|${item.message}`;
-    if (seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  });
+function setSurveyData(model, answersObj, suppressDirtyRef) {
+  suppressDirtyRef.current = true;
+  try {
+    model.data = answersObj && typeof answersObj === "object" ? answersObj : {};
+    syncAllMatrixQuestionVisualErrors(model);
+  } finally {
+    suppressDirtyRef.current = false;
+  }
 }
 
 export default function FormRunnerBase({ mode }) {
@@ -284,11 +99,15 @@ export default function FormRunnerBase({ mode }) {
 
   const [saveOk, setSaveOk] = useState(false);
   const [submitOk, setSubmitOk] = useState(false);
+  const [validateOk, setValidateOk] = useState(false);
   const [lastSavedAt, setLastSavedAt] = useState(null);
 
   const [debugAnswersText, setDebugAnswersText] = useState("{\n  \n}\n");
 
   const backIconRef = useRef(null);
+
+  const validateIconRef = useRef(null);
+  const validateOkIconRef = useRef(null);
 
   const saveIconRef = useRef(null);
   const saveOkIconRef = useRef(null);
@@ -299,6 +118,7 @@ export default function FormRunnerBase({ mode }) {
   const withdrawIconRef = useRef(null);
   const reopenIconRef = useRef(null);
 
+  const validateOkTimerRef = useRef(null);
   const saveOkTimerRef = useRef(null);
   const submitOkTimerRef = useRef(null);
 
@@ -318,6 +138,7 @@ export default function FormRunnerBase({ mode }) {
   }, [instance]);
 
   const surveyParsed = useMemo(() => safeSurveyParse(instance?.survey_json), [instance]);
+
   const surveyTitle = useMemo(() => {
     if (surveyParsed.ok) {
       const t = surveyParsed.value?.title;
@@ -329,15 +150,16 @@ export default function FormRunnerBase({ mode }) {
   function allowedActions(s) {
     const st = String(s || "");
 
-    if (st === "CONCEPT") return { save: true, submit: true, withdraw: true, reopen: false };
-    if (st === "INGEDIEND") return { save: false, submit: false, withdraw: true, reopen: true };
-    if (st === "INGETROKKEN") return { save: false, submit: false, withdraw: false, reopen: true };
+    if (st === "CONCEPT") return { validate: true, save: true, submit: true, withdraw: true, reopen: false };
+    if (st === "INGEDIEND") return { validate: false, save: false, submit: false, withdraw: true, reopen: true };
+    if (st === "INGETROKKEN") return { validate: false, save: false, submit: false, withdraw: false, reopen: true };
 
-    return { save: false, submit: false, withdraw: false, reopen: false };
+    return { validate: false, save: false, submit: false, withdraw: false, reopen: false };
   }
 
   const actions = useMemo(() => allowedActions(status), [status]);
 
+  const showValidate = actions.validate;
   const showSave = actions.save;
   const showSubmit = actions.submit;
   const showWithdraw = actions.withdraw;
@@ -349,37 +171,14 @@ export default function FormRunnerBase({ mode }) {
     canEditRef.current = canEditAnswers;
   }, [canEditAnswers]);
 
-  function createSurveyModel(surveyJsonObj) {
-    const m = new Model(surveyJsonObj);
+  function clearTransientSuccess() {
+    setValidateOk(false);
+    setSaveOk(false);
+    setSubmitOk(false);
 
-    m.onValueChanged.add(() => {
-      if (!canEditRef.current) return;
-      if (suppressDirtyRef.current) return;
-      setDirty(true);
-    });
-
-    m.onMatrixRowAdded.add(() => {
-      if (!canEditRef.current) return;
-      if (suppressDirtyRef.current) return;
-      setDirty(true);
-    });
-
-    m.onMatrixRowRemoved.add(() => {
-      if (!canEditRef.current) return;
-      if (suppressDirtyRef.current) return;
-      setDirty(true);
-    });
-
-    return m;
-  }
-
-  function setSurveyData(model, answersObj) {
-    suppressDirtyRef.current = true;
-    try {
-      model.data = answersObj && typeof answersObj === "object" ? answersObj : {};
-    } finally {
-      suppressDirtyRef.current = false;
-    }
+    validateOkIconRef.current?.stopAnimation?.();
+    saveOkIconRef.current?.stopAnimation?.();
+    submitOkIconRef.current?.stopAnimation?.();
   }
 
   function getCurrentAnswersObject() {
@@ -396,8 +195,10 @@ export default function FormRunnerBase({ mode }) {
     return { ok: true, value: surveyModelRef.current.data || {} };
   }
 
-  function validateBeforeSubmit() {
-    if (isDebug) return { ok: true, summary: [] };
+  function runLocalValidation() {
+    if (isDebug) {
+      return { ok: true, summary: [] };
+    }
 
     const model = surveyModelRef.current;
     if (!model) {
@@ -410,19 +211,18 @@ export default function FormRunnerBase({ mode }) {
     }
 
     try {
-      const valid = model.validate();
-      if (!valid) {
-        const summary = collectValidationSummary(model);
+      model.validate(true);
+      syncAllMatrixQuestionVisualErrors(model);
 
-        return {
-          ok: false,
-          error:
-            "Het formulier is nog niet volledig of bevat ongeldige invoer. Controleer de gemarkeerde velden voordat je indient.",
-          summary,
-        };
-      }
-
-      return { ok: true, summary: [] };
+      const summary = collectValidationSummary(model);
+      return {
+        ok: summary.length === 0,
+        summary,
+        error:
+          summary.length > 0
+            ? "Controleer eerst de gemarkeerde velden."
+            : null,
+      };
     } catch (e) {
       return {
         ok: false,
@@ -432,22 +232,46 @@ export default function FormRunnerBase({ mode }) {
     }
   }
 
+  function applyValidationResult(result, { showSuccess } = {}) {
+    const summary = Array.isArray(result?.summary) ? result.summary : [];
+    setValidationSummary(summary);
+
+    if (!result?.ok) {
+      setError(result?.error || "Controleer eerst de gemarkeerde velden.");
+      setValidateOk(false);
+      validateOkIconRef.current?.stopAnimation?.();
+      return false;
+    }
+
+    setError(null);
+
+    if (showSuccess) {
+      setValidateOk(true);
+      validateOkIconRef.current?.startAnimation?.();
+
+      if (validateOkTimerRef.current) clearTimeout(validateOkTimerRef.current);
+      validateOkTimerRef.current = setTimeout(() => {
+        setValidateOk(false);
+        validateOkIconRef.current?.stopAnimation?.();
+      }, 1500);
+    }
+
+    return true;
+  }
+
   function openValidationItem(item) {
     if (isDebug) return;
 
     const model = surveyModelRef.current;
-    if (!model) return;
+    if (!model || !item) return;
 
-    const targetPage = Array.isArray(model.pages) ? model.pages[item?.pageIndex] : null;
+    const targetPage = Array.isArray(model.pages) ? model.pages[item.pageIndex] : null;
     if (targetPage) {
       model.currentPage = targetPage;
     }
 
-    const question = model.getQuestionByName?.(item?.questionName);
-    if (!question) return;
-
     requestAnimationFrame(() => {
-      scrollToQuestion(question);
+      scrollToQuestionByName(item.questionName);
     });
   }
 
@@ -507,9 +331,14 @@ export default function FormRunnerBase({ mode }) {
       const shouldOverwrite = forceEditor || (!dirty && !alreadyLoaded);
 
       if (!surveyModelRef.current) {
-        const model = createSurveyModel(parsedSurvey.value);
+        const model = createRunnerSurveyModel(parsedSurvey.value, {
+          onDirtyChange: setDirty,
+          canEditRef,
+          suppressDirtyRef,
+        });
+
         surveyModelRef.current = model;
-        setSurveyData(model, answersObj);
+        setSurveyData(model, answersObj, suppressDirtyRef);
 
         setDirty(false);
         lastLoadedKeyRef.current = key;
@@ -517,7 +346,7 @@ export default function FormRunnerBase({ mode }) {
       }
 
       if (shouldOverwrite) {
-        setSurveyData(surveyModelRef.current, answersObj);
+        setSurveyData(surveyModelRef.current, answersObj, suppressDirtyRef);
         setDirty(false);
         lastLoadedKeyRef.current = key;
       }
@@ -535,12 +364,12 @@ export default function FormRunnerBase({ mode }) {
 
     async function boot() {
       if (!code || !instanceId) return;
-
       await reload({ forceEditor: true });
       if (cancelled) return;
     }
 
     boot();
+
     return () => {
       cancelled = true;
     };
@@ -549,6 +378,7 @@ export default function FormRunnerBase({ mode }) {
 
   useEffect(() => {
     return () => {
+      if (validateOkTimerRef.current) clearTimeout(validateOkTimerRef.current);
       if (saveOkTimerRef.current) clearTimeout(saveOkTimerRef.current);
       if (submitOkTimerRef.current) clearTimeout(submitOkTimerRef.current);
     };
@@ -572,6 +402,24 @@ export default function FormRunnerBase({ mode }) {
     return () => window.removeEventListener("keydown", onKeyDown);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [showSave, busy, dirty, instance, mode]);
+
+  async function validateForm() {
+    if (!showValidate) {
+      setError(`Controleren is niet toegestaan in status (${statusLbl}).`);
+      return;
+    }
+
+    setBusy(true);
+    clearTransientSuccess();
+    setError(null);
+
+    try {
+      const result = runLocalValidation();
+      applyValidationResult(result, { showSuccess: true });
+    } finally {
+      setBusy(false);
+    }
+  }
 
   async function save() {
     if (!showSave) {
@@ -612,6 +460,7 @@ export default function FormRunnerBase({ mode }) {
     }
 
     setBusy(true);
+    clearTransientSuccess();
     setError(null);
     setValidationSummary([]);
 
@@ -622,12 +471,9 @@ export default function FormRunnerBase({ mode }) {
         return;
       }
 
-      const validation = validateBeforeSubmit();
-      if (!validation.ok) {
-        setValidationSummary(Array.isArray(validation.summary) ? validation.summary : []);
-        setError(validation.error);
-        return;
-      }
+      const validation = runLocalValidation();
+      const valid = applyValidationResult(validation, { showSuccess: false });
+      if (!valid) return;
 
       const preview = await previewSubmitFormInstance(code, instanceId, {
         answers_json: cur.value,
@@ -823,6 +669,30 @@ export default function FormRunnerBase({ mode }) {
             </button>
           )}
 
+          {showValidate && (
+            <button
+              type="button"
+              className="btn btn-secondary"
+              disabled={busy}
+              onClick={validateForm}
+              onMouseEnter={() => {
+                if (!validateOk) validateIconRef.current?.startAnimation?.();
+              }}
+              onMouseLeave={() => {
+                if (!validateOk) validateIconRef.current?.stopAnimation?.();
+              }}
+              style={{ display: "inline-flex", alignItems: "center", gap: 8 }}
+              title="Controleer het formulier zonder op te slaan"
+            >
+              {validateOk ? (
+                <CheckCheckIcon ref={validateOkIconRef} size={18} />
+              ) : (
+                <CheckCheckIcon ref={validateIconRef} size={18} />
+              )}
+              Controleer
+            </button>
+          )}
+
           {showSubmit && (
             <button
               type="button"
@@ -838,7 +708,7 @@ export default function FormRunnerBase({ mode }) {
               style={{ display: "inline-flex", alignItems: "center", gap: 8 }}
               title={
                 dirty
-                  ? "Indienen (controleert, toont opvolgingen en slaat eerst op)"
+                  ? "Indienen; controleert, toont opvolgingen en slaat eerst op"
                   : "Indienen"
               }
             >

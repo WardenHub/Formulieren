@@ -413,3 +413,10 @@
   font-weight: 600;
   line-height: 1;
 }
+
+.ember-nav-target-flash {
+  outline: 2px solid rgba(250,128,114,0.9) !important;
+  outline-offset: 4px;
+  border-radius: 8px;
+  transition: outline 0.2s ease;
+}
