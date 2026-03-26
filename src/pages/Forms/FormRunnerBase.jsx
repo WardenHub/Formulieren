@@ -1544,7 +1544,13 @@ export default function FormRunnerBase({ mode }) {
           validationSummary={validationSummary}
           hasValidatedOnce={hasValidatedOnce}
           bookmarksOpen={bookmarksOpen}
-          onToggleBookmarks={() => setBookmarksOpen((prev) => !prev)}
+          onToggleBookmarks={(next) => {
+            if (typeof next === "boolean") {
+              setBookmarksOpen(next);
+              return;
+            }
+            setBookmarksOpen((prev) => !prev);
+          }}
           onNavigateToPage={(pageIndex) => {
             goToPageIndex(pageIndex);
             setBookmarksOpen(false);

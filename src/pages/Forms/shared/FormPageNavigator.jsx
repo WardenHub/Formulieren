@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useEffect, useMemo, useRef } from "react";
 
 import { PanelLeftOpenIcon } from "@/components/ui/panel-left-open";
 import { PanelLeftCloseIcon } from "@/components/ui/panel-left-close";
@@ -57,6 +57,8 @@ export default function FormPageNavigator({
   onToggleBookmarks,
   onNavigateToPage,
 }) {
+  const rootRef = useRef(null);
+
   const pages = useMemo(() => {
     return Array.isArray(model?.visiblePages) ? model.visiblePages : [];
   }, [model]);
@@ -73,96 +75,142 @@ export default function FormPageNavigator({
     }));
   }, [pages, validationSummary, hasValidatedOnce]);
 
+  useEffect(() => {
+    if (!bookmarksOpen) return;
+
+    function onPointerDown(e) {
+      const root = rootRef.current;
+      if (!root) return;
+      if (root.contains(e.target)) return;
+      onToggleBookmarks?.(false);
+    }
+
+    function onKeyDown(e) {
+      if (e.key === "Escape") {
+        onToggleBookmarks?.(false);
+      }
+    }
+
+    document.addEventListener("pointerdown", onPointerDown);
+    window.addEventListener("keydown", onKeyDown);
+
+    return () => {
+      document.removeEventListener("pointerdown", onPointerDown);
+      window.removeEventListener("keydown", onKeyDown);
+    };
+  }, [bookmarksOpen, onToggleBookmarks]);
+
   if (!pages.length) return null;
 
   return (
     <div
-      className="card"
+      ref={rootRef}
+      className="ember-page-nav-shell"
       style={{
-        padding: 12,
-        display: "grid",
-        gap: 10,
         position: "sticky",
-        top: 8,
-        zIndex: 20,
+        top: "var(--ember-form-nav-top, 56px)",
+        zIndex: 35,
       }}
     >
       <div
+        className="card ember-page-nav-compact"
         style={{
+          padding: 12,
           display: "grid",
-          gridTemplateColumns: "auto minmax(0, 1fr)",
           gap: 10,
-          alignItems: "center",
+          boxShadow: "0 8px 24px rgba(0,0,0,0.28)",
         }}
       >
-        <button
-          type="button"
-          className="icon-btn"
-          onClick={onToggleBookmarks}
-          title={bookmarksOpen ? "Bladwijzerlijst inklappen" : "Bladwijzerlijst uitklappen"}
-          style={{
-            width: 42,
-            height: 42,
-            borderRadius: 12,
-            border: "1px solid rgba(255,255,255,0.10)",
-            background: "rgba(255,255,255,0.04)",
-            display: "inline-flex",
-            alignItems: "center",
-            justifyContent: "center",
-            flex: "0 0 auto",
-          }}
-        >
-          {bookmarksOpen ? <PanelLeftCloseIcon size={18} /> : <PanelLeftOpenIcon size={18} />}
-        </button>
-
         <div
-          className="ember-form-page-nav-strip"
           style={{
-            display: "flex",
-            gap: 8,
-            overflowX: "auto",
-            paddingBottom: 2,
+            display: "grid",
+            gridTemplateColumns: "auto minmax(0, 1fr)",
+            gap: 10,
+            alignItems: "center",
           }}
         >
-          {navItems.map((item) => {
-            const isActive = item.index === currentPageIndex;
+          <button
+            type="button"
+            className="icon-btn"
+            onClick={() => onToggleBookmarks?.(!bookmarksOpen)}
+            title={bookmarksOpen ? "Bladwijzerlijst inklappen" : "Bladwijzerlijst uitklappen"}
+            style={{
+              width: 42,
+              height: 42,
+              borderRadius: 12,
+              border: bookmarksOpen
+                ? "1px solid rgba(249, 115, 22, 0.45)"
+                : "1px solid rgba(255,255,255,0.10)",
+              background: bookmarksOpen
+                ? "rgba(249, 115, 22, 0.10)"
+                : "rgba(255,255,255,0.04)",
+              display: "inline-flex",
+              alignItems: "center",
+              justifyContent: "center",
+              flex: "0 0 auto",
+            }}
+          >
+            {bookmarksOpen ? <PanelLeftCloseIcon size={18} /> : <PanelLeftOpenIcon size={18} />}
+          </button>
 
-            return (
-              <button
-                key={item.index}
-                type="button"
-                onClick={() => onNavigateToPage(item.index)}
-                title={item.title}
-                style={{
-                  minWidth: isActive ? 46 : 40,
-                  height: isActive ? 46 : 40,
-                  borderRadius: 12,
-                  border: `1px solid ${item.status.compactBorder}`,
-                  background: item.status.compactBg,
-                  color: item.status.compactColor,
-                  fontWeight: isActive ? 900 : 800,
-                  fontSize: isActive ? 15 : 14,
-                  boxShadow: isActive ? "0 0 0 2px rgba(249, 115, 22, 0.28) inset" : "none",
-                  transform: isActive ? "translateY(-1px)" : "none",
-                  transition: "all 0.18s ease",
-                  flex: "0 0 auto",
-                  cursor: "pointer",
-                }}
-              >
-                {item.index + 1}
-              </button>
-            );
-          })}
+          <div
+            className="ember-form-page-nav-strip"
+            style={{
+              display: "flex",
+              gap: 8,
+              overflowX: "auto",
+              paddingBottom: 2,
+            }}
+          >
+            {navItems.map((item) => {
+              const isActive = item.index === currentPageIndex;
+
+              return (
+                <button
+                  key={item.index}
+                  type="button"
+                  onClick={() => onNavigateToPage(item.index)}
+                  title={item.title}
+                  style={{
+                    minWidth: isActive ? 46 : 40,
+                    height: isActive ? 46 : 40,
+                    borderRadius: 12,
+                    border: `1px solid ${item.status.compactBorder}`,
+                    background: item.status.compactBg,
+                    color: item.status.compactColor,
+                    fontWeight: isActive ? 900 : 800,
+                    fontSize: isActive ? 15 : 14,
+                    boxShadow: isActive ? "0 0 0 2px rgba(249, 115, 22, 0.28) inset" : "none",
+                    transform: isActive ? "translateY(-1px)" : "none",
+                    transition: "all 0.18s ease",
+                    flex: "0 0 auto",
+                    cursor: "pointer",
+                  }}
+                >
+                  {item.index + 1}
+                </button>
+              );
+            })}
+          </div>
         </div>
       </div>
 
       {bookmarksOpen && (
         <div
+          className="card ember-page-nav-bookmarks"
           style={{
+            position: "absolute",
+            top: "calc(100% + 8px)",
+            left: 0,
+            right: 0,
+            padding: 12,
             display: "grid",
             gap: 8,
-            borderTop: "1px solid rgba(255,255,255,0.08)",
-            paddingTop: 10,
+            maxHeight: "min(60vh, 520px)",
+            overflow: "auto",
+            border: "1px solid rgba(255,255,255,0.10)",
+            boxShadow: "0 18px 46px rgba(0,0,0,0.42)",
+            backdropFilter: "blur(10px)",
           }}
         >
           {navItems.map((item) => {
