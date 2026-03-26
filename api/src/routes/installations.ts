@@ -38,45 +38,45 @@ import { requireRole } from "../middleware/roleMiddleware.js";
 const router = Router();
 
 // authMiddleware zit al globaal in app.ts; dus hier geen router.use(authMiddleware)
-router.get("/search", requireRole("admin", "monteur"), searchInstallations);
+router.get("/search", requireRole("admin", "gebruiker"), searchInstallations);
 // stroomvoorziening e.d.
-router.get("/energy-supply-brand-types", requireRole("admin", "monteur"), getEnergySupplyBrandTypes);
+router.get("/energy-supply-brand-types", requireRole("admin", "gebruiker"), getEnergySupplyBrandTypes);
 router.put("/energy-supply-brand-types", requireRole("admin"), putEnergySupplyBrandTypes);
-router.get("/:code/energy-supplies", requireRole("admin", "monteur"), getEnergySupplies);
-router.put("/:code/energy-supplies", requireRole("admin", "monteur"), putEnergySupplies);
-router.delete("/:code/energy-supplies/:energySupplyId", requireRole("admin", "monteur"), deleteEnergySupply);
+router.get("/:code/energy-supplies", requireRole("admin", "gebruiker"), getEnergySupplies);
+router.put("/:code/energy-supplies", requireRole("admin", "gebruiker"), putEnergySupplies);
+router.delete("/:code/energy-supplies/:energySupplyId", requireRole("admin", "gebruiker"), deleteEnergySupply);
 // NEN2535 prestatie-eisen catalog
-router.get("/nen2535/catalog", requireRole("admin", "monteur"), getNen2535Catalog);
+router.get("/nen2535/catalog", requireRole("admin", "gebruiker"), getNen2535Catalog);
 // NEN2535 prestatie-eisen per installatie
-router.get("/:code/performance-requirements", requireRole("admin", "monteur"), getPerformanceRequirements);
-router.put("/:code/performance-requirements", requireRole("admin", "monteur"), putPerformanceRequirements);
+router.get("/:code/performance-requirements", requireRole("admin", "gebruiker"), getPerformanceRequirements);
+router.put("/:code/performance-requirements", requireRole("admin", "gebruiker"), putPerformanceRequirements);
 
 // preflight formulieren
-router.get("/:code/forms/catalog", requireRole("admin", "monteur"), getFormsCatalog);
-router.get("/:code/forms/:formCode/preflight", requireRole("admin", "monteur"), getFormStartPreflight);
+router.get("/:code/forms/catalog", requireRole("admin", "gebruiker"), getFormsCatalog);
+router.get("/:code/forms/:formCode/preflight", requireRole("admin", "gebruiker"), getFormStartPreflight);
 
 // basis installatie data
 router.get("/:code", getInstallation);
 router.get("/:code/catalog", getCatalog);
 router.get("/:code/custom-values", getCustomValues);
-router.get("/:code/components", requireRole("admin", "monteur"), getInstallationComponents);
-router.put("/:code/custom-values", requireRole("admin", "monteur"), putCustomValues);
-router.get("/:code/documents", requireRole("admin", "monteur"), getDocuments);
-router.put("/:code/type", requireRole("admin", "monteur"), putInstallationType);
-router.put("/:code/documents", requireRole("admin", "monteur"), putDocuments);
+router.get("/:code/components", requireRole("admin", "gebruiker"), getInstallationComponents);
+router.put("/:code/custom-values", requireRole("admin", "gebruiker"), putCustomValues);
+router.get("/:code/documents", requireRole("admin", "gebruiker"), getDocuments);
+router.put("/:code/type", requireRole("admin", "gebruiker"), putInstallationType);
+router.put("/:code/documents", requireRole("admin", "gebruiker"), putDocuments);
 
 // prefill (SurveyJS ember.bind kind="prefill")
-router.post("/:code/forms/:formCode/prefill", requireRole("admin", "monteur"), getFormPrefill);
+router.post("/:code/forms/:formCode/prefill", requireRole("admin", "gebruiker"), getFormPrefill);
 // forms runtime
-router.post("/:code/forms/:formCode/start", requireRole("admin", "monteur"), startFormInstance);
-router.get("/:code/forms/instances/:instanceId", requireRole("admin", "monteur"), getFormInstance);
-router.put("/:code/forms/instances/:instanceId/answers", requireRole("admin", "monteur"), putFormAnswers);
-router.post("/:code/forms/instances/:instanceId/submit-preview", requireRole("admin", "monteur"), previewSubmitFormInstance);
-router.post("/:code/forms/instances/:instanceId/submit", requireRole("admin", "monteur"), submitFormInstance);
-router.post("/:code/forms/instances/:instanceId/withdraw", requireRole("admin", "monteur"), withdrawFormInstance);
-router.post("/:code/forms/instances/:instanceId/reopen", requireRole("admin", "monteur"), reopenFormInstance);
+router.post("/:code/forms/:formCode/start", requireRole("admin", "gebruiker"), startFormInstance);
+router.get("/:code/forms/instances/:instanceId", requireRole("admin", "gebruiker"), getFormInstance);
+router.put("/:code/forms/instances/:instanceId/answers", requireRole("admin", "gebruiker"), putFormAnswers);
+router.post("/:code/forms/instances/:instanceId/submit-preview", requireRole("admin", "gebruiker"), previewSubmitFormInstance);
+router.post("/:code/forms/instances/:instanceId/submit", requireRole("admin", "gebruiker"), submitFormInstance);
+router.post("/:code/forms/instances/:instanceId/withdraw", requireRole("admin", "gebruiker"), withdrawFormInstance);
+router.post("/:code/forms/instances/:instanceId/reopen", requireRole("admin", "gebruiker"), reopenFormInstance);
 // offline-light import
-router.post("/:code/forms/import", requireRole("admin", "monteur"), importFormAnswerFile);
+router.post("/:code/forms/import", requireRole("admin", "gebruiker"), importFormAnswerFile);
 
 
 

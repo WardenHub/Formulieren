@@ -1,3 +1,5 @@
+// src/middleware/roleMiddleware.ts
+
 export function requireRole(...allowed: string[]) {
   return (req: any, res: any, next: any) => {
     const roles = req.roles || [];

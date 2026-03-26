@@ -85,7 +85,7 @@ app.get("/forms/definitions", requireRole("admin"), (req, res) => {
   res.json({ ok: true, data: [] });
 });
 
-app.get("/forms/instances", requireRole("admin", "monteur"), (req, res) => {
+app.get("/forms/instances", requireRole("admin", "gebruiker"), (req, res) => {
   res.json({ ok: true, data: [] });
 });
 

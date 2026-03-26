@@ -62,6 +62,8 @@ export function createRuntimeSurveyModel(
 ) {
   const model = new Model(surveyJsonObj);
 
+  model.showTOC = false;
+
   const markDirty = () => {
     if (!canEditRef?.current) return;
     if (suppressDirtyRef?.current) return;
