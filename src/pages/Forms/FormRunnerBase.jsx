@@ -18,6 +18,7 @@ import { RotateCCWIcon } from "@/components/ui/rotate-ccw";
 import { ChevronUpIcon } from "@/components/ui/chevron-up";
 import { PlusIcon } from "@/components/ui/plus";
 
+
 import {
   getFormInstance,
   putFormAnswers,
@@ -26,6 +27,8 @@ import {
   withdrawFormInstance,
   reopenFormInstance,
 } from "../../api/emberApi.js";
+
+import FormPageNavigator from "./shared/FormPageNavigator.jsx";
 
 import {
   normalizeInstanceResponse,
@@ -267,6 +270,10 @@ export default function FormRunnerBase({ mode }) {
   const [showValidateCelebration, setShowValidateCelebration] = useState(false);
   const [prefillRefreshOk, setPrefillRefreshOk] = useState(false);
 
+  const [currentPageIndex, setCurrentPageIndex] = useState(0);
+  const [bookmarksOpen, setBookmarksOpen] = useState(false);
+  const [hasValidatedOnce, setHasValidatedOnce] = useState(false);
+
   const [debugCards, setDebugCards] = useState(defaultDebugCards);
 
   const backIconRef = useRef(null);
@@ -364,6 +371,25 @@ export default function FormRunnerBase({ mode }) {
   useEffect(() => {
     canEditRef.current = canEditAnswers;
   }, [canEditAnswers]);
+
+  useEffect(() => {
+    const model = surveyModelRef.current;
+    if (!model || isDebug) return;
+
+    const syncCurrentPage = () => {
+      const pages = Array.isArray(model.visiblePages) ? model.visiblePages : [];
+      const idx = Math.max(0, pages.indexOf(model.currentPage));
+      setCurrentPageIndex(idx >= 0 ? idx : 0);
+    };
+
+    syncCurrentPage();
+
+    model.onCurrentPageChanged.add(syncCurrentPage);
+
+    return () => {
+      model.onCurrentPageChanged.remove(syncCurrentPage);
+    };
+  }, [runtimeReady, isDebug, instanceId]);
 
   useEffect(() => {
     if (!showSubmitCelebration) return;
@@ -526,14 +552,29 @@ export default function FormRunnerBase({ mode }) {
     const model = surveyModelRef.current;
     if (!model || !item) return;
 
-    const targetPage = Array.isArray(model.pages) ? model.pages[item.pageIndex] : null;
+    const targetPage = Array.isArray(model.visiblePages) ? model.visiblePages[item.pageIndex] : null;
     if (targetPage) {
       model.currentPage = targetPage;
+      setCurrentPageIndex(item.pageIndex);
+      setBookmarksOpen(false);
     }
 
     requestAnimationFrame(() => {
       scrollToQuestionByName(item.questionName);
     });
+  }
+
+  function goToPageIndex(pageIndex) {
+    if (isDebug) return;
+
+    const model = surveyModelRef.current;
+    const pages = Array.isArray(model?.visiblePages) ? model.visiblePages : [];
+    const targetPage = pages[pageIndex] || null;
+
+    if (!model || !targetPage) return;
+
+    model.currentPage = targetPage;
+    setCurrentPageIndex(pageIndex);
   }
 
   async function saveCurrentAnswers(curValue) {
@@ -563,6 +604,8 @@ export default function FormRunnerBase({ mode }) {
     setError(null);
     setValidationSummary([]);
     setRuntimeReady(false);
+    setCurrentPageIndex(0);
+    setHasValidatedOnce(false);
 
     try {
       const res = await getFormInstance(code, instanceId);
@@ -776,6 +819,7 @@ export default function FormRunnerBase({ mode }) {
     clearTransientSuccess();
     setError(null);
     validationActivatedRef.current = true;
+    setHasValidatedOnce(true);
 
     try {
       const result = runLocalValidation();
@@ -828,6 +872,7 @@ export default function FormRunnerBase({ mode }) {
     setError(null);
     setValidationSummary([]);
     validationActivatedRef.current = true;
+    setHasValidatedOnce(true);
 
     try {
       const cur = getCurrentAnswersObject();
@@ -1490,6 +1535,27 @@ export default function FormRunnerBase({ mode }) {
             {readonlyBanner.text}
           </div>
         </div>
+      )}
+
+      {!isDebug && runtimeReady && surveyModelRef.current && (
+        <FormPageNavigator
+          model={surveyModelRef.current}
+          currentPageIndex={currentPageIndex}
+          validationSummary={validationSummary}
+          hasValidatedOnce={hasValidatedOnce}
+          bookmarksOpen={bookmarksOpen}
+          onToggleBookmarks={(next) => {
+            if (typeof next === "boolean") {
+              setBookmarksOpen(next);
+              return;
+            }
+            setBookmarksOpen((prev) => !prev);
+          }}
+          onNavigateToPage={(pageIndex) => {
+            goToPageIndex(pageIndex);
+            setBookmarksOpen(false);
+          }}
+        />
       )}
 
       {!isDebug && validationSummary.length > 0 && (

@@ -382,3 +382,75 @@
   border-radius: 8px;
   transition: outline 0.2s ease;
 }
+
+.sd-root-modern .sd-toc {
+  display: none !important;
+}
+
+.ember-form-page-nav-strip {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255,255,255,0.18) transparent;
+}
+
+.ember-form-page-nav-strip::-webkit-scrollbar {
+  height: 8px;
+}
+
+.ember-form-page-nav-strip::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.ember-form-page-nav-strip::-webkit-scrollbar-thumb {
+  background: rgba(255,255,255,0.16);
+  border-radius: 999px;
+}
+
+@media (max-width: 900px) {
+  .ember-form-page-nav-strip button {
+    min-width: 38px;
+  }
+}
+
+.sd-root-modern .sd-toc {
+  display: none !important;
+}
+
+.ember-form-page-nav-strip {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255,255,255,0.18) transparent;
+}
+
+.ember-form-page-nav-strip::-webkit-scrollbar {
+  height: 8px;
+}
+
+.ember-form-page-nav-strip::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.ember-form-page-nav-strip::-webkit-scrollbar-thumb {
+  background: rgba(255,255,255,0.16);
+  border-radius: 999px;
+}
+
+.ember-page-nav-shell {
+  --ember-form-nav-top: 56px;
+}
+
+.ember-page-nav-compact {
+  background: rgba(8, 14, 24, 0.96) !important;
+}
+
+.ember-page-nav-bookmarks {
+  background: rgba(8, 14, 24, 0.98) !important;
+}
+
+@media (max-width: 900px) {
+  .ember-form-page-nav-strip button {
+    min-width: 38px;
+  }
+
+  .ember-page-nav-shell {
+    --ember-form-nav-top: 52px;
+  }
+}
