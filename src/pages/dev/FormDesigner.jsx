@@ -17,6 +17,10 @@ import {
 
 import { PlusIcon } from "@/components/ui/plus";
 import { ChevronUpIcon } from "@/components/ui/chevron-up";
+import { ChevronsDownUpIcon } from "@/components/ui/chevrons-down-up";
+import { ChevronsUpDownIcon } from "@/components/ui/chevrons-up-down";
+
+import FormPageNavigator from "@/pages/Forms/shared/FormPageNavigator.jsx";
 
 import {
   safeJsonParse,
@@ -365,7 +369,7 @@ export default function FormDesigner() {
 
   const didApplyAdminBootstrapRef = useRef(false);
 
-    const [editorText, setEditorText] = useState(() => {
+  const [editorText, setEditorText] = useState(() => {
     if (adminBootstrap?.survey_json && typeof adminBootstrap.survey_json === "object") {
       return JSON.stringify(adminBootstrap.survey_json, null, 2) + "\n";
     }
@@ -431,8 +435,11 @@ export default function FormDesigner() {
 
   const [validationSummary, setValidationSummary] = useState([]);
   const [validationActivated, setValidationActivated] = useState(false);
+  const [validationListOpen, setValidationListOpen] = useState(true);
 
   const [forcedPageNo, setForcedPageNo] = useState(0);
+  const [currentPageIndex, setCurrentPageIndex] = useState(0);
+  const [bookmarksOpen, setBookmarksOpen] = useState(false);
   const [surveyRenderTick, setSurveyRenderTick] = useState(0);
   const [openCards, setOpenCards] = useState(readOpenCardsFromStorage);
 
@@ -443,6 +450,7 @@ export default function FormDesigner() {
 
   const noticeTimerRef = useRef(null);
   const highlightTimerRef = useRef(null);
+  const validationCollapseAnimTimerRef = useRef(null);
 
   const validationRefreshRafRef = useRef(0);
   const pendingNavigationRef = useRef(null);
@@ -458,6 +466,8 @@ export default function FormDesigner() {
     localFollowUpPreview: null,
     backendSubmitPreview: null,
   });
+
+  const validationCollapseIconRef = useRef(null);
 
   const draggingRef = useRef(false);
   const dragStartXRef = useRef(0);
@@ -516,6 +526,14 @@ export default function FormDesigner() {
     return s.length ? s.split("\n").length : 1;
   }, [editorText]);
 
+  const hasValidationItems = validationSummary.length > 0;
+  const validationCollapseBtnTitle = validationListOpen
+    ? "Controlelijst inklappen"
+    : "Controlelijst uitklappen";
+  const ValidationCollapseIcon = validationListOpen
+    ? ChevronsDownUpIcon
+    : ChevronsUpDownIcon;
+
   function animateIcon(key) {
     toggleIconRef.current[key]?.startAnimation?.();
   }
@@ -555,6 +573,9 @@ export default function FormDesigner() {
     setBackendSubmitPreview(null);
     setValidationSummary([]);
     setValidationActivated(false);
+    setValidationListOpen(true);
+    setCurrentPageIndex(0);
+    setBookmarksOpen(false);
   }
 
   function buildPreparedSurveyObject(surveyObj) {
@@ -669,6 +690,7 @@ export default function FormDesigner() {
 
     setPreviewError(null);
     setForcedPageNo(0);
+    setCurrentPageIndex(0);
     setPreviewJson(buildPreparedSurveyObject(parsed.value));
     setShowPreview(true);
     resetPreviewSideStates();
@@ -686,6 +708,7 @@ export default function FormDesigner() {
     setShowEditor(true);
     setShowPreview(true);
     setForcedPageNo(0);
+    setCurrentPageIndex(0);
     resetPreviewSideStates();
 
     if (adminBootstrap?.form_code) {
@@ -697,11 +720,11 @@ export default function FormDesigner() {
     setNotice(
       {
         kind: "ok",
-        text: `Admin bootstrap geladen${adminBootstrap.form_name ? `; ${adminBootstrap.form_name}` : ""}`,
+        text: `Admin bootstrap geladen; ${adminBootstrap.form_name || ""}`.trim(),
       },
       { autoClearMs: 1800 }
     );
-  }, [adminBootstrap, buildPreviewFromEditor]);
+  }, [adminBootstrap]);
 
   async function loadPreviewFromBackend() {
     if (!backendCode || !backendInstanceId) {
@@ -736,6 +759,7 @@ export default function FormDesigner() {
       settingAnswersProgrammaticallyRef.current = false;
 
       setForcedPageNo(0);
+      setCurrentPageIndex(0);
       setPreviewJson(buildPreparedSurveyObject(surveyObj));
       setShowPreview(true);
       resetPreviewSideStates();
@@ -753,7 +777,7 @@ export default function FormDesigner() {
     }
 
     if (!modelRef.current) {
-      setPreviewError("Geen preview model geladen (klik eerst 'Preview uit editor').");
+      setPreviewError("Geen preview model geladen; klik eerst 'Preview uit editor'.");
       return;
     }
 
@@ -859,6 +883,7 @@ export default function FormDesigner() {
 
     setValidationSummary([]);
     setValidationActivated(false);
+    setValidationListOpen(true);
   }
 
   function runLocalFollowUpPreview() {
@@ -935,10 +960,11 @@ export default function FormDesigner() {
       const isValid = summary.length === 0;
 
       setValidationSummary(summary);
+      setValidationListOpen(true);
 
       if (isValid) {
         setNotice(
-          { kind: "ok", text: "Geen openstaande required/validatieproblemen gevonden." },
+          { kind: "ok", text: "Geen openstaande required of validatieproblemen gevonden." },
           { autoClearMs: 1500 }
         );
         return true;
@@ -969,8 +995,10 @@ export default function FormDesigner() {
     };
     navigationAttemptRef.current = 0;
     renderedQuestionElementsRef.current = new Map();
+    setBookmarksOpen(false);
 
     if (forcedPageNo === targetPageIndex) {
+      setCurrentPageIndex(targetPageIndex);
       forceVisibleValidationState(model);
       setSurveyRenderTick((v) => v + 1);
       return;
@@ -978,6 +1006,30 @@ export default function FormDesigner() {
 
     setValidationActivated(true);
     setForcedPageNo(targetPageIndex);
+    setCurrentPageIndex(targetPageIndex);
+    setSurveyRenderTick((v) => v + 1);
+  }
+
+  function goToPageIndex(pageIndex) {
+    const model = modelRef.current;
+    if (!model) return;
+
+    const pages = Array.isArray(model.visiblePages) ? model.visiblePages : [];
+    const maxPageIndex = Math.max(0, pages.length - 1);
+    const nextPageIndex = clamp(Number(pageIndex) || 0, 0, maxPageIndex);
+
+    pendingNavigationRef.current = null;
+    navigationAttemptRef.current = 0;
+    setBookmarksOpen(false);
+
+    if (model.currentPageNo === nextPageIndex) {
+      setCurrentPageIndex(nextPageIndex);
+      return;
+    }
+
+    model.currentPageNo = nextPageIndex;
+    setForcedPageNo(nextPageIndex);
+    setCurrentPageIndex(nextPageIndex);
     setSurveyRenderTick((v) => v + 1);
   }
 
@@ -1195,6 +1247,7 @@ export default function FormDesigner() {
       localFollowUpPreview: localFollowUpPreview ?? null,
       backendSubmitPreview: backendSubmitPreview ?? null,
       validationSummary: validationSummary ?? [],
+      currentPageIndex,
     };
 
     downloadJsonFile(`ember_debug_bundle_${stamp}.json`, bundle);
@@ -1293,6 +1346,12 @@ export default function FormDesigner() {
   }, [editorText, editorNotice]);
 
   useEffect(() => {
+    if (validationSummary.length > 0) {
+      setValidationListOpen(true);
+    }
+  }, [validationSummary]);
+
+  useEffect(() => {
     function onMouseMove(e) {
       if (draggingRef.current) {
         const dx = e.clientX - dragStartXRef.current;
@@ -1330,10 +1389,38 @@ export default function FormDesigner() {
     };
   }, [leftWidth, editorHeight]);
 
+  useEffect(() => {
+    function onKeyDown(e) {
+      const key = String(e.key || "");
+
+      if (e.altKey && (key === "q" || key === "Q")) {
+        if (!hasValidationItems) return;
+
+        e.preventDefault();
+        setValidationListOpen((prev) => !prev);
+
+        validationCollapseIconRef.current?.startAnimation?.();
+
+        if (validationCollapseAnimTimerRef.current) {
+          clearTimeout(validationCollapseAnimTimerRef.current);
+        }
+
+        validationCollapseAnimTimerRef.current = window.setTimeout(() => {
+          validationCollapseIconRef.current?.stopAnimation?.();
+        }, 650);
+      }
+    }
+
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [hasValidationItems]);
+
   const model = useMemo(() => {
     if (!previewJson) return null;
 
     const m = new Model(previewJson);
+    m.showTOC = false;
+
     energyAutoStateRef.current = {};
     availabilityAutoStateRef.current = {};
     renderedQuestionElementsRef.current = new Map();
@@ -1669,6 +1756,23 @@ export default function FormDesigner() {
   }, [previewJson, prefillPayload, forcedPageNo, validationActivated]);
 
   useEffect(() => {
+    if (!model) return;
+
+    const syncCurrentPage = () => {
+      const pages = Array.isArray(model.visiblePages) ? model.visiblePages : [];
+      const idx = Math.max(0, pages.indexOf(model.currentPage));
+      setCurrentPageIndex(idx >= 0 ? idx : 0);
+    };
+
+    syncCurrentPage();
+    model.onCurrentPageChanged.add(syncCurrentPage);
+
+    return () => {
+      model.onCurrentPageChanged.remove(syncCurrentPage);
+    };
+  }, [model, surveyRenderTick]);
+
+  useEffect(() => {
     if (!showPreview) return;
     if (!pendingNavigationRef.current?.questionName) return;
     if (!model) return;
@@ -1690,6 +1794,7 @@ export default function FormDesigner() {
       if (validationRefreshRafRef.current) cancelAnimationFrame(validationRefreshRafRef.current);
       if (noticeTimerRef.current) clearTimeout(noticeTimerRef.current);
       if (highlightTimerRef.current) clearTimeout(highlightTimerRef.current);
+      if (validationCollapseAnimTimerRef.current) clearTimeout(validationCollapseAnimTimerRef.current);
     };
   }, []);
 
@@ -1699,7 +1804,6 @@ export default function FormDesigner() {
 
     autoApplyAfterLoadRef.current = false;
     applyPrefill({ onlyRefreshable: false, payloadOverride: prefillPayload });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [prefillPayload, model]);
 
   return (
@@ -1856,7 +1960,7 @@ export default function FormDesigner() {
           className="btn btn-secondary"
           onClick={() => applyPrefill({ onlyRefreshable: true })}
           disabled={prefillBusy || !prefillPayload || !previewJson}
-          title="Refresh alleen velden met refreshable: true (zonder user wijzigingen te overschrijven)"
+          title="Refresh alleen velden met refreshable: true; zonder user wijzigingen te overschrijven"
         >
           Refresh (refreshable only)
         </button>
@@ -1901,7 +2005,7 @@ export default function FormDesigner() {
           className="btn btn-secondary"
           onClick={runBackendSubmitPreview}
           disabled={submitPreviewBusy || !backendCode || !backendInstanceId || !modelRef.current}
-          title="Roept de echte backend submit-preview endpoint aan, maar pas na lokale validatie"
+          title="Roept de echte backend submit-preview endpoint aan; maar pas na lokale validatie"
         >
           {submitPreviewBusy ? "Bezig..." : "Preview submit (backend)"}
         </button>
@@ -1955,7 +2059,7 @@ export default function FormDesigner() {
           >
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
               <div className="muted" style={{ fontSize: 12 }}>
-                survey_json editor (autosave localStorage) — Tab/Shift+Tab werkt
+                survey_json editor (autosave localStorage) ; Tab/Shift+Tab werkt
               </div>
 
               <div style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "flex-end" }}>
@@ -2011,7 +2115,7 @@ export default function FormDesigner() {
 
               {braceMatch ? (
                 <div className="muted" style={{ fontSize: 12, whiteSpace: "nowrap" }}>
-                  Match — L{braceMatch.aLc.line}:C{braceMatch.aLc.col} ↔ L{braceMatch.bLc.line}:C{braceMatch.bLc.col}
+                  Match ; L{braceMatch.aLc.line}:C{braceMatch.aLc.col} ↔ L{braceMatch.bLc.line}:C{braceMatch.bLc.col}
                 </div>
               ) : null}
             </div>
@@ -2157,6 +2261,26 @@ export default function FormDesigner() {
         )}
 
         <div style={{ display: "grid", gap: 12 }}>
+          {showPreview && model && (
+            <FormPageNavigator
+              model={model}
+              currentPageIndex={currentPageIndex}
+              validationSummary={validationSummary}
+              hasValidatedOnce={validationActivated}
+              bookmarksOpen={bookmarksOpen}
+              onToggleBookmarks={(next) => {
+                if (typeof next === "boolean") {
+                  setBookmarksOpen(next);
+                  return;
+                }
+                setBookmarksOpen((prev) => !prev);
+              }}
+              onNavigateToPage={(pageIndex) => {
+                goToPageIndex(pageIndex);
+              }}
+            />
+          )}
+
           {validationSummary.length > 0 && (
             <div
               className="card"
@@ -2167,37 +2291,65 @@ export default function FormDesigner() {
                 border: "1px solid rgba(250, 128, 114, 0.35)",
               }}
             >
-              <div style={{ fontWeight: 700 }}>Controleer eerst de volgende velden</div>
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  gap: 10,
+                }}
+              >
+                <div>
+                  <div style={{ fontWeight: 700 }}>Controleer eerst de volgende velden</div>
 
-              <div className="muted" style={{ fontSize: 12 }}>
-                Klik op een regel om naar het betreffende onderdeel te gaan.
+                  <div className="muted" style={{ fontSize: 12, marginTop: 4 }}>
+                    Klik op een regel om naar het betreffende onderdeel te gaan.
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  className="icon-btn"
+                  title={validationCollapseBtnTitle}
+                  onClick={() => setValidationListOpen((prev) => !prev)}
+                  onMouseEnter={() => validationCollapseIconRef.current?.startAnimation?.()}
+                  onMouseLeave={() => validationCollapseIconRef.current?.stopAnimation?.()}
+                >
+                  <ValidationCollapseIcon
+                    ref={validationCollapseIconRef}
+                    size={18}
+                    className="nav-anim-icon"
+                  />
+                </button>
               </div>
 
-              <div style={{ display: "grid", gap: 6 }}>
-                {validationSummary.map((item) => (
-                  <button
-                    key={item.id}
-                    type="button"
-                    className="btn btn-secondary"
-                    onClick={() => openValidationItem(item)}
-                    style={{
-                      textAlign: "left",
-                      justifyContent: "flex-start",
-                      whiteSpace: "normal",
-                      lineHeight: 1.35,
-                    }}
-                    title={`${item.pageTitle} · ${item.questionTitle}`}
-                  >
-                    <span>
-                      <strong>{item.pageTitle}</strong>
-                      {" · "}
-                      {item.questionTitle}
-                      {" — "}
-                      {item.message}
-                    </span>
-                  </button>
-                ))}
-              </div>
+              {validationListOpen && (
+                <div style={{ display: "grid", gap: 6 }}>
+                  {validationSummary.map((item) => (
+                    <button
+                      key={item.id}
+                      type="button"
+                      className="btn btn-secondary"
+                      onClick={() => openValidationItem(item)}
+                      style={{
+                        textAlign: "left",
+                        justifyContent: "flex-start",
+                        whiteSpace: "normal",
+                        lineHeight: 1.35,
+                      }}
+                      title={`${item.pageTitle} · ${item.questionTitle}`}
+                    >
+                      <span>
+                        <strong>{item.pageTitle}</strong>
+                        {" · "}
+                        {item.questionTitle}
+                        {" ; "}
+                        {item.message}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
           )}
 

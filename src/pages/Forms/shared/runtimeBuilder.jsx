@@ -1,5 +1,3 @@
-// src/pages/Forms/shared/runtimeBuilder.jsx
-
 import { ItemValue, Model } from "survey-core";
 import { getFormPrefill } from "@/api/emberApi.js";
 
@@ -98,6 +96,35 @@ export function setRuntimeSurveyData(model, answersObj, suppressDirtyRef) {
   }
 }
 
+function getInstanceDocumentNumber(instance) {
+  const raw =
+    instance?.form_instance_id ??
+    instance?.instance_id ??
+    instance?.formInstanceId ??
+    instance?.instanceId ??
+    null;
+
+  if (raw === null || raw === undefined) return null;
+
+  const s = String(raw).trim();
+  return s.length ? s : null;
+}
+
+function applyRuntimeInstanceFields(model, instance) {
+  if (!model) return;
+
+  const documentnummerQuestion = model.getQuestionByName?.("documentnummer") || null;
+  const documentnummer = getInstanceDocumentNumber(instance);
+
+  if (documentnummerQuestion) {
+    documentnummerQuestion.readOnly = true;
+  }
+
+  if (documentnummerQuestion && documentnummer !== null) {
+    model.setValue("documentnummer", documentnummer);
+  }
+}
+
 export async function buildRuntimeModelFromInstance({
   instance,
   code,
@@ -144,7 +171,13 @@ export async function buildRuntimeModelFromInstance({
     ...(answersObj || {}),
   };
 
+  const documentnummer = getInstanceDocumentNumber(instance);
+  if (documentnummer !== null) {
+    mergedData.documentnummer = documentnummer;
+  }
+
   setRuntimeSurveyData(model, mergedData, suppressDirtyRef);
+  applyRuntimeInstanceFields(model, instance);
 
   return {
     ok: true,
@@ -192,6 +225,7 @@ export async function refreshRuntimePrefill({
     isRefresh: true,
   });
 
+  applyRuntimeInstanceFields(model, instance);
   syncAllMatrixQuestionVisualErrors(model);
 
   const afterData = model.data && typeof model.data === "object" ? { ...model.data } : {};

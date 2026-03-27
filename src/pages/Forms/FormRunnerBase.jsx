@@ -17,7 +17,8 @@ import { PartyPopperIcon } from "@/components/ui/party-popper";
 import { RotateCCWIcon } from "@/components/ui/rotate-ccw";
 import { ChevronUpIcon } from "@/components/ui/chevron-up";
 import { PlusIcon } from "@/components/ui/plus";
-
+import { ChevronsDownUpIcon } from "@/components/ui/chevrons-down-up";
+import { ChevronsUpDownIcon } from "@/components/ui/chevrons-up-down";
 
 import {
   getFormInstance,
@@ -273,6 +274,7 @@ export default function FormRunnerBase({ mode }) {
   const [currentPageIndex, setCurrentPageIndex] = useState(0);
   const [bookmarksOpen, setBookmarksOpen] = useState(false);
   const [hasValidatedOnce, setHasValidatedOnce] = useState(false);
+  const [validationListOpen, setValidationListOpen] = useState(true);
 
   const [debugCards, setDebugCards] = useState(defaultDebugCards);
 
@@ -292,6 +294,7 @@ export default function FormRunnerBase({ mode }) {
   const partyPopperRef = useRef(null);
   const validateCelebrationIconRef = useRef(null);
   const prefillRefreshIconRef = useRef(null);
+  const validationCollapseIconRef = useRef(null);
 
   const debugToggleIconRef = useRef({
     instance: null,
@@ -309,6 +312,7 @@ export default function FormRunnerBase({ mode }) {
   const validateCelebrationTimerRef = useRef(null);
   const prefillRefreshOkTimerRef = useRef(null);
   const postSubmitReloadTimerRef = useRef(null);
+  const validationCollapseAnimTimerRef = useRef(null);
 
   const lastLoadedKeyRef = useRef("");
 
@@ -337,6 +341,15 @@ export default function FormRunnerBase({ mode }) {
   const headerTitle = useMemo(() => {
     return surveyTitle || "Formulier";
   }, [surveyTitle]);
+
+  const formVersionLabel = useMemo(() => {
+    const label = String(instance?.version_label || "").trim();
+    if (label) return label;
+
+    const version = instance?.version;
+    if (version === null || version === undefined) return "";
+    return String(version).trim();
+  }, [instance]);
 
   const readonlyBanner = useMemo(() => {
     return buildReadonlyBanner(status, statusLbl);
@@ -367,6 +380,14 @@ export default function FormRunnerBase({ mode }) {
   const showReopen = actions.reopen;
 
   const canEditAnswers = actions.save;
+
+  const hasValidationItems = !isDebug && validationSummary.length > 0;
+  const validationCollapseBtnTitle = validationListOpen
+    ? "Controlelijst inklappen"
+    : "Controlelijst uitklappen";
+  const ValidationCollapseIcon = validationListOpen
+    ? ChevronsDownUpIcon
+    : ChevronsUpDownIcon;
 
   useEffect(() => {
     canEditRef.current = canEditAnswers;
@@ -416,6 +437,12 @@ export default function FormRunnerBase({ mode }) {
       validateCelebrationIconRef.current?.stopAnimation?.();
     };
   }, [showValidateCelebration]);
+
+  useEffect(() => {
+    if (validationSummary.length > 0) {
+      setValidationListOpen(true);
+    }
+  }, [validationSummary]);
 
   function animateDebugToggle(key) {
     debugToggleIconRef.current[key]?.startAnimation?.();
@@ -740,27 +767,46 @@ export default function FormRunnerBase({ mode }) {
       if (validateCelebrationTimerRef.current) clearTimeout(validateCelebrationTimerRef.current);
       if (prefillRefreshOkTimerRef.current) clearTimeout(prefillRefreshOkTimerRef.current);
       if (postSubmitReloadTimerRef.current) clearTimeout(postSubmitReloadTimerRef.current);
+      if (validationCollapseAnimTimerRef.current) clearTimeout(validationCollapseAnimTimerRef.current);
     };
   }, []);
 
   useEffect(() => {
     function onKeyDown(e) {
       const key = String(e.key || "");
-      if (!e.altKey) return;
-      if (key !== "s" && key !== "S") return;
 
-      if (!showSave) return;
-      if (busy) return;
-      if (!dirty) return;
+      if (e.altKey && (key === "s" || key === "S")) {
+        if (!showSave) return;
+        if (busy) return;
+        if (!dirty) return;
 
-      e.preventDefault();
-      save();
+        e.preventDefault();
+        save();
+        return;
+      }
+
+      if (e.altKey && (key === "q" || key === "Q")) {
+        if (!hasValidationItems) return;
+
+        e.preventDefault();
+        setValidationListOpen((prev) => !prev);
+
+        validationCollapseIconRef.current?.startAnimation?.();
+
+        if (validationCollapseAnimTimerRef.current) {
+          clearTimeout(validationCollapseAnimTimerRef.current);
+        }
+
+        validationCollapseAnimTimerRef.current = window.setTimeout(() => {
+          validationCollapseIconRef.current?.stopAnimation?.();
+        }, 650);
+      }
     }
 
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [showSave, busy, dirty, instance, mode]);
+  }, [showSave, busy, dirty, hasValidationItems]);
 
   async function handleRefreshPrefill() {
     if (isDebug) return;
@@ -1157,6 +1203,7 @@ export default function FormRunnerBase({ mode }) {
             >
               <span>installatie: {code}</span>
               <span>status: {statusLbl}</span>
+              {formVersionLabel ? <span>versie: {formVersionLabel}</span> : null}
               {lastSavedAt ? <span>laatst opgeslagen: {formatNlDateTime(lastSavedAt)}</span> : null}
               {dirty ? <span>wijzigingen niet opgeslagen</span> : null}
               {!canEditAnswers && !isDebug ? (
@@ -1568,39 +1615,67 @@ export default function FormRunnerBase({ mode }) {
             border: "1px solid rgba(250, 128, 114, 0.35)",
           }}
         >
-          <div style={{ fontWeight: 800 }}>
-            Controleer eerst de volgende velden
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              gap: 10,
+            }}
+          >
+            <div>
+              <div style={{ fontWeight: 800 }}>
+                Controleer eerst de volgende velden
+              </div>
+
+              <div className="muted" style={{ fontSize: 12, marginTop: 4 }}>
+                Klik op een regel om naar het betreffende onderdeel te gaan.
+              </div>
+            </div>
+
+            <button
+              type="button"
+              className="icon-btn"
+              title={validationCollapseBtnTitle}
+              onClick={() => setValidationListOpen((prev) => !prev)}
+              onMouseEnter={() => validationCollapseIconRef.current?.startAnimation?.()}
+              onMouseLeave={() => validationCollapseIconRef.current?.stopAnimation?.()}
+            >
+              <ValidationCollapseIcon
+                ref={validationCollapseIconRef}
+                size={18}
+                className="nav-anim-icon"
+              />
+            </button>
           </div>
 
-          <div className="muted" style={{ fontSize: 12 }}>
-            Klik op een regel om naar het betreffende onderdeel te gaan.
-          </div>
-
-          <div style={{ display: "grid", gap: 6 }}>
-            {validationSummary.map((item) => (
-              <button
-                key={item.id}
-                type="button"
-                className="btn btn-secondary"
-                onClick={() => openValidationItem(item)}
-                style={{
-                  textAlign: "left",
-                  justifyContent: "flex-start",
-                  whiteSpace: "normal",
-                  lineHeight: 1.35,
-                }}
-                title={`${item.pageTitle} · ${item.questionTitle}`}
-              >
-                <span>
-                  <strong>{item.pageTitle}</strong>
-                  {" · "}
-                  {item.questionTitle}
-                  {" — "}
-                  {item.message}
-                </span>
-              </button>
-            ))}
-          </div>
+          {validationListOpen && (
+            <div style={{ display: "grid", gap: 6 }}>
+              {validationSummary.map((item) => (
+                <button
+                  key={item.id}
+                  type="button"
+                  className="btn btn-secondary"
+                  onClick={() => openValidationItem(item)}
+                  style={{
+                    textAlign: "left",
+                    justifyContent: "flex-start",
+                    whiteSpace: "normal",
+                    lineHeight: 1.35,
+                  }}
+                  title={`${item.pageTitle} · ${item.questionTitle}`}
+                >
+                  <span>
+                    <strong>{item.pageTitle}</strong>
+                    {" · "}
+                    {item.questionTitle}
+                    {" ; "}
+                    {item.message}
+                  </span>
+                </button>
+              ))}
+            </div>
+          )}
         </div>
       )}
 
@@ -1628,7 +1703,7 @@ export default function FormRunnerBase({ mode }) {
         <>
           <div className="card" style={{ padding: 12 }}>
             <div className="muted" style={{ fontSize: 12, marginBottom: 8 }}>
-              Antwoorden (debug JSON) — bewerken alleen in Concept
+              Antwoorden (debug JSON) ; bewerken alleen in Concept
             </div>
 
             <textarea
