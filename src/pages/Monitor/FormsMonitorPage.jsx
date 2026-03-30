@@ -20,7 +20,7 @@ import { ChevronUpIcon } from "@/components/ui/chevron-up";
 import { RefreshCWIcon } from "@/components/ui/refresh-cw";
 import { RefreshCWOffIcon } from "@/components/ui/refresh-cw-off";
 
-const LS_KEY = "forms-monitor-state-v4";
+const LS_KEY = "forms-monitor-state-v5";
 const AUTO_REFRESH_MS = 30000;
 
 const STATUS_FILTER_OPTIONS = [
@@ -98,20 +98,16 @@ function SummaryTag({ children, title, tone = "default" }) {
   );
 }
 
-function ToggleChip({ active, label, title, onClick }) {
+function FilterChip({ active, label, title, onClick }) {
   return (
     <button
       type="button"
-      className="btn btn-secondary"
+      className={active ? "monitor-tag monitor-tag--active" : "monitor-tag monitor-tag--muted"}
       title={title}
       onClick={onClick}
       style={{
-        border: active
-          ? "1px solid rgba(255,255,255,0.28)"
-          : "1px solid rgba(255,255,255,0.12)",
-        background: active ? "rgba(255,255,255,0.08)" : "transparent",
-        color: "inherit",
-        padding: "7px 12px",
+        cursor: "pointer",
+        opacity: active ? 1 : 0.9,
       }}
     >
       {label}
@@ -128,11 +124,35 @@ function StatusFilterChip({ status, active, onClick }) {
       className={active ? getToneClass(getStatusTone(status)) : "monitor-tag monitor-tag--muted"}
       style={{
         cursor: "pointer",
-        opacity: active ? 1 : 0.75,
+        opacity: active ? 1 : 0.78,
       }}
     >
       {statusLabel(status)}
     </button>
+  );
+}
+
+function FilterGroup({ label, children, minWidth = 0, grow = false }) {
+  return (
+    <div
+      style={{
+        minWidth,
+        flex: grow ? "1 1 360px" : "0 1 auto",
+        display: "grid",
+        gap: 8,
+        padding: 10,
+        border: "1px solid rgba(255,255,255,0.10)",
+        borderRadius: 12,
+        background: "rgba(255,255,255,0.02)",
+      }}
+    >
+      <div className="muted" style={{ fontSize: 12, fontWeight: 600 }}>
+        {label}
+      </div>
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+        {children}
+      </div>
+    </div>
   );
 }
 
@@ -259,7 +279,7 @@ function ActionFooter({ canFinish, finishBusy, onFinish, onOpenForm }) {
           disabled={finishBusy}
           onClick={onFinish}
         >
-          Definitief maken
+          Formulier definitief maken
         </button>
       )}
     </div>
@@ -299,7 +319,7 @@ export default function FormsMonitorPage() {
   const [items, setItems] = useState([]);
   const [selectedId, setSelectedId] = useState(storedState?.selectedId ?? null);
   const [propertiesOpen, setPropertiesOpen] = useState(storedState?.propertiesOpen ?? false);
-  const [relationsOpen, setRelationsOpen] = useState(storedState?.relationsOpen ?? true);
+  const [relationsOpen, setRelationsOpen] = useState(storedState?.relationsOpen ?? false);
   const [autoRefreshEnabled, setAutoRefreshEnabled] = useState(
     storedState?.autoRefreshEnabled ?? true
   );
@@ -677,21 +697,20 @@ export default function FormsMonitorPage() {
             <div
               style={{
                 display: "flex",
-                justifyContent: "space-between",
-                gap: 12,
-                alignItems: "flex-start",
+                gap: 10,
+                alignItems: "stretch",
                 flexWrap: "wrap",
               }}
             >
-              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                <ToggleChip
+              <FilterGroup label="Filters" minWidth={260}>
+                <FilterChip
                   active={Boolean(filters.mine)}
                   label="Eigen"
                   title="Toon standaard alleen eigen formulieren"
                   onClick={() => setFilters((prev) => ({ ...prev, mine: !prev.mine }))}
                 />
 
-                <ToggleChip
+                <FilterChip
                   active={Boolean(filters.onlyActionable)}
                   label="Open actiepunten"
                   title="Met openstaande actiepunten"
@@ -702,35 +721,18 @@ export default function FormsMonitorPage() {
                     }))
                   }
                 />
-              </div>
+              </FilterGroup>
 
-              <div
-                style={{
-                  minWidth: 320,
-                  flex: 1,
-                  display: "grid",
-                  gap: 8,
-                  padding: 10,
-                  border: "1px solid rgba(255,255,255,0.10)",
-                  borderRadius: 12,
-                  background: "rgba(255,255,255,0.02)",
-                }}
-              >
-                <div className="muted" style={{ fontSize: 12, fontWeight: 600 }}>
-                  Status
-                </div>
-
-                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                  {STATUS_FILTER_OPTIONS.map((opt) => (
-                    <StatusFilterChip
-                      key={opt.key}
-                      status={opt.key}
-                      active={filters.selectedStatuses.includes(opt.key)}
-                      onClick={() => toggleStatusFilter(opt.key)}
-                    />
-                  ))}
-                </div>
-              </div>
+              <FilterGroup label="Status" minWidth={360} grow>
+                {STATUS_FILTER_OPTIONS.map((opt) => (
+                  <StatusFilterChip
+                    key={opt.key}
+                    status={opt.key}
+                    active={filters.selectedStatuses.includes(opt.key)}
+                    onClick={() => toggleStatusFilter(opt.key)}
+                  />
+                ))}
+              </FilterGroup>
             </div>
 
             <input
@@ -1001,7 +1003,7 @@ export default function FormsMonitorPage() {
                         disabled={formActionBusy}
                         onClick={() => handleFormAction("set_afgehandeld")}
                       >
-                        Definitief maken
+                        Formulier definitief maken
                       </button>
                     )}
                   </div>
@@ -1437,7 +1439,7 @@ export default function FormsMonitorPage() {
                                   onClick={() => handleFollowUpAction(row.follow_up_action_id, "mark_done")}
                                 >
                                   <FolderInputIcon size={18} style={{ marginRight: 6 }} />
-                                  Definitief maken
+                                  Actiepunt afronden
                                 </button>
                               </div>
                             </div>
