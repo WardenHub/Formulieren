@@ -15,6 +15,7 @@ import {
   getFormsCatalogForInstallationSql,
   getFormStartPreflightSql,
   reopenFormInstanceSql,
+  updateFormInstanceMetadataSql,
 } from "../db/queries/forms.sql.js";
 
 import { getFormPrefillSql } from "../db/queries/prefill.sql.js";
@@ -58,12 +59,29 @@ function parseSurveyJson(value: any) {
 function parseInstanceId(value: any): number | null {
   if (value == null) return null;
 
+  const txt = String(value).trim();
+  if (!txt) return null;
+
+  const n = typeof value === "number" ? value : Number(txt);
+
+  if (!Number.isInteger(n) || n <= 0) return null;
+  return n;
+}
+
+function normalizeOptionalText(value: any): string | null {
+  if (value == null) return null;
+  const txt = String(value).trim();
+  return txt ? txt : null;
+}
+
+function parseRequiredDraftRev(value: any): number | null {
   const n =
     typeof value === "number"
       ? value
-      : Number(String(value).trim());
+      : Number(String(value ?? "").trim());
 
-  if (!Number.isInteger(n) || n <= 0) return null;
+  if (!Number.isFinite(n) || n < 0) return null;
+  if (!Number.isInteger(n)) return null;
   return n;
 }
 
@@ -244,6 +262,69 @@ export async function getFormInstance(code: string, instanceId: number | string)
   if (!row) return { error: "not found" };
 
   return { item: row };
+}
+
+export async function updateFormInstanceMetadata(
+  code: string,
+  instanceId: number | string,
+  payload: any,
+  user: any
+) {
+  const cleanCode = String(code || "").trim();
+  const id = parseInstanceId(instanceId);
+  const updatedBy = getUserDisplayName(user);
+
+  if (id == null) {
+    return { ok: false, error: "ongeldige form_instance_id" };
+  }
+
+  const instance_title = normalizeOptionalText(
+    payload?.instance_title ?? payload?.instanceTitle
+  );
+  const instance_note = normalizeOptionalText(
+    payload?.instance_note ?? payload?.instanceNote
+  );
+
+  const rawParentInstanceId =
+    payload?.parent_instance_id ?? payload?.parentInstanceId ?? null;
+
+  const parent_instance_id =
+    rawParentInstanceId == null || String(rawParentInstanceId).trim() === ""
+      ? null
+      : parseInstanceId(rawParentInstanceId);
+
+  if (
+    rawParentInstanceId != null &&
+    String(rawParentInstanceId).trim() !== "" &&
+    parent_instance_id == null
+  ) {
+    return { ok: false, error: "ongeldige parent_instance_id" };
+  }
+
+  if (instance_title != null && instance_title.length > 200) {
+    return { ok: false, error: "instance_title mag maximaal 200 tekens bevatten" };
+  }
+
+  const expected_draft_rev = parseRequiredDraftRev(
+    payload?.expected_draft_rev ?? payload?.expectedDraftRev
+  );
+
+  if (expected_draft_rev == null) {
+    return { ok: false, error: "expected_draft_rev is verplicht" };
+  }
+
+  const rows = await sqlQuery(updateFormInstanceMetadataSql, {
+    code: cleanCode,
+    instanceId: id,
+    instanceTitle: instance_title,
+    instanceNote: instance_note,
+    parentInstanceId: parent_instance_id,
+    expectedDraftRev: expected_draft_rev,
+    updatedBy,
+  });
+
+  const r: any = rows?.[0] ?? null;
+  return { ok: true, result: r };
 }
 
 export async function saveFormAnswers(code: string, instanceId: number | string, payload: any, user: any) {

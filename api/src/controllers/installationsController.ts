@@ -337,6 +337,40 @@ export async function getFormInstance(req: any, res: Response) {
   }
 }
 
+export async function putFormInstanceMetadata(req: any, res: any) {
+  try {
+    const code = String(req.params.code || "");
+    const instanceId = String(req.params.instanceId || "");
+    const payload = req.body || {};
+
+    const result = await formsService.updateFormInstanceMetadata(code, instanceId, payload, req.user);
+    if (result?.ok === false) return res.status(400).json(result);
+
+    return res.json(result);
+  } catch (err: any) {
+    const msg = (err?.message || String(err)).toLowerCase();
+
+    if (msg.includes("form instance not found")) {
+      return res.status(404).json({ error: "form instance not found" });
+    }
+    if (msg.includes("parent form instance not found")) {
+      return res.status(400).json({ error: "parent form instance not found" });
+    }
+    if (msg.includes("parent form instance invalid")) {
+      return res.status(400).json({ error: "parent form instance invalid" });
+    }
+    if (msg.includes("draft_rev conflict")) {
+      return res.status(409).json({ error: "draft_rev conflict" });
+    }
+    if (msg.includes("form instance not editable")) {
+      return res.status(409).json({ error: "form instance not editable" });
+    }
+
+    console.error(err);
+    return res.status(500).json({ error: "putFormInstanceMetadata failed" });
+  }
+}
+
 export async function putFormAnswers(req: any, res: any) {
   try {
     const code = String(req.params.code || "");

@@ -70,6 +70,9 @@ begin
     installation_id,
     atrium_installation_code,
     status,
+    instance_title,
+    instance_note,
+    parent_instance_id,
     draft_rev,
     created_at,
     created_by,
@@ -81,6 +84,9 @@ begin
     @installationId,
     @code,
     N'CONCEPT',
+    null,
+    null,
+    null,
     0,
     sysutcdatetime(),
     @updatedBy,
@@ -268,6 +274,11 @@ select top 1
   fi.installation_id,
   fi.form_version_id,
   fi.status,
+
+  fi.instance_title,
+  fi.instance_note,
+  fi.parent_instance_id,
+
   fi.draft_rev,
   fi.locked_by,
   fi.lock_expires_at,
@@ -302,6 +313,99 @@ join dbo.FormDefinition fd
   on fd.form_id = fv.form_id
 left join dbo.FormAnswer fa
   on fa.form_instance_id = fi.form_instance_id
+where fi.form_instance_id = @instanceId
+  and fi.atrium_installation_code = @code;
+`;
+
+// =========================================================
+// forms runtime - update instance metadata
+// - title / note / parent relation live on FormInstance
+// - separate from answers_json on purpose
+// =========================================================
+
+export const updateFormInstanceMetadataSql = `
+-- expects:
+--   @code nvarchar(...)
+--   @instanceId bigint
+--   @instanceTitle nvarchar(200) (nullable)
+--   @instanceNote nvarchar(max) (nullable)
+--   @parentInstanceId bigint (nullable)
+--   @expectedDraftRev int
+--   @updatedBy nvarchar(...)
+
+declare @trimmedTitle nvarchar(200) = nullif(ltrim(rtrim(@instanceTitle)), N'');
+declare @trimmedNote nvarchar(max) = nullif(ltrim(rtrim(@instanceNote)), N'');
+
+if not exists (
+  select 1
+  from dbo.FormInstance
+  where form_instance_id = @instanceId
+    and atrium_installation_code = @code
+)
+begin
+  throw 50000, 'form instance not found', 1;
+end;
+
+if exists (
+  select 1
+  from dbo.FormInstance
+  where form_instance_id = @instanceId
+    and atrium_installation_code = @code
+    and status <> N'CONCEPT'
+)
+begin
+  throw 50000, 'form instance not editable', 1;
+end;
+
+declare @currentRev int;
+select top 1 @currentRev = draft_rev
+from dbo.FormInstance
+where form_instance_id = @instanceId
+  and atrium_installation_code = @code;
+
+if @currentRev <> @expectedDraftRev
+begin
+  throw 50000, 'draft_rev conflict', 1;
+end;
+
+if @parentInstanceId is not null
+begin
+  if @parentInstanceId = @instanceId
+  begin
+    throw 50000, 'parent form instance invalid', 1;
+  end;
+
+  if not exists (
+    select 1
+    from dbo.FormInstance parent_fi
+    where parent_fi.form_instance_id = @parentInstanceId
+      and parent_fi.atrium_installation_code = @code
+  )
+  begin
+    throw 50000, 'parent form instance not found', 1;
+  end;
+end;
+
+update dbo.FormInstance
+set
+  instance_title = @trimmedTitle,
+  instance_note = @trimmedNote,
+  parent_instance_id = @parentInstanceId,
+  updated_at = sysutcdatetime(),
+  updated_by = @updatedBy,
+  draft_rev = draft_rev + 1
+where form_instance_id = @instanceId
+  and atrium_installation_code = @code;
+
+select top 1
+  fi.form_instance_id,
+  fi.instance_title,
+  fi.instance_note,
+  fi.parent_instance_id,
+  fi.draft_rev,
+  fi.updated_at,
+  fi.updated_by
+from dbo.FormInstance fi
 where fi.form_instance_id = @instanceId
   and fi.atrium_installation_code = @code;
 `;
@@ -393,6 +497,9 @@ insert into dbo.FormInstance (
   installation_id,
   atrium_installation_code,
   status,
+  instance_title,
+  instance_note,
+  parent_instance_id,
   locked_by,
   lock_expires_at,
   draft_rev,
@@ -408,6 +515,9 @@ values (
   @installationId,
   @code,
   N'CONCEPT',
+  null,
+  null,
+  null,
   null,
   null,
   0,

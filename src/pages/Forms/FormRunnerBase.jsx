@@ -22,6 +22,7 @@ import { ChevronsUpDownIcon } from "@/components/ui/chevrons-up-down";
 
 import {
   getFormInstance,
+  putFormInstanceMetadata,
   putFormAnswers,
   submitFormInstance,
   previewSubmitFormInstance,
@@ -156,10 +157,14 @@ function buildDebugBundle({
   validationSummary,
   surveyModel,
   debugAnswersText,
+  instanceMetadata,
+  savedInstanceMetadata,
 }) {
   return {
     exported_at: new Date().toISOString(),
     instance: instance ?? null,
+    instance_metadata_runtime: instanceMetadata ?? null,
+    instance_metadata_saved: savedInstanceMetadata ?? null,
     survey_json: instance?.survey_json ?? null,
     answers_json_stored: getAnswersObject(instance) ?? null,
     answers_preview_runtime: answersPreview ?? {},
@@ -239,6 +244,34 @@ function ToggleRow({ title, meta, isOpen, onToggle, iconRef, onIconEnter, onIcon
   );
 }
 
+function normalizeMetadataValue(value) {
+  if (value == null) return "";
+  return String(value);
+}
+
+function normalizeMetadataParentId(value) {
+  if (value == null || value === "") return null;
+  const n = Number(value);
+  if (!Number.isInteger(n) || n <= 0) return null;
+  return n;
+}
+
+function buildInstanceMetadataState(source) {
+  return {
+    instance_title: normalizeMetadataValue(source?.instance_title),
+    instance_note: normalizeMetadataValue(source?.instance_note),
+    parent_instance_id: normalizeMetadataParentId(source?.parent_instance_id),
+  };
+}
+
+function areInstanceMetadataEqual(a, b) {
+  return (
+    String(a?.instance_title || "") === String(b?.instance_title || "") &&
+    String(a?.instance_note || "") === String(b?.instance_note || "") &&
+    normalizeMetadataParentId(a?.parent_instance_id) === normalizeMetadataParentId(b?.parent_instance_id)
+  );
+}
+
 export default function FormRunnerBase({ mode }) {
   const isDebug = mode === "debug";
 
@@ -253,6 +286,9 @@ export default function FormRunnerBase({ mode }) {
   const [validationSummary, setValidationSummary] = useState([]);
 
   const [dirty, setDirty] = useState(false);
+
+  const [instanceMetadata, setInstanceMetadata] = useState(buildInstanceMetadataState(null));
+  const [savedInstanceMetadata, setSavedInstanceMetadata] = useState(buildInstanceMetadataState(null));
 
   const [saveOk, setSaveOk] = useState(false);
   const [submitOk, setSubmitOk] = useState(false);
@@ -275,6 +311,7 @@ export default function FormRunnerBase({ mode }) {
   const [bookmarksOpen, setBookmarksOpen] = useState(false);
   const [hasValidatedOnce, setHasValidatedOnce] = useState(false);
   const [validationListOpen, setValidationListOpen] = useState(true);
+  const [instanceMetaOpen, setInstanceMetaOpen] = useState(false);
 
   const [debugCards, setDebugCards] = useState(defaultDebugCards);
 
@@ -380,6 +417,13 @@ export default function FormRunnerBase({ mode }) {
   const showReopen = actions.reopen;
 
   const canEditAnswers = actions.save;
+  const canEditMetadata = actions.save;
+
+  const hasMetadataChanges = useMemo(() => {
+    return !areInstanceMetadataEqual(instanceMetadata, savedInstanceMetadata);
+  }, [instanceMetadata, savedInstanceMetadata]);
+
+  const hasUnsavedChanges = dirty || hasMetadataChanges;
 
   const hasValidationItems = !isDebug && validationSummary.length > 0;
   const validationCollapseBtnTitle = validationListOpen
@@ -388,6 +432,20 @@ export default function FormRunnerBase({ mode }) {
   const ValidationCollapseIcon = validationListOpen
     ? ChevronsDownUpIcon
     : ChevronsUpDownIcon;
+
+  const currentParentInstanceId = useMemo(() => {
+    return normalizeMetadataParentId(instanceMetadata?.parent_instance_id);
+  }, [instanceMetadata]);
+
+  useEffect(() => {
+    const hasTitle = String(savedInstanceMetadata?.instance_title || "").trim().length > 0;
+    const hasNote = String(savedInstanceMetadata?.instance_note || "").trim().length > 0;
+    const hasParent = savedInstanceMetadata?.parent_instance_id != null;
+
+    if (hasTitle || hasNote || hasParent) {
+      setInstanceMetaOpen(true);
+    }
+  }, [savedInstanceMetadata]);
 
   useEffect(() => {
     canEditRef.current = canEditAnswers;
@@ -604,26 +662,118 @@ export default function FormRunnerBase({ mode }) {
     setCurrentPageIndex(pageIndex);
   }
 
-  async function saveCurrentAnswers(curValue) {
-    const expectedDraftRev = getDraftRev(instance);
+  function applyMetadataResultLocally(resultRow) {
+    const nextDraftRev = Number(resultRow?.draft_rev);
+    const safeDraftRev =
+      Number.isInteger(nextDraftRev) && nextDraftRev >= 0
+        ? nextDraftRev
+        : getDraftRev(instance) + 1;
 
-    await putFormAnswers(code, instanceId, {
-      answers_json: curValue,
-      expected_draft_rev: expectedDraftRev,
-    });
+    setInstance((prev) =>
+      prev
+        ? {
+            ...prev,
+            instance_title: resultRow?.instance_title ?? instanceMetadata.instance_title,
+            instance_note: resultRow?.instance_note ?? instanceMetadata.instance_note,
+            parent_instance_id:
+              resultRow?.parent_instance_id == null
+                ? null
+                : Number(resultRow.parent_instance_id),
+            draft_rev: safeDraftRev,
+            updated_at: resultRow?.updated_at ?? new Date().toISOString(),
+            updated_by: resultRow?.updated_by ?? prev.updated_by,
+          }
+        : prev
+    );
+  }
 
-    setLastSavedAt(new Date().toISOString());
-    setDirty(false);
+  function applyAnswersSaveLocally(nextDraftRev) {
+    const safeDraftRev =
+      Number.isInteger(Number(nextDraftRev)) && Number(nextDraftRev) >= 0
+        ? Number(nextDraftRev)
+        : getDraftRev(instance) + 1;
 
-    setSaveOk(true);
-    saveOkIconRef.current?.startAnimation?.();
-    if (saveOkTimerRef.current) clearTimeout(saveOkTimerRef.current);
-    saveOkTimerRef.current = setTimeout(() => {
-      setSaveOk(false);
-      saveOkIconRef.current?.stopAnimation?.();
-    }, 1500);
+    setInstance((prev) =>
+      prev
+        ? {
+            ...prev,
+            draft_rev: safeDraftRev,
+            updated_at: new Date().toISOString(),
+          }
+        : prev
+    );
+  }
 
-    await reload({ forceEditor: false });
+  async function persistPendingChanges(curValue, { reloadAfter = true, animateSave = true } = {}) {
+    let workingDraftRev = getDraftRev(instance);
+    let didSaveSomething = false;
+
+    if (hasMetadataChanges) {
+      const metadataPayload = {
+        instance_title: instanceMetadata.instance_title,
+        instance_note: instanceMetadata.instance_note,
+        parent_instance_id: currentParentInstanceId,
+        expected_draft_rev: workingDraftRev,
+      };
+
+      const metadataRes = await putFormInstanceMetadata(code, instanceId, metadataPayload);
+      const metadataRow = metadataRes?.result ?? metadataRes ?? null;
+
+      didSaveSomething = true;
+      applyMetadataResultLocally(metadataRow);
+
+      const savedMeta = {
+        instance_title: String(metadataRow?.instance_title ?? instanceMetadata.instance_title ?? ""),
+        instance_note: String(metadataRow?.instance_note ?? instanceMetadata.instance_note ?? ""),
+        parent_instance_id:
+          metadataRow?.parent_instance_id == null
+            ? currentParentInstanceId
+            : normalizeMetadataParentId(metadataRow.parent_instance_id),
+      };
+
+      setSavedInstanceMetadata(savedMeta);
+      setInstanceMetadata(savedMeta);
+
+      workingDraftRev =
+        Number.isInteger(Number(metadataRow?.draft_rev)) && Number(metadataRow?.draft_rev) >= 0
+          ? Number(metadataRow.draft_rev)
+          : workingDraftRev + 1;
+    }
+
+    if (dirty) {
+      await putFormAnswers(code, instanceId, {
+        answers_json: curValue,
+        expected_draft_rev: workingDraftRev,
+      });
+
+      didSaveSomething = true;
+      workingDraftRev += 1;
+      applyAnswersSaveLocally(workingDraftRev);
+      setDirty(false);
+    }
+
+    if (didSaveSomething) {
+      setLastSavedAt(new Date().toISOString());
+
+      if (animateSave) {
+        setSaveOk(true);
+        saveOkIconRef.current?.startAnimation?.();
+        if (saveOkTimerRef.current) clearTimeout(saveOkTimerRef.current);
+        saveOkTimerRef.current = setTimeout(() => {
+          setSaveOk(false);
+          saveOkIconRef.current?.stopAnimation?.();
+        }, 1500);
+      }
+    }
+
+    if (reloadAfter && didSaveSomething) {
+      await reload({ forceEditor: false });
+    }
+
+    return {
+      didSaveSomething,
+      nextDraftRev: workingDraftRev,
+    };
   }
 
   async function reload({ forceEditor } = {}) {
@@ -646,6 +796,16 @@ export default function FormRunnerBase({ mode }) {
       const alreadyLoaded = lastLoadedKeyRef.current === key;
 
       const parsedSurvey = safeSurveyParse(inst?.survey_json);
+
+      const shouldOverwriteEditor = forceEditor || (!dirty && !alreadyLoaded);
+      const shouldOverwriteMetadata = forceEditor || (!hasMetadataChanges && !alreadyLoaded);
+
+      if (shouldOverwriteMetadata) {
+        const nextMetadata = buildInstanceMetadataState(inst);
+        setInstanceMetadata(nextMetadata);
+        setSavedInstanceMetadata(nextMetadata);
+      }
+
       if (!parsedSurvey.ok) {
         surveyModelRef.current = null;
         setPrefillPayload(null);
@@ -653,7 +813,7 @@ export default function FormRunnerBase({ mode }) {
         setLastAppliedMap({});
         setRuntimeReady(false);
 
-        if (isDebug && (forceEditor || (!dirty && !alreadyLoaded))) {
+        if (isDebug && shouldOverwriteEditor) {
           setDebugAnswersText(JSON.stringify(answersObj || {}, null, 2));
           setDirty(false);
           lastLoadedKeyRef.current = key;
@@ -663,9 +823,7 @@ export default function FormRunnerBase({ mode }) {
         return;
       }
 
-      const shouldOverwrite = forceEditor || (!dirty && !alreadyLoaded);
-
-      if (!shouldOverwrite && surveyModelRef.current) {
+      if (!shouldOverwriteEditor && surveyModelRef.current) {
         setRuntimeReady(true);
         setLoading(false);
         return;
@@ -716,7 +874,7 @@ export default function FormRunnerBase({ mode }) {
         onValidationSummaryChange: setValidationSummary,
       });
 
-      if (isDebug && (forceEditor || (!dirty && !alreadyLoaded))) {
+      if (isDebug && shouldOverwriteEditor) {
         setDebugAnswersText(JSON.stringify(answersObj || {}, null, 2));
       }
 
@@ -778,7 +936,7 @@ export default function FormRunnerBase({ mode }) {
       if (e.altKey && (key === "s" || key === "S")) {
         if (!showSave) return;
         if (busy) return;
-        if (!dirty) return;
+        if (!hasUnsavedChanges) return;
 
         e.preventDefault();
         save();
@@ -806,7 +964,7 @@ export default function FormRunnerBase({ mode }) {
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [showSave, busy, dirty, hasValidationItems]);
+  }, [showSave, busy, hasUnsavedChanges, hasValidationItems]);
 
   async function handleRefreshPrefill() {
     if (isDebug) return;
@@ -892,7 +1050,7 @@ export default function FormRunnerBase({ mode }) {
     }
 
     try {
-      await saveCurrentAnswers(cur.value);
+      await persistPendingChanges(cur.value, { reloadAfter: true, animateSave: true });
     } catch (e) {
       const msg = String(e?.message || e || "").toLowerCase();
 
@@ -946,8 +1104,8 @@ export default function FormRunnerBase({ mode }) {
       const confirmed = window.confirm(buildSubmitConfirmText(preview));
       if (!confirmed) return;
 
-      if (dirty) {
-        await saveCurrentAnswers(cur.value);
+      if (hasUnsavedChanges) {
+        await persistPendingChanges(cur.value, { reloadAfter: false, animateSave: false });
       }
 
       const submitRes = await submitFormInstance(code, instanceId);
@@ -973,6 +1131,12 @@ export default function FormRunnerBase({ mode }) {
       );
 
       setDirty(false);
+      setSavedInstanceMetadata(buildInstanceMetadataState({
+        instance_title: instanceMetadata.instance_title,
+        instance_note: instanceMetadata.instance_note,
+        parent_instance_id: currentParentInstanceId,
+      }));
+
       setShowSubmitCelebration(true);
 
       if (submitCelebrationTimerRef.current) {
@@ -1064,6 +1228,8 @@ export default function FormRunnerBase({ mode }) {
       validationSummary,
       surveyModel: surveyModelRef.current,
       debugAnswersText,
+      instanceMetadata,
+      savedInstanceMetadata,
     });
 
     const stamp = new Date().toISOString().replaceAll(":", "-");
@@ -1167,120 +1333,122 @@ export default function FormRunnerBase({ mode }) {
         className="card"
         style={{
           padding: 12,
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          gap: 10,
+          display: "grid",
+          gap: 12,
         }}
       >
-        <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
-          <button
-            type="button"
-            className="icon-btn"
-            title="Terug"
-            onClick={() => navigate(-1)}
-            onMouseEnter={() => backIconRef.current?.startAnimation?.()}
-            onMouseLeave={() => backIconRef.current?.stopAnimation?.()}
-          >
-            <ChevronLeftIcon ref={backIconRef} size={18} />
-          </button>
+        <div
+          style={{
+            display: "flex",
+            alignItems: "flex-start",
+            justifyContent: "space-between",
+            gap: 10,
+          }}
+        >
+          <div style={{ display: "flex", alignItems: "flex-start", gap: 10, minWidth: 0, flex: 1 }}>
+            <button
+              type="button"
+              className="icon-btn"
+              title="Terug"
+              onClick={() => navigate(-1)}
+              onMouseEnter={() => backIconRef.current?.startAnimation?.()}
+              onMouseLeave={() => backIconRef.current?.stopAnimation?.()}
+            >
+              <ChevronLeftIcon ref={backIconRef} size={18} />
+            </button>
 
-          <div style={{ minWidth: 0 }}>
-            <div style={{ fontWeight: 900, fontSize: 16, lineHeight: 1.2 }}>
-              {headerTitle}
-              {isDebug ? " (debug)" : ""}
-            </div>
-
-            <div
-              className="muted"
+            <button
+              type="button"
+              onClick={() => setInstanceMetaOpen((prev) => !prev)}
+              title={instanceMetaOpen ? "Verberg formulierdetails" : "Toon formulierdetails"}
               style={{
-                fontSize: 12,
-                display: "flex",
-                gap: 10,
-                flexWrap: "wrap",
-                alignItems: "center",
+                appearance: "none",
+                background: "transparent",
+                border: "none",
+                padding: 0,
+                margin: 0,
+                color: "inherit",
+                textAlign: "left",
+                cursor: "pointer",
+                minWidth: 0,
+                display: "grid",
+                gap: 2,
               }}
             >
-              <span>installatie: {code}</span>
-              <span>status: {statusLbl}</span>
-              {formVersionLabel ? <span>versie: {formVersionLabel}</span> : null}
-              {lastSavedAt ? <span>laatst opgeslagen: {formatNlDateTime(lastSavedAt)}</span> : null}
-              {dirty ? <span>wijzigingen niet opgeslagen</span> : null}
-              {!canEditAnswers && !isDebug ? (
-                <span
-                  style={{
-                    padding: "2px 8px",
-                    borderRadius: 999,
-                    background: "rgba(255,255,255,0.06)",
-                    fontWeight: 700,
-                  }}
-                >
-                  Klaar
-                </span>
-              ) : null}
-              {prefillRefreshOk ? (
-                <span
-                  style={{
-                    padding: "2px 8px",
-                    borderRadius: 999,
-                    background: "rgba(255,255,255,0.06)",
-                    fontWeight: 700,
-                  }}
-                >
-                  Voorinvulling vernieuwd
-                </span>
-              ) : null}
-            </div>
+              <div
+                style={{
+                  fontWeight: 900,
+                  fontSize: 16,
+                  lineHeight: 1.2,
+                }}
+              >
+                {headerTitle}
+                {isDebug ? " (debug)" : ""}
+              </div>
+
+              <div
+                className="muted"
+                style={{
+                  fontSize: 12,
+                  display: "flex",
+                  gap: 10,
+                  flexWrap: "wrap",
+                  alignItems: "center",
+                }}
+              >
+                <span>installatie: {code}</span>
+                <span>status: {statusLbl}</span>
+                {formVersionLabel ? <span>versie: {formVersionLabel}</span> : null}
+                {lastSavedAt ? <span>laatst opgeslagen: {formatNlDateTime(lastSavedAt)}</span> : null}
+                {hasUnsavedChanges ? <span>wijzigingen niet opgeslagen</span> : null}
+                {!canEditAnswers && !isDebug ? (
+                  <span
+                    style={{
+                      padding: "2px 8px",
+                      borderRadius: 999,
+                      background: "rgba(255,255,255,0.06)",
+                      fontWeight: 700,
+                    }}
+                  >
+                    Klaar
+                  </span>
+                ) : null}
+                {prefillRefreshOk ? (
+                  <span
+                    style={{
+                      padding: "2px 8px",
+                      borderRadius: 999,
+                      background: "rgba(255,255,255,0.06)",
+                      fontWeight: 700,
+                    }}
+                  >
+                    Voorinvulling vernieuwd
+                  </span>
+                ) : null}
+              </div>
+            </button>
           </div>
-        </div>
 
-        <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
-          {!isDebug && canEditAnswers && (
-            <button
-              type="button"
-              className="btn btn-secondary"
-              disabled={busy || !surveyModelRef.current}
-              onClick={handleRefreshPrefill}
-              onMouseEnter={() => prefillRefreshIconRef.current?.startAnimation?.()}
-              onMouseLeave={() => {
-                if (!prefillRefreshOk) prefillRefreshIconRef.current?.stopAnimation?.();
-              }}
-              style={{ display: "inline-flex", alignItems: "center", gap: 8 }}
-              title="Haal de laatste installatiedata op en vul deze in op het formulier."
-            >
-              <RotateCCWIcon ref={prefillRefreshIconRef} size={18} />
-              Voorinvulling vernieuwen
-            </button>
-          )}
-
-          {!isDebug && (
-            <button
-              type="button"
-              className="btn btn-secondary"
-              disabled={busy}
-              onClick={() =>
-                navigate(
-                  `/installaties/${encodeURIComponent(code)}/formulieren/${encodeURIComponent(
-                    instanceId
-                  )}/debug`
-                )
-              }
-            >
-              Debug JSON
-            </button>
-          )}
-
-          {isDebug && (
-            <>
+          <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+            {!isDebug && canEditAnswers && (
               <button
                 type="button"
                 className="btn btn-secondary"
-                disabled={busy}
-                onClick={downloadDebugBundle}
+                disabled={busy || !surveyModelRef.current}
+                onClick={handleRefreshPrefill}
+                onMouseEnter={() => prefillRefreshIconRef.current?.startAnimation?.()}
+                onMouseLeave={() => {
+                  if (!prefillRefreshOk) prefillRefreshIconRef.current?.stopAnimation?.();
+                }}
+                style={{ display: "inline-flex", alignItems: "center", gap: 8 }}
+                title="Haal de laatste installatiedata op en vul deze in op het formulier."
               >
-                Download debug-bundle
+                <RotateCCWIcon ref={prefillRefreshIconRef} size={18} />
+                Voorinvulling vernieuwen
               </button>
+            )}
 
+            {!isDebug && (
               <button
                 type="button"
                 className="btn btn-secondary"
@@ -1289,123 +1457,241 @@ export default function FormRunnerBase({ mode }) {
                   navigate(
                     `/installaties/${encodeURIComponent(code)}/formulieren/${encodeURIComponent(
                       instanceId
-                    )}`
+                    )}/debug`
                   )
                 }
               >
-                Terug naar formulier
+                Debug JSON
               </button>
-            </>
-          )}
+            )}
 
-          {showReopen && (
-            <button
-              type="button"
-              className="btn btn-secondary"
-              disabled={busy}
-              onClick={reopenToConcept}
-              onMouseEnter={() => reopenIconRef.current?.startAnimation?.()}
-              onMouseLeave={() => reopenIconRef.current?.stopAnimation?.()}
-              style={{ display: "inline-flex", alignItems: "center", gap: 8 }}
-              title="Terug naar concept"
-            >
-              <HistoryIcon ref={reopenIconRef} size={18} />
-              Concept
-            </button>
-          )}
+            {isDebug && (
+              <>
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  disabled={busy}
+                  onClick={downloadDebugBundle}
+                >
+                  Download debug-bundle
+                </button>
 
-          {showWithdraw && (
-            <button
-              type="button"
-              className="btn btn-secondary"
-              disabled={busy}
-              onClick={withdraw}
-              onMouseEnter={() => withdrawIconRef.current?.startAnimation?.()}
-              onMouseLeave={() => withdrawIconRef.current?.stopAnimation?.()}
-              style={{ display: "inline-flex", alignItems: "center", gap: 8 }}
-              title="Intrekken"
-            >
-              <FolderXIcon ref={withdrawIconRef} size={18} />
-              Intrekken
-            </button>
-          )}
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  disabled={busy}
+                  onClick={() =>
+                    navigate(
+                      `/installaties/${encodeURIComponent(code)}/formulieren/${encodeURIComponent(
+                        instanceId
+                      )}`
+                    )
+                  }
+                >
+                  Terug naar formulier
+                </button>
+              </>
+            )}
 
-          {showValidate && (
-            <button
-              type="button"
-              className="btn btn-secondary"
-              disabled={busy}
-              onClick={validateForm}
-              onMouseEnter={() => {
-                if (!validateOk) validateIconRef.current?.startAnimation?.();
-              }}
-              onMouseLeave={() => {
-                if (!validateOk) validateIconRef.current?.stopAnimation?.();
-              }}
-              style={{ display: "inline-flex", alignItems: "center", gap: 8 }}
-              title="Controleer het formulier zonder op te slaan"
-            >
-              {validateOk ? (
-                <CheckCheckIcon ref={validateOkIconRef} size={18} />
-              ) : (
-                <CheckCheckIcon ref={validateIconRef} size={18} />
-              )}
-              Controleer
-            </button>
-          )}
+            {showReopen && (
+              <button
+                type="button"
+                className="btn btn-secondary"
+                disabled={busy}
+                onClick={reopenToConcept}
+                onMouseEnter={() => reopenIconRef.current?.startAnimation?.()}
+                onMouseLeave={() => reopenIconRef.current?.stopAnimation?.()}
+                style={{ display: "inline-flex", alignItems: "center", gap: 8 }}
+                title="Terug naar concept"
+              >
+                <HistoryIcon ref={reopenIconRef} size={18} />
+                Concept
+              </button>
+            )}
 
-          {showSubmit && (
-            <button
-              type="button"
-              className="btn btn-secondary"
-              disabled={busy}
-              onClick={submit}
-              onMouseEnter={() => {
-                if (!submitOk) submitIconRef.current?.startAnimation?.();
-              }}
-              onMouseLeave={() => {
-                if (!submitOk) submitIconRef.current?.stopAnimation?.();
-              }}
-              style={{ display: "inline-flex", alignItems: "center", gap: 8 }}
-              title={
-                dirty
-                  ? "Indienen; controleert, toont opvolgingen en slaat eerst op"
-                  : "Indienen"
-              }
-            >
-              {submitOk ? (
-                <FileCheck2Icon ref={submitOkIconRef} size={18} />
-              ) : (
-                <FolderInputIcon ref={submitIconRef} size={18} />
-              )}
-              Indienen
-            </button>
-          )}
+            {showWithdraw && (
+              <button
+                type="button"
+                className="btn btn-secondary"
+                disabled={busy}
+                onClick={withdraw}
+                onMouseEnter={() => withdrawIconRef.current?.startAnimation?.()}
+                onMouseLeave={() => withdrawIconRef.current?.stopAnimation?.()}
+                style={{ display: "inline-flex", alignItems: "center", gap: 8 }}
+                title="Intrekken"
+              >
+                <FolderXIcon ref={withdrawIconRef} size={18} />
+                Intrekken
+              </button>
+            )}
 
-          {showSave && (
-            <button
-              type="button"
-              className="btn"
-              disabled={busy || !dirty}
-              onClick={save}
-              onMouseEnter={() => {
-                if (!saveOk) saveIconRef.current?.startAnimation?.();
-              }}
-              onMouseLeave={() => {
-                if (!saveOk) saveIconRef.current?.stopAnimation?.();
-              }}
-              style={{ display: "inline-flex", alignItems: "center", gap: 8 }}
-              title={dirty ? "Opslaan (Alt+S)" : "Geen wijzigingen om op te slaan."}
-            >
-              {saveOk ? (
-                <FileCheckIcon ref={saveOkIconRef} size={18} />
-              ) : (
-                <FileCogIcon ref={saveIconRef} size={18} />
-              )}
-              Opslaan
-            </button>
-          )}
+            {showValidate && (
+              <button
+                type="button"
+                className="btn btn-secondary"
+                disabled={busy}
+                onClick={validateForm}
+                onMouseEnter={() => {
+                  if (!validateOk) validateIconRef.current?.startAnimation?.();
+                }}
+                onMouseLeave={() => {
+                  if (!validateOk) validateIconRef.current?.stopAnimation?.();
+                }}
+                style={{ display: "inline-flex", alignItems: "center", gap: 8 }}
+                title="Controleer het formulier zonder op te slaan"
+              >
+                {validateOk ? (
+                  <CheckCheckIcon ref={validateOkIconRef} size={18} />
+                ) : (
+                  <CheckCheckIcon ref={validateIconRef} size={18} />
+                )}
+                Controleer
+              </button>
+            )}
+
+            {showSubmit && (
+              <button
+                type="button"
+                className="btn btn-secondary"
+                disabled={busy}
+                onClick={submit}
+                onMouseEnter={() => {
+                  if (!submitOk) submitIconRef.current?.startAnimation?.();
+                }}
+                onMouseLeave={() => {
+                  if (!submitOk) submitIconRef.current?.stopAnimation?.();
+                }}
+                style={{ display: "inline-flex", alignItems: "center", gap: 8 }}
+                title={
+                  hasUnsavedChanges
+                    ? "Indienen; controleert, toont opvolgingen en slaat eerst op"
+                    : "Indienen"
+                }
+              >
+                {submitOk ? (
+                  <FileCheck2Icon ref={submitOkIconRef} size={18} />
+                ) : (
+                  <FolderInputIcon ref={submitIconRef} size={18} />
+                )}
+                Indienen
+              </button>
+            )}
+
+            {showSave && (
+              <button
+                type="button"
+                className="btn"
+                disabled={busy || !hasUnsavedChanges}
+                onClick={save}
+                onMouseEnter={() => {
+                  if (!saveOk) saveIconRef.current?.startAnimation?.();
+                }}
+                onMouseLeave={() => {
+                  if (!saveOk) saveIconRef.current?.stopAnimation?.();
+                }}
+                style={{ display: "inline-flex", alignItems: "center", gap: 8 }}
+                title={hasUnsavedChanges ? "Opslaan (Alt+S)" : "Geen wijzigingen om op te slaan."}
+              >
+                {saveOk ? (
+                  <FileCheckIcon ref={saveOkIconRef} size={18} />
+                ) : (
+                  <FileCogIcon ref={saveIconRef} size={18} />
+                )}
+                Opslaan
+              </button>
+            )}
+          </div>
         </div>
+
+        {instanceMetaOpen && (
+          <div
+            style={{
+              display: "grid",
+              gap: 10,
+              paddingTop: 2,
+              borderTop: "1px solid rgba(255,255,255,0.08)",
+            }}
+          >
+            <div
+              style={{
+                display: "grid",
+                gap: 12,
+                gridTemplateColumns: "minmax(260px, 480px) minmax(320px, 1fr)",
+                alignItems: "start",
+              }}
+            >
+              <div style={{ display: "grid", gap: 6 }}>
+                <div className="muted" style={{ fontSize: 12 }}>
+                  Titel
+                </div>
+                <input
+                  className="input"
+                  type="text"
+                  maxLength={200}
+                  value={instanceMetadata.instance_title}
+                  onChange={(e) =>
+                    setInstanceMetadata((prev) => ({
+                      ...prev,
+                      instance_title: e.target.value,
+                    }))
+                  }
+                  disabled={!canEditMetadata}
+                  placeholder="Optionele titel voor deze formulierinstantie"
+                  title={!canEditMetadata ? "Bewerken kan alleen in status: Concept." : undefined}
+                />
+              </div>
+
+              <div style={{ display: "grid", gap: 6 }}>
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 10,
+                    flexWrap: "wrap",
+                  }}
+                >
+                  <div className="muted" style={{ fontSize: 12 }}>
+                    Opmerking
+                  </div>
+
+                  {currentParentInstanceId ? (
+                    <span
+                      className="muted"
+                      style={{
+                        fontSize: 12,
+                        padding: "2px 8px",
+                        borderRadius: 999,
+                        background: "rgba(255,255,255,0.06)",
+                      }}
+                      title="Deze instantie is gekoppeld aan een bovenliggende formulierinstantie."
+                    >
+                      vervolg op #{currentParentInstanceId}
+                    </span>
+                  ) : null}
+                </div>
+
+                <textarea
+                  className="input"
+                  value={instanceMetadata.instance_note}
+                  onChange={(e) =>
+                    setInstanceMetadata((prev) => ({
+                      ...prev,
+                      instance_note: e.target.value,
+                    }))
+                  }
+                  disabled={!canEditMetadata}
+                  placeholder="Optionele interne opmerking bij deze formulierinstantie"
+                  title={!canEditMetadata ? "Bewerken kan alleen in status: Concept." : undefined}
+                  style={{
+                    width: "100%",
+                    minHeight: 76,
+                    resize: "vertical",
+                  }}
+                />
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
       {error && <div style={{ color: "salmon" }}>{error}</div>}
@@ -1701,6 +1987,51 @@ export default function FormRunnerBase({ mode }) {
 
       {isDebug && (
         <>
+          <div className="card" style={{ padding: 12, display: "grid", gap: 12 }}>
+            <div style={{ display: "grid", gap: 6 }}>
+              <div className="muted" style={{ fontSize: 12 }}>
+                Titel instantie (debug)
+              </div>
+              <input
+                className="input"
+                type="text"
+                maxLength={200}
+                value={instanceMetadata.instance_title}
+                onChange={(e) =>
+                  setInstanceMetadata((prev) => ({
+                    ...prev,
+                    instance_title: e.target.value,
+                  }))
+                }
+                disabled={!canEditMetadata}
+                placeholder="Optionele titel voor deze formulierinstantie"
+              />
+            </div>
+
+            <div style={{ display: "grid", gap: 6 }}>
+              <div className="muted" style={{ fontSize: 12 }}>
+                Opmerking instantie (debug)
+              </div>
+              <textarea
+                className="input"
+                style={{ width: "100%", minHeight: 100, resize: "vertical" }}
+                value={instanceMetadata.instance_note}
+                onChange={(e) =>
+                  setInstanceMetadata((prev) => ({
+                    ...prev,
+                    instance_note: e.target.value,
+                  }))
+                }
+                disabled={!canEditMetadata}
+                spellCheck={false}
+              />
+            </div>
+
+            <div className="muted" style={{ fontSize: 12 }}>
+              Parent instance id: {currentParentInstanceId ?? "geen"}
+            </div>
+          </div>
+
           <div className="card" style={{ padding: 12 }}>
             <div className="muted" style={{ fontSize: 12, marginBottom: 8 }}>
               Antwoorden (debug JSON) ; bewerken alleen in Concept
