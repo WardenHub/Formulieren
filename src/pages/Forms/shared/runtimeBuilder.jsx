@@ -1,3 +1,5 @@
+// src/pages/Forms/shared/runtimeBuilder.jsx
+
 import { ItemValue, Model } from "survey-core";
 import { getFormPrefill } from "@/api/emberApi.js";
 
@@ -23,6 +25,18 @@ import {
   syncAllMatrixQuestionVisualErrors,
 } from "./validation.jsx";
 
+export function emptyRuntimePrefillPayload() {
+  return {
+    ok: true,
+    prefill: { values: {}, choices: {} },
+    warnings: [],
+  };
+}
+
+export function normalizeRuntimePrefillPayload(prefillPayload) {
+  return prefillPayload || emptyRuntimePrefillPayload();
+}
+
 export function buildPreparedSurveyJson(surveyJson) {
   registerEmberSurveyFunctions();
 
@@ -46,11 +60,7 @@ export async function loadRuntimePrefill({ code, formCode, preparedSurveyJson })
 
   return {
     keys,
-    prefillPayload: prefillPayload || {
-      ok: true,
-      prefill: { values: {}, choices: {} },
-      warnings: [],
-    },
+    prefillPayload: normalizeRuntimePrefillPayload(prefillPayload),
   };
 }
 
@@ -102,15 +112,13 @@ function getInstanceDocumentNumber(instance) {
     instance?.instance_id ??
     instance?.formInstanceId ??
     instance?.instanceId ??
-    null;
+    "DEV";
 
-  if (raw === null || raw === undefined) return null;
-
-  const s = String(raw).trim();
-  return s.length ? s : null;
+  const s = String(raw ?? "").trim();
+  return s.length ? s : "DEV";
 }
 
-function applyRuntimeInstanceFields(model, instance) {
+export function applyRuntimeInstanceFields(model, instance) {
   if (!model) return;
 
   const documentnummerQuestion = model.getQuestionByName?.("documentnummer") || null;
@@ -123,6 +131,122 @@ function applyRuntimeInstanceFields(model, instance) {
   if (documentnummerQuestion && documentnummer !== null) {
     model.setValue("documentnummer", documentnummer);
   }
+}
+
+export function buildRuntimeMergedData({
+  model,
+  answersObj,
+  instance,
+}) {
+  const mergedData = {
+    ...(model?.data || {}),
+    ...(answersObj && typeof answersObj === "object" ? answersObj : {}),
+  };
+
+  const documentnummer = getInstanceDocumentNumber(instance);
+  if (documentnummer !== null) {
+    mergedData.documentnummer = documentnummer;
+  }
+
+  return mergedData;
+}
+
+export function applyRuntimePrefillToModel({
+  model,
+  prefillPayload,
+  lastAppliedMap = {},
+  onlyRefreshable = false,
+  isRefresh = false,
+  instance = null,
+}) {
+  if (!model) {
+    return { ok: false, error: "Survey model ontbreekt." };
+  }
+
+  const effectivePrefillPayload = normalizeRuntimePrefillPayload(prefillPayload);
+  const beforeData = model.data && typeof model.data === "object" ? { ...model.data } : {};
+
+  applyChoices(model, effectivePrefillPayload, ItemValue);
+
+  const nextApplied = applyBindings({
+    model,
+    prefillPayload: effectivePrefillPayload,
+    lastAppliedMap,
+    onlyRefreshable,
+    isRefresh,
+  });
+
+  applyRuntimeInstanceFields(model, instance);
+  syncAllMatrixQuestionVisualErrors(model);
+
+  const afterData = model.data && typeof model.data === "object" ? { ...model.data } : {};
+  const changed = !deepEqual(beforeData, afterData);
+
+  return {
+    ok: true,
+    changed,
+    data: afterData,
+    prefillPayload: effectivePrefillPayload,
+    lastAppliedMap: nextApplied,
+  };
+}
+
+export async function buildRuntimeModelFromSurvey({
+  surveyJson,
+  answersObj = {},
+  prefillPayload = null,
+  instance = null,
+  onDirtyChange,
+  canEditRef,
+  suppressDirtyRef,
+  lastAppliedMap = {},
+}) {
+  const preparedRes = buildPreparedSurveyJson(surveyJson);
+  if (!preparedRes.ok) {
+    return { ok: false, error: preparedRes.error };
+  }
+
+  const preparedSurveyJson = preparedRes.preparedSurveyJson;
+  const effectivePrefillPayload = normalizeRuntimePrefillPayload(prefillPayload);
+
+  const enrichedSurveyJson = injectChoicesIntoSurveyJson(
+    preparedSurveyJson,
+    effectivePrefillPayload
+  );
+
+  const model = createRuntimeSurveyModel(enrichedSurveyJson, {
+    onDirtyChange,
+    canEditRef,
+    suppressDirtyRef,
+  });
+
+  applyChoices(model, effectivePrefillPayload, ItemValue);
+
+  const nextApplied = applyBindings({
+    model,
+    prefillPayload: effectivePrefillPayload,
+    lastAppliedMap,
+    onlyRefreshable: false,
+    isRefresh: false,
+  });
+
+  const mergedData = buildRuntimeMergedData({
+    model,
+    answersObj,
+    instance,
+  });
+
+  setRuntimeSurveyData(model, mergedData, suppressDirtyRef);
+  applyRuntimeInstanceFields(model, instance);
+
+  return {
+    ok: true,
+    model,
+    preparedSurveyJson,
+    enrichedSurveyJson,
+    prefillPayload: effectivePrefillPayload,
+    lastAppliedMap: nextApplied,
+  };
 }
 
 export async function buildRuntimeModelFromInstance({
@@ -147,46 +271,18 @@ export async function buildRuntimeModelFromInstance({
     preparedSurveyJson,
   });
 
-  const enrichedSurveyJson = injectChoicesIntoSurveyJson(preparedSurveyJson, prefillPayload);
+  const answersObj = getAnswersObject(instance) || {};
 
-  const model = createRuntimeSurveyModel(enrichedSurveyJson, {
+  return buildRuntimeModelFromSurvey({
+    surveyJson: instance?.survey_json,
+    answersObj,
+    prefillPayload,
+    instance,
     onDirtyChange,
     canEditRef,
     suppressDirtyRef,
-  });
-
-  applyChoices(model, prefillPayload, ItemValue);
-
-  const nextApplied = applyBindings({
-    model,
-    prefillPayload,
     lastAppliedMap,
-    onlyRefreshable: false,
-    isRefresh: false,
   });
-
-  const answersObj = getAnswersObject(instance) || {};
-  const mergedData = {
-    ...(model.data || {}),
-    ...(answersObj || {}),
-  };
-
-  const documentnummer = getInstanceDocumentNumber(instance);
-  if (documentnummer !== null) {
-    mergedData.documentnummer = documentnummer;
-  }
-
-  setRuntimeSurveyData(model, mergedData, suppressDirtyRef);
-  applyRuntimeInstanceFields(model, instance);
-
-  return {
-    ok: true,
-    model,
-    preparedSurveyJson,
-    enrichedSurveyJson,
-    prefillPayload,
-    lastAppliedMap: nextApplied,
-  };
 }
 
 export async function refreshRuntimePrefill({
@@ -213,29 +309,12 @@ export async function refreshRuntimePrefill({
     preparedSurveyJson,
   });
 
-  const beforeData = model.data && typeof model.data === "object" ? { ...model.data } : {};
-
-  applyChoices(model, prefillPayload, ItemValue);
-
-  const nextApplied = applyBindings({
+  return applyRuntimePrefillToModel({
     model,
     prefillPayload,
     lastAppliedMap,
     onlyRefreshable: true,
     isRefresh: true,
+    instance,
   });
-
-  applyRuntimeInstanceFields(model, instance);
-  syncAllMatrixQuestionVisualErrors(model);
-
-  const afterData = model.data && typeof model.data === "object" ? { ...model.data } : {};
-  const changed = !deepEqual(beforeData, afterData);
-
-  return {
-    ok: true,
-    changed,
-    data: afterData,
-    prefillPayload,
-    lastAppliedMap: nextApplied,
-  };
 }

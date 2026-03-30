@@ -1,9 +1,7 @@
-// src/pages/dev/FormDesigner.jsx
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLocation } from "react-router-dom";
 
 import { Survey } from "survey-react-ui";
-import { ItemValue, Model } from "survey-core";
 import "survey-core/survey-core.min.css";
 import "survey-core/i18n/dutch";
 
@@ -43,31 +41,23 @@ import {
 } from "@/pages/Forms/shared/navigation.jsx";
 
 import {
-  stripHandledMatrixValidatorsFromSurveyJson,
-  injectChoicesIntoSurveyJson,
   collectEmberMeta,
-  applyBindings,
   collectRequestedPrefillKeys,
-  applyChoices,
 } from "@/pages/Forms/shared/prefill.jsx";
-
-import {
-  toNumberOrNull,
-  formatMaybeNumber,
-  computeEffectiveAh,
-  computeRequiredAh,
-  buildBrandTypeMap,
-  valuesEqualLoose,
-  computeHoursBetween,
-  computeMeldurenNietBeschikbaar,
-  sumAvailabilityMelduren,
-  sumAantalMeldersFromPerformanceRows,
-  computeGeconstateerdeSysteembeschikbaarheid,
-} from "@/pages/Forms/shared/calculations.jsx";
 
 import {
   registerEmberSurveyFunctions,
 } from "@/pages/Forms/shared/modelBuilders.jsx";
+
+import {
+  buildRuntimeModelFromSurvey,
+  applyRuntimePrefillToModel,
+  emptyRuntimePrefillPayload,
+} from "@/pages/Forms/shared/runtimeBuilder.jsx";
+
+import {
+  attachRuntimeBehaviors,
+} from "@/pages/Forms/shared/runtimeBehaviors.jsx";
 
 function formatJsonText(text) {
   const parsed = safeJsonParse(text);
@@ -358,6 +348,39 @@ function readAdminFormDevBootstrap(locationState) {
   }
 }
 
+function normalizePrefillPayloadForDesigner(raw, installCode, formCode) {
+  if (!raw) {
+    return {
+      ...emptyRuntimePrefillPayload(),
+      meta: {
+        installCode: String(installCode || "").trim(),
+        formCode: String(formCode || "DEV"),
+        requestedKeyCount: 0,
+        loadedAt: new Date().toISOString(),
+      },
+    };
+  }
+
+  const prefill = raw?.prefill || raw;
+  const warnings = Array.isArray(raw?.warnings) ? raw.warnings : [];
+
+  return {
+    ok: Boolean(raw?.ok ?? true),
+    prefill: {
+      values: prefill?.values || {},
+      choices: prefill?.choices || {},
+    },
+    warnings,
+    meta: {
+      installCode: String(installCode || "").trim(),
+      formCode: String(formCode || "DEV"),
+      requestedKeyCount: 0,
+      loadedAt: new Date().toISOString(),
+    },
+    _raw: raw,
+  };
+}
+
 export default function FormDesigner() {
   registerEmberSurveyFunctions();
 
@@ -383,8 +406,9 @@ export default function FormDesigner() {
 
   const [answersPreview, setAnswersPreview] = useState({});
   const answersRef = useRef({});
-  const autoApplyAfterLoadRef = useRef(false);
-  const settingAnswersProgrammaticallyRef = useRef(false);
+  const suppressDirtyRef = useRef(false);
+  const canEditRef = useRef(true);
+  const validationActivatedRef = useRef(false);
 
   const [showPreview, setShowPreview] = useState(true);
   const [showEditor, setShowEditor] = useState(() => {
@@ -403,6 +427,7 @@ export default function FormDesigner() {
   const [backendCode, setBackendCode] = useState("");
   const [backendInstanceId, setBackendInstanceId] = useState("");
   const [backendBusy, setBackendBusy] = useState(false);
+  const [backendInstance, setBackendInstance] = useState(null);
 
   const [installCode, setInstallCode] = useState("");
   const [prefillFormCode, setPrefillFormCode] = useState(() => {
@@ -421,6 +446,9 @@ export default function FormDesigner() {
   const [prefillPayload, setPrefillPayload] = useState(null);
   const [lastAppliedMap, setLastAppliedMap] = useState({});
 
+  const [runtimeModel, setRuntimeModel] = useState(null);
+  const runtimeDetachRef = useRef(null);
+
   const [editorScrollTop, setEditorScrollTop] = useState(0);
   const [lineHeightPx, setLineHeightPx] = useState(17);
 
@@ -437,14 +465,12 @@ export default function FormDesigner() {
   const [validationActivated, setValidationActivated] = useState(false);
   const [validationListOpen, setValidationListOpen] = useState(true);
 
-  const [forcedPageNo, setForcedPageNo] = useState(0);
   const [currentPageIndex, setCurrentPageIndex] = useState(0);
   const [bookmarksOpen, setBookmarksOpen] = useState(false);
-  const [surveyRenderTick, setSurveyRenderTick] = useState(0);
+
   const [openCards, setOpenCards] = useState(readOpenCardsFromStorage);
 
   const fileInputRef = useRef(null);
-  const modelRef = useRef(null);
   const editorRef = useRef(null);
   const surveyHostRef = useRef(null);
 
@@ -452,7 +478,6 @@ export default function FormDesigner() {
   const highlightTimerRef = useRef(null);
   const validationCollapseAnimTimerRef = useRef(null);
 
-  const validationRefreshRafRef = useRef(0);
   const pendingNavigationRef = useRef(null);
   const navigationAttemptRef = useRef(0);
   const renderedQuestionElementsRef = useRef(new Map());
@@ -481,9 +506,9 @@ export default function FormDesigner() {
   const availabilityAutoStateRef = useRef({});
 
   const followUpMeta = useMemo(() => {
-    const { followUps } = collectEmberMeta(modelRef.current);
+    const { followUps } = collectEmberMeta(runtimeModel);
     return followUps;
-  }, [previewJson]);
+  }, [runtimeModel]);
 
   const unknownKeys = useMemo(() => {
     const ws = Array.isArray(prefillPayload?.warnings) ? prefillPayload.warnings : [];
@@ -534,6 +559,81 @@ export default function FormDesigner() {
     ? ChevronsDownUpIcon
     : ChevronsUpDownIcon;
 
+  const rebuildRuntimeModel = useCallback(async ({
+    nextSurveyJson = previewJson,
+    nextAnswers = answersRef.current,
+    nextPrefillPayload = prefillPayload,
+    nextInstance = backendInstance,
+  } = {}) => {
+    if (!nextSurveyJson) {
+      setRuntimeModel(null);
+      return;
+    }
+
+    if (runtimeDetachRef.current) {
+      runtimeDetachRef.current();
+      runtimeDetachRef.current = null;
+    }
+
+    renderedQuestionElementsRef.current = new Map();
+
+    const buildRes = await buildRuntimeModelFromSurvey({
+      surveyJson: nextSurveyJson,
+      answersObj: nextAnswers || {},
+      prefillPayload: nextPrefillPayload,
+      instance: nextInstance,
+      onDirtyChange: () => {},
+      canEditRef,
+      suppressDirtyRef,
+      lastAppliedMap,
+    });
+
+    if (!buildRes.ok) {
+      setRuntimeModel(null);
+      setPreviewError(buildRes.error || "Runtime model kon niet worden opgebouwd.");
+      return;
+    }
+
+    const model = buildRes.model;
+    setRuntimeModel(model);
+    setLastAppliedMap(buildRes.lastAppliedMap || {});
+    setAnswersPreview({ ...(model.data || {}) });
+
+    const afterRenderDesignerHandler = (_, options) => {
+      const qname = String(options?.question?.name || "").trim();
+      const el = options?.htmlElement || null;
+
+      if (qname && el) {
+        renderedQuestionElementsRef.current.set(qname, el);
+      }
+    };
+
+    model.onAfterRenderQuestion.add(afterRenderDesignerHandler);
+
+    runtimeDetachRef.current = (() => {
+      const detachRuntime = attachRuntimeBehaviors({
+        model,
+        prefillPayload: nextPrefillPayload,
+        energyAutoStateRef,
+        availabilityAutoStateRef,
+        validationActivatedRef,
+        suppressDirtyRef,
+        onAnswersSnapshotChange: (next) => {
+          answersRef.current = next && typeof next === "object" ? next : {};
+          setAnswersPreview(answersRef.current);
+        },
+        onValidationSummaryChange: setValidationSummary,
+      });
+
+      return () => {
+        detachRuntime?.();
+        model.onAfterRenderQuestion.remove(afterRenderDesignerHandler);
+      };
+    })();
+
+    setPreviewError(null);
+  }, [previewJson, prefillPayload, backendInstance, lastAppliedMap]);
+
   function animateIcon(key) {
     toggleIconRef.current[key]?.startAnimation?.();
   }
@@ -573,13 +673,12 @@ export default function FormDesigner() {
     setBackendSubmitPreview(null);
     setValidationSummary([]);
     setValidationActivated(false);
+    validationActivatedRef.current = false;
     setValidationListOpen(true);
     setCurrentPageIndex(0);
     setBookmarksOpen(false);
-  }
-
-  function buildPreparedSurveyObject(surveyObj) {
-    return stripHandledMatrixValidatorsFromSurveyJson(surveyObj);
+    pendingNavigationRef.current = null;
+    navigationAttemptRef.current = 0;
   }
 
   function tryScrollToPendingDesignerQuestion() {
@@ -676,7 +775,7 @@ export default function FormDesigner() {
     }, 720);
   }
 
-  function buildPreviewFromEditor() {
+  async function buildPreviewFromEditor() {
     const parsed = safeJsonParse(editorText);
     if (!parsed.ok) {
       setPreviewError(parsed.error);
@@ -688,12 +787,21 @@ export default function FormDesigner() {
       return;
     }
 
+    const nextPreviewJson = parsed.value;
+
     setPreviewError(null);
-    setForcedPageNo(0);
-    setCurrentPageIndex(0);
-    setPreviewJson(buildPreparedSurveyObject(parsed.value));
+    setBackendInstance(null);
+    setPreviewJson(nextPreviewJson);
     setShowPreview(true);
+    setLastAppliedMap({});
     resetPreviewSideStates();
+
+    await rebuildRuntimeModel({
+      nextSurveyJson: nextPreviewJson,
+      nextAnswers: answersRef.current,
+      nextPrefillPayload: prefillPayload,
+      nextInstance: null,
+    });
   }
 
   useEffect(() => {
@@ -707,15 +815,14 @@ export default function FormDesigner() {
     setBackendBusy(false);
     setShowEditor(true);
     setShowPreview(true);
-    setForcedPageNo(0);
-    setCurrentPageIndex(0);
-    resetPreviewSideStates();
 
     if (adminBootstrap?.form_code) {
       setPrefillFormCode(String(adminBootstrap.form_code));
     }
 
-    buildPreviewFromEditor();
+    setTimeout(() => {
+      buildPreviewFromEditor();
+    }, 0);
 
     setNotice(
       {
@@ -724,7 +831,7 @@ export default function FormDesigner() {
       },
       { autoClearMs: 1800 }
     );
-  }, [adminBootstrap]);
+  }, [adminBootstrap, editorText]);
 
   async function loadPreviewFromBackend() {
     if (!backendCode || !backendInstanceId) {
@@ -751,18 +858,23 @@ export default function FormDesigner() {
         setPreviewError("Backend instance heeft geen geldige survey_json.");
         setPreviewJson(null);
         setAnswers({});
+        setRuntimeModel(null);
         return;
       }
 
-      settingAnswersProgrammaticallyRef.current = true;
+      setBackendInstance(inst || null);
       setAnswers(answersObj && typeof answersObj === "object" ? answersObj : {});
-      settingAnswersProgrammaticallyRef.current = false;
-
-      setForcedPageNo(0);
-      setCurrentPageIndex(0);
-      setPreviewJson(buildPreparedSurveyObject(surveyObj));
+      setPreviewJson(surveyObj);
       setShowPreview(true);
+      setLastAppliedMap({});
       resetPreviewSideStates();
+
+      await rebuildRuntimeModel({
+        nextSurveyJson: surveyObj,
+        nextAnswers: answersObj && typeof answersObj === "object" ? answersObj : {},
+        nextPrefillPayload: prefillPayload,
+        nextInstance: inst || null,
+      });
     } catch (e) {
       setPreviewError(String(e?.message || e || "Backend load faalde."));
     } finally {
@@ -776,7 +888,7 @@ export default function FormDesigner() {
       return;
     }
 
-    if (!modelRef.current) {
+    if (!runtimeModel) {
       setPreviewError("Geen preview model geladen; klik eerst 'Preview uit editor'.");
       return;
     }
@@ -785,13 +897,11 @@ export default function FormDesigner() {
     setPreviewError(null);
 
     try {
-      const keys = collectRequestedPrefillKeys(modelRef.current);
+      const keys = collectRequestedPrefillKeys(runtimeModel);
 
       if (keys.length === 0) {
-        setPrefillPayload({
-          ok: true,
-          values: {},
-          choices: {},
+        const emptyPayload = {
+          ...emptyRuntimePrefillPayload(),
           warnings: [
             {
               type: "no_keys",
@@ -804,7 +914,17 @@ export default function FormDesigner() {
             requestedKeyCount: 0,
             loadedAt: new Date().toISOString(),
           },
+        };
+
+        setPrefillPayload(emptyPayload);
+
+        await rebuildRuntimeModel({
+          nextSurveyJson: previewJson,
+          nextAnswers: answersRef.current,
+          nextPrefillPayload: emptyPayload,
+          nextInstance: backendInstance,
         });
+
         return;
       }
 
@@ -814,33 +934,27 @@ export default function FormDesigner() {
         keys
       );
 
-      const prefill = res?.prefill || {};
-      const warnings = Array.isArray(res?.warnings) ? res.warnings : [];
+      const payload = normalizePrefillPayloadForDesigner(
+        res,
+        installCode,
+        prefillFormCode
+      );
 
-      const payload = {
-        ok: Boolean(res?.ok ?? true),
-        values: prefill?.values || {},
-        choices: prefill?.choices || {},
-        warnings,
-        meta: {
-          installCode: String(installCode).trim(),
-          formCode: String(prefillFormCode || "DEV"),
-          requestedKeyCount: keys.length,
-          loadedAt: new Date().toISOString(),
-        },
-        _raw: res,
-      };
+      payload.meta.requestedKeyCount = keys.length;
 
-      autoApplyAfterLoadRef.current = true;
       setPrefillPayload(payload);
 
-      if (previewJson && payload?.choices) {
-        const nextSurvey = injectChoicesIntoSurveyJson(previewJson, payload);
-        setPreviewJson(nextSurvey);
-      }
+      await rebuildRuntimeModel({
+        nextSurveyJson: previewJson,
+        nextAnswers: answersRef.current,
+        nextPrefillPayload: payload,
+        nextInstance: backendInstance,
+      });
 
       setValidationSummary([]);
-      setBackendSubmitPreview(null);
+      setValidationActivated(false);
+      validationActivatedRef.current = false;
+      setValidationListOpen(true);
     } catch (e) {
       setPreviewError(String(e?.message || e || "Prefill load faalde."));
     } finally {
@@ -848,41 +962,38 @@ export default function FormDesigner() {
     }
   }
 
-  function applyPrefill({ onlyRefreshable, payloadOverride } = {}) {
-    const payload = payloadOverride || prefillPayload;
-
-    if (!modelRef.current) {
+  function applyPrefill({ onlyRefreshable } = {}) {
+    if (!runtimeModel) {
       setPreviewError("Geen preview model geladen.");
       return;
     }
 
-    if (!payload) {
+    if (!prefillPayload) {
       setPreviewError("Geen prefill payload geladen.");
       return;
     }
 
     setPreviewError(null);
 
-    applyChoices(modelRef.current, payload, ItemValue);
-
-    const nextApplied = applyBindings({
-      model: modelRef.current,
-      prefillPayload: payload,
+    const result = applyRuntimePrefillToModel({
+      model: runtimeModel,
+      prefillPayload,
       lastAppliedMap,
-      onlyRefreshable,
+      onlyRefreshable: Boolean(onlyRefreshable),
       isRefresh: Boolean(onlyRefreshable),
+      instance: backendInstance,
     });
 
-    setLastAppliedMap(nextApplied);
+    if (!result.ok) {
+      setPreviewError(result.error || "Prefill toepassen mislukt.");
+      return;
+    }
 
-    const nextAnswers = { ...(modelRef.current.data || {}) };
-    settingAnswersProgrammaticallyRef.current = true;
-    answersRef.current = nextAnswers;
-    setAnswersPreview(nextAnswers);
-    settingAnswersProgrammaticallyRef.current = false;
-
+    setLastAppliedMap(result.lastAppliedMap || {});
+    setAnswers(result.data || {});
     setValidationSummary([]);
     setValidationActivated(false);
+    validationActivatedRef.current = false;
     setValidationListOpen(true);
   }
 
@@ -911,42 +1022,8 @@ export default function FormDesigner() {
     return collectValidationSummary(model);
   }
 
-  function refreshValidationSummaryLive(nextModel = modelRef.current) {
-    const model = nextModel;
-    if (!model) return;
-    if (!validationActivated) return;
-    if (settingAnswersProgrammaticallyRef.current) return;
-
-    try {
-      const summary = runValidationSync(model);
-      setValidationSummary(summary);
-
-      if (summary.length === 0) {
-        setEditorNotice((prev) => {
-          if (prev?.kind === "error") return null;
-          return prev;
-        });
-      }
-    } catch {
-      // stil
-    }
-  }
-
-  function forceVisibleValidationState(nextModel = modelRef.current) {
-    const model = nextModel;
-    if (!model) return;
-
-    try {
-      setValidationActivated(true);
-      const summary = runValidationSync(model);
-      setValidationSummary(summary);
-    } catch {
-      // stil
-    }
-  }
-
   function runLocalValidationPreview() {
-    if (!modelRef.current) {
+    if (!runtimeModel) {
       setPreviewError("Geen preview model geladen.");
       return false;
     }
@@ -955,8 +1032,9 @@ export default function FormDesigner() {
 
     try {
       setValidationActivated(true);
+      validationActivatedRef.current = true;
 
-      const summary = runValidationSync(modelRef.current);
+      const summary = runValidationSync(runtimeModel);
       const isValid = summary.length === 0;
 
       setValidationSummary(summary);
@@ -983,54 +1061,37 @@ export default function FormDesigner() {
   }
 
   function openValidationItem(item) {
-    const model = modelRef.current;
+    const model = runtimeModel;
     if (!model || !item) return;
 
-    const targetPageIndex = Number(item.pageIndex);
-    if (!Number.isFinite(targetPageIndex) || targetPageIndex < 0) return;
+    const targetPage = Array.isArray(model.visiblePages) ? model.visiblePages[item.pageIndex] : null;
+    if (targetPage) {
+      model.currentPage = targetPage;
+      setCurrentPageIndex(item.pageIndex);
+      setBookmarksOpen(false);
+    }
 
     pendingNavigationRef.current = {
       questionName: item.questionName,
-      pageIndex: targetPageIndex,
+      pageIndex: item.pageIndex,
     };
     navigationAttemptRef.current = 0;
-    renderedQuestionElementsRef.current = new Map();
-    setBookmarksOpen(false);
 
-    if (forcedPageNo === targetPageIndex) {
-      setCurrentPageIndex(targetPageIndex);
-      forceVisibleValidationState(model);
-      setSurveyRenderTick((v) => v + 1);
-      return;
-    }
-
-    setValidationActivated(true);
-    setForcedPageNo(targetPageIndex);
-    setCurrentPageIndex(targetPageIndex);
-    setSurveyRenderTick((v) => v + 1);
+    requestAnimationFrame(() => {
+      tryScrollToPendingDesignerQuestion();
+    });
   }
 
   function goToPageIndex(pageIndex) {
-    const model = modelRef.current;
-    if (!model) return;
+    const model = runtimeModel;
+    const pages = Array.isArray(model?.visiblePages) ? model.visiblePages : [];
+    const targetPage = pages[pageIndex] || null;
 
-    const pages = Array.isArray(model.visiblePages) ? model.visiblePages : [];
-    const maxPageIndex = Math.max(0, pages.length - 1);
-    const nextPageIndex = clamp(Number(pageIndex) || 0, 0, maxPageIndex);
+    if (!model || !targetPage) return;
 
-    pendingNavigationRef.current = null;
-    navigationAttemptRef.current = 0;
+    model.currentPage = targetPage;
+    setCurrentPageIndex(pageIndex);
     setBookmarksOpen(false);
-
-    if (model.currentPageNo === nextPageIndex) {
-      setCurrentPageIndex(nextPageIndex);
-      return;
-    }
-
-    model.currentPageNo = nextPageIndex;
-    setForcedPageNo(nextPageIndex);
-    setCurrentPageIndex(nextPageIndex);
-    setSurveyRenderTick((v) => v + 1);
   }
 
   async function runBackendSubmitPreview() {
@@ -1044,7 +1105,7 @@ export default function FormDesigner() {
       return;
     }
 
-    if (!modelRef.current) {
+    if (!runtimeModel) {
       setPreviewError("Geen preview model geladen.");
       return;
     }
@@ -1092,7 +1153,9 @@ export default function FormDesigner() {
     reader.onload = () => {
       const txt = String(reader.result || "");
       setEditorText(txt);
-      setTimeout(() => buildPreviewFromEditor(), 0);
+      setTimeout(() => {
+        buildPreviewFromEditor();
+      }, 0);
     };
     reader.readAsText(file);
 
@@ -1352,6 +1415,10 @@ export default function FormDesigner() {
   }, [validationSummary]);
 
   useEffect(() => {
+    validationActivatedRef.current = validationActivated;
+  }, [validationActivated]);
+
+  useEffect(() => {
     function onMouseMove(e) {
       if (draggingRef.current) {
         const dx = e.clientX - dragStartXRef.current;
@@ -1415,347 +1482,8 @@ export default function FormDesigner() {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [hasValidationItems]);
 
-  const model = useMemo(() => {
-    if (!previewJson) return null;
-
-    const m = new Model(previewJson);
-    m.showTOC = false;
-
-    energyAutoStateRef.current = {};
-    availabilityAutoStateRef.current = {};
-    renderedQuestionElementsRef.current = new Map();
-
-    if (Number.isFinite(forcedPageNo) && forcedPageNo >= 0) {
-      const pageCount = Array.isArray(m.visiblePages) ? m.visiblePages.length : 0;
-      if (pageCount > 0) {
-        m.currentPageNo = Math.min(forcedPageNo, pageCount - 1);
-      }
-    }
-
-    const seed =
-      answersRef.current && typeof answersRef.current === "object"
-        ? answersRef.current
-        : {};
-
-    m.data = { ...(m.data || {}), ...seed };
-
-    function applyCapWarnings() {
-      const matrixRoot = document.querySelector('[data-name="es_regels"]');
-      if (!matrixRoot) return;
-
-      const rows = Array.isArray(m.getValue("es_regels")) ? m.getValue("es_regels") : [];
-      const trList = matrixRoot.querySelectorAll("tbody tr");
-
-      trList.forEach((tr, rowIndex) => {
-        const row = rows[rowIndex];
-        if (!row || typeof row !== "object") return;
-
-        const aanwezige = toNumberOrNull(row.es_effectieve_ah);
-        const benodigd = toNumberOrNull(row.es_benodigd_ah);
-        const shouldWarn =
-          aanwezige !== null &&
-          benodigd !== null &&
-          aanwezige < benodigd;
-
-        const cells = tr.querySelectorAll("td");
-        const aanwezigeCell = cells[5];
-        const benodigdCell = cells[8];
-
-        if (aanwezigeCell) aanwezigeCell.classList.toggle("ember-cap-too-low", shouldWarn);
-        if (benodigdCell) benodigdCell.classList.toggle("ember-cap-too-low", shouldWarn);
-      });
-    }
-
-    function applyAvailabilityWarnings() {
-      const geconstateerd = toNumberOrNull(m.getValue("a2_systeembeschikbaarheid_geconstateerd"));
-      const pve = toNumberOrNull(m.getValue("a2_systeembeschikbaarheid_pve"));
-
-      const shouldWarn =
-        geconstateerd !== null &&
-        pve !== null &&
-        geconstateerd < pve;
-
-      const input = document.querySelector(
-        '[data-name="a2_systeembeschikbaarheid_geconstateerd"] input, [data-name="a2_systeembeschikbaarheid_geconstateerd"] textarea'
-      );
-
-      if (input) {
-        input.style.color = shouldWarn ? "red" : "";
-        input.style.borderColor = shouldWarn ? "red" : "";
-        input.style.boxShadow = shouldWarn ? "0 0 0 1px red inset" : "";
-      }
-    }
-
-    function normalizeAvailabilityRows() {
-      const rows = Array.isArray(m.getValue("a2_buitenbedrijfstellingen"))
-        ? m.getValue("a2_buitenbedrijfstellingen")
-        : [];
-
-      const perfRows = Array.isArray(m.getValue("performance_data_view"))
-        ? m.getValue("performance_data_view")
-        : [];
-
-      let changed = false;
-
-      const nextRows = rows.map((r, rowIndex) => {
-        const row = r && typeof r === "object" ? { ...r } : {};
-        const stateKey = String(rowIndex);
-
-        const prevState = availabilityAutoStateRef.current[stateKey] || {};
-        availabilityAutoStateRef.current[stateKey] = { ...prevState };
-
-        const urenPerDag = formatMaybeNumber(
-          computeHoursBetween(row.tijd_begin, row.tijd_einde),
-          3
-        );
-
-        if (!valuesEqualLoose(row.uren_pd_niet_beschikbaar, urenPerDag)) {
-          row.uren_pd_niet_beschikbaar = urenPerDag;
-          changed = true;
-        }
-
-        const meldurenNietBeschikbaar = formatMaybeNumber(
-          computeMeldurenNietBeschikbaar(
-            row.uren_pd_niet_beschikbaar,
-            row.melders_niet_beschikbaar,
-            row.tijdsduur_dagen
-          ),
-          3
-        );
-
-        if (!valuesEqualLoose(row.melduren_niet_beschikbaar, meldurenNietBeschikbaar)) {
-          row.melduren_niet_beschikbaar = meldurenNietBeschikbaar;
-          changed = true;
-        }
-
-        return row;
-      });
-
-      const totaalMeldurenBuitenWerking = sumAvailabilityMelduren(nextRows);
-      const totaalAantalMelders = sumAantalMeldersFromPerformanceRows(perfRows);
-      const geconstateerd = computeGeconstateerdeSysteembeschikbaarheid(
-        totaalAantalMelders,
-        totaalMeldurenBuitenWerking
-      );
-
-      if (changed) {
-        m.setValue("a2_buitenbedrijfstellingen", nextRows);
-        return;
-      }
-
-      if (!valuesEqualLoose(m.getValue("a2_melduren_buiten_werking"), totaalMeldurenBuitenWerking)) {
-        m.setValue("a2_melduren_buiten_werking", totaalMeldurenBuitenWerking);
-      }
-
-      if (!valuesEqualLoose(m.getValue("a2_aantal_melders"), totaalAantalMelders)) {
-        m.setValue("a2_aantal_melders", totaalAantalMelders);
-      }
-
-      if (!valuesEqualLoose(m.getValue("a2_systeembeschikbaarheid_geconstateerd"), geconstateerd)) {
-        m.setValue("a2_systeembeschikbaarheid_geconstateerd", geconstateerd);
-      }
-
-      const a2Rows = Array.isArray(m.getValue("a2_items")) ? m.getValue("a2_items") : [];
-      if (a2Rows.length > 0) {
-        const nextA2Rows = a2Rows.map((row, idx) => {
-          if (idx !== 0) return row;
-          const rr = row && typeof row === "object" ? { ...row } : {};
-          rr.eis = "NEN 2535:1996 & 2009 §4.4";
-          return rr;
-        });
-
-        if (JSON.stringify(nextA2Rows) !== JSON.stringify(a2Rows)) {
-          m.setValue("a2_items", nextA2Rows);
-        }
-      }
-
-      requestAnimationFrame(() => {
-        applyAvailabilityWarnings();
-      });
-    }
-
-    function normalizeEnergyRows() {
-      const rows = Array.isArray(m.getValue("es_regels")) ? m.getValue("es_regels") : [];
-      if (!rows.length) return;
-
-      const agingFactor = m.getValue("es_verouderingsfactor");
-      const brandTypeMap = buildBrandTypeMap(prefillPayload);
-      let changed = false;
-
-      const nextRows = rows.map((r, rowIndex) => {
-        const row = r && typeof r === "object" ? { ...r } : {};
-        const stateKey = String(rowIndex);
-
-        const prevState = energyAutoStateRef.current[stateKey] || {
-          lastMerkType: null,
-          autoCapaciteitAh: null,
-          autoEffectieveAh: null,
-        };
-
-        const nextState = { ...prevState };
-
-        const merkType = row.es_merk_type ? String(row.es_merk_type) : "";
-        const brand = merkType ? brandTypeMap.get(merkType) : null;
-        const merkTypeChanged = prevState.lastMerkType !== merkType;
-
-        if (brand?.default_capacity_ah != null) {
-          const defaultCap = formatMaybeNumber(brand.default_capacity_ah, 3);
-          const currentCap = toNumberOrNull(row.es_capaciteit_ah);
-
-          if (merkTypeChanged || currentCap === null) {
-            if (!valuesEqualLoose(row.es_capaciteit_ah, defaultCap)) {
-              row.es_capaciteit_ah = defaultCap;
-              changed = true;
-            }
-            nextState.autoCapaciteitAh = defaultCap;
-          }
-        }
-
-        const computedEffectiveAh = formatMaybeNumber(
-          computeEffectiveAh(row.es_capaciteit_ah, row.es_aantal, row.es_schakeling),
-          3
-        );
-
-        const currentEffective = row.es_effectieve_ah;
-        const effectiveIsEmpty = toNumberOrNull(currentEffective) === null;
-        const effectiveStillAuto =
-          prevState.autoEffectieveAh != null &&
-          valuesEqualLoose(currentEffective, prevState.autoEffectieveAh);
-
-        if (effectiveIsEmpty || effectiveStillAuto || merkTypeChanged) {
-          if (!valuesEqualLoose(currentEffective, computedEffectiveAh)) {
-            row.es_effectieve_ah = computedEffectiveAh;
-            changed = true;
-          }
-          nextState.autoEffectieveAh = computedEffectiveAh;
-        }
-
-        const requiredAh = formatMaybeNumber(
-          computeRequiredAh(
-            row.es_ruststroom_ma,
-            row.es_alarmstroom_ma,
-            row.es_overbrugging_uren,
-            agingFactor
-          ),
-          3
-        );
-
-        if (!valuesEqualLoose(row.es_benodigd_ah, requiredAh)) {
-          row.es_benodigd_ah = requiredAh;
-          changed = true;
-        }
-
-        nextState.lastMerkType = merkType;
-        energyAutoStateRef.current[stateKey] = nextState;
-
-        return row;
-      });
-
-      if (changed) {
-        m.setValue("es_regels", nextRows);
-      } else {
-        requestAnimationFrame(() => applyCapWarnings());
-      }
-    }
-
-    const pendingRef = { current: null };
-    const rafRef = { current: 0 };
-    const normalizeRafRef = { current: 0 };
-
-    m.onAfterRenderQuestion.add((sender, options) => {
-      const qname = String(options?.question?.name || "").trim();
-      const el = options?.htmlElement || null;
-
-      if (qname && el) {
-        renderedQuestionElementsRef.current.set(qname, el);
-      }
-
-      if (options?.question?.getType?.() === "matrixdynamic") {
-        requestAnimationFrame(() => {
-          syncAllMatrixQuestionVisualErrors(m);
-        });
-      }
-
-      if (qname === "es_regels") {
-        requestAnimationFrame(() => applyCapWarnings());
-      }
-
-      if (
-        qname === "a2_buitenbedrijfstellingen" ||
-        qname === "a2_resultaat_panel" ||
-        qname === "a2_systeembeschikbaarheid_geconstateerd"
-      ) {
-        requestAnimationFrame(() => applyAvailabilityWarnings());
-      }
-    });
-
-    m.onValueChanged.add((sender, options) => {
-      const name = String(options?.name || "");
-      const next = { ...(m.data || {}) };
-      answersRef.current = next;
-
-      requestAnimationFrame(() => {
-        syncAllMatrixQuestionVisualErrors(m);
-      });
-
-      pendingRef.current = next;
-      if (!rafRef.current) {
-        rafRef.current = requestAnimationFrame(() => {
-          rafRef.current = 0;
-          const snap = pendingRef.current;
-          pendingRef.current = null;
-          if (snap) setAnswersPreview(snap);
-        });
-      }
-
-      const isEnergyRelevant =
-        name === "es_verouderingsfactor" ||
-        name.startsWith("es_regels");
-
-      const isAvailabilityRelevant =
-        name === "a2_systeembeschikbaarheid_pve" ||
-        name.startsWith("a2_buitenbedrijfstellingen") ||
-        name.startsWith("performance_data_view") ||
-        name.startsWith("a2_items");
-
-      if (isEnergyRelevant || isAvailabilityRelevant) {
-        if (normalizeRafRef.current) cancelAnimationFrame(normalizeRafRef.current);
-
-        normalizeRafRef.current = requestAnimationFrame(() => {
-          normalizeRafRef.current = 0;
-
-          if (isEnergyRelevant) normalizeEnergyRows();
-          if (isAvailabilityRelevant) normalizeAvailabilityRows();
-        });
-      }
-
-      if (validationRefreshRafRef.current) {
-        cancelAnimationFrame(validationRefreshRafRef.current);
-      }
-
-      validationRefreshRafRef.current = requestAnimationFrame(() => {
-        validationRefreshRafRef.current = 0;
-
-        if (!validationActivated) return;
-        if (settingAnswersProgrammaticallyRef.current) return;
-
-        refreshValidationSummaryLive(m);
-      });
-    });
-
-    requestAnimationFrame(() => {
-      normalizeEnergyRows();
-      applyCapWarnings();
-
-      normalizeAvailabilityRows();
-      applyAvailabilityWarnings();
-    });
-
-    modelRef.current = m;
-    return m;
-  }, [previewJson, prefillPayload, forcedPageNo, validationActivated]);
-
   useEffect(() => {
+    const model = runtimeModel;
     if (!model) return;
 
     const syncCurrentPage = () => {
@@ -1770,41 +1498,35 @@ export default function FormDesigner() {
     return () => {
       model.onCurrentPageChanged.remove(syncCurrentPage);
     };
-  }, [model, surveyRenderTick]);
+  }, [runtimeModel]);
 
   useEffect(() => {
     if (!showPreview) return;
     if (!pendingNavigationRef.current?.questionName) return;
-    if (!model) return;
+    if (!runtimeModel) return;
     if (!surveyHostRef.current) return;
 
     requestAnimationFrame(() => {
       requestAnimationFrame(() => {
-        forceVisibleValidationState(model);
-
         requestAnimationFrame(() => {
           tryScrollToPendingDesignerQuestion();
         });
       });
     });
-  }, [forcedPageNo, surveyRenderTick, showPreview, model]);
+  }, [runtimeModel, showPreview, currentPageIndex]);
 
   useEffect(() => {
     return () => {
-      if (validationRefreshRafRef.current) cancelAnimationFrame(validationRefreshRafRef.current);
+      if (runtimeDetachRef.current) {
+        runtimeDetachRef.current();
+        runtimeDetachRef.current = null;
+      }
+
       if (noticeTimerRef.current) clearTimeout(noticeTimerRef.current);
       if (highlightTimerRef.current) clearTimeout(highlightTimerRef.current);
       if (validationCollapseAnimTimerRef.current) clearTimeout(validationCollapseAnimTimerRef.current);
     };
   }, []);
-
-  useEffect(() => {
-    if (!prefillPayload || !autoApplyAfterLoadRef.current) return;
-    if (!modelRef.current) return;
-
-    autoApplyAfterLoadRef.current = false;
-    applyPrefill({ onlyRefreshable: false, payloadOverride: prefillPayload });
-  }, [prefillPayload, model]);
 
   return (
     <div style={{ display: "grid", gap: 12 }}>
@@ -1935,9 +1657,9 @@ export default function FormDesigner() {
           type="button"
           className="btn btn-secondary"
           onClick={loadPrefillFromBackend}
-          disabled={prefillBusy || !modelRef.current}
+          disabled={prefillBusy || !runtimeModel}
           title={
-            !modelRef.current
+            !runtimeModel
               ? "Klik eerst 'Preview uit editor' om de survey te laden."
               : "Haalt keys uit survey + doet backend call."
           }
@@ -1949,8 +1671,8 @@ export default function FormDesigner() {
           type="button"
           className="btn"
           onClick={() => applyPrefill({ onlyRefreshable: false })}
-          disabled={prefillBusy || !prefillPayload || !previewJson}
-          title="Past alle binds toe volgens mode"
+          disabled={prefillBusy || !prefillPayload || !runtimeModel}
+          title="Past alle binds toe volgens dezelfde runtime pipeline als FormRunner"
         >
           Apply prefill
         </button>
@@ -1959,7 +1681,7 @@ export default function FormDesigner() {
           type="button"
           className="btn btn-secondary"
           onClick={() => applyPrefill({ onlyRefreshable: true })}
-          disabled={prefillBusy || !prefillPayload || !previewJson}
+          disabled={prefillBusy || !prefillPayload || !runtimeModel}
           title="Refresh alleen velden met refreshable: true; zonder user wijzigingen te overschrijven"
         >
           Refresh (refreshable only)
@@ -1984,7 +1706,7 @@ export default function FormDesigner() {
           type="button"
           className="btn btn-secondary"
           onClick={runLocalValidationPreview}
-          disabled={!previewJson || !modelRef.current}
+          disabled={!previewJson || !runtimeModel}
           title="Controleert required fields en SurveyJS validators lokaal"
         >
           Check validatie (local)
@@ -1994,7 +1716,7 @@ export default function FormDesigner() {
           type="button"
           className="btn"
           onClick={runLocalFollowUpPreview}
-          disabled={!previewJson || !modelRef.current}
+          disabled={!previewJson || !runtimeModel}
           title="Evalueert ember.followUp lokaal op basis van de huidige preview + live answers"
         >
           Preview follow-ups (local)
@@ -2004,7 +1726,7 @@ export default function FormDesigner() {
           type="button"
           className="btn btn-secondary"
           onClick={runBackendSubmitPreview}
-          disabled={submitPreviewBusy || !backendCode || !backendInstanceId || !modelRef.current}
+          disabled={submitPreviewBusy || !backendCode || !backendInstanceId || !runtimeModel}
           title="Roept de echte backend submit-preview endpoint aan; maar pas na lokale validatie"
         >
           {submitPreviewBusy ? "Bezig..." : "Preview submit (backend)"}
@@ -2261,9 +1983,9 @@ export default function FormDesigner() {
         )}
 
         <div style={{ display: "grid", gap: 12 }}>
-          {showPreview && model && (
+          {showPreview && runtimeModel && (
             <FormPageNavigator
-              model={model}
+              model={runtimeModel}
               currentPageIndex={currentPageIndex}
               validationSummary={validationSummary}
               hasValidatedOnce={validationActivated}
@@ -2359,13 +2081,10 @@ export default function FormDesigner() {
               className="card"
               style={{ padding: 12, minHeight: 420 }}
             >
-              {!model ? (
+              {!runtimeModel ? (
                 <div className="muted">Geen preview geladen.</div>
               ) : (
-                <Survey
-                  key={`survey-preview-${surveyRenderTick}-${forcedPageNo}`}
-                  model={model}
-                />
+                <Survey model={runtimeModel} />
               )}
             </div>
           )}
