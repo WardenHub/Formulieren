@@ -9,8 +9,8 @@ import { LogoutIcon } from "@/components/ui/logout";
 
 import { HomeIcon } from "@/components/ui/home";
 import { SearchIcon } from "@/components/ui/search";
-import { FileTextIcon } from "@/components/ui/file-text";
 import { BrainIcon } from "@/components/ui/brain";
+import { MonitorCheckIcon } from "@/components/ui/monitor-check";
 
 export default function Layout() {
   const [navOpen, setNavOpen] = useState(false);
@@ -149,8 +149,8 @@ export default function Layout() {
             Installatiegegevens
           </AnimatedNavLink>
 
-          <AnimatedNavLink to="/formulieren" Icon={FileTextIcon}>
-            Formulieren
+          <AnimatedNavLink to="/monitor/formulieren" Icon={MonitorCheckIcon}>
+            Monitor
           </AnimatedNavLink>
 
           {roles.includes("admin") && (

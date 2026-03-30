@@ -183,6 +183,69 @@ export function getInstallationComponents(code) {
   return apiGet(`/installations/${encodeURIComponent(code)}/components`);
 }
 
+// forms monitor
+export async function getFormsMonitorList(params = {}) {
+  const qs = new URLSearchParams();
+
+  if (params.q && String(params.q).trim()) qs.set("q", String(params.q).trim());
+  if (params.status && String(params.status).trim()) qs.set("status", String(params.status).trim());
+  if (params.formCode && String(params.formCode).trim()) qs.set("formCode", String(params.formCode).trim());
+
+  if (params.mine !== undefined && params.mine !== null) {
+    qs.set("mine", params.mine ? "1" : "0");
+  }
+
+  if (params.includeWithdrawn !== undefined && params.includeWithdrawn !== null) {
+    qs.set("includeWithdrawn", params.includeWithdrawn ? "1" : "0");
+  }
+
+  if (params.onlyActionable !== undefined && params.onlyActionable !== null) {
+    qs.set("onlyActionable", params.onlyActionable ? "1" : "0");
+  }
+
+  if (params.take != null) qs.set("take", String(params.take));
+  if (params.skip != null) qs.set("skip", String(params.skip));
+
+  const suffix = qs.toString() ? `?${qs.toString()}` : "";
+  return apiGet(`/forms-monitor${suffix}`);
+}
+
+export function getFormsMonitorDetail(formInstanceId, options = {}) {
+  const qs = new URLSearchParams();
+
+  if (options.autoClaim !== undefined && options.autoClaim !== null) {
+    qs.set("autoClaim", options.autoClaim ? "1" : "0");
+  }
+
+  const suffix = qs.toString() ? `?${qs.toString()}` : "";
+  return apiGet(`/forms-monitor/${encodeURIComponent(formInstanceId)}${suffix}`);
+}
+
+export function getFormsMonitorFollowUps(formInstanceId) {
+  return apiGet(`/forms-monitor/${encodeURIComponent(formInstanceId)}/follow-ups`);
+}
+
+export function postFormsMonitorStatusAction(formInstanceId, action) {
+  return apiPost(
+    `/forms-monitor/${encodeURIComponent(formInstanceId)}/status-action`,
+    { action }
+  );
+}
+
+export function postFormsMonitorFollowUpStatusAction(followUpActionId, payload) {
+  return apiPost(
+    `/forms-monitor/follow-ups/${encodeURIComponent(followUpActionId)}/status-action`,
+    payload ?? {}
+  );
+}
+
+export function putFormsMonitorFollowUpNote(followUpActionId, payload) {
+  return apiPut(
+    `/forms-monitor/follow-ups/${encodeURIComponent(followUpActionId)}/note`,
+    payload ?? {}
+  );
+}
+
 // admin forms
 export function getAdminForms() {
   return apiGet("/admin/forms");
