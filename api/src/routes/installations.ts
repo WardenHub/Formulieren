@@ -1,3 +1,4 @@
+// api/src/routes/installations.ts
 import { Router } from "express";
 import {
   getInstallation,

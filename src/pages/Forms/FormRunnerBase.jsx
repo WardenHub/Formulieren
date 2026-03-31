@@ -1,3 +1,4 @@
+// src/pages/Forms/FormRunnerBase.jsx
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 
@@ -1385,7 +1386,6 @@ export default function FormRunnerBase({ mode }) {
                 {headerTitle}
                 {isDebug ? " (debug)" : ""}
               </div>
-
               <div
                 className="muted"
                 style={{
@@ -1398,9 +1398,29 @@ export default function FormRunnerBase({ mode }) {
               >
                 <span>installatie: {code}</span>
                 <span>status: {statusLbl}</span>
-                {formVersionLabel ? <span>versie: {formVersionLabel}</span> : null}
+
+                {formVersionLabel ? (
+                  <span style={{ display: "inline-flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                    <span>versie: {formVersionLabel}</span>
+                  </span>
+                ) : currentParentInstanceId ? (
+                  <span
+                    style={{
+                      fontSize: 12,
+                      padding: "2px 8px",
+                      borderRadius: 999,
+                      background: "rgba(255,255,255,0.06)",
+                      fontWeight: 700,
+                    }}
+                    title="Deze instantie is gekoppeld aan een bovenliggende formulierinstantie."
+                  >
+                    vervolg op #{currentParentInstanceId}
+                  </span>
+                ) : null}
+
                 {lastSavedAt ? <span>laatst opgeslagen: {formatNlDateTime(lastSavedAt)}</span> : null}
                 {hasUnsavedChanges ? <span>wijzigingen niet opgeslagen</span> : null}
+
                 {!canEditAnswers && !isDebug ? (
                   <span
                     style={{
@@ -1413,6 +1433,7 @@ export default function FormRunnerBase({ mode }) {
                     Klaar
                   </span>
                 ) : null}
+
                 {prefillRefreshOk ? (
                   <span
                     style={{
