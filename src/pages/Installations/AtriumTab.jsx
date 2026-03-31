@@ -112,7 +112,14 @@ const AtriumTab = forwardRef(function AtriumTab({ catalog, installation, isAdmin
     toggleIconRefs.current[sectionKey]?.stopAnimation?.();
   }
 
-  if (!catalog || !installation) return <p className="muted">laden; atriumdata</p>;
+  if (!catalog || !installation) {
+    return (
+      <TabLoadingCard
+        title="Atriumdata laden..."
+        label="Bezig met Atriumvelden en installatiegegevens ophalen."
+      />
+    );
+  }
 
   return (
     <div style={{ display: "grid", gap: 12 }}>
@@ -226,5 +233,48 @@ const AtriumTab = forwardRef(function AtriumTab({ catalog, installation, isAdmin
     </div>
   );
 });
+
+function TabLoadingCard({ title = "Laden...", label = "Bezig met gegevens laden." }) {
+  return (
+    <div
+      className="card"
+      style={{
+        minHeight: 180,
+        display: "grid",
+        placeItems: "center",
+      }}
+    >
+      <div
+        style={{
+          width: "100%",
+          maxWidth: 360,
+          padding: 24,
+          display: "grid",
+          gap: 10,
+          justifyItems: "center",
+          textAlign: "center",
+        }}
+      >
+        <div
+          style={{
+            width: 64,
+            height: 64,
+            borderRadius: 999,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            background: "rgba(255,255,255,0.08)",
+            boxShadow: "0 0 0 8px rgba(255,255,255,0.04)",
+          }}
+        >
+          <PlusIcon size={26} className="nav-anim-icon" />
+        </div>
+
+        <div style={{ fontWeight: 800, fontSize: 20 }}>{title}</div>
+        <div className="muted" style={{ fontSize: 13 }}>{label}</div>
+      </div>
+    </div>
+  );
+}
 
 export default AtriumTab;

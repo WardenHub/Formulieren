@@ -12,8 +12,66 @@ import { SearchIcon } from "@/components/ui/search";
 import { CircleHelpIcon } from "@/components/ui/circle-help";
 import { PlusIcon } from "@/components/ui/plus";
 import { ChevronUpIcon } from "@/components/ui/chevron-up";
+import { RefreshCWIcon } from "@/components/ui/refresh-cw";
 
 import { getInstallationComponents } from "../../api/emberApi.js";
+
+function SectionBusyOverlay({ iconRef, title, label }) {
+  return (
+    <div
+      style={{
+        position: "absolute",
+        inset: 0,
+        zIndex: 10,
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        background: "rgba(0, 0, 0, 0.14)",
+        backdropFilter: "blur(1px)",
+        borderRadius: 16,
+        pointerEvents: "auto",
+      }}
+    >
+      <div
+        className="card"
+        style={{
+          minWidth: 250,
+          maxWidth: 360,
+          padding: 18,
+          display: "grid",
+          gap: 8,
+          justifyItems: "center",
+          textAlign: "center",
+          border: "1px solid rgba(255,255,255,0.16)",
+          boxShadow: "0 14px 40px rgba(0,0,0,0.26)",
+        }}
+      >
+        <div
+          style={{
+            width: 58,
+            height: 58,
+            borderRadius: 999,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            background: "rgba(255,255,255,0.08)",
+            boxShadow: "0 0 0 6px rgba(255,255,255,0.04)",
+          }}
+        >
+          <RefreshCWIcon ref={iconRef} size={28} />
+        </div>
+
+        <div style={{ fontWeight: 800, fontSize: 18, lineHeight: 1.1 }}>
+          {title || "Laden..."}
+        </div>
+
+        <div className="muted" style={{ fontSize: 12 }}>
+          {label || "Bezig met gegevens ophalen."}
+        </div>
+      </div>
+    </div>
+  );
+}
 
 const ComponentsTab = forwardRef(function ComponentsTab({ code, onAnyOpenChange }, ref) {
   const [items, setItems] = useState([]);
@@ -24,6 +82,7 @@ const ComponentsTab = forwardRef(function ComponentsTab({ code, onAnyOpenChange 
 
   const searchIconRef = useRef(null);
   const helpIconRef = useRef(null);
+  const busyIconRef = useRef(null);
 
   const [helpOpen, setHelpOpen] = useState(false);
   const helpWrapRef = useRef(null);
@@ -134,6 +193,17 @@ const ComponentsTab = forwardRef(function ComponentsTab({ code, onAnyOpenChange 
       cancelled = true;
     };
   }, [code]);
+
+  useEffect(() => {
+    if (loading) busyIconRef.current?.startAnimation?.();
+    else busyIconRef.current?.stopAnimation?.();
+  }, [loading]);
+
+  useEffect(() => {
+    return () => {
+      busyIconRef.current?.stopAnimation?.();
+    };
+  }, []);
 
   useEffect(() => {
     const anyOpen = Object.values(openMap).some(Boolean);
@@ -283,221 +353,243 @@ const ComponentsTab = forwardRef(function ComponentsTab({ code, onAnyOpenChange 
         </div>
       </div>
 
-      {loading && <p className="muted">Laden…</p>}
       {error && <p style={{ color: "salmon" }}>{error}</p>}
 
       {!loading && !error && filtered.length === 0 && (
         <p className="muted">Geen componenten gevonden.</p>
       )}
 
-      <div style={{ display: "grid", gap: 10 }}>
-        {filtered.map((it) => {
-          const id = it?.component_id || it?.id || it?.componentId;
-          if (!id) return null;
+      <div
+        style={{
+          display: "grid",
+          gap: 10,
+          position: "relative",
+          minHeight: 160,
+        }}
+      >
+        {loading && (
+          <SectionBusyOverlay
+            iconRef={busyIconRef}
+            title="Componenten laden..."
+            label="Bezig met componentregels ophalen."
+          />
+        )}
 
-          const regelNr = it?.instcomp_regel_nr ?? "";
-          const nr =
-            regelNr !== "" && regelNr !== null && regelNr !== undefined ? String(regelNr) : "?";
+        <div
+          style={{
+            display: "grid",
+            gap: 10,
+            opacity: loading ? 0.55 : 1,
+            transition: "opacity 120ms ease",
+          }}
+        >
+          {filtered.map((it) => {
+            const id = it?.component_id || it?.id || it?.componentId;
+            if (!id) return null;
 
-          const qty = formatQty(it?.instcomp_aantal);
-          const qtyTxt = qty ? `${qty}×` : null;
+            const regelNr = it?.instcomp_regel_nr ?? "";
+            const nr =
+              regelNr !== "" && regelNr !== null && regelNr !== undefined ? String(regelNr) : "?";
 
-          const name =
-            normalizeStr(it?.instcomp_omschrijving) ||
-            normalizeStr(it?.artikel_omschrijving) ||
-            "Onbekend component";
+            const qty = formatQty(it?.instcomp_aantal);
+            const qtyTxt = qty ? `${qty}×` : null;
 
-          const regelType = normalizeStr(it?.instcomp_regel_type);
-          const t = regelType && typeInfo[regelType] ? typeInfo[regelType] : null;
+            const name =
+              normalizeStr(it?.instcomp_omschrijving) ||
+              normalizeStr(it?.artikel_omschrijving) ||
+              "Onbekend component";
 
-          const badgeLabel = t?.label || "Onbekend";
-          const badgeKey = t?.badgeKey || "m";
+            const regelType = normalizeStr(it?.instcomp_regel_type);
+            const t = regelType && typeInfo[regelType] ? typeInfo[regelType] : null;
 
-          const isOpen = Boolean(openMap[id]);
+            const badgeLabel = t?.label || "Onbekend";
+            const badgeKey = t?.badgeKey || "m";
 
-          const plaatsing = formatDate(it?.instcomp_datum_plaatsing);
-          const garantie = formatDate(it?.instcomp_datum_garantie);
+            const isOpen = Boolean(openMap[id]);
 
-          const artikel = [normalizeStr(it?.artikel_code), normalizeStr(it?.artikel_omschrijving)]
-            .filter(Boolean)
-            .join(" ; ");
-          const handart = [normalizeStr(it?.handart_code), normalizeStr(it?.handart_omschrijving)]
-            .filter(Boolean)
-            .join(" ; ");
-          const tarief = [normalizeStr(it?.tarief_code), normalizeStr(it?.tarief_omschrijving)]
-            .filter(Boolean)
-            .join(" ; ");
+            const plaatsing = formatDate(it?.instcomp_datum_plaatsing);
+            const garantie = formatDate(it?.instcomp_datum_garantie);
 
-          const metaLine = artikel ? `artikel ${artikel}` : tarief ? `tarief ${tarief}` : null;
+            const artikel = [normalizeStr(it?.artikel_code), normalizeStr(it?.artikel_omschrijving)]
+              .filter(Boolean)
+              .join(" ; ");
+            const handart = [normalizeStr(it?.handart_code), normalizeStr(it?.handart_omschrijving)]
+              .filter(Boolean)
+              .join(" ; ");
+            const tarief = [normalizeStr(it?.tarief_code), normalizeStr(it?.tarief_omschrijving)]
+              .filter(Boolean)
+              .join(" ; ");
 
-          const bronGcid = normalizeStr(it?.source_instcomp_gcid);
-          const geladenAt = formatDateTime(it?.data_loaded_at);
+            const metaLine = artikel ? `artikel ${artikel}` : tarief ? `tarief ${tarief}` : null;
 
-          return (
-            <div key={id} className="comp-row">
-              <button
-                type="button"
-                className="comp-head"
-                onClick={() => toggleOpen(id)}
-                onMouseEnter={() => toggleIconRefs.current[id]?.startAnimation?.()}
-                onMouseLeave={() => toggleIconRefs.current[id]?.stopAnimation?.()}
-                title={isOpen ? "inklappen" : "uitklappen"}
-              >
-                <div className="comp-head-left">
-                  <div className="comp-title-row">
-                    <span className="comp-pill comp-pill--nr">#{nr}</span>
-                    {qtyTxt ? <span className="comp-pill comp-pill--qty">{qtyTxt}</span> : null}
+            const bronGcid = normalizeStr(it?.source_instcomp_gcid);
+            const geladenAt = formatDateTime(it?.data_loaded_at);
 
-                    <div className="comp-title" title={name}>
-                      {name}
+            return (
+              <div key={id} className="comp-row">
+                <button
+                  type="button"
+                  className="comp-head"
+                  onClick={() => toggleOpen(id)}
+                  onMouseEnter={() => toggleIconRefs.current[id]?.startAnimation?.()}
+                  onMouseLeave={() => toggleIconRefs.current[id]?.stopAnimation?.()}
+                  title={isOpen ? "inklappen" : "uitklappen"}
+                >
+                  <div className="comp-head-left">
+                    <div className="comp-title-row">
+                      <span className="comp-pill comp-pill--nr">#{nr}</span>
+                      {qtyTxt ? <span className="comp-pill comp-pill--qty">{qtyTxt}</span> : null}
+
+                      <div className="comp-title" title={name}>
+                        {name}
+                      </div>
                     </div>
+
+                    {metaLine ? <div className="comp-meta">{metaLine}</div> : null}
                   </div>
 
-                  {metaLine ? <div className="comp-meta">{metaLine}</div> : null}
-                </div>
+                  <div className="comp-head-right">
+                    <span className={`comp-badge comp-badge--${badgeKey}`}>{badgeLabel}</span>
 
-                <div className="comp-head-right">
-                  <span className={`comp-badge comp-badge--${badgeKey}`}>{badgeLabel}</span>
+                    {!isOpen ? (
+                      <PlusIcon
+                        ref={(el) => {
+                          toggleIconRefs.current[id] = el;
+                        }}
+                        size={18}
+                        className="nav-anim-icon"
+                      />
+                    ) : (
+                      <ChevronUpIcon
+                        ref={(el) => {
+                          toggleIconRefs.current[id] = el;
+                        }}
+                        size={18}
+                        className="nav-anim-icon"
+                      />
+                    )}
+                  </div>
+                </button>
 
-                  {!isOpen ? (
-                    <PlusIcon
-                      ref={(el) => {
-                        toggleIconRefs.current[id] = el;
+                {isOpen && (
+                  <div style={{ display: "grid", gap: 8, marginTop: 12 }}>
+                    <div
+                      style={{
+                        display: "grid",
+                        gridTemplateColumns: "260px 1fr",
+                        gap: 12,
+                        alignItems: "baseline",
                       }}
-                      size={18}
-                      className="nav-anim-icon"
-                    />
-                  ) : (
-                    <ChevronUpIcon
-                      ref={(el) => {
-                        toggleIconRefs.current[id] = el;
+                    >
+                      <div className="muted">Plaatsingdatum</div>
+                      <div>{plaatsing ?? <span className="muted">onbekend</span>}</div>
+                    </div>
+
+                    <div
+                      style={{
+                        display: "grid",
+                        gridTemplateColumns: "260px 1fr",
+                        gap: 12,
+                        alignItems: "baseline",
                       }}
-                      size={18}
-                      className="nav-anim-icon"
-                    />
-                  )}
-                </div>
-              </button>
+                    >
+                      <div className="muted">Garantie tot</div>
+                      <div>{garantie ?? <span className="muted">onbekend</span>}</div>
+                    </div>
 
-              {isOpen && (
-                <div style={{ display: "grid", gap: 8, marginTop: 12 }}>
-                  <div
-                    style={{
-                      display: "grid",
-                      gridTemplateColumns: "260px 1fr",
-                      gap: 12,
-                      alignItems: "baseline",
-                    }}
-                  >
-                    <div className="muted">Plaatsingdatum</div>
-                    <div>{plaatsing ?? <span className="muted">onbekend</span>}</div>
-                  </div>
+                    <div
+                      style={{
+                        display: "grid",
+                        gridTemplateColumns: "260px 1fr",
+                        gap: 12,
+                        alignItems: "baseline",
+                      }}
+                    >
+                      <div className="muted">Artikeltype</div>
+                      <div style={{ overflowWrap: "anywhere" }}>
+                        {normalizeStr(it?.instcomp_artikeltype) ||
+                          normalizeStr(it?.artikel_artikeltype) || (
+                            <span className="muted">onbekend</span>
+                          )}
+                      </div>
+                    </div>
 
-                  <div
-                    style={{
-                      display: "grid",
-                      gridTemplateColumns: "260px 1fr",
-                      gap: 12,
-                      alignItems: "baseline",
-                    }}
-                  >
-                    <div className="muted">Garantie tot</div>
-                    <div>{garantie ?? <span className="muted">onbekend</span>}</div>
-                  </div>
+                    <div
+                      style={{
+                        display: "grid",
+                        gridTemplateColumns: "260px 1fr",
+                        gap: 12,
+                        alignItems: "baseline",
+                      }}
+                    >
+                      <div className="muted">Handelsartikel</div>
+                      <div style={{ overflowWrap: "anywhere" }}>
+                        {handart ? handart : <span className="muted">onbekend</span>}
+                      </div>
+                    </div>
 
-                  <div
-                    style={{
-                      display: "grid",
-                      gridTemplateColumns: "260px 1fr",
-                      gap: 12,
-                      alignItems: "baseline",
-                    }}
-                  >
-                    <div className="muted">Artikeltype</div>
-                    <div style={{ overflowWrap: "anywhere" }}>
-                      {normalizeStr(it?.instcomp_artikeltype) ||
-                        normalizeStr(it?.artikel_artikeltype) || (
-                          <span className="muted">onbekend</span>
-                        )}
+                    <div
+                      style={{
+                        display: "grid",
+                        gridTemplateColumns: "260px 1fr",
+                        gap: 12,
+                        alignItems: "baseline",
+                      }}
+                    >
+                      <div className="muted">Tarief</div>
+                      <div style={{ overflowWrap: "anywhere" }}>
+                        {tarief ? tarief : <span className="muted">onbekend</span>}
+                      </div>
+                    </div>
+
+                    <div
+                      style={{
+                        display: "grid",
+                        gridTemplateColumns: "260px 1fr",
+                        gap: 12,
+                        alignItems: "baseline",
+                      }}
+                    >
+                      <div className="muted">Serienr</div>
+                      <div style={{ overflowWrap: "anywhere" }}>
+                        {normalizeStr(it?.instcomp_serienr) ?? <span className="muted">onbekend</span>}
+                      </div>
+                    </div>
+
+                    <div
+                      style={{
+                        display: "grid",
+                        gridTemplateColumns: "260px 1fr",
+                        gap: 12,
+                        alignItems: "baseline",
+                      }}
+                    >
+                      <div className="muted">Locatie</div>
+                      <div style={{ overflowWrap: "anywhere" }}>
+                        {normalizeStr(it?.instcomp_locatie) ?? <span className="muted">onbekend</span>}
+                      </div>
+                    </div>
+
+                    <div
+                      style={{
+                        display: "grid",
+                        gridTemplateColumns: "260px 1fr",
+                        gap: 12,
+                        alignItems: "baseline",
+                      }}
+                    >
+                      <div className="muted">Bron</div>
+                      <div className="muted" style={{ overflowWrap: "anywhere" }}>
+                        {geladenAt ? `geladen ${geladenAt}` : "geladen onbekend"}
+                        {bronGcid ? ` ; gcid ${bronGcid}` : " ; gcid onbekend"}
+                      </div>
                     </div>
                   </div>
-
-                  <div
-                    style={{
-                      display: "grid",
-                      gridTemplateColumns: "260px 1fr",
-                      gap: 12,
-                      alignItems: "baseline",
-                    }}
-                  >
-                    <div className="muted">Handelsartikel</div>
-                    <div style={{ overflowWrap: "anywhere" }}>
-                      {handart ? handart : <span className="muted">onbekend</span>}
-                    </div>
-                  </div>
-
-                  <div
-                    style={{
-                      display: "grid",
-                      gridTemplateColumns: "260px 1fr",
-                      gap: 12,
-                      alignItems: "baseline",
-                    }}
-                  >
-                    <div className="muted">Tarief</div>
-                    <div style={{ overflowWrap: "anywhere" }}>
-                      {tarief ? tarief : <span className="muted">onbekend</span>}
-                    </div>
-                  </div>
-
-                  <div
-                    style={{
-                      display: "grid",
-                      gridTemplateColumns: "260px 1fr",
-                      gap: 12,
-                      alignItems: "baseline",
-                    }}
-                  >
-                    <div className="muted">Serienr</div>
-                    <div style={{ overflowWrap: "anywhere" }}>
-                      {normalizeStr(it?.instcomp_serienr) ?? <span className="muted">onbekend</span>}
-                    </div>
-                  </div>
-
-                  <div
-                    style={{
-                      display: "grid",
-                      gridTemplateColumns: "260px 1fr",
-                      gap: 12,
-                      alignItems: "baseline",
-                    }}
-                  >
-                    <div className="muted">Locatie</div>
-                    <div style={{ overflowWrap: "anywhere" }}>
-                      {normalizeStr(it?.instcomp_locatie) ?? <span className="muted">onbekend</span>}
-                    </div>
-                  </div>
-
-                  {/* UPDATED: eerst geladen (leesbaar), dan gcid */}
-                  <div
-                    style={{
-                      display: "grid",
-                      gridTemplateColumns: "260px 1fr",
-                      gap: 12,
-                      alignItems: "baseline",
-                    }}
-                  >
-                    <div className="muted">Bron</div>
-                    <div className="muted" style={{ overflowWrap: "anywhere" }}>
-                      {geladenAt ? `geladen ${geladenAt}` : "geladen onbekend"}
-                      {bronGcid ? ` ; gcid ${bronGcid}` : " ; gcid onbekend"}
-                    </div>
-                  </div>
-                </div>
-              )}
-            </div>
-          );
-        })}
+                )}
+              </div>
+            );
+          })}
+        </div>
       </div>
 
       <style>{`

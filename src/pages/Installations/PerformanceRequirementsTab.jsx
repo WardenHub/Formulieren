@@ -101,6 +101,63 @@ function Badge({ children, variant = "neutral", title }) {
   );
 }
 
+function SectionBusyOverlay({ title, label }) {
+  return (
+    <div
+      style={{
+        position: "absolute",
+        inset: 0,
+        zIndex: 10,
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        background: "rgba(0, 0, 0, 0.14)",
+        backdropFilter: "blur(1px)",
+        borderRadius: 16,
+        pointerEvents: "auto",
+      }}
+    >
+      <div
+        className="card"
+        style={{
+          minWidth: 250,
+          maxWidth: 360,
+          padding: 18,
+          display: "grid",
+          gap: 8,
+          justifyItems: "center",
+          textAlign: "center",
+          border: "1px solid rgba(255,255,255,0.16)",
+          boxShadow: "0 14px 40px rgba(0,0,0,0.26)",
+        }}
+      >
+        <div
+          style={{
+            width: 58,
+            height: 58,
+            borderRadius: 999,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            background: "rgba(255,255,255,0.08)",
+            boxShadow: "0 0 0 6px rgba(255,255,255,0.04)",
+          }}
+        >
+          <GaugeIcon size={28} className="nav-anim-icon" />
+        </div>
+
+        <div style={{ fontWeight: 800, fontSize: 18, lineHeight: 1.1 }}>
+          {title || "Laden..."}
+        </div>
+
+        <div className="muted" style={{ fontSize: 12 }}>
+          {label || "Bezig met gegevens ophalen."}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function StepperInput({ label, value, disabled, onChange }) {
   const n = toInt(value);
 
@@ -158,6 +215,9 @@ const PerformanceRequirementsTab = forwardRef(function PerformanceRequirementsTa
   const initialJsonRef = useRef("");
   const [saving, setSaving] = useState(false);
 
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(null);
+
   const [catalog, setCatalog] = useState({ normeringen: [], functies: [], matrix: [] });
   const [normeringKey, setNormeringKey] = useState(DEFAULT_NORMERING);
 
@@ -170,6 +230,8 @@ const PerformanceRequirementsTab = forwardRef(function PerformanceRequirementsTa
   // ---- load
   useEffect(() => {
     let cancelled = false;
+    setLoading(true);
+    setLoadError(null);
 
     Promise.all([getNen2535Catalog(), getPerformanceRequirements(code)])
       .then(([catRaw, pr]) => {
@@ -214,8 +276,14 @@ const PerformanceRequirementsTab = forwardRef(function PerformanceRequirementsTa
 
         initialJsonRef.current = JSON.stringify({ normeringKey: nk, rows: loadedRows });
         onDirtyChange?.(false);
+        setLoading(false);
       })
-      .catch((err) => console.error(err));
+      .catch((err) => {
+        if (cancelled) return;
+        setLoadError(err?.message || String(err));
+        setLoading(false);
+        console.error(err);
+      });
 
     return () => {
       cancelled = true;
@@ -536,7 +604,17 @@ const PerformanceRequirementsTab = forwardRef(function PerformanceRequirementsTa
   }, [calcByRowKey]);
 
   return (
-    <div className="card">
+    <div className="card" style={{ position: "relative", overflow: "hidden" }}>
+      {loading && (
+        <SectionBusyOverlay
+          title="Prestatie-eisen laden..."
+          label="Bezig met catalogus en regels ophalen."
+        />
+      )}
+
+      {loadError && (
+        <div style={{ color: "salmon", marginBottom: 12 }}>{loadError}</div>
+      )}
       <div
         className="card-head"
         style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}
@@ -566,7 +644,15 @@ const PerformanceRequirementsTab = forwardRef(function PerformanceRequirementsTa
         </button>
       </div>
 
-      <div className="card-body" style={{ display: "grid", gap: 12 }}>
+      <div
+          className="card-body"
+          style={{
+            display: "grid",
+            gap: 12,
+            opacity: loading ? 0.55 : 1,
+            transition: "opacity 120ms ease",
+          }}
+        >
         <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: 12 }}>
           <div>
             <div className="label">normering</div>

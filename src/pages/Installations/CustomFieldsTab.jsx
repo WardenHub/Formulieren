@@ -131,6 +131,49 @@ function toOption(o) {
   return { value: String(value), label: String(label) };
 }
 
+function TabLoadingCard({ title = "Laden...", label = "Bezig met gegevens laden." }) {
+  return (
+    <div
+      className="card"
+      style={{
+        minHeight: 180,
+        display: "grid",
+        placeItems: "center",
+      }}
+    >
+      <div
+        style={{
+          width: "100%",
+          maxWidth: 360,
+          padding: 24,
+          display: "grid",
+          gap: 10,
+          justifyItems: "center",
+          textAlign: "center",
+        }}
+      >
+        <div
+          style={{
+            width: 64,
+            height: 64,
+            borderRadius: 999,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            background: "rgba(255,255,255,0.08)",
+            boxShadow: "0 0 0 8px rgba(255,255,255,0.04)",
+          }}
+        >
+          <PlusIcon size={26} className="nav-anim-icon" />
+        </div>
+
+        <div style={{ fontWeight: 800, fontSize: 20 }}>{title}</div>
+        <div className="muted" style={{ fontSize: 13 }}>{label}</div>
+      </div>
+    </div>
+  );
+}
+
 const CustomFieldsTab = forwardRef(function CustomFieldsTab(
   { code, catalog, customValues, onSaved, onDirtyChange, onSavingChange, onSaveOk, onAnyOpenChange },
   ref
@@ -504,7 +547,15 @@ const CustomFieldsTab = forwardRef(function CustomFieldsTab(
 
   useImperativeHandle(ref, () => ({ save, expandAll, collapseAll }));
 
-  if (!catalog) return <div className="muted">laden; catalog</div>;
+  if (!catalog) {
+    return (
+      <TabLoadingCard
+        title="Eigenschappen laden..."
+        label="Bezig met catalogus en eigenschappen ophalen."
+      />
+    );
+  }
+
   if (customFields.length === 0) return <div className="muted">geen eigenschappen beschikbaar</div>;
 
   function isFilledValue(v) {

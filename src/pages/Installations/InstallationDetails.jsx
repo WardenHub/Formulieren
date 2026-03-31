@@ -1,4 +1,3 @@
-// src/pages/Installations/InstallationDetails.jsx
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 
@@ -41,6 +40,63 @@ import {
   startChildFormInstance,
 } from "../../api/emberApi.js";
 
+function BusyOverlay({ iconRef, title, label, fixed = false }) {
+  return (
+    <div
+      style={{
+        position: fixed ? "fixed" : "absolute",
+        inset: 0,
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        pointerEvents: "auto",
+        zIndex: fixed ? 80 : 20,
+        background: fixed ? "rgba(0, 0, 0, 0.18)" : "rgba(0, 0, 0, 0.10)",
+        backdropFilter: "blur(1px)",
+        borderRadius: fixed ? 0 : 16,
+      }}
+    >
+      <div
+        className="card"
+        style={{
+          minWidth: 280,
+          maxWidth: 420,
+          padding: 24,
+          display: "grid",
+          gap: 10,
+          justifyItems: "center",
+          textAlign: "center",
+          border: "1px solid rgba(255,255,255,0.16)",
+          boxShadow: "0 20px 60px rgba(0,0,0,0.28)",
+        }}
+      >
+        <div
+          style={{
+            width: 72,
+            height: 72,
+            borderRadius: 999,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            background: "rgba(255,255,255,0.08)",
+            boxShadow: "0 0 0 8px rgba(255,255,255,0.04)",
+          }}
+        >
+          <RefreshCWIcon ref={iconRef} size={34} />
+        </div>
+
+        <div style={{ fontWeight: 900, fontSize: 22, lineHeight: 1.1 }}>
+          {title || "Laden..."}
+        </div>
+
+        <div className="muted" style={{ fontSize: 13 }}>
+          {label || "Bezig met gegevens laden."}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function InstallationDetails() {
   const { code } = useParams();
   const navigate = useNavigate();
@@ -48,6 +104,7 @@ export default function InstallationDetails() {
   const backIconRef = useRef(null);
   const collapseAllIconRef = useRef(null);
   const formsBusyIconRef = useRef(null);
+  const pageBusyIconRef = useRef(null);
 
   const atriumRef = useRef(null);
   const customSaveRef = useRef(null);
@@ -67,6 +124,8 @@ export default function InstallationDetails() {
   const [energySupplies, setEnergySupplies] = useState(null);
   const [energyBrandTypes, setEnergyBrandTypes] = useState(null);
   const [error, setError] = useState(null);
+
+  const [pageLoading, setPageLoading] = useState(true);
 
   const [installationTypes, setInstallationTypesState] = useState([]);
   const [typeSaving, setTypeSaving] = useState(false);
@@ -265,6 +324,7 @@ export default function InstallationDetails() {
   useEffect(() => {
     let cancelled = false;
     setError(null);
+    setPageLoading(true);
 
     getInstallationTypes()
       .then((res) => {
@@ -298,6 +358,8 @@ export default function InstallationDetails() {
 
       const firstErr = results.find((x) => x.status === "rejected");
       if (firstErr) setError(firstErr.reason?.message || String(firstErr.reason));
+
+      setPageLoading(false);
     });
 
     return () => {
@@ -317,6 +379,7 @@ export default function InstallationDetails() {
   useEffect(() => {
     return () => {
       formsBusyIconRef.current?.stopAnimation?.();
+      pageBusyIconRef.current?.stopAnimation?.();
     };
   }, []);
 
@@ -327,6 +390,14 @@ export default function InstallationDetails() {
       formsBusyIconRef.current?.stopAnimation?.();
     }
   }, [formsBusy]);
+
+  useEffect(() => {
+    if (pageLoading) {
+      pageBusyIconRef.current?.startAnimation?.();
+    } else {
+      pageBusyIconRef.current?.stopAnimation?.();
+    }
+  }, [pageLoading]);
 
   useEffect(() => {
     function onBeforeUnload(e) {
@@ -666,57 +737,12 @@ export default function InstallationDetails() {
   return (
     <div>
       {formsBusy && (
-        <div
-          style={{
-            position: "fixed",
-            inset: 0,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            pointerEvents: "auto",
-            zIndex: 80,
-            background: "rgba(0, 0, 0, 0.18)",
-            backdropFilter: "blur(1px)",
-          }}
-        >
-          <div
-            className="card"
-            style={{
-              minWidth: 280,
-              maxWidth: 420,
-              padding: 24,
-              display: "grid",
-              gap: 10,
-              justifyItems: "center",
-              textAlign: "center",
-              border: "1px solid rgba(255,255,255,0.16)",
-              boxShadow: "0 20px 60px rgba(0,0,0,0.28)",
-            }}
-          >
-            <div
-              style={{
-                width: 72,
-                height: 72,
-                borderRadius: 999,
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                background: "rgba(255,255,255,0.08)",
-                boxShadow: "0 0 0 8px rgba(255,255,255,0.04)",
-              }}
-            >
-              <RefreshCWIcon ref={formsBusyIconRef} size={34} />
-            </div>
-
-            <div style={{ fontWeight: 900, fontSize: 22, lineHeight: 1.1 }}>
-              Laden...
-            </div>
-
-            <div className="muted" style={{ fontSize: 13 }}>
-              {formsBusyLabel || "Bezig met formulieren verwerken."}
-            </div>
-          </div>
-        </div>
+        <BusyOverlay
+          fixed
+          iconRef={formsBusyIconRef}
+          title="Laden..."
+          label={formsBusyLabel || "Bezig met formulieren verwerken."}
+        />
       )}
 
       <div className="inst-sticky">
@@ -846,16 +872,24 @@ export default function InstallationDetails() {
         <Tabs tabs={tabs} activeKey={activeTab} onChange={handleTabChange} />
       </div>
 
-      <div className="inst-body">
+      <div
+        className="inst-body"
+        style={{
+          position: "relative",
+          minHeight: 240,
+        }}
+      >
+        {pageLoading && (
+          <BusyOverlay
+            iconRef={pageBusyIconRef}
+            title="Installatie laden..."
+            label="Bezig met installatiegegevens ophalen."
+          />
+        )}
+
         {error && <p style={{ color: "salmon" }}>{error}</p>}
-        {!installation &&
-          !catalog &&
-          !customValues &&
-          !docs &&
-          !energySupplies &&
-          !energyBrandTypes &&
-          !error && <p className="muted">Laden…</p>}
-        {activeContent}
+
+        {!pageLoading && activeContent}
       </div>
     </div>
   );

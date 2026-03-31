@@ -31,6 +31,49 @@ function newDraft(typeKey) {
   };
 }
 
+function TabLoadingCard({ title = "Laden...", label = "Bezig met gegevens laden." }) {
+  return (
+    <div
+      className="card"
+      style={{
+        minHeight: 180,
+        display: "grid",
+        placeItems: "center",
+      }}
+    >
+      <div
+        style={{
+          width: "100%",
+          maxWidth: 360,
+          padding: 24,
+          display: "grid",
+          gap: 10,
+          justifyItems: "center",
+          textAlign: "center",
+        }}
+      >
+        <div
+          style={{
+            width: 64,
+            height: 64,
+            borderRadius: 999,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            background: "rgba(255,255,255,0.08)",
+            boxShadow: "0 0 0 8px rgba(255,255,255,0.04)",
+          }}
+        >
+          <ArchiveIcon size={26} className="doc-anim-icon" />
+        </div>
+
+        <div style={{ fontWeight: 800, fontSize: 20 }}>{title}</div>
+        <div className="muted" style={{ fontSize: 13 }}>{label}</div>
+      </div>
+    </div>
+  );
+}
+
 const DocumentsTab = forwardRef(function DocumentsTab(
   { code, docs, catalog, onDirtyChange, onSavingChange, onSaveOk, onSaved, onAnyOpenChange },
   ref
@@ -310,8 +353,23 @@ const DocumentsTab = forwardRef(function DocumentsTab(
     );
   }
 
-  if (!catalog) return <div className="muted">laden; catalog</div>;
-  if (!docs) return <div className="muted">laden; documenten</div>;
+  if (!catalog) {
+    return (
+      <TabLoadingCard
+        title="Documentcatalogus laden..."
+        label="Bezig met documenttypes ophalen."
+      />
+    );
+  }
+
+  if (!docs) {
+    return (
+      <TabLoadingCard
+        title="Documenten laden..."
+        label="Bezig met documentregels ophalen."
+      />
+    );
+  }
 
   return (
     <div style={{ display: "grid", gap: 12 }}>

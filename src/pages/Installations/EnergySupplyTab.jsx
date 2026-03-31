@@ -78,6 +78,49 @@ function getAgeInfo(dateStr) {
   return { label: `${years.toFixed(1)} jr`, years };
 }
 
+function TabLoadingCard({ title = "Laden...", label = "Bezig met gegevens laden." }) {
+  return (
+    <div
+      className="card"
+      style={{
+        minHeight: 180,
+        display: "grid",
+        placeItems: "center",
+      }}
+    >
+      <div
+        style={{
+          width: "100%",
+          maxWidth: 360,
+          padding: 24,
+          display: "grid",
+          gap: 10,
+          justifyItems: "center",
+          textAlign: "center",
+        }}
+      >
+        <div
+          style={{
+            width: 64,
+            height: 64,
+            borderRadius: 999,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            background: "rgba(255,255,255,0.08)",
+            boxShadow: "0 0 0 8px rgba(255,255,255,0.04)",
+          }}
+        >
+          <BatteryPlusIcon size={26} className="nav-anim-icon" />
+        </div>
+
+        <div style={{ fontWeight: 800, fontSize: 20 }}>{title}</div>
+        <div className="muted" style={{ fontSize: 13 }}>{label}</div>
+      </div>
+    </div>
+  );
+}
+
 const EnergySupplyTab = forwardRef(function EnergySupplyTab(
   { code, items, brandTypes, onDirtyChange, onSavingChange, onSaveOk, onSaved, onAnyOpenChange },
   ref
@@ -197,7 +240,7 @@ const EnergySupplyTab = forwardRef(function EnergySupplyTab(
     window.setTimeout(() => addIconRef.current?.stopAnimation?.(), 650);
   }
 
-    useEffect(() => {
+  useEffect(() => {
     function onKeyDown(e) {
       if (saving) return;
       if (e.repeat) return;
@@ -369,6 +412,14 @@ const EnergySupplyTab = forwardRef(function EnergySupplyTab(
     msgIconRefs.current[key]?.stopAnimation?.();
     if (!isOld) warnIconRefs.current[key]?.stopAnimation?.();
   }
+  if (!Array.isArray(items) || !Array.isArray(brandTypes)) {
+  return (
+    <TabLoadingCard
+      title="Energievoorziening laden..."
+      label="Bezig met energiebronnen en merktypes ophalen."
+    />
+  );
+}
 
   return (
     <div className="card">

@@ -213,6 +213,63 @@ function buildVisibleRows(items) {
   return result;
 }
 
+function SectionBusyOverlay({ iconRef, title, label }) {
+  return (
+    <div
+      style={{
+        position: "absolute",
+        inset: 0,
+        zIndex: 10,
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        background: "rgba(0, 0, 0, 0.14)",
+        backdropFilter: "blur(1px)",
+        borderRadius: 16,
+        pointerEvents: "auto",
+      }}
+    >
+      <div
+        className="card"
+        style={{
+          minWidth: 250,
+          maxWidth: 360,
+          padding: 18,
+          display: "grid",
+          gap: 8,
+          justifyItems: "center",
+          textAlign: "center",
+          border: "1px solid rgba(255,255,255,0.16)",
+          boxShadow: "0 14px 40px rgba(0,0,0,0.26)",
+        }}
+      >
+        <div
+          style={{
+            width: 58,
+            height: 58,
+            borderRadius: 999,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            background: "rgba(255,255,255,0.08)",
+            boxShadow: "0 0 0 6px rgba(255,255,255,0.04)",
+          }}
+        >
+          <RefreshCWIcon ref={iconRef} size={28} />
+        </div>
+
+        <div style={{ fontWeight: 800, fontSize: 18, lineHeight: 1.1 }}>
+          {title || "Laden..."}
+        </div>
+
+        <div className="muted" style={{ fontSize: 12 }}>
+          {label || "Bezig met gegevens ophalen."}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function FormsTab({
   code,
   installation,
@@ -263,6 +320,7 @@ export default function FormsTab({
   const statusArrowRef = useRef(null);
   const searchIconRef = useRef(null);
   const refreshIconRef = useRef(null);
+  const instancesBusyIconRef = useRef(null);
   const followUpToggleIconRefs = useRef({});
   const followUpStatusIconRefs = useRef({});
   const followUpStatusArrowRefs = useRef({});
@@ -291,6 +349,20 @@ export default function FormsTab({
     selectedFormTypes,
     expandedFollowUpForId,
   ]);
+
+  useEffect(() => {
+    if (instancesLoading) {
+      instancesBusyIconRef.current?.startAnimation?.();
+    } else {
+      instancesBusyIconRef.current?.stopAnimation?.();
+    }
+  }, [instancesLoading]);
+
+  useEffect(() => {
+    return () => {
+      instancesBusyIconRef.current?.stopAnimation?.();
+    };
+  }, []);
 
   const typeKey = installation?.installation_type_key || null;
 
@@ -772,8 +844,18 @@ export default function FormsTab({
         style={{
           display: "grid",
           gap: 12,
+          position: "relative",
+          overflow: "hidden",
         }}
       >
+        {instancesLoading && (
+          <SectionBusyOverlay
+            iconRef={instancesBusyIconRef}
+            title="Formulieren laden..."
+            label="Bezig met zoeken, filteren of verversen."
+          />
+        )}
+
         <div
           style={{
             display: "flex",
@@ -781,6 +863,8 @@ export default function FormsTab({
             gap: 10,
             alignItems: "center",
             flexWrap: "wrap",
+            opacity: instancesLoading ? 0.55 : 1,
+            transition: "opacity 120ms ease",
           }}
         >
           <div style={{ fontWeight: 700 }}>Bestaande formulieren</div>
@@ -789,7 +873,14 @@ export default function FormsTab({
           </div>
         </div>
 
-        <div style={{ display: "grid", gap: 10 }}>
+        <div
+          style={{
+            display: "grid",
+            gap: 10,
+            opacity: instancesLoading ? 0.55 : 1,
+            transition: "opacity 120ms ease",
+          }}
+        >
           <div style={{ display: "grid", gap: 8 }}>
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
               {STATUS_FILTER_OPTIONS.map((opt) => (
@@ -854,363 +945,372 @@ export default function FormsTab({
           </div>
         </div>
 
-        {instancesError && <div style={{ color: "salmon" }}>{instancesError}</div>}
+        <div
+          style={{
+            display: "grid",
+            gap: 8,
+            opacity: instancesLoading ? 0.55 : 1,
+            transition: "opacity 120ms ease",
+          }}
+        >
+          {instancesError && <div style={{ color: "salmon" }}>{instancesError}</div>}
 
-        {!instancesLoading && !instancesError && selectedStatuses.length === 0 && (
-          <div className="muted">Selecteer minimaal één status om formulieren te tonen.</div>
-        )}
-
-        {!instancesLoading &&
-          !instancesError &&
-          selectedStatuses.length > 0 &&
-          formTypeOptions.length > 0 &&
-          selectedFormTypes.length === 0 && (
-            <div className="muted">Selecteer minimaal één formuliertype om formulieren te tonen.</div>
+          {!instancesLoading && !instancesError && selectedStatuses.length === 0 && (
+            <div className="muted">Selecteer minimaal één status om formulieren te tonen.</div>
           )}
 
-        {!instancesLoading &&
-          !instancesError &&
-          selectedStatuses.length > 0 &&
-          selectedFormTypes.length > 0 &&
-          visibleRows.length === 0 && (
-            <div className="muted">Geen formulieren gevonden voor deze filters.</div>
-          )}
+          {!instancesLoading &&
+            !instancesError &&
+            selectedStatuses.length > 0 &&
+            formTypeOptions.length > 0 &&
+            selectedFormTypes.length === 0 && (
+              <div className="muted">Selecteer minimaal één formuliertype om formulieren te tonen.</div>
+            )}
 
-        {visibleRows.length > 0 && (
-          <div style={{ display: "grid", gap: 8 }}>
-            {visibleRows.map(({ item, depth }) => {
-              const itemId = Number(item.form_instance_id);
-              const followUpFormCode = String(item.form_code || "").trim();
-              const followUpFormLabel =
-                String(item.form_name || item.form_code || "").trim() || "Onbekend formulier";
+          {!instancesLoading &&
+            !instancesError &&
+            selectedStatuses.length > 0 &&
+            selectedFormTypes.length > 0 &&
+            visibleRows.length === 0 && (
+              <div className="muted">Geen formulieren gevonden voor deze filters.</div>
+            )}
 
-              const childPreflight = getChildPreflight(itemId);
-              const childBlocking = Array.isArray(childPreflight?.blocking) ? childPreflight.blocking : [];
-              const childWarnings = Array.isArray(childPreflight?.warnings) ? childPreflight.warnings : [];
-              const childOkToStart = Boolean(childPreflight?.ok_to_start);
-              const childLoading = getChildPreflightLoading(itemId);
-              const childError = getChildPreflightError(itemId);
-              const childExpanded = expandedFollowUpForId === itemId;
-              const canFollowUp = canStartFollowUp(item);
-              const iconKey = String(itemId);
-              const openIconKey = `open-${itemId}`;
-              const childStartClickable =
-                childOkToStart &&
-                typeof onOpenChildForm === "function" &&
-                Boolean(followUpFormCode);
+          {visibleRows.length > 0 && (
+            <div style={{ display: "grid", gap: 8 }}>
+              {visibleRows.map(({ item, depth }) => {
+                const itemId = Number(item.form_instance_id);
+                const followUpFormCode = String(item.form_code || "").trim();
+                const followUpFormLabel =
+                  String(item.form_name || item.form_code || "").trim() || "Onbekend formulier";
 
-              const modifiedAt = item.updated_at || item.created_at;
-              const modifiedBy = getLastModifiedBy(item);
+                const childPreflight = getChildPreflight(itemId);
+                const childBlocking = Array.isArray(childPreflight?.blocking) ? childPreflight.blocking : [];
+                const childWarnings = Array.isArray(childPreflight?.warnings) ? childPreflight.warnings : [];
+                const childOkToStart = Boolean(childPreflight?.ok_to_start);
+                const childLoading = getChildPreflightLoading(itemId);
+                const childError = getChildPreflightError(itemId);
+                const childExpanded = expandedFollowUpForId === itemId;
+                const canFollowUp = canStartFollowUp(item);
+                const iconKey = String(itemId);
+                const openIconKey = `open-${itemId}`;
+                const childStartClickable =
+                  childOkToStart &&
+                  typeof onOpenChildForm === "function" &&
+                  Boolean(followUpFormCode);
 
-              function openChildForm() {
-                if (!childStartClickable) return;
-                onOpenChildForm?.(itemId, followUpFormCode);
-              }
+                const modifiedAt = item.updated_at || item.created_at;
+                const modifiedBy = getLastModifiedBy(item);
 
-              return (
-                <div
-                  key={item.form_instance_id}
-                  style={{
-                    marginLeft: depth * 18,
-                    padding: "10px 12px",
-                    border: "1px solid rgba(255,255,255,0.12)",
-                    borderRadius: 12,
-                    display: "grid",
-                    gap: 8,
-                    background: depth > 0 ? "rgba(255,255,255,0.02)" : "transparent",
-                  }}
-                >
+                function openChildForm() {
+                  if (!childStartClickable) return;
+                  onOpenChildForm?.(itemId, followUpFormCode);
+                }
+
+                return (
                   <div
+                    key={item.form_instance_id}
                     style={{
-                      display: "flex",
-                      justifyContent: "space-between",
-                      gap: 12,
-                      alignItems: "flex-start",
-                      flexWrap: "wrap",
+                      marginLeft: depth * 18,
+                      padding: "10px 12px",
+                      border: "1px solid rgba(255,255,255,0.12)",
+                      borderRadius: 12,
+                      display: "grid",
+                      gap: 8,
+                      background: depth > 0 ? "rgba(255,255,255,0.02)" : "transparent",
                     }}
                   >
-                    <div style={{ display: "grid", gap: 4, minWidth: 0, flex: "1 1 420px" }}>
-                      <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-                        <div style={{ fontWeight: 700, fontSize: 15 }}>
-                          {item.form_name || item.form_code || `Formulier ${item.form_instance_id}`}
-                        </div>
-                        <StatusTag status={item.status} />
-                        <SummaryTag title="Formuliernummer">#{item.form_instance_id}</SummaryTag>
-                        <SummaryTag title="Versie">v{item.version_label || "-"}</SummaryTag>
-
-                        {item.parent_instance_id ? (
-                          <RelationTag title="Vervolgrelatie">
-                            Vervolg op formulier #{item.parent_instance_id}
-                          </RelationTag>
-                        ) : null}
-
-                        {item.relations?.has_children ? (
-                          <SummaryTag title="Aantal vervolgformulieren">
-                            {item.relations.child_count || 0} vervolg
-                          </SummaryTag>
-                        ) : null}
-                      </div>
-
-                      {item.instance_title ? (
-                        <div className="muted" style={{ fontSize: 13, lineHeight: 1.25 }}>
-                          {item.instance_title}
-                        </div>
-                      ) : null}
-
-                      {item.instance_note ? (
-                        <div
-                          className="muted"
-                          style={{
-                            fontSize: 13,
-                            lineHeight: 1.25,
-                            whiteSpace: "pre-wrap",
-                          }}
-                        >
-                          {item.instance_note}
-                        </div>
-                      ) : null}
-                    </div>
-
                     <div
                       style={{
-                        flex: "0 0 auto",
-                        minWidth: 220,
-                        display: "grid",
-                        gap: 2,
-                        justifyItems: "end",
-                        textAlign: "right",
+                        display: "flex",
+                        justifyContent: "space-between",
+                        gap: 12,
+                        alignItems: "flex-start",
+                        flexWrap: "wrap",
                       }}
                     >
-                      <div style={{ fontSize: 12 }}>
-                        Laatste wijziging: {formatCompactDateTime(modifiedAt)}
+                      <div style={{ display: "grid", gap: 4, minWidth: 0, flex: "1 1 420px" }}>
+                        <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                          <div style={{ fontWeight: 700, fontSize: 15 }}>
+                            {item.form_name || item.form_code || `Formulier ${item.form_instance_id}`}
+                          </div>
+                          <StatusTag status={item.status} />
+                          <SummaryTag title="Formuliernummer">#{item.form_instance_id}</SummaryTag>
+                          <SummaryTag title="Versie">v{item.version_label || "-"}</SummaryTag>
+
+                          {item.parent_instance_id ? (
+                            <RelationTag title="Vervolgrelatie">
+                              Vervolg op formulier #{item.parent_instance_id}
+                            </RelationTag>
+                          ) : null}
+
+                          {item.relations?.has_children ? (
+                            <SummaryTag title="Aantal vervolgformulieren">
+                              {item.relations.child_count || 0} vervolg
+                            </SummaryTag>
+                          ) : null}
+                        </div>
+
+                        {item.instance_title ? (
+                          <div className="muted" style={{ fontSize: 13, lineHeight: 1.25 }}>
+                            {item.instance_title}
+                          </div>
+                        ) : null}
+
+                        {item.instance_note ? (
+                          <div
+                            className="muted"
+                            style={{
+                              fontSize: 13,
+                              lineHeight: 1.25,
+                              whiteSpace: "pre-wrap",
+                            }}
+                          >
+                            {item.instance_note}
+                          </div>
+                        ) : null}
                       </div>
-                      <div className="muted" style={{ fontSize: 12 }}>
-                        door {modifiedBy}
-                      </div>
-                      <div className="muted" style={{ fontSize: 11, marginTop: 2 }}>
-                        Aangemaakt: {formatCompactDateTime(item.created_at)}
-                        {item.created_by ? ` door ${item.created_by}` : ""}
+
+                      <div
+                        style={{
+                          flex: "0 0 auto",
+                          minWidth: 220,
+                          display: "grid",
+                          gap: 2,
+                          justifyItems: "end",
+                          textAlign: "right",
+                        }}
+                      >
+                        <div style={{ fontSize: 12 }}>
+                          Laatste wijziging: {formatCompactDateTime(modifiedAt)}
+                        </div>
+                        <div className="muted" style={{ fontSize: 12 }}>
+                          door {modifiedBy}
+                        </div>
+                        <div className="muted" style={{ fontSize: 11, marginTop: 2 }}>
+                          Aangemaakt: {formatCompactDateTime(item.created_at)}
+                          {item.created_by ? ` door ${item.created_by}` : ""}
+                        </div>
                       </div>
                     </div>
-                  </div>
 
-                  <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-                    <button
-                      type="button"
-                      className="btn btn-secondary"
-                      onClick={() => onOpenExistingForm?.(item.form_instance_id)}
-                      style={{ display: "inline-flex", alignItems: "center", gap: 8 }}
-                      onMouseEnter={() => openFormIconRefs.current[openIconKey]?.startAnimation?.()}
-                      onMouseLeave={() => openFormIconRefs.current[openIconKey]?.stopAnimation?.()}
-                    >
-                      <ArrowBigRightIcon
-                        ref={(el) => {
-                          openFormIconRefs.current[openIconKey] = el;
-                        }}
-                        size={18}
-                        className="nav-anim-icon"
-                      />
-                      Open formulier
-                    </button>
-
-                    {canFollowUp && (
+                    <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
                       <button
                         type="button"
                         className="btn btn-secondary"
-                        onClick={() => {
-                          setExpandedFollowUpForId((prev) => (prev === itemId ? null : itemId));
-                        }}
+                        onClick={() => onOpenExistingForm?.(item.form_instance_id)}
                         style={{ display: "inline-flex", alignItems: "center", gap: 8 }}
-                        onMouseEnter={() => followUpToggleIconRefs.current[iconKey]?.startAnimation?.()}
-                        onMouseLeave={() => followUpToggleIconRefs.current[iconKey]?.stopAnimation?.()}
+                        onMouseEnter={() => openFormIconRefs.current[openIconKey]?.startAnimation?.()}
+                        onMouseLeave={() => openFormIconRefs.current[openIconKey]?.stopAnimation?.()}
                       >
-                        {childExpanded ? (
-                          <ChevronUpIcon
-                            ref={(el) => {
-                              followUpToggleIconRefs.current[iconKey] = el;
-                            }}
-                            size={18}
-                            className="nav-anim-icon"
-                          />
-                        ) : (
-                          <PlusIcon
-                            ref={(el) => {
-                              followUpToggleIconRefs.current[iconKey] = el;
-                            }}
-                            size={18}
-                            className="nav-anim-icon"
-                          />
-                        )}
-                        Vervolgformulier
+                        <ArrowBigRightIcon
+                          ref={(el) => {
+                            openFormIconRefs.current[openIconKey] = el;
+                          }}
+                          size={18}
+                          className="nav-anim-icon"
+                        />
+                        Open formulier
                       </button>
-                    )}
-                  </div>
 
-                  {childExpanded && canFollowUp && (
-                    <div
-                      style={{
-                        padding: 12,
-                        border: "1px solid rgba(255,255,255,0.10)",
-                        borderRadius: 12,
-                        display: "grid",
-                        gap: 10,
-                      }}
-                    >
-                      <div className="muted" style={{ fontSize: 13 }}>
-                        Start een vervolgformulier op basis van formulier #{item.form_instance_id}.
-                      </div>
-
-                      <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-                        <RelationTag title="Vervolgtype">
-                          {followUpFormLabel}
-                        </RelationTag>
-
+                      {canFollowUp && (
                         <button
                           type="button"
                           className="btn btn-secondary"
-                          disabled={!followUpFormCode || childLoading}
-                          onClick={() => runChildPreflight(itemId, followUpFormCode)}
-                          style={{ display: "inline-flex", alignItems: "center", gap: 8, whiteSpace: "nowrap" }}
+                          onClick={() => {
+                            setExpandedFollowUpForId((prev) => (prev === itemId ? null : itemId));
+                          }}
+                          style={{ display: "inline-flex", alignItems: "center", gap: 8 }}
+                          onMouseEnter={() => followUpToggleIconRefs.current[iconKey]?.startAnimation?.()}
+                          onMouseLeave={() => followUpToggleIconRefs.current[iconKey]?.stopAnimation?.()}
                         >
-                          <ClipboardCheckIcon size={18} />
-                          Status controleren
+                          {childExpanded ? (
+                            <ChevronUpIcon
+                              ref={(el) => {
+                                followUpToggleIconRefs.current[iconKey] = el;
+                              }}
+                              size={18}
+                              className="nav-anim-icon"
+                            />
+                          ) : (
+                            <PlusIcon
+                              ref={(el) => {
+                                followUpToggleIconRefs.current[iconKey] = el;
+                              }}
+                              size={18}
+                              className="nav-anim-icon"
+                            />
+                          )}
+                          Vervolgformulier
                         </button>
-                      </div>
+                      )}
+                    </div>
 
-                      {childLoading && <div className="muted">Status laden…</div>}
-                      {childError && <div style={{ color: "salmon" }}>{childError}</div>}
+                    {childExpanded && canFollowUp && (
+                      <div
+                        style={{
+                          padding: 12,
+                          border: "1px solid rgba(255,255,255,0.10)",
+                          borderRadius: 12,
+                          display: "grid",
+                          gap: 10,
+                        }}
+                      >
+                        <div className="muted" style={{ fontSize: 13 }}>
+                          Start een vervolgformulier op basis van formulier #{item.form_instance_id}.
+                        </div>
 
-                      {childPreflight && (
-                        <>
-                          <div
-                            className="card"
-                            role={childStartClickable ? "button" : undefined}
-                            tabIndex={childStartClickable ? 0 : -1}
-                            onClick={() => {
-                              if (childStartClickable) openChildForm();
-                            }}
-                            onKeyDown={(e) => {
-                              if (!childStartClickable) return;
-                              if (e.key === "Enter" || e.key === " ") {
-                                e.preventDefault();
-                                openChildForm();
-                              }
-                            }}
-                            onMouseEnter={() => {
-                              followUpStatusIconRefs.current[iconKey]?.startAnimation?.();
-                              if (childOkToStart) {
-                                followUpStatusArrowRefs.current[iconKey]?.startAnimation?.();
-                              }
-                            }}
-                            onMouseLeave={() => {
-                              followUpStatusIconRefs.current[iconKey]?.stopAnimation?.();
-                              if (childOkToStart) {
-                                followUpStatusArrowRefs.current[iconKey]?.stopAnimation?.();
-                              }
-                            }}
-                            style={{
-                              cursor: childStartClickable ? "pointer" : "default",
-                              padding: "12px 14px",
-                              display: "flex",
-                              alignItems: "center",
-                              justifyContent: "space-between",
-                              gap: 12,
-                              width: "100%",
-                            }}
-                            title={
-                              childOkToStart
-                                ? "Start vervolgformulier"
-                                : "Nog niet startklaar"
-                            }
+                        <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                          <RelationTag title="Vervolgtype">
+                            {followUpFormLabel}
+                          </RelationTag>
+
+                          <button
+                            type="button"
+                            className="btn btn-secondary"
+                            disabled={!followUpFormCode || childLoading}
+                            onClick={() => runChildPreflight(itemId, followUpFormCode)}
+                            style={{ display: "inline-flex", alignItems: "center", gap: 8, whiteSpace: "nowrap" }}
                           >
-                            <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
-                              {childOkToStart ? (
-                                <BookmarkCheckIcon
-                                  ref={(el) => {
-                                    followUpStatusIconRefs.current[iconKey] = el;
-                                  }}
-                                  size={18}
-                                />
-                              ) : (
-                                <BookmarkXIcon
-                                  ref={(el) => {
-                                    followUpStatusIconRefs.current[iconKey] = el;
-                                  }}
-                                  size={18}
-                                />
-                              )}
-                              <div style={{ display: "grid", gap: 2, minWidth: 0 }}>
-                                <div style={{ fontWeight: 700, fontSize: 14 }}>
-                                  {childOkToStart ? "Startklaar" : "Nog niet startklaar"}
-                                </div>
-                                <div className="muted" style={{ fontSize: 12 }}>
-                                  {childOkToStart
-                                    ? "Alle checks zijn in orde. Start het vervolgformulier."
-                                    : "Los blokkades op en controleer waarschuwingen."}
-                                </div>
-                              </div>
-                            </div>
+                            <ClipboardCheckIcon size={18} />
+                            Status controleren
+                          </button>
+                        </div>
 
-                            {childOkToStart && (
-                              <div style={{ display: "flex", alignItems: "center", gap: 10, flex: "0 0 auto" }}>
-                                <div className="muted" style={{ fontSize: 12, whiteSpace: "nowrap" }}>
-                                  Start vervolgformulier
-                                </div>
+                        {childLoading && <div className="muted">Status laden…</div>}
+                        {childError && <div style={{ color: "salmon" }}>{childError}</div>}
 
-                                <div className="icon-btn" style={{ flex: "0 0 auto" }} aria-hidden="true">
-                                  <RocketIcon
+                        {childPreflight && (
+                          <>
+                            <div
+                              className="card"
+                              role={childStartClickable ? "button" : undefined}
+                              tabIndex={childStartClickable ? 0 : -1}
+                              onClick={() => {
+                                if (childStartClickable) openChildForm();
+                              }}
+                              onKeyDown={(e) => {
+                                if (!childStartClickable) return;
+                                if (e.key === "Enter" || e.key === " ") {
+                                  e.preventDefault();
+                                  openChildForm();
+                                }
+                              }}
+                              onMouseEnter={() => {
+                                followUpStatusIconRefs.current[iconKey]?.startAnimation?.();
+                                if (childOkToStart) {
+                                  followUpStatusArrowRefs.current[iconKey]?.startAnimation?.();
+                                }
+                              }}
+                              onMouseLeave={() => {
+                                followUpStatusIconRefs.current[iconKey]?.stopAnimation?.();
+                                if (childOkToStart) {
+                                  followUpStatusArrowRefs.current[iconKey]?.stopAnimation?.();
+                                }
+                              }}
+                              style={{
+                                cursor: childStartClickable ? "pointer" : "default",
+                                padding: "12px 14px",
+                                display: "flex",
+                                alignItems: "center",
+                                justifyContent: "space-between",
+                                gap: 12,
+                                width: "100%",
+                              }}
+                              title={
+                                childOkToStart
+                                  ? "Start vervolgformulier"
+                                  : "Nog niet startklaar"
+                              }
+                            >
+                              <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
+                                {childOkToStart ? (
+                                  <BookmarkCheckIcon
                                     ref={(el) => {
-                                      followUpStatusArrowRefs.current[iconKey] = el;
+                                      followUpStatusIconRefs.current[iconKey] = el;
                                     }}
                                     size={18}
                                   />
+                                ) : (
+                                  <BookmarkXIcon
+                                    ref={(el) => {
+                                      followUpStatusIconRefs.current[iconKey] = el;
+                                    }}
+                                    size={18}
+                                  />
+                                )}
+                                <div style={{ display: "grid", gap: 2, minWidth: 0 }}>
+                                  <div style={{ fontWeight: 700, fontSize: 14 }}>
+                                    {childOkToStart ? "Startklaar" : "Nog niet startklaar"}
+                                  </div>
+                                  <div className="muted" style={{ fontSize: 12 }}>
+                                    {childOkToStart
+                                      ? "Alle checks zijn in orde. Start het vervolgformulier."
+                                      : "Los blokkades op en controleer waarschuwingen."}
+                                  </div>
+                                </div>
+                              </div>
+
+                              {childOkToStart && (
+                                <div style={{ display: "flex", alignItems: "center", gap: 10, flex: "0 0 auto" }}>
+                                  <div className="muted" style={{ fontSize: 12, whiteSpace: "nowrap" }}>
+                                    Start vervolgformulier
+                                  </div>
+
+                                  <div className="icon-btn" style={{ flex: "0 0 auto" }} aria-hidden="true">
+                                    <RocketIcon
+                                      ref={(el) => {
+                                        followUpStatusArrowRefs.current[iconKey] = el;
+                                      }}
+                                      size={18}
+                                    />
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+
+                            {childBlocking.length > 0 && (
+                              <div className="card" style={{ borderColor: "salmon" }}>
+                                <div style={{ fontWeight: 600, marginBottom: 8 }}>Blokkades</div>
+                                <div style={{ display: "grid" }}>
+                                  {childBlocking.map((b, idx) => (
+                                    <PreflightRow
+                                      key={`${itemId}-${b?.key || "cb"}-${idx}`}
+                                      item={b}
+                                      kind="blocking"
+                                      onOpenTab={onOpenTab}
+                                      showDivider={idx > 0}
+                                    />
+                                  ))}
                                 </div>
                               </div>
                             )}
-                          </div>
 
-                          {childBlocking.length > 0 && (
-                            <div className="card" style={{ borderColor: "salmon" }}>
-                              <div style={{ fontWeight: 600, marginBottom: 8 }}>Blokkades</div>
-                              <div style={{ display: "grid" }}>
-                                {childBlocking.map((b, idx) => (
-                                  <PreflightRow
-                                    key={`${itemId}-${b?.key || "cb"}-${idx}`}
-                                    item={b}
-                                    kind="blocking"
-                                    onOpenTab={onOpenTab}
-                                    showDivider={idx > 0}
-                                  />
-                                ))}
+                            {childWarnings.length > 0 && (
+                              <div className="card">
+                                <div style={{ fontWeight: 600, marginBottom: 8 }}>Waarschuwingen</div>
+                                <div style={{ display: "grid" }}>
+                                  {childWarnings.map((w, idx) => (
+                                    <PreflightRow
+                                      key={`${itemId}-${w?.key || "cw"}-${idx}`}
+                                      item={w}
+                                      kind="warning"
+                                      onOpenTab={onOpenTab}
+                                      showDivider={idx > 0}
+                                    />
+                                  ))}
+                                </div>
                               </div>
-                            </div>
-                          )}
-
-                          {childWarnings.length > 0 && (
-                            <div className="card">
-                              <div style={{ fontWeight: 600, marginBottom: 8 }}>Waarschuwingen</div>
-                              <div style={{ display: "grid" }}>
-                                {childWarnings.map((w, idx) => (
-                                  <PreflightRow
-                                    key={`${itemId}-${w?.key || "cw"}-${idx}`}
-                                    item={w}
-                                    kind="warning"
-                                    onOpenTab={onOpenTab}
-                                    showDivider={idx > 0}
-                                  />
-                                ))}
-                              </div>
-                            </div>
-                          )}
-                        </>
-                      )}
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        )}
+                            )}
+                          </>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
