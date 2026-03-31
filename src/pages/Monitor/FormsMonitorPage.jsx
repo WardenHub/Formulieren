@@ -19,9 +19,14 @@ import { PlusIcon } from "@/components/ui/plus";
 import { ChevronUpIcon } from "@/components/ui/chevron-up";
 import { RefreshCWIcon } from "@/components/ui/refresh-cw";
 import { RefreshCWOffIcon } from "@/components/ui/refresh-cw-off";
+import { CheckIcon } from "@/components/ui/check";
+import { ClipboardCheckIcon } from "@/components/ui/clipboard-check";
+import { DownloadIcon } from "@/components/ui/download";
+import { HistoryIcon } from "@/components/ui/history";
 
-const LS_KEY = "forms-monitor-state-v5";
+const LS_KEY = "forms-monitor-state-v7";
 const AUTO_REFRESH_MS = 30000;
+const COPY_FEEDBACK_MS = 1500;
 
 const STATUS_FILTER_OPTIONS = [
   { key: "INGEDIEND", label: "Ingediend" },
@@ -75,6 +80,18 @@ function getToneClass(tone) {
   if (tone === "warning") return "monitor-tag monitor-tag--warning";
   if (tone === "danger") return "monitor-tag monitor-tag--danger";
   return "monitor-tag monitor-tag--muted";
+}
+
+function getLastModifiedBy(source) {
+  if (!source) return "-";
+  return (
+    source.updated_by ||
+    source.last_modified_by ||
+    source.modified_by ||
+    source.submitted_by ||
+    source.created_by ||
+    "-"
+  );
 }
 
 function StatusTag({ status }) {
@@ -242,7 +259,15 @@ function buildRelationRows(item) {
   return rows;
 }
 
-function ActionFooter({ canFinish, finishBusy, onFinish, onOpenForm }) {
+function ActionFooter({
+  canFinish,
+  finishBusy,
+  onFinish,
+  onOpenForm,
+  footerOpenIconRef,
+  footerPdfIconRef,
+  footerFinishIconRef,
+}) {
   return (
     <div
       style={{
@@ -259,7 +284,11 @@ function ActionFooter({ canFinish, finishBusy, onFinish, onOpenForm }) {
         type="button"
         className="btn btn-secondary"
         onClick={onOpenForm}
+        style={{ display: "inline-flex", alignItems: "center", gap: 8 }}
+        onMouseEnter={() => footerOpenIconRef.current?.startAnimation?.()}
+        onMouseLeave={() => footerOpenIconRef.current?.stopAnimation?.()}
       >
+        <ArrowBigRightIcon ref={footerOpenIconRef} size={18} className="nav-anim-icon" />
         Open formulier
       </button>
 
@@ -268,8 +297,12 @@ function ActionFooter({ canFinish, finishBusy, onFinish, onOpenForm }) {
         className="btn btn-secondary"
         disabled
         title="PDF-export volgt later"
+        style={{ display: "inline-flex", alignItems: "center", gap: 8 }}
+        onMouseEnter={() => footerPdfIconRef.current?.startAnimation?.()}
+        onMouseLeave={() => footerPdfIconRef.current?.stopAnimation?.()}
       >
-        PDF-export
+        <DownloadIcon ref={footerPdfIconRef} size={18} className="nav-anim-icon" />
+        PDF
       </button>
 
       {canFinish && (
@@ -278,7 +311,11 @@ function ActionFooter({ canFinish, finishBusy, onFinish, onOpenForm }) {
           className="btn"
           disabled={finishBusy}
           onClick={onFinish}
+          style={{ display: "inline-flex", alignItems: "center", gap: 8 }}
+          onMouseEnter={() => footerFinishIconRef.current?.startAnimation?.()}
+          onMouseLeave={() => footerFinishIconRef.current?.stopAnimation?.()}
         >
+          <ClipboardCheckIcon ref={footerFinishIconRef} size={18} className="nav-anim-icon" />
           Formulier definitief maken
         </button>
       )}
@@ -293,10 +330,18 @@ export default function FormsMonitorPage() {
   const refreshIconRef = useRef(null);
   const refreshOffIconRef = useRef(null);
   const openIconRef = useRef(null);
+  const pdfIconRef = useRef(null);
+  const finishIconRef = useRef(null);
+  const footerOpenIconRef = useRef(null);
+  const footerPdfIconRef = useRef(null);
+  const footerFinishIconRef = useRef(null);
+  const setIngediendIconRef = useRef(null);
+  const setConceptIconRef = useRef(null);
   const propsToggleIconRef = useRef(null);
   const relationToggleIconRef = useRef(null);
 
   const noteSaveTimersRef = useRef({});
+  const copyResetTimersRef = useRef({});
 
   const [listLoading, setListLoading] = useState(true);
   const [detailLoading, setDetailLoading] = useState(false);
@@ -334,6 +379,7 @@ export default function FormsMonitorPage() {
   const [noteDrafts, setNoteDrafts] = useState(storedState?.noteDrafts ?? {});
   const [noteSavingById, setNoteSavingById] = useState({});
   const [noteSavedById, setNoteSavedById] = useState({});
+  const [copiedById, setCopiedById] = useState({});
 
   const visibleItems = useMemo(() => {
     const selectedStatusesSet = new Set(filters.selectedStatuses || []);
@@ -354,6 +400,10 @@ export default function FormsMonitorPage() {
   useEffect(() => {
     return () => {
       Object.values(noteSaveTimersRef.current).forEach((timerId) => {
+        if (timerId) window.clearTimeout(timerId);
+      });
+
+      Object.values(copyResetTimersRef.current).forEach((timerId) => {
         if (timerId) window.clearTimeout(timerId);
       });
     };
@@ -559,6 +609,9 @@ export default function FormsMonitorPage() {
   }
 
   async function handleCopyClipboard(row) {
+    const key = String(row?.follow_up_action_id || "");
+    if (!key) return;
+
     try {
       const text = buildClipboardText({
         detailItem: detail?.item || {},
@@ -566,6 +619,22 @@ export default function FormsMonitorPage() {
       });
 
       await navigator.clipboard.writeText(text);
+
+      setCopiedById((prev) => ({
+        ...prev,
+        [key]: true,
+      }));
+
+      if (copyResetTimersRef.current[key]) {
+        window.clearTimeout(copyResetTimersRef.current[key]);
+      }
+
+      copyResetTimersRef.current[key] = window.setTimeout(() => {
+        setCopiedById((prev) => ({
+          ...prev,
+          [key]: false,
+        }));
+      }, COPY_FEEDBACK_MS);
     } catch (e) {
       window.alert(e?.message || String(e));
     }
@@ -859,11 +928,15 @@ export default function FormsMonitorPage() {
                             display: "flex",
                             justifyContent: "space-between",
                             gap: 10,
-                            alignItems: "center",
+                            alignItems: "flex-start",
                             flexWrap: "wrap",
                           }}
                         >
                           <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                            <SummaryTag title="Documentnummer">
+                              {row.form_instance_id ?? "-"}
+                            </SummaryTag>
+
                             <SummaryTag title="Formulierversie">
                               v{row.version_label || "-"}
                             </SummaryTag>
@@ -879,8 +952,21 @@ export default function FormsMonitorPage() {
                             )}
                           </div>
 
-                          <div className="muted" style={{ fontSize: 12 }}>
-                            Laatste wijziging; {formatDateTime(row.updated_at || row.created_at)}
+                          <div
+                            className="muted"
+                            style={{
+                              fontSize: 12,
+                              display: "grid",
+                              gap: 2,
+                              textAlign: "right",
+                            }}
+                          >
+                            <div>
+                              Laatste wijziging: {formatDateTime(row.updated_at || row.created_at)}
+                            </div>
+                            <div>
+                              Laatst gewijzigd door: {getLastModifiedBy(row)}
+                            </div>
                           </div>
                         </div>
                       </div>
@@ -925,6 +1011,10 @@ export default function FormsMonitorPage() {
 
                       <StatusTag status={item.status} />
 
+                      <SummaryTag title="Documentnummer">
+                        {item.form_instance_id ?? "-"}
+                      </SummaryTag>
+
                       <SummaryTag title="Formulierversie">
                         v{item.version_label || "-"}
                       </SummaryTag>
@@ -956,7 +1046,11 @@ export default function FormsMonitorPage() {
                         className="btn btn-secondary"
                         disabled={formActionBusy}
                         onClick={() => handleFormAction("set_ingediend")}
+                        style={{ display: "inline-flex", alignItems: "center", gap: 8 }}
+                        onMouseEnter={() => setIngediendIconRef.current?.startAnimation?.()}
+                        onMouseLeave={() => setIngediendIconRef.current?.stopAnimation?.()}
                       >
+                        <FolderInputIcon ref={setIngediendIconRef} size={18} className="nav-anim-icon" />
                         Terug naar ingediend
                       </button>
                     )}
@@ -967,7 +1061,11 @@ export default function FormsMonitorPage() {
                         className="btn btn-secondary"
                         disabled={formActionBusy}
                         onClick={() => handleFormAction("set_concept")}
+                        style={{ display: "inline-flex", alignItems: "center", gap: 8 }}
+                        onMouseEnter={() => setConceptIconRef.current?.startAnimation?.()}
+                        onMouseLeave={() => setConceptIconRef.current?.stopAnimation?.()}
                       >
+                        <HistoryIcon ref={setConceptIconRef} size={18} className="nav-anim-icon" />
                         Terug naar concept
                       </button>
                     )}
@@ -992,8 +1090,12 @@ export default function FormsMonitorPage() {
                       className="btn btn-secondary"
                       disabled
                       title="PDF-export volgt later"
+                      style={{ display: "inline-flex", alignItems: "center", gap: 8 }}
+                      onMouseEnter={() => pdfIconRef.current?.startAnimation?.()}
+                      onMouseLeave={() => pdfIconRef.current?.stopAnimation?.()}
                     >
-                      PDF-export
+                      <DownloadIcon ref={pdfIconRef} size={18} className="nav-anim-icon" />
+                      PDF
                     </button>
 
                     {allowedActions.set_afgehandeld && (
@@ -1002,7 +1104,11 @@ export default function FormsMonitorPage() {
                         className="btn"
                         disabled={formActionBusy}
                         onClick={() => handleFormAction("set_afgehandeld")}
+                        style={{ display: "inline-flex", alignItems: "center", gap: 8 }}
+                        onMouseEnter={() => finishIconRef.current?.startAnimation?.()}
+                        onMouseLeave={() => finishIconRef.current?.stopAnimation?.()}
                       >
+                        <ClipboardCheckIcon ref={finishIconRef} size={18} className="nav-anim-icon" />
                         Formulier definitief maken
                       </button>
                     )}
@@ -1060,10 +1166,10 @@ export default function FormsMonitorPage() {
                     <div className="cf-grid">
                       <div className="cf-row">
                         <div className="cf-label">
-                          <div className="cf-label-text cf-label-text--accent">Documentnummer</div>
+                          <div className="cf-label-text cf-label-text--accent">Aangemaakt op</div>
                         </div>
                         <div className="cf-control">
-                          <input className="input" readOnly value={item.form_instance_id ?? ""} />
+                          <input className="input" readOnly value={formatDateTime(item.created_at)} />
                         </div>
                       </div>
 
@@ -1078,15 +1184,6 @@ export default function FormsMonitorPage() {
 
                       <div className="cf-row">
                         <div className="cf-label">
-                          <div className="cf-label-text cf-label-text--accent">Aangemaakt op</div>
-                        </div>
-                        <div className="cf-control">
-                          <input className="input" readOnly value={formatDateTime(item.created_at)} />
-                        </div>
-                      </div>
-
-                      <div className="cf-row">
-                        <div className="cf-label">
                           <div className="cf-label-text cf-label-text--accent">Laatste wijziging</div>
                         </div>
                         <div className="cf-control">
@@ -1095,6 +1192,28 @@ export default function FormsMonitorPage() {
                             readOnly
                             value={formatDateTime(item.updated_at || item.created_at)}
                           />
+                        </div>
+                      </div>
+
+                      <div className="cf-row">
+                        <div className="cf-label">
+                          <div className="cf-label-text cf-label-text--accent">Gewijzigd door</div>
+                        </div>
+                        <div className="cf-control">
+                          <input
+                            className="input"
+                            readOnly
+                            value={getLastModifiedBy(item)}
+                          />
+                        </div>
+                      </div>
+
+                      <div className="cf-row wide">
+                        <div className="cf-label">
+                          <div className="cf-label-text cf-label-text--accent">Documentnummer</div>
+                        </div>
+                        <div className="cf-control">
+                          <input className="input" readOnly value={item.form_instance_id ?? ""} />
                         </div>
                       </div>
                     </div>
@@ -1286,6 +1405,7 @@ export default function FormsMonitorPage() {
                         const noteValue = noteDrafts[noteKey] ?? normalizeNoteValue(row.note);
                         const noteSaving = Boolean(noteSavingById[noteKey]);
                         const noteSaved = Boolean(noteSavedById[noteKey]);
+                        const copied = Boolean(copiedById[noteKey]);
 
                         return (
                           <div
@@ -1338,9 +1458,9 @@ export default function FormsMonitorPage() {
                                   </SummaryTag>
                                 ) : null}
 
-                                {row.certificate_impact ? (
-                                  <SummaryTag title="Certificaatimpact">
-                                    certificaat; {row.certificate_impact}
+                                {String(row.certificate_impact || "").toLowerCase() === "yes" ? (
+                                  <SummaryTag title="Dit actiepunt blokkeert het certificaat">
+                                    Blokkeert certificaat
                                   </SummaryTag>
                                 ) : null}
 
@@ -1391,8 +1511,12 @@ export default function FormsMonitorPage() {
                                 onClick={() => handleCopyClipboard(row)}
                                 style={{ display: "inline-flex", alignItems: "center", gap: 8 }}
                               >
-                                <ArchiveIcon size={18} />
-                                Kopieer ERP-tekst
+                                {copied ? (
+                                  <CheckIcon size={18} className="nav-anim-icon" />
+                                ) : (
+                                  <ArchiveIcon size={18} />
+                                )}
+                                {copied ? "Actietekst gekopieerd" : "Kopieer actietekst"}
                               </button>
 
                               <div style={{ marginLeft: "auto", display: "flex", gap: 8, flexWrap: "wrap" }}>
@@ -1437,8 +1561,9 @@ export default function FormsMonitorPage() {
                                   className="btn"
                                   disabled={followUpBusyId === row.follow_up_action_id}
                                   onClick={() => handleFollowUpAction(row.follow_up_action_id, "mark_done")}
+                                  style={{ display: "inline-flex", alignItems: "center", gap: 8 }}
                                 >
-                                  <FolderInputIcon size={18} style={{ marginRight: 6 }} />
+                                  <CheckIcon size={18} className="nav-anim-icon" />
                                   Actiepunt afronden
                                 </button>
                               </div>
@@ -1458,6 +1583,9 @@ export default function FormsMonitorPage() {
                     const url = `/installaties/${encodeURIComponent(item.atrium_installation_code)}/formulieren/${encodeURIComponent(item.form_instance_id)}`;
                     window.open(url, "_blank", "noopener");
                   }}
+                  footerOpenIconRef={footerOpenIconRef}
+                  footerPdfIconRef={footerPdfIconRef}
+                  footerFinishIconRef={footerFinishIconRef}
                 />
               </>
             )}
