@@ -159,10 +159,10 @@ export function putFormAnswers(code, formInstanceId, payload) {
   );
 }
 
-export function startChildFormInstance(code, payload) {
+export function startChildFormInstance(code, parentInstanceId, formCode) {
   return apiPost(
-    `/installations/${encodeURIComponent(code)}/forms/start-child`,
-    payload ?? {}
+    `/installations/${encodeURIComponent(code)}/forms/instances/${encodeURIComponent(parentInstanceId)}/children/${encodeURIComponent(formCode)}/start`,
+    {}
   );
 }
 

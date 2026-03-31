@@ -50,13 +50,6 @@ function writeStoredState(code, state) {
   }
 }
 
-function formatDateTime(value) {
-  if (!value) return "-";
-  const d = new Date(value);
-  if (Number.isNaN(d.getTime())) return String(value);
-  return d.toLocaleString("nl-NL");
-}
-
 function formatCompactDateTime(value) {
   if (!value) return "-";
   const d = new Date(value);
@@ -82,6 +75,7 @@ function statusLabel(status) {
 function getStatusTone(status) {
   if (status === "IN_BEHANDELING") return "active";
   if (status === "INGEDIEND") return "neutral";
+  if (status === "AFGEHANDELDT") return "success";
   if (status === "AFGEHANDELD") return "success";
   if (status === "INGETROKKEN") return "muted";
   if (status === "CONCEPT") return "muted";
@@ -136,6 +130,30 @@ function TypeFilterChip({ label, active, onClick }) {
 function SummaryTag({ children, title }) {
   return (
     <span className="monitor-tag monitor-tag--muted" title={title}>
+      {children}
+    </span>
+  );
+}
+
+function RelationTag({ children, title }) {
+  return (
+    <span
+      title={title}
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        gap: 6,
+        padding: "5px 10px",
+        borderRadius: 999,
+        fontSize: 12,
+        fontWeight: 700,
+        lineHeight: 1,
+        color: "rgba(255,255,255,0.96)",
+        background: "rgba(70, 125, 255, 0.20)",
+        border: "1px solid rgba(110, 155, 255, 0.45)",
+        boxShadow: "inset 0 0 0 1px rgba(255,255,255,0.03)",
+      }}
+    >
       {children}
     </span>
   );
@@ -236,9 +254,6 @@ export default function FormsTab({
   const [expandedFollowUpForId, setExpandedFollowUpForId] = useState(
     storedState?.expandedFollowUpForId ?? null
   );
-  const [childFormCodeByParentId, setChildFormCodeByParentId] = useState(
-    storedState?.childFormCodeByParentId ?? {}
-  );
   const [childPreflightByParentId, setChildPreflightByParentId] = useState({});
   const [childPreflightLoadingByParentId, setChildPreflightLoadingByParentId] = useState({});
   const [childPreflightErrorByParentId, setChildPreflightErrorByParentId] = useState({});
@@ -267,7 +282,6 @@ export default function FormsTab({
       selectedStatuses,
       selectedFormTypes,
       expandedFollowUpForId,
-      childFormCodeByParentId,
     });
   }, [
     code,
@@ -276,7 +290,6 @@ export default function FormsTab({
     selectedStatuses,
     selectedFormTypes,
     expandedFollowUpForId,
-    childFormCodeByParentId,
   ]);
 
   const typeKey = installation?.installation_type_key || null;
@@ -491,10 +504,6 @@ export default function FormsTab({
     await loadInstances({ nextSearch: appliedSearch, nextStatuses: selectedStatuses });
   }
 
-  function getChildFormCode(parentId) {
-    return childFormCodeByParentId[String(parentId)] || "";
-  }
-
   function getChildPreflight(parentId) {
     return childPreflightByParentId[String(parentId)] || null;
   }
@@ -512,10 +521,6 @@ export default function FormsTab({
     const cleanFormCode = String(formCode || "").trim();
     const key = String(cleanParentId);
 
-    setChildFormCodeByParentId((prev) => ({
-      ...prev,
-      [key]: cleanFormCode || "",
-    }));
     setChildPreflightByParentId((prev) => ({
       ...prev,
       [key]: null,
@@ -855,19 +860,30 @@ export default function FormsTab({
           <div className="muted">Selecteer minimaal één status om formulieren te tonen.</div>
         )}
 
-        {!instancesLoading && !instancesError && selectedStatuses.length > 0 && formTypeOptions.length > 0 && selectedFormTypes.length === 0 && (
-          <div className="muted">Selecteer minimaal één formuliertype om formulieren te tonen.</div>
-        )}
+        {!instancesLoading &&
+          !instancesError &&
+          selectedStatuses.length > 0 &&
+          formTypeOptions.length > 0 &&
+          selectedFormTypes.length === 0 && (
+            <div className="muted">Selecteer minimaal één formuliertype om formulieren te tonen.</div>
+          )}
 
-        {!instancesLoading && !instancesError && selectedStatuses.length > 0 && selectedFormTypes.length > 0 && visibleRows.length === 0 && (
-          <div className="muted">Geen formulieren gevonden voor deze filters.</div>
-        )}
+        {!instancesLoading &&
+          !instancesError &&
+          selectedStatuses.length > 0 &&
+          selectedFormTypes.length > 0 &&
+          visibleRows.length === 0 && (
+            <div className="muted">Geen formulieren gevonden voor deze filters.</div>
+          )}
 
         {visibleRows.length > 0 && (
           <div style={{ display: "grid", gap: 8 }}>
             {visibleRows.map(({ item, depth }) => {
               const itemId = Number(item.form_instance_id);
-              const childFormCode = getChildFormCode(itemId);
+              const followUpFormCode = String(item.form_code || "").trim();
+              const followUpFormLabel =
+                String(item.form_name || item.form_code || "").trim() || "Onbekend formulier";
+
               const childPreflight = getChildPreflight(itemId);
               const childBlocking = Array.isArray(childPreflight?.blocking) ? childPreflight.blocking : [];
               const childWarnings = Array.isArray(childPreflight?.warnings) ? childPreflight.warnings : [];
@@ -878,13 +894,17 @@ export default function FormsTab({
               const canFollowUp = canStartFollowUp(item);
               const iconKey = String(itemId);
               const openIconKey = `open-${itemId}`;
-              const childStartClickable = childOkToStart && typeof onOpenChildForm === "function";
+              const childStartClickable =
+                childOkToStart &&
+                typeof onOpenChildForm === "function" &&
+                Boolean(followUpFormCode);
+
               const modifiedAt = item.updated_at || item.created_at;
               const modifiedBy = getLastModifiedBy(item);
 
               function openChildForm() {
                 if (!childStartClickable) return;
-                onOpenChildForm?.(itemId, childFormCode);
+                onOpenChildForm?.(itemId, followUpFormCode);
               }
 
               return (
@@ -915,13 +935,15 @@ export default function FormsTab({
                           {item.form_name || item.form_code || `Formulier ${item.form_instance_id}`}
                         </div>
                         <StatusTag status={item.status} />
-                        <SummaryTag title="Documentnummer">#{item.form_instance_id}</SummaryTag>
+                        <SummaryTag title="Formuliernummer">#{item.form_instance_id}</SummaryTag>
                         <SummaryTag title="Versie">v{item.version_label || "-"}</SummaryTag>
+
                         {item.parent_instance_id ? (
-                          <SummaryTag title="Vervolg op parent">
-                            Vervolg op #{item.parent_instance_id}
-                          </SummaryTag>
+                          <RelationTag title="Vervolgrelatie">
+                            Vervolg op formulier #{item.parent_instance_id}
+                          </RelationTag>
                         ) : null}
+
                         {item.relations?.has_children ? (
                           <SummaryTag title="Aantal vervolgformulieren">
                             {item.relations.child_count || 0} vervolg
@@ -1035,48 +1057,19 @@ export default function FormsTab({
                       }}
                     >
                       <div className="muted" style={{ fontSize: 13 }}>
-                        Start een vervolgformulier op basis van document #{item.form_instance_id}.
+                        Start een vervolgformulier op basis van formulier #{item.form_instance_id}.
                       </div>
 
-                      <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
-                        <select
-                          className="input"
-                          style={{ minWidth: 320 }}
-                          value={childFormCode}
-                          onChange={(e) => {
-                            const nextCode = e.target.value || "";
-                            setChildFormCodeByParentId((prev) => ({
-                              ...prev,
-                              [String(itemId)]: nextCode,
-                            }));
-                            setChildPreflightByParentId((prev) => ({
-                              ...prev,
-                              [String(itemId)]: null,
-                            }));
-                            setChildPreflightErrorByParentId((prev) => ({
-                              ...prev,
-                              [String(itemId)]: null,
-                            }));
-                          }}
-                          disabled={formsLoading}
-                        >
-                          <option value="">
-                            {formsLoading ? "Formulieren laden…" : "Selecteer vervolgformulier"}
-                          </option>
-
-                          {formOptions.map((f) => (
-                            <option key={`${itemId}-${f.code}`} value={f.code}>
-                              {f.name ? `${f.name}` : f.code}
-                              {f.is_applicable === false ? " (niet toepasbaar)" : ""}
-                            </option>
-                          ))}
-                        </select>
+                      <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                        <RelationTag title="Vervolgtype">
+                          {followUpFormLabel}
+                        </RelationTag>
 
                         <button
                           type="button"
                           className="btn btn-secondary"
-                          disabled={!childFormCode || childLoading}
-                          onClick={() => runChildPreflight(itemId, childFormCode)}
+                          disabled={!followUpFormCode || childLoading}
+                          onClick={() => runChildPreflight(itemId, followUpFormCode)}
                           style={{ display: "inline-flex", alignItems: "center", gap: 8, whiteSpace: "nowrap" }}
                         >
                           <ClipboardCheckIcon size={18} />

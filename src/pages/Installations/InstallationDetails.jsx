@@ -1,4 +1,4 @@
-// /src/pages/Installations/InstallationDetails.jsx
+// src/pages/Installations/InstallationDetails.jsx
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 
@@ -25,7 +25,7 @@ import { FileTextIcon } from "@/components/ui/file-text";
 import { ChevronsDownUpIcon } from "@/components/ui/chevrons-down-up";
 import { ChevronsUpDownIcon } from "@/components/ui/chevrons-up-down";
 import { CogIcon } from "@/components/ui/cog";
-
+import { RefreshCWIcon } from "@/components/ui/refresh-cw";
 
 import {
   getInstallation,
@@ -47,6 +47,7 @@ export default function InstallationDetails() {
 
   const backIconRef = useRef(null);
   const collapseAllIconRef = useRef(null);
+  const formsBusyIconRef = useRef(null);
 
   const atriumRef = useRef(null);
   const customSaveRef = useRef(null);
@@ -89,14 +90,15 @@ export default function InstallationDetails() {
   const [perfSaving, setPerfSaving] = useState(false);
   const [perfSaveOk, setPerfSaveOk] = useState(false);
 
-  // Formulieren state in parent, zodat tab-switch niet alles reset
   const [selectedFormCode, setSelectedFormCode] = useState(null);
   const [preflight, setPreflight] = useState(null);
   const [preflightLoading, setPreflightLoading] = useState(false);
   const [preflightError, setPreflightError] = useState(null);
 
-  // bump elke keer dat de forms-tab geopend wordt (robuste auto-refresh in FormsTab)
   const [formsActivationToken, setFormsActivationToken] = useState(0);
+
+  const [formsBusy, setFormsBusy] = useState(false);
+  const [formsBusyLabel, setFormsBusyLabel] = useState("");
 
   const [anyOpenByTab, setAnyOpenByTab] = useState({
     atrium: false,
@@ -121,7 +123,7 @@ export default function InstallationDetails() {
     if (activeTab === "custom") return customSaveRef.current;
     if (activeTab === "energy") return energySaveRef.current;
     if (activeTab === "performance") return perfRef.current;
-    return null; // documenten + forms: toggle is verborgen
+    return null;
   }
 
   function hasUnsavedChanges() {
@@ -133,11 +135,8 @@ export default function InstallationDetails() {
   }
 
   function confirmLeaveTab(nextTabKey) {
-    // switching within same tab: allow
     if (nextTabKey === activeTab) return true;
-
     if (!hasUnsavedChanges()) return true;
-
     return window.confirm("Je hebt niet-opgeslagen wijzigingen. Weet je zeker dat je wilt doorgaan?");
   }
 
@@ -230,7 +229,6 @@ export default function InstallationDetails() {
       setPerfDirty(false);
       setPerfSaveOk(false);
 
-      // type change: formulierselectie/preflight resetten (formulier-aanbod kan veranderen)
       setSelectedFormCode(null);
       setPreflight(null);
       setPreflightError(null);
@@ -317,6 +315,20 @@ export default function InstallationDetails() {
   }, []);
 
   useEffect(() => {
+    return () => {
+      formsBusyIconRef.current?.stopAnimation?.();
+    };
+  }, []);
+
+  useEffect(() => {
+    if (formsBusy) {
+      formsBusyIconRef.current?.startAnimation?.();
+    } else {
+      formsBusyIconRef.current?.stopAnimation?.();
+    }
+  }, [formsBusy]);
+
+  useEffect(() => {
     function onBeforeUnload(e) {
       if (!hasUnsavedChanges()) return;
       e.preventDefault();
@@ -375,7 +387,6 @@ export default function InstallationDetails() {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [
     activeTab,
-
     customDirty,
     customSaving,
     docsDirty,
@@ -384,7 +395,6 @@ export default function InstallationDetails() {
     energySaving,
     perfDirty,
     perfSaving,
-
     showCollapseAllToggle,
     anyOpenInActiveTab,
   ]);
@@ -421,12 +431,12 @@ export default function InstallationDetails() {
       {
         key: "components",
         label: "Componenten",
-        Icon: CogIcon, 
+        Icon: CogIcon,
         content: (
           <ComponentsTab
-            ref={componentsRef}                      
+            ref={componentsRef}
             code={code}
-            onAnyOpenChange={(v) => setAnyOpen("components", v)} 
+            onAnyOpenChange={(v) => setAnyOpen("components", v)}
           />
         ),
       },
@@ -548,26 +558,34 @@ export default function InstallationDetails() {
               const clean = String(formCode || "").trim();
               if (!clean) return;
 
-              const res = await startFormInstance(code, clean);
+              setFormsBusy(true);
+              setFormsBusyLabel("Formulier starten...");
 
-              const id =
-                res?.item?.form_instance_id ||
-                res?.item?.instance_id ||
-                res?.form_instance_id ||
-                res?.instance_id ||
-                res?.instance?.form_instance_id ||
-                res?.instance?.instance_id ||
-                res?.formInstance?.form_instance_id ||
-                res?.formInstance?.instance_id;
+              try {
+                const res = await startFormInstance(code, clean);
 
-              if (!id) {
-                console.error("startFormInstance: missing instance id", res);
-                return;
+                const id =
+                  res?.item?.form_instance_id ||
+                  res?.item?.instance_id ||
+                  res?.form_instance_id ||
+                  res?.instance_id ||
+                  res?.instance?.form_instance_id ||
+                  res?.instance?.instance_id ||
+                  res?.formInstance?.form_instance_id ||
+                  res?.formInstance?.instance_id;
+
+                if (!id) {
+                  console.error("startFormInstance: missing instance id", res);
+                  return;
+                }
+
+                navigate(
+                  `/installaties/${encodeURIComponent(code)}/formulieren/${encodeURIComponent(id)}`
+                );
+              } finally {
+                setFormsBusy(false);
+                setFormsBusyLabel("");
               }
-
-              navigate(
-                `/installaties/${encodeURIComponent(code)}/formulieren/${encodeURIComponent(id)}`
-              );
             }}
             onOpenExistingForm={(instanceId) => {
               const id = Number(instanceId);
@@ -577,32 +595,38 @@ export default function InstallationDetails() {
                 `/installaties/${encodeURIComponent(code)}/formulieren/${encodeURIComponent(id)}`
               );
             }}
-            onOpenChildForm={async (parentInstanceId, formCode) => {
+            onOpenChildForm={async (parentInstanceId) => {
               const parentId = Number(parentInstanceId);
-              const clean = String(formCode || "").trim();
               if (!Number.isInteger(parentId) || parentId <= 0) return;
-              if (!clean) return;
 
-              const res = await startChildFormInstance(code, parentId, clean);
+              setFormsBusy(true);
+              setFormsBusyLabel("Vervolgformulier starten...");
 
-              const id =
-                res?.item?.form_instance_id ||
-                res?.item?.instance_id ||
-                res?.form_instance_id ||
-                res?.instance_id ||
-                res?.instance?.form_instance_id ||
-                res?.instance?.instance_id ||
-                res?.formInstance?.form_instance_id ||
-                res?.formInstance?.instance_id;
+              try {
+                const res = await startChildFormInstance(code, parentId);
 
-              if (!id) {
-                console.error("startChildFormInstance: missing instance id", res);
-                return;
+                const id =
+                  res?.item?.form_instance_id ||
+                  res?.item?.instance_id ||
+                  res?.form_instance_id ||
+                  res?.instance_id ||
+                  res?.instance?.form_instance_id ||
+                  res?.instance?.instance_id ||
+                  res?.formInstance?.form_instance_id ||
+                  res?.formInstance?.instance_id;
+
+                if (!id) {
+                  console.error("startChildFormInstance: missing instance id", res);
+                  return;
+                }
+
+                navigate(
+                  `/installaties/${encodeURIComponent(code)}/formulieren/${encodeURIComponent(id)}`
+                );
+              } finally {
+                setFormsBusy(false);
+                setFormsBusyLabel("");
               }
-
-              navigate(
-                `/installaties/${encodeURIComponent(code)}/formulieren/${encodeURIComponent(id)}`
-              );
             }}
             onAnyOpenChange={(v) => setAnyOpen("forms", v)}
           />
@@ -641,6 +665,60 @@ export default function InstallationDetails() {
 
   return (
     <div>
+      {formsBusy && (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            pointerEvents: "auto",
+            zIndex: 80,
+            background: "rgba(0, 0, 0, 0.18)",
+            backdropFilter: "blur(1px)",
+          }}
+        >
+          <div
+            className="card"
+            style={{
+              minWidth: 280,
+              maxWidth: 420,
+              padding: 24,
+              display: "grid",
+              gap: 10,
+              justifyItems: "center",
+              textAlign: "center",
+              border: "1px solid rgba(255,255,255,0.16)",
+              boxShadow: "0 20px 60px rgba(0,0,0,0.28)",
+            }}
+          >
+            <div
+              style={{
+                width: 72,
+                height: 72,
+                borderRadius: 999,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                background: "rgba(255,255,255,0.08)",
+                boxShadow: "0 0 0 8px rgba(255,255,255,0.04)",
+              }}
+            >
+              <RefreshCWIcon ref={formsBusyIconRef} size={34} />
+            </div>
+
+            <div style={{ fontWeight: 900, fontSize: 22, lineHeight: 1.1 }}>
+              Laden...
+            </div>
+
+            <div className="muted" style={{ fontSize: 13 }}>
+              {formsBusyLabel || "Bezig met formulieren verwerken."}
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="inst-sticky">
         <div className="inst-sticky-row">
           <div className="inst-sticky-left">

@@ -1,6 +1,4 @@
-// =========================================================
-// forms runtime - import answerfile v1
-// =========================================================
+// api/src/db/queries/forms.sql.ts
 
 export const importAnswerFileSql = `
 -- expects:
@@ -679,15 +677,16 @@ select
 // =========================================================
 // forms runtime - start child form (create or resume concept child instance)
 // - same installation only
-// - explicit parent linkage
-// - resume only within same installation + same parent + same latest form version
+// - child is ALWAYS same form type as parent
+// - newest version of same form type is used
+// - parent answers/calculated are copied into child
 // =========================================================
 
 export const startChildFormInstanceSql = `
 -- expects:
 --   @code nvarchar(...)
 --   @parentInstanceId bigint
---   @formCode nvarchar(...)
+--   @formCode nvarchar(...)   -- wordt genegeerd; child volgt altijd parent-formulier
 --   @createdBy nvarchar(...)
 
 if not exists (select 1 from dbo.AtriumInstallationBase where installatie_code = @code)
@@ -731,23 +730,27 @@ begin
 end;
 
 declare @parentInstallationId uniqueidentifier;
-select top 1 @parentInstallationId = installation_id
-from dbo.FormInstance
-where form_instance_id = @parentInstanceId
-  and atrium_installation_code = @code;
+declare @parentFormId uniqueidentifier;
+declare @parentFormCode nvarchar(100);
+
+select top 1
+  @parentInstallationId = parent_fi.installation_id,
+  @parentFormId = parent_fd.form_id,
+  @parentFormCode = parent_fd.code
+from dbo.FormInstance parent_fi
+join dbo.FormDefinitionVersion parent_fv
+  on parent_fv.form_version_id = parent_fi.form_version_id
+join dbo.FormDefinition parent_fd
+  on parent_fd.form_id = parent_fv.form_id
+where parent_fi.form_instance_id = @parentInstanceId
+  and parent_fi.atrium_installation_code = @code;
 
 if @parentInstallationId <> @installationId
 begin
   throw 50000, 'parent form instance invalid', 1;
 end;
 
-declare @formId uniqueidentifier;
-select top 1 @formId = fd.form_id
-from dbo.FormDefinition fd
-where fd.code = @formCode
-  and fd.status = 'A';
-
-if @formId is null
+if @parentFormId is null
 begin
   throw 50000, 'form not found', 1;
 end;
@@ -755,7 +758,7 @@ end;
 declare @formVersionId uniqueidentifier;
 select top 1 @formVersionId = fv.form_version_id
 from dbo.FormDefinitionVersion fv
-where fv.form_id = @formId
+where fv.form_id = @parentFormId
 order by fv.version desc;
 
 if @formVersionId is null
@@ -777,9 +780,25 @@ begin
   select
     @existingInstanceId as form_instance_id,
     @formVersionId as form_version_id,
-    @formId as form_id;
+    @parentFormId as form_id,
+    @parentFormCode as form_code;
   return;
 end;
+
+declare @defaultTitle nvarchar(200) =
+  concat(N'Vervolg op formulier #', convert(nvarchar(30), @parentInstanceId));
+
+declare @parentAnswersJson nvarchar(max) = N'{}';
+declare @parentCalculatedJson nvarchar(max) = null;
+
+select top 1
+  @parentAnswersJson = isnull(fa.answers_json, N'{}'),
+  @parentCalculatedJson = fa.calculated_json
+from dbo.FormInstance parent_fi
+left join dbo.FormAnswer fa
+  on fa.form_instance_id = parent_fi.form_instance_id
+where parent_fi.form_instance_id = @parentInstanceId
+  and parent_fi.atrium_installation_code = @code;
 
 insert into dbo.FormInstance (
   form_version_id,
@@ -804,7 +823,7 @@ values (
   @installationId,
   @code,
   N'CONCEPT',
-  null,
+  @defaultTitle,
   null,
   @parentInstanceId,
   null,
@@ -829,16 +848,25 @@ insert into dbo.FormAnswer (
 )
 values (
   @instanceId,
-  N'{}',
-  null,
+  isnull(@parentAnswersJson, N'{}'),
+  @parentCalculatedJson,
   sysutcdatetime(),
   @createdBy
 );
 
+update dbo.FormInstance
+set
+  updated_at = sysutcdatetime(),
+  updated_by = @createdBy,
+  draft_rev = 1
+where form_instance_id = @instanceId
+  and atrium_installation_code = @code;
+
 select
   @instanceId as form_instance_id,
   @formVersionId as form_version_id,
-  @formId as form_id;
+  @parentFormId as form_id,
+  @parentFormCode as form_code;
 `;
 
 // =========================================================
