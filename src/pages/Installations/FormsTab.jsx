@@ -25,11 +25,49 @@ const STATUS_FILTER_OPTIONS = [
 
 const DEFAULT_SELECTED_STATUSES = STATUS_FILTER_OPTIONS.map((x) => x.key);
 
+function getStorageKey(code) {
+  return `forms-tab-state-v2::${String(code || "")}`;
+}
+
+function readStoredState(code) {
+  try {
+    if (!code) return null;
+    const raw = window.localStorage.getItem(getStorageKey(code));
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === "object" ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+function writeStoredState(code, state) {
+  try {
+    if (!code) return;
+    window.localStorage.setItem(getStorageKey(code), JSON.stringify(state));
+  } catch {
+    // ignore
+  }
+}
+
 function formatDateTime(value) {
   if (!value) return "-";
   const d = new Date(value);
   if (Number.isNaN(d.getTime())) return String(value);
   return d.toLocaleString("nl-NL");
+}
+
+function formatCompactDateTime(value) {
+  if (!value) return "-";
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return String(value);
+  return d.toLocaleString("nl-NL", {
+    day: "numeric",
+    month: "numeric",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
 }
 
 function statusLabel(status) {
@@ -174,6 +212,8 @@ export default function FormsTab({
   onOpenChildForm,
   onAnyOpenChange,
 }) {
+  const storedState = useMemo(() => readStoredState(code), [code]);
+
   const [formsLoading, setFormsLoading] = useState(false);
   const [formsError, setFormsError] = useState(null);
   const [forms, setForms] = useState([]);
@@ -182,13 +222,23 @@ export default function FormsTab({
   const [instancesError, setInstancesError] = useState(null);
   const [instances, setInstances] = useState([]);
 
-  const [searchInput, setSearchInput] = useState("");
-  const [appliedSearch, setAppliedSearch] = useState("");
-  const [selectedStatuses, setSelectedStatuses] = useState(DEFAULT_SELECTED_STATUSES);
-  const [selectedFormTypes, setSelectedFormTypes] = useState([]);
+  const [searchInput, setSearchInput] = useState(storedState?.searchInput ?? "");
+  const [appliedSearch, setAppliedSearch] = useState(storedState?.appliedSearch ?? "");
+  const [selectedStatuses, setSelectedStatuses] = useState(
+    Array.isArray(storedState?.selectedStatuses) && storedState.selectedStatuses.length > 0
+      ? storedState.selectedStatuses
+      : DEFAULT_SELECTED_STATUSES
+  );
+  const [selectedFormTypes, setSelectedFormTypes] = useState(
+    Array.isArray(storedState?.selectedFormTypes) ? storedState.selectedFormTypes : []
+  );
 
-  const [expandedFollowUpForId, setExpandedFollowUpForId] = useState(null);
-  const [childFormCodeByParentId, setChildFormCodeByParentId] = useState({});
+  const [expandedFollowUpForId, setExpandedFollowUpForId] = useState(
+    storedState?.expandedFollowUpForId ?? null
+  );
+  const [childFormCodeByParentId, setChildFormCodeByParentId] = useState(
+    storedState?.childFormCodeByParentId ?? {}
+  );
   const [childPreflightByParentId, setChildPreflightByParentId] = useState({});
   const [childPreflightLoadingByParentId, setChildPreflightLoadingByParentId] = useState({});
   const [childPreflightErrorByParentId, setChildPreflightErrorByParentId] = useState({});
@@ -199,7 +249,6 @@ export default function FormsTab({
   const searchIconRef = useRef(null);
   const refreshIconRef = useRef(null);
   const followUpToggleIconRefs = useRef({});
-  const followUpActionIconRefs = useRef({});
   const followUpStatusIconRefs = useRef({});
   const followUpStatusArrowRefs = useRef({});
   const openFormIconRefs = useRef({});
@@ -210,6 +259,25 @@ export default function FormsTab({
   useEffect(() => {
     onAnyOpenChange?.(false);
   }, [onAnyOpenChange]);
+
+  useEffect(() => {
+    writeStoredState(code, {
+      searchInput,
+      appliedSearch,
+      selectedStatuses,
+      selectedFormTypes,
+      expandedFollowUpForId,
+      childFormCodeByParentId,
+    });
+  }, [
+    code,
+    searchInput,
+    appliedSearch,
+    selectedStatuses,
+    selectedFormTypes,
+    expandedFollowUpForId,
+    childFormCodeByParentId,
+  ]);
 
   const typeKey = installation?.installation_type_key || null;
 
@@ -351,24 +419,33 @@ export default function FormsTab({
 
     if (!hasInitializedTypeFiltersRef.current) {
       hasInitializedTypeFiltersRef.current = true;
-      setSelectedFormTypes(availableKeys);
+
+      if (Array.isArray(storedState?.selectedFormTypes) && storedState.selectedFormTypes.length > 0) {
+        const storedSet = new Set(storedState.selectedFormTypes);
+        const restored = availableKeys.filter((key) => storedSet.has(key));
+        setSelectedFormTypes(restored.length > 0 ? restored : availableKeys);
+      } else {
+        setSelectedFormTypes(availableKeys);
+      }
       return;
     }
 
     setSelectedFormTypes((prev) => {
       const prevSet = new Set(prev);
-      const hadAllSelected =
-        prev.length > 0 &&
-        prev.length === availableKeys.filter((key) => prevSet.has(key)).length &&
-        prev.length <= availableKeys.length;
+      const intersection = availableKeys.filter((key) => prevSet.has(key));
 
-      if (hadAllSelected) {
-        return availableKeys;
+      if (prev.length === 0) return availableKeys;
+      if (intersection.length === prev.length && prev.length <= availableKeys.length) {
+        const hadAllAvailableSelected =
+          prev.length === availableKeys.length &&
+          availableKeys.every((key) => prevSet.has(key));
+
+        if (hadAllAvailableSelected) return availableKeys;
       }
 
-      return availableKeys.filter((key) => prevSet.has(key));
+      return intersection.length > 0 ? intersection : availableKeys;
     });
-  }, [formTypeOptions]);
+  }, [formTypeOptions, storedState]);
 
   const filteredInstances = useMemo(() => {
     if (!Array.isArray(instances) || instances.length === 0) return [];
@@ -787,7 +864,7 @@ export default function FormsTab({
         )}
 
         {visibleRows.length > 0 && (
-          <div style={{ display: "grid", gap: 10 }}>
+          <div style={{ display: "grid", gap: 8 }}>
             {visibleRows.map(({ item, depth }) => {
               const itemId = Number(item.form_instance_id);
               const childFormCode = getChildFormCode(itemId);
@@ -802,6 +879,8 @@ export default function FormsTab({
               const iconKey = String(itemId);
               const openIconKey = `open-${itemId}`;
               const childStartClickable = childOkToStart && typeof onOpenChildForm === "function";
+              const modifiedAt = item.updated_at || item.created_at;
+              const modifiedBy = getLastModifiedBy(item);
 
               function openChildForm() {
                 if (!childStartClickable) return;
@@ -812,12 +891,12 @@ export default function FormsTab({
                 <div
                   key={item.form_instance_id}
                   style={{
-                    marginLeft: depth * 22,
-                    padding: 12,
+                    marginLeft: depth * 18,
+                    padding: "10px 12px",
                     border: "1px solid rgba(255,255,255,0.12)",
                     borderRadius: 12,
                     display: "grid",
-                    gap: 10,
+                    gap: 8,
                     background: depth > 0 ? "rgba(255,255,255,0.02)" : "transparent",
                   }}
                 >
@@ -830,9 +909,9 @@ export default function FormsTab({
                       flexWrap: "wrap",
                     }}
                   >
-                    <div style={{ display: "grid", gap: 6, minWidth: 0 }}>
+                    <div style={{ display: "grid", gap: 4, minWidth: 0, flex: "1 1 420px" }}>
                       <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-                        <div style={{ fontWeight: 700 }}>
+                        <div style={{ fontWeight: 700, fontSize: 15 }}>
                           {item.form_name || item.form_code || `Formulier ${item.form_instance_id}`}
                         </div>
                         <StatusTag status={item.status} />
@@ -851,21 +930,45 @@ export default function FormsTab({
                       </div>
 
                       {item.instance_title ? (
-                        <div className="muted" style={{ fontSize: 13 }}>
+                        <div className="muted" style={{ fontSize: 13, lineHeight: 1.25 }}>
                           {item.instance_title}
                         </div>
                       ) : null}
 
                       {item.instance_note ? (
-                        <div className="muted" style={{ fontSize: 13, whiteSpace: "pre-wrap" }}>
+                        <div
+                          className="muted"
+                          style={{
+                            fontSize: 13,
+                            lineHeight: 1.25,
+                            whiteSpace: "pre-wrap",
+                          }}
+                        >
                           {item.instance_note}
                         </div>
                       ) : null}
                     </div>
 
-                    <div className="muted" style={{ fontSize: 12, display: "grid", gap: 2, textAlign: "right" }}>
-                      <div>Laatste wijziging: {formatDateTime(item.updated_at || item.created_at)}</div>
-                      <div>Laatst gewijzigd door: {getLastModifiedBy(item)}</div>
+                    <div
+                      style={{
+                        flex: "0 0 auto",
+                        minWidth: 220,
+                        display: "grid",
+                        gap: 2,
+                        justifyItems: "end",
+                        textAlign: "right",
+                      }}
+                    >
+                      <div style={{ fontSize: 12 }}>
+                        Laatste wijziging: {formatCompactDateTime(modifiedAt)}
+                      </div>
+                      <div className="muted" style={{ fontSize: 12 }}>
+                        door {modifiedBy}
+                      </div>
+                      <div className="muted" style={{ fontSize: 11, marginTop: 2 }}>
+                        Aangemaakt: {formatCompactDateTime(item.created_at)}
+                        {item.created_by ? ` door ${item.created_by}` : ""}
+                      </div>
                     </div>
                   </div>
 
