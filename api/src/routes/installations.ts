@@ -1,5 +1,3 @@
-// /api/src/routes/installations.ts
-
 import { Router } from "express";
 import {
   getInstallation,
@@ -20,8 +18,10 @@ import {
   putPerformanceRequirements,
   getFormStartPreflight,
   getFormsCatalog,
+  getInstallationFormInstances,
   importFormAnswerFile,
   startFormInstance,
+  startChildFormInstance,
   getFormInstance,
   withdrawFormInstance,
   submitFormInstance,
@@ -54,8 +54,9 @@ router.get("/nen2535/catalog", requireRole("admin", "gebruiker"), getNen2535Cata
 router.get("/:code/performance-requirements", requireRole("admin", "gebruiker"), getPerformanceRequirements);
 router.put("/:code/performance-requirements", requireRole("admin", "gebruiker"), putPerformanceRequirements);
 
-// preflight formulieren
+// forms start / catalog / overview / preflight
 router.get("/:code/forms/catalog", requireRole("admin", "gebruiker"), getFormsCatalog);
+router.get("/:code/forms/overview", requireRole("admin", "gebruiker"), getInstallationFormInstances);
 router.get("/:code/forms/:formCode/preflight", requireRole("admin", "gebruiker"), getFormStartPreflight);
 
 // basis installatie data
@@ -73,6 +74,11 @@ router.post("/:code/forms/:formCode/prefill", requireRole("admin", "gebruiker"),
 
 // forms runtime
 router.post("/:code/forms/:formCode/start", requireRole("admin", "gebruiker"), startFormInstance);
+router.post(
+  "/:code/forms/instances/:parentInstanceId/children/:formCode/start",
+  requireRole("admin", "gebruiker"),
+  startChildFormInstance
+);
 router.get("/:code/forms/instances/:instanceId", requireRole("admin", "gebruiker"), getFormInstance);
 router.put("/:code/forms/instances/:instanceId/metadata", requireRole("admin", "gebruiker"), putFormInstanceMetadata);
 router.put("/:code/forms/instances/:instanceId/answers", requireRole("admin", "gebruiker"), putFormAnswers);

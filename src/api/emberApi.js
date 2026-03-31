@@ -112,6 +112,25 @@ export function getFormsCatalog(code) {
   return apiGet(`/installations/${encodeURIComponent(code)}/forms/catalog`);
 }
 
+export function getInstallationFormInstances(code, params = {}) {
+  const qs = new URLSearchParams();
+
+  if (params.q && String(params.q).trim()) {
+    qs.set("q", String(params.q).trim());
+  }
+
+  const statuses = Array.isArray(params.statuses)
+    ? params.statuses.map((x) => String(x || "").trim()).filter(Boolean)
+    : [];
+
+  if (statuses.length > 0) {
+    qs.set("statuses", statuses.join(","));
+  }
+
+  const suffix = qs.toString() ? `?${qs.toString()}` : "";
+  return apiGet(`/installations/${encodeURIComponent(code)}/forms/overview${suffix}`);
+}
+
 // forms runtime
 export function startFormInstance(code, formCode) {
   return apiPost(
@@ -137,6 +156,13 @@ export function putFormAnswers(code, formInstanceId, payload) {
   return apiPut(
     `/installations/${encodeURIComponent(code)}/forms/instances/${encodeURIComponent(formInstanceId)}/answers`,
     payload
+  );
+}
+
+export function startChildFormInstance(code, payload) {
+  return apiPost(
+    `/installations/${encodeURIComponent(code)}/forms/start-child`,
+    payload ?? {}
   );
 }
 
@@ -178,6 +204,7 @@ export function getFormPrefill(code, formCode, keys) {
     { keys }
   );
 }
+
 
 export function getInstallationComponents(code) {
   return apiGet(`/installations/${encodeURIComponent(code)}/components`);

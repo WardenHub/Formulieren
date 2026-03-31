@@ -1,4 +1,3 @@
-// /api/src/db/queries/forms.sql.ts
 // =========================================================
 // forms runtime - import answerfile v1
 // =========================================================
@@ -252,6 +251,131 @@ select
 from forms f
 left join app a on a.form_id = f.form_id
 order by f.sort_order asc, f.name asc;
+`;
+
+// =========================================================
+// forms runtime - installation overview for FormsTab
+// - installation scoped
+// - supports small search on form/title/note/creator/modifier
+// - supports multi-status filtering via @statusesJson
+// =========================================================
+
+export const getInstallationFormInstancesSql = `
+-- expects:
+--   @code nvarchar(...)
+--   @q nvarchar(...) (nullable)
+--   @statusesJson nvarchar(max) (nullable json array)
+
+if not exists (select 1 from dbo.AtriumInstallationBase where installatie_code = @code)
+begin
+  throw 50000, 'atrium installation not found', 1;
+end;
+
+;with status_filter as (
+  select distinct upper(convert(nvarchar(30), [value])) as status_value
+  from openjson(isnull(@statusesJson, N'[]'))
+  where nullif(ltrim(rtrim(convert(nvarchar(30), [value]))), N'') is not null
+),
+base as (
+  select
+    fi.form_instance_id,
+    fi.status,
+    fi.instance_title,
+    fi.instance_note,
+    fi.parent_instance_id,
+    fi.atrium_installation_code,
+    fi.created_at,
+    fi.created_by,
+    fi.updated_at,
+    fi.updated_by,
+    fi.submitted_at,
+    fi.submitted_by,
+
+    fd.code as form_code,
+    fd.name as form_name,
+    fv.version,
+    fv.version_label,
+
+    parent_fi.form_instance_id as parent_form_instance_id,
+    parent_fd.code as parent_form_code,
+    parent_fd.name as parent_form_name,
+    parent_fi.instance_title as parent_instance_title,
+
+    case when exists (
+      select 1
+      from dbo.FormInstance child_fi
+      where child_fi.parent_instance_id = fi.form_instance_id
+    ) then 1 else 0 end as has_children,
+
+    (
+      select count(*)
+      from dbo.FormInstance child_fi
+      where child_fi.parent_instance_id = fi.form_instance_id
+    ) as child_count
+  from dbo.FormInstance fi
+  join dbo.FormDefinitionVersion fv
+    on fv.form_version_id = fi.form_version_id
+  join dbo.FormDefinition fd
+    on fd.form_id = fv.form_id
+  left join dbo.FormInstance parent_fi
+    on parent_fi.form_instance_id = fi.parent_instance_id
+  left join dbo.FormDefinitionVersion parent_fv
+    on parent_fv.form_version_id = parent_fi.form_version_id
+  left join dbo.FormDefinition parent_fd
+    on parent_fd.form_id = parent_fv.form_id
+  where fi.atrium_installation_code = @code
+),
+filtered as (
+  select b.*
+  from base b
+  where
+    (
+      not exists (select 1 from status_filter)
+      or exists (
+        select 1
+        from status_filter sf
+        where sf.status_value = upper(b.status)
+      )
+    )
+    and (
+      nullif(ltrim(rtrim(convert(nvarchar(400), @q))), N'') is null
+      or b.form_name like N'%' + convert(nvarchar(400), @q) + N'%'
+      or b.form_code like N'%' + convert(nvarchar(400), @q) + N'%'
+      or isnull(b.instance_title, N'') like N'%' + convert(nvarchar(400), @q) + N'%'
+      or isnull(b.instance_note, N'') like N'%' + convert(nvarchar(400), @q) + N'%'
+      or isnull(b.created_by, N'') like N'%' + convert(nvarchar(400), @q) + N'%'
+      or isnull(b.updated_by, N'') like N'%' + convert(nvarchar(400), @q) + N'%'
+      or isnull(b.submitted_by, N'') like N'%' + convert(nvarchar(400), @q) + N'%'
+    )
+)
+select
+  form_instance_id,
+  status,
+  instance_title,
+  instance_note,
+  parent_instance_id,
+  atrium_installation_code,
+  created_at,
+  created_by,
+  updated_at,
+  updated_by,
+  submitted_at,
+  submitted_by,
+  form_code,
+  form_name,
+  version,
+  version_label,
+  parent_form_instance_id,
+  parent_form_code,
+  parent_form_name,
+  parent_instance_title,
+  has_children,
+  child_count
+from filtered
+order by
+  isnull(updated_at, created_at) desc,
+  created_at desc,
+  form_instance_id desc;
 `;
 
 // =========================================================
@@ -518,6 +642,171 @@ values (
   null,
   null,
   null,
+  null,
+  null,
+  0,
+  sysutcdatetime(),
+  @createdBy,
+  null,
+  null,
+  null,
+  null
+);
+
+declare @instanceId bigint = cast(scope_identity() as bigint);
+
+insert into dbo.FormAnswer (
+  form_instance_id,
+  answers_json,
+  calculated_json,
+  updated_at,
+  updated_by
+)
+values (
+  @instanceId,
+  N'{}',
+  null,
+  sysutcdatetime(),
+  @createdBy
+);
+
+select
+  @instanceId as form_instance_id,
+  @formVersionId as form_version_id,
+  @formId as form_id;
+`;
+
+// =========================================================
+// forms runtime - start child form (create or resume concept child instance)
+// - same installation only
+// - explicit parent linkage
+// - resume only within same installation + same parent + same latest form version
+// =========================================================
+
+export const startChildFormInstanceSql = `
+-- expects:
+--   @code nvarchar(...)
+--   @parentInstanceId bigint
+--   @formCode nvarchar(...)
+--   @createdBy nvarchar(...)
+
+if not exists (select 1 from dbo.AtriumInstallationBase where installatie_code = @code)
+begin
+  throw 50000, 'atrium installation not found', 1;
+end;
+
+if not exists (select 1 from dbo.Installation where atrium_installation_code = @code)
+begin
+  insert into dbo.Installation (
+    installation_id,
+    atrium_installation_code,
+    installation_type_key,
+    created_at,
+    created_by,
+    is_active
+  )
+  values (
+    newid(),
+    @code,
+    null,
+    sysutcdatetime(),
+    @createdBy,
+    1
+  );
+end;
+
+declare @installationId uniqueidentifier;
+select top 1 @installationId = i.installation_id
+from dbo.Installation i
+where i.atrium_installation_code = @code;
+
+if not exists (
+  select 1
+  from dbo.FormInstance parent_fi
+  where parent_fi.form_instance_id = @parentInstanceId
+    and parent_fi.atrium_installation_code = @code
+)
+begin
+  throw 50000, 'parent form instance not found', 1;
+end;
+
+declare @parentInstallationId uniqueidentifier;
+select top 1 @parentInstallationId = installation_id
+from dbo.FormInstance
+where form_instance_id = @parentInstanceId
+  and atrium_installation_code = @code;
+
+if @parentInstallationId <> @installationId
+begin
+  throw 50000, 'parent form instance invalid', 1;
+end;
+
+declare @formId uniqueidentifier;
+select top 1 @formId = fd.form_id
+from dbo.FormDefinition fd
+where fd.code = @formCode
+  and fd.status = 'A';
+
+if @formId is null
+begin
+  throw 50000, 'form not found', 1;
+end;
+
+declare @formVersionId uniqueidentifier;
+select top 1 @formVersionId = fv.form_version_id
+from dbo.FormDefinitionVersion fv
+where fv.form_id = @formId
+order by fv.version desc;
+
+if @formVersionId is null
+begin
+  throw 50000, 'form has no versions', 1;
+end;
+
+declare @existingInstanceId bigint;
+select top 1 @existingInstanceId = fi.form_instance_id
+from dbo.FormInstance fi
+where fi.installation_id = @installationId
+  and fi.form_version_id = @formVersionId
+  and fi.parent_instance_id = @parentInstanceId
+  and fi.status = N'CONCEPT'
+order by fi.created_at desc;
+
+if @existingInstanceId is not null
+begin
+  select
+    @existingInstanceId as form_instance_id,
+    @formVersionId as form_version_id,
+    @formId as form_id;
+  return;
+end;
+
+insert into dbo.FormInstance (
+  form_version_id,
+  installation_id,
+  atrium_installation_code,
+  status,
+  instance_title,
+  instance_note,
+  parent_instance_id,
+  locked_by,
+  lock_expires_at,
+  draft_rev,
+  created_at,
+  created_by,
+  updated_at,
+  updated_by,
+  submitted_at,
+  submitted_by
+)
+values (
+  @formVersionId,
+  @installationId,
+  @code,
+  N'CONCEPT',
+  null,
+  null,
+  @parentInstanceId,
   null,
   null,
   0,

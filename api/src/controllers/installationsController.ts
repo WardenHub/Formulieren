@@ -1,5 +1,4 @@
 // api/src/controllers/installationsController.ts
-
 import type { Request, Response } from "express";
 import * as service from "../services/installationsService.js";
 import * as formsService from "../services/formsService.js";
@@ -304,6 +303,36 @@ export async function getFormsCatalog(req: any, res: Response) {
   }
 }
 
+export async function getInstallationFormInstances(req: any, res: Response) {
+  try {
+    const code = String(req.params.code || "");
+    const q = req.query?.q ? String(req.query.q) : null;
+
+    const rawStatuses = req.query?.statuses;
+    const statuses = Array.isArray(rawStatuses)
+      ? rawStatuses.map((x) => String(x).trim()).filter(Boolean)
+      : typeof rawStatuses === "string"
+        ? rawStatuses.split(",").map((x) => x.trim()).filter(Boolean)
+        : [];
+
+    const data = await formsService.getInstallationFormInstances(code, {
+      q,
+      statuses,
+    });
+
+    return res.json(data);
+  } catch (err: any) {
+    const msg = (err?.message || String(err)).toLowerCase();
+
+    if (msg.includes("atrium installation not found")) {
+      return res.status(404).json({ error: "atrium installation not found" });
+    }
+
+    console.error(err);
+    return res.status(500).json({ error: "getInstallationFormInstances failed" });
+  }
+}
+
 export async function startFormInstance(req: any, res: Response) {
   try {
     const code = String(req.params.code || "");
@@ -319,6 +348,52 @@ export async function startFormInstance(req: any, res: Response) {
     if (msg.includes("form not found")) return res.status(404).json({ error: "form not found" });
     console.error(err);
     return res.status(500).json({ error: "startFormInstance failed" });
+  }
+}
+
+export async function startChildFormInstance(req: any, res: Response) {
+  try {
+    const code = String(req.params.code || "");
+    const parentInstanceId = req.params.parentInstanceId;
+    const formCode = String(req.params.formCode || "");
+
+    const result = await formsService.startChildFormInstance(
+      code,
+      parentInstanceId,
+      formCode,
+      req.user
+    );
+
+    if (result && "ok" in result && result.ok === false) {
+      return res.status(400).json(result);
+    }
+
+    if (result && "error" in result) {
+      if (result.error === "not found") {
+        return res.status(404).json({ error: "not found" });
+      }
+      return res.status(400).json({ error: result.error });
+    }
+
+    return res.json(result);
+  } catch (err: any) {
+    const msg = String(err?.message || err).toLowerCase();
+
+    if (msg.includes("atrium installation not found")) {
+      return res.status(404).json({ error: "atrium installation not found" });
+    }
+    if (msg.includes("parent form instance not found")) {
+      return res.status(404).json({ error: "parent form instance not found" });
+    }
+    if (msg.includes("parent form instance invalid")) {
+      return res.status(400).json({ error: "parent form instance invalid" });
+    }
+    if (msg.includes("form not found")) {
+      return res.status(404).json({ error: "form not found" });
+    }
+
+    console.error(err);
+    return res.status(500).json({ error: "startChildFormInstance failed" });
   }
 }
 

@@ -11,7 +11,9 @@ import {
 import {
   importAnswerFileSql,
   getFormInstanceSql,
+  getInstallationFormInstancesSql,
   startFormInstanceSql,
+  startChildFormInstanceSql,
   getFormsCatalogForInstallationSql,
   getFormStartPreflightSql,
   reopenFormInstanceSql,
@@ -233,6 +235,64 @@ export async function getFormsCatalog(code: string) {
   return { items };
 }
 
+export async function getInstallationFormInstances(
+  code: string,
+  options: {
+    q?: any;
+    statuses?: any;
+  } = {}
+) {
+  const cleanCode = String(code || "").trim();
+  const q = normalizeOptionalText(options?.q);
+  const statuses = Array.isArray(options?.statuses)
+    ? options.statuses
+        .map((x: any) => String(x || "").trim().toUpperCase())
+        .filter((x: string) => x.length > 0)
+    : [];
+
+  const rows = await sqlQuery(getInstallationFormInstancesSql, {
+    code: cleanCode,
+    q,
+    statusesJson: JSON.stringify(statuses),
+  });
+
+  const items = Array.isArray(rows)
+    ? rows.map((r: any) => ({
+        form_instance_id: Number(r.form_instance_id),
+        status: String(r.status || ""),
+        instance_title: r.instance_title ?? null,
+        instance_note: r.instance_note ?? null,
+        parent_instance_id: r.parent_instance_id == null ? null : Number(r.parent_instance_id),
+        atrium_installation_code: r.atrium_installation_code ?? null,
+        created_at: r.created_at ?? null,
+        created_by: r.created_by ?? null,
+        updated_at: r.updated_at ?? null,
+        updated_by: r.updated_by ?? null,
+        submitted_at: r.submitted_at ?? null,
+        submitted_by: r.submitted_by ?? null,
+        form_code: r.form_code ?? null,
+        form_name: r.form_name ?? null,
+        version: r.version == null ? null : Number(r.version),
+        version_label: r.version_label ?? null,
+        parent: r.parent_form_instance_id
+          ? {
+              form_instance_id: Number(r.parent_form_instance_id),
+              form_code: r.parent_form_code ?? null,
+              form_name: r.parent_form_name ?? null,
+              instance_title: r.parent_instance_title ?? null,
+            }
+          : null,
+        relations: {
+          has_parent: r.parent_instance_id != null,
+          has_children: Number(r.has_children ?? 0) === 1,
+          child_count: Number(r.child_count ?? 0),
+        },
+      }))
+    : [];
+
+  return { items };
+}
+
 export async function startFormInstance(code: string, formCode: string, user: any) {
   const cleanCode = String(code || "").trim();
   const cleanFormCode = String(formCode || "").trim();
@@ -240,6 +300,34 @@ export async function startFormInstance(code: string, formCode: string, user: an
 
   const rows = await sqlQuery(startFormInstanceSql, {
     code: cleanCode,
+    formCode: cleanFormCode,
+    createdBy,
+  });
+
+  const row: any = rows?.[0] ?? null;
+  if (!row) return { error: "not found" };
+
+  return await getFormInstance(cleanCode, row.form_instance_id);
+}
+
+export async function startChildFormInstance(
+  code: string,
+  parentInstanceId: number | string,
+  formCode: string,
+  user: any
+) {
+  const cleanCode = String(code || "").trim();
+  const cleanFormCode = String(formCode || "").trim();
+  const parentId = parseInstanceId(parentInstanceId);
+  const createdBy = getUserDisplayName(user);
+
+  if (parentId == null) {
+    return { ok: false, error: "ongeldige parent_instance_id" };
+  }
+
+  const rows = await sqlQuery(startChildFormInstanceSql, {
+    code: cleanCode,
+    parentInstanceId: parentId,
     formCode: cleanFormCode,
     createdBy,
   });

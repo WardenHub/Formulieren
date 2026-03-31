@@ -38,6 +38,7 @@ import {
   getEnergySupplyBrandTypes,
   getFormStartPreflight,
   startFormInstance,
+  startChildFormInstance,
 } from "../../api/emberApi.js";
 
 export default function InstallationDetails() {
@@ -161,23 +162,37 @@ export default function InstallationDetails() {
     setEnergyBrandTypes(types?.types || []);
   }
 
-  async function runPreflight(formCode) {
+  async function runPreflight(formCode, options = {}) {
     const clean = formCode ? String(formCode).trim() : "";
+    const silent = options?.silent === true;
 
-    setSelectedFormCode(clean || null);
-    setPreflight(null);
-    setPreflightError(null);
+    if (!silent) {
+      setSelectedFormCode(clean || null);
+      setPreflight(null);
+      setPreflightError(null);
+    }
 
-    if (!clean) return;
+    if (!clean) return null;
 
-    setPreflightLoading(true);
+    if (!silent) {
+      setPreflightLoading(true);
+    }
+
     try {
       const res = await getFormStartPreflight(code, clean);
-      setPreflight(res || null);
+      if (!silent) {
+        setPreflight(res || null);
+      }
+      return res || null;
     } catch (e) {
-      setPreflightError(e?.message || String(e));
+      if (!silent) {
+        setPreflightError(e?.message || String(e));
+      }
+      throw e;
     } finally {
-      setPreflightLoading(false);
+      if (!silent) {
+        setPreflightLoading(false);
+      }
     }
   }
 
@@ -527,7 +542,7 @@ export default function InstallationDetails() {
             preflightLoading={preflightLoading}
             preflightError={preflightError}
             onSelectForm={(formCode) => runPreflight(formCode)}
-            onStartChecklist={() => runPreflight(selectedFormCode)}
+            onStartChecklist={(formCode, options) => runPreflight(formCode ?? selectedFormCode, options)}
             onOpenTab={(tabKey) => setActiveTab(tabKey)}
             onOpenForm={async (formCode) => {
               const clean = String(formCode || "").trim();
@@ -547,6 +562,41 @@ export default function InstallationDetails() {
 
               if (!id) {
                 console.error("startFormInstance: missing instance id", res);
+                return;
+              }
+
+              navigate(
+                `/installaties/${encodeURIComponent(code)}/formulieren/${encodeURIComponent(id)}`
+              );
+            }}
+            onOpenExistingForm={(instanceId) => {
+              const id = Number(instanceId);
+              if (!Number.isInteger(id) || id <= 0) return;
+
+              navigate(
+                `/installaties/${encodeURIComponent(code)}/formulieren/${encodeURIComponent(id)}`
+              );
+            }}
+            onOpenChildForm={async (parentInstanceId, formCode) => {
+              const parentId = Number(parentInstanceId);
+              const clean = String(formCode || "").trim();
+              if (!Number.isInteger(parentId) || parentId <= 0) return;
+              if (!clean) return;
+
+              const res = await startChildFormInstance(code, parentId, clean);
+
+              const id =
+                res?.item?.form_instance_id ||
+                res?.item?.instance_id ||
+                res?.form_instance_id ||
+                res?.instance_id ||
+                res?.instance?.form_instance_id ||
+                res?.instance?.instance_id ||
+                res?.formInstance?.form_instance_id ||
+                res?.formInstance?.instance_id;
+
+              if (!id) {
+                console.error("startChildFormInstance: missing instance id", res);
                 return;
               }
 
