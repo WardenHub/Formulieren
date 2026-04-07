@@ -11,25 +11,36 @@ function buildUrl(path) {
   return API_BASE ? `${API_BASE}${p}` : p;
 }
 
+export function buildApiUrl(path) {
+  return buildUrl(path);
+}
+
+async function buildHeaders(extraHeaders = {}) {
+  const token = await getApiAccessToken();
+
+  return {
+    ...(extraHeaders || {}),
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+  };
+}
+
 export async function httpJson(path, options = {}) {
   const url = buildUrl(path);
 
-  const token = await getApiAccessToken();
+  const headers = await buildHeaders({
+    ...(options.headers || {}),
+    Accept: "application/json",
+  });
 
   const res = await fetch(url, {
     ...options,
     credentials: "omit",
-    headers: {
-      ...(options.headers || {}),
-      Accept: "application/json",
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-    },
+    headers,
   });
 
   if (res.status === 401) {
-  throw new Error("unauthorized");
+    throw new Error("unauthorized");
   }
-
 
   const ct = res.headers.get("content-type") || "";
   if (!ct.includes("application/json")) {
@@ -40,6 +51,47 @@ export async function httpJson(path, options = {}) {
   if (!res.ok) {
     const data = await res.json().catch(() => null);
     throw new Error(data?.error || `Request failed (${res.status})`);
+  }
+
+  return res.json();
+}
+
+export async function httpUpload(path, formData, options = {}) {
+  const url = buildUrl(path);
+
+  const headers = await buildHeaders({
+    ...(options.headers || {}),
+    Accept: "application/json",
+  });
+
+  const res = await fetch(url, {
+    ...options,
+    method: options.method || "POST",
+    credentials: "omit",
+    headers,
+    body: formData,
+  });
+
+  if (res.status === 401) {
+    throw new Error("unauthorized");
+  }
+
+  const ct = res.headers.get("content-type") || "";
+  const isJson = ct.includes("application/json");
+
+  if (!res.ok) {
+    if (isJson) {
+      const data = await res.json().catch(() => null);
+      throw new Error(data?.error || `Request failed (${res.status})`);
+    }
+
+    const text = await res.text().catch(() => "");
+    throw new Error(text || `Request failed (${res.status})`);
+  }
+
+  if (!isJson) {
+    const text = await res.text();
+    throw new Error(`Expected JSON from ${url}, got: ${ct}. First chars: ${text.slice(0, 80)}`);
   }
 
   return res.json();

@@ -1,3 +1,4 @@
+// src/routes/AppRoutes.jsx
 import { Routes, Route } from "react-router-dom";
 import Layout from "../layout/layout.jsx";
 import Home from "../pages/Home.jsx";
@@ -8,6 +9,7 @@ import FormRunnerDebug from "../pages/Forms/FormRunnerDebug.jsx";
 import SurveyDesigner from "../pages/dev/FormDesigner.jsx";
 import AdminPage from "../pages/Admin/AdminPage.jsx";
 import FormsMonitorPage from "../pages/Monitor/FormsMonitorPage.jsx";
+import FormsMonitorDetailPage from "../pages/Monitor/FormsMonitorDetailPage.jsx";
 import NotFound from "../pages/NotFound.jsx";
 
 export default function AppRoutes() {
@@ -28,6 +30,8 @@ export default function AppRoutes() {
         />
 
         <Route path="/monitor/formulieren" element={<FormsMonitorPage />} />
+        <Route path="/monitor/formulieren/:instanceId" element={<FormsMonitorDetailPage />} />
+
         <Route path="/dev/formdev" element={<SurveyDesigner />} />
         <Route path="/admin" element={<AdminPage />} />
         <Route path="*" element={<NotFound />} />

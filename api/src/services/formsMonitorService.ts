@@ -324,6 +324,16 @@ export async function getMonitorList(input: {
       open_count: Number(r.follow_up_open_count ?? 0),
       terminal_count: Number(r.follow_up_terminal_count ?? 0),
     },
+    follow_up_counts: {
+      total_count: Number(r.follow_up_total_count ?? 0),
+      open_count: Number(r.follow_up_open_count ?? 0),
+      waiting_count: Number(r.follow_up_waiting_count ?? 0),
+      done_count: Number(r.follow_up_done_count ?? 0),
+      rejected_count: Number(r.follow_up_rejected_count ?? 0),
+      expired_count: Number(r.follow_up_expired_count ?? 0),
+      informative_count: Number(r.follow_up_informative_count ?? 0),
+      terminal_count: Number(r.follow_up_terminal_count ?? 0),
+    },
     relations: {
       has_parent: r.parent_instance_id != null,
       has_children: Number(r.has_children ?? 0) === 1,

@@ -1,3 +1,5 @@
+// src/pages/Installations/InstallationDetails.jsx
+
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 
@@ -182,6 +184,7 @@ export default function InstallationDetails() {
     if (activeTab === "custom") return customSaveRef.current;
     if (activeTab === "energy") return energySaveRef.current;
     if (activeTab === "performance") return perfRef.current;
+    if (activeTab === "documents") return docsSaveRef.current;
     return null;
   }
 
@@ -204,7 +207,7 @@ export default function InstallationDetails() {
     setActiveTab(nextTabKey);
   }
 
-  const showCollapseAllToggle = activeTab !== "documents" && activeTab !== "forms";
+  const showCollapseAllToggle = activeTab !== "forms";
   const anyOpenInActiveTab = Boolean(anyOpenByTab[activeTab]);
   const collapseBtnTitle = anyOpenInActiveTab ? "Alles inklappen" : "Alles uitklappen";
   const CollapseIcon = anyOpenInActiveTab ? ChevronsDownUpIcon : ChevronsUpDownIcon;

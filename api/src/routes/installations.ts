@@ -1,5 +1,5 @@
-// api/src/routes/installations.ts
 import { Router } from "express";
+import multer from "multer";
 import {
   getInstallation,
   getCatalog,
@@ -8,6 +8,11 @@ import {
   getDocuments,
   putInstallationType,
   putDocuments,
+  uploadDocumentFile,
+  getDocumentDownloadUrl,
+  downloadDocumentFile,
+  createDocumentReplacement,
+  createDocumentAttachment,
   searchInstallations,
   getEnergySupplies,
   putEnergySupplies,
@@ -38,7 +43,15 @@ import { requireRole } from "../middleware/roleMiddleware.js";
 
 const router = Router();
 
-// authMiddleware zit al globaal in app.ts; dus hier geen router.use(authMiddleware)
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: {
+    fileSize: Number(process.env.DOCUMENT_UPLOAD_MAX_BYTES || 25 * 1024 * 1024),
+  },
+});
+
+const documentRoles = ["admin", "gebruiker", "documentbeheerder"] as const;
+
 router.get("/search", requireRole("admin", "gebruiker"), searchInstallations);
 
 // stroomvoorziening e.d.
@@ -66,9 +79,37 @@ router.get("/:code/catalog", getCatalog);
 router.get("/:code/custom-values", getCustomValues);
 router.get("/:code/components", requireRole("admin", "gebruiker"), getInstallationComponents);
 router.put("/:code/custom-values", requireRole("admin", "gebruiker"), putCustomValues);
-router.get("/:code/documents", requireRole("admin", "gebruiker"), getDocuments);
+
+router.get("/:code/documents", requireRole(...documentRoles), getDocuments);
+router.put("/:code/documents", requireRole(...documentRoles), putDocuments);
+router.post(
+  "/:code/documents/:documentId/upload",
+  requireRole(...documentRoles),
+  upload.single("file"),
+  uploadDocumentFile
+);
+router.get(
+  "/:code/documents/:documentId/download-url",
+  requireRole(...documentRoles),
+  getDocumentDownloadUrl
+);
+router.get(
+  "/:code/documents/:documentId/download",
+  requireRole(...documentRoles),
+  downloadDocumentFile
+);
+router.post(
+  "/:code/documents/:documentId/replacements",
+  requireRole(...documentRoles),
+  createDocumentReplacement
+);
+router.post(
+  "/:code/documents/:documentId/attachments",
+  requireRole(...documentRoles),
+  createDocumentAttachment
+);
+
 router.put("/:code/type", requireRole("admin", "gebruiker"), putInstallationType);
-router.put("/:code/documents", requireRole("admin", "gebruiker"), putDocuments);
 
 // prefill (SurveyJS ember.bind kind="prefill")
 router.post("/:code/forms/:formCode/prefill", requireRole("admin", "gebruiker"), getFormPrefill);

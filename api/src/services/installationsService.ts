@@ -1,6 +1,6 @@
 // api/src/services/installationsService.ts
-
 import { sqlQuery, sqlQueryRaw } from "../db/index.js";
+
 import {
   getInstallationSql,
   getCustomValuesSql,
@@ -10,10 +10,13 @@ import {
   getCatalogDocumentTypesSql,
   getCatalogCustomFieldOptionsSql,
   upsertCustomValuesSql,
-  getInstallationDocumentsSql, 
-  upsertInstallationDocumentsSql,
   searchInstallationsSql
 } from "../db/queries/installations.sql.js";
+
+import {
+  getInstallationDocumentsReadSql,
+  upsertInstallationDocumentsMetadataSql,
+} from "../db/queries/installationDocuments.sql.js";
 
 import {
   ensureInstallationSql,
@@ -179,7 +182,7 @@ export async function upsertCustomValues(code: string, values: any[], user: any)
 }
 
 export async function getInstallationDocuments(code: string) {
-  const rows = await sqlQuery(getInstallationDocumentsSql, { code });
+  const rows = await sqlQuery(getInstallationDocumentsReadSql, { code });
 
   const byType = new Map<
     string,
@@ -202,20 +205,108 @@ export async function getInstallationDocuments(code: string) {
         documents: [],
       });
     }
+  }
 
-    if (r.document_id) {
-      byType.get(r.document_type_key)!.documents.push({
-        document_id: r.document_id,
-        document_type_key: r.document_type_key,
-        document_is_active: r.document_is_active,
-        title: r.title,
-        document_number: r.document_number,
-        document_date: r.document_date,
-        revision: r.revision,
-        created_at: r.created_at,
-        created_by: r.created_by,
+  const rowsByType = new Map<string, any[]>();
+  for (const r of rows as any[]) {
+    if (!r.document_id) continue;
+    const arr = rowsByType.get(r.document_type_key) || [];
+    arr.push({
+      document_id: r.document_id,
+      document_type_key: r.document_type_key,
+      parent_document_id: r.parent_document_id ?? null,
+      relation_type: r.relation_type ?? null,
+
+      title: r.title ?? "",
+      note: r.note ?? "",
+      document_number: r.document_number ?? "",
+      document_date: r.document_date ?? null,
+      revision: r.revision ?? "",
+
+      has_file: Boolean(r.storage_key),
+      file_name: r.file_name ?? null,
+      mime_type: r.mime_type ?? null,
+      file_size_bytes: r.file_size_bytes ?? null,
+      uploaded_at: r.uploaded_at ?? null,
+      uploaded_by: r.uploaded_by ?? null,
+      file_last_modified_at: r.file_last_modified_at ?? null,
+      file_last_modified_by: r.file_last_modified_by ?? null,
+
+      storage_provider: r.storage_provider ?? null,
+      storage_key: r.storage_key ?? null,
+
+      document_is_active: r.document_is_active ?? true,
+      created_at: r.created_at ?? null,
+      created_by: r.created_by ?? null,
+      updated_at: r.updated_at ?? null,
+      updated_by: r.updated_by ?? null,
+
+      attachments: [],
+      history: [],
+    });
+    rowsByType.set(r.document_type_key, arr);
+  }
+
+  for (const [typeKey, arr] of rowsByType.entries()) {
+    const docsById = new Map(arr.map((d) => [String(d.document_id), d]));
+    const replacedParentIds = new Set<string>();
+
+    for (const d of arr) {
+      if (String(d.relation_type || "").toUpperCase() === "VERVANGING" && d.parent_document_id) {
+        replacedParentIds.add(String(d.parent_document_id));
+      }
+    }
+
+    const mainDocs = arr.filter((d) => {
+      if (String(d.relation_type || "").toUpperCase() === "BIJLAGE") return false;
+      return !replacedParentIds.has(String(d.document_id));
+    });
+
+    const resolveHistory = (head: any) => {
+      const history: any[] = [];
+      let current = head;
+
+      while (current?.parent_document_id) {
+        const parent = docsById.get(String(current.parent_document_id));
+        if (!parent) break;
+
+        history.push({
+          ...parent,
+          attachments: [],
+          history: [],
+        });
+
+        current = parent;
+      }
+
+      return history;
+    };
+
+    const attachmentParentIds = new Set<string>();
+    for (const d of arr) {
+      if (String(d.relation_type || "").toUpperCase() === "BIJLAGE" && d.parent_document_id) {
+        attachmentParentIds.add(String(d.parent_document_id));
+      }
+    }
+
+    for (const main of mainDocs) {
+      main.history = resolveHistory(main);
+
+      const validParentIds = new Set<string>([
+        String(main.document_id),
+        ...main.history.map((x: any) => String(x.document_id)),
+      ]);
+
+      main.attachments = arr.filter((d) => {
+        return (
+          String(d.relation_type || "").toUpperCase() === "BIJLAGE" &&
+          d.parent_document_id &&
+          validParentIds.has(String(d.parent_document_id))
+        );
       });
     }
+
+    byType.get(typeKey)!.documents = mainDocs;
   }
 
   return {
@@ -236,21 +327,10 @@ export async function upsertInstallationDocuments(code: string, documents: any[]
       document_type_key: String(d.document_type_key),
 
       title: d.title ?? null,
+      note: d.note ?? null,
       document_number: d.document_number ?? null,
       document_date: d.document_date ?? null,
       revision: d.revision ?? null,
-
-      file_name: d.file_name ?? null,
-      mime_type: d.mime_type ?? null,
-      file_size_bytes: d.file_size_bytes ?? null,
-
-      storage_provider: d.storage_provider ?? null,
-      storage_key: d.storage_key ?? null,
-      storage_url: d.storage_url ?? null,
-      checksum_sha256: d.checksum_sha256 ?? null,
-
-      source_system: d.source_system ?? null,
-      source_reference: d.source_reference ?? null,
 
       is_active: d.is_active ?? true,
     }));
@@ -258,7 +338,7 @@ export async function upsertInstallationDocuments(code: string, documents: any[]
   const documentsJson = JSON.stringify(cleaned);
   const updatedBy = user?.name || user?.objectId || "unknown";
 
-  const result = await sqlQuery(upsertInstallationDocumentsSql, {
+  const result = await sqlQuery(upsertInstallationDocumentsMetadataSql, {
     code,
     documentsJson,
     updatedBy,

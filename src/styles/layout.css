@@ -1090,3 +1090,1151 @@ input[type="date"].input{
   background: rgba(148,163,184,.06);
   color: rgba(203,213,225,.80);
 }
+
+
+
+@media (max-width: 1100px){
+  .doc-row-grid,
+  .doc-card-edit-grid{
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 720px){
+  .doc-row-grid,
+  .doc-card-edit-grid{
+    grid-template-columns: 1fr;
+  }
+}
+
+/* =========================================================
+   Monitor overview/detail split
+   ========================================================= */
+
+.monitor-dossier-row{
+  width: 100%;
+  padding: 12px;
+  border-radius: 14px;
+  border: 1px solid rgba(255,255,255,0.10);
+  background: rgba(255,255,255,0.02);
+  color: inherit;
+  cursor: pointer;
+  text-align: left;
+  display: grid;
+  gap: 10px;
+}
+
+.monitor-dossier-row:hover{
+  background: rgba(255,255,255,0.05);
+  border-color: rgba(255,255,255,0.16);
+}
+
+.monitor-chain-card{
+  width: 100%;
+  padding: 10px;
+  border: 1px solid rgba(255,255,255,0.12);
+  border-radius: 10px;
+  background: rgba(255,255,255,0.02);
+  color: inherit;
+  cursor: pointer;
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  align-items: center;
+}
+
+.monitor-chain-card:hover{
+  background: rgba(255,255,255,0.05);
+  border-color: rgba(255,255,255,0.16);
+}
+
+.monitor-followup-card{
+  padding: 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(255,255,255,0.12);
+  background: rgba(255,255,255,0.02);
+  display: grid;
+  gap: 10px;
+}
+
+.monitor-followup-card--active{
+  border-color: rgba(59,130,246,.30);
+  background: rgba(59,130,246,.10);
+}
+
+.monitor-followup-card--warning{
+  border-color: rgba(245,158,11,.30);
+  background: rgba(245,158,11,.10);
+}
+
+.monitor-followup-card--success{
+  border-color: rgba(34,197,94,.28);
+  background: rgba(34,197,94,.10);
+}
+
+.monitor-followup-card--danger{
+  border-color: rgba(239,68,68,.28);
+  background: rgba(239,68,68,.10);
+}
+
+.monitor-followup-card--neutral{
+  border-color: rgba(148,163,184,.24);
+  background: rgba(148,163,184,.08);
+}
+
+.monitor-followup-card--muted{
+  border-color: rgba(148,163,184,.14);
+  background: rgba(148,163,184,.05);
+}
+
+.monitor-followup-note-box{
+  padding: 10px;
+  border: 1px solid rgba(255,255,255,0.10);
+  border-radius: 10px;
+  display: grid;
+  gap: 6px;
+  background: rgba(0,0,0,0.10);
+}
+
+/* =========================================================
+   Monitor UX refinement
+   ========================================================= */
+
+.monitor-surface{
+  border: 1px solid rgba(255,255,255,0.12);
+  background: rgba(255,255,255,0.02);
+}
+
+.monitor-surface--active{
+  border-color: rgba(59,130,246,.28);
+  background: rgba(59,130,246,.08);
+}
+
+.monitor-surface--neutral{
+  border-color: rgba(148,163,184,.20);
+  background: rgba(148,163,184,.06);
+}
+
+.monitor-surface--success{
+  border-color: rgba(34,197,94,.28);
+  background: rgba(34,197,94,.10);
+}
+
+.monitor-surface--warning{
+  border-color: rgba(245,158,11,.28);
+  background: rgba(245,158,11,.09);
+}
+
+.monitor-surface--danger{
+  border-color: rgba(239,68,68,.28);
+  background: rgba(239,68,68,.09);
+}
+
+.monitor-surface--muted{
+  border-color: rgba(148,163,184,.14);
+  background: rgba(148,163,184,.05);
+}
+
+.monitor-link-tag{
+  cursor: pointer;
+}
+
+.monitor-link-tag:hover{
+  filter: brightness(1.08);
+}
+
+.monitor-dossier-row{
+  width: 100%;
+  padding: 12px;
+  border-radius: 14px;
+  color: inherit;
+  display: grid;
+  gap: 10px;
+}
+
+.monitor-dossier-row--compact{
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 16px;
+}
+
+.monitor-dossier-row__main{
+  min-width: 0;
+  display: grid;
+  gap: 6px;
+}
+
+.monitor-dossier-row__title{
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.monitor-dossier-row__sub{
+  font-size: 13px;
+  color: var(--muted);
+  line-height: 1.2;
+}
+
+.monitor-dossier-row__meta{
+  font-size: 13px;
+  color: rgba(255,255,255,.78);
+  line-height: 1.25;
+}
+
+.monitor-dossier-row__chips{
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.monitor-dossier-row__side{
+  min-width: 230px;
+  display: grid;
+  gap: 8px;
+  justify-items: end;
+}
+
+.monitor-dossier-row__audit{
+  font-size: 12px;
+  color: var(--muted);
+  text-align: right;
+  display: grid;
+  gap: 2px;
+}
+
+.monitor-open-action{
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font-size: 13px;
+}
+
+.monitor-open-action:hover{
+  opacity: 0.9;
+}
+
+.monitor-chain-card{
+  width: 100%;
+  padding: 10px;
+  border: 1px solid rgba(255,255,255,0.12);
+  border-radius: 10px;
+  background: rgba(255,255,255,0.02);
+  color: inherit;
+  cursor: pointer;
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  align-items: center;
+}
+
+.monitor-chain-card:hover{
+  background: rgba(255,255,255,0.05);
+  border-color: rgba(255,255,255,0.16);
+}
+
+.monitor-status-grid{
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.monitor-status-tile{
+  border: 1px solid rgba(255,255,255,0.12);
+  border-radius: 14px;
+  padding: 12px;
+  display: grid;
+  gap: 4px;
+  min-height: 86px;
+  align-content: center;
+}
+
+.monitor-status-tile__value{
+  font-size: 28px;
+  font-weight: 900;
+  line-height: 1;
+}
+
+.monitor-status-tile__label{
+  font-size: 12px;
+  color: rgba(255,255,255,.86);
+}
+
+.monitor-status-tile--neutral{
+  border-color: rgba(148,163,184,.24);
+  background: rgba(148,163,184,.08);
+}
+
+.monitor-status-tile--active{
+  border-color: rgba(59,130,246,.30);
+  background: rgba(59,130,246,.12);
+}
+
+.monitor-status-tile--success{
+  border-color: rgba(34,197,94,.30);
+  background: rgba(34,197,94,.12);
+}
+
+.monitor-status-tile--warning{
+  border-color: rgba(245,158,11,.30);
+  background: rgba(245,158,11,.12);
+}
+
+.monitor-status-tile--danger{
+  border-color: rgba(239,68,68,.30);
+  background: rgba(239,68,68,.12);
+}
+
+.monitor-status-tile--muted{
+  border-color: rgba(148,163,184,.16);
+  background: rgba(148,163,184,.06);
+}
+
+.monitor-section-toggle{
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  background: transparent;
+  border: 0;
+  padding: 0;
+  color: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+
+.monitor-followup-card{
+  padding: 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(255,255,255,0.12);
+  background: rgba(255,255,255,0.02);
+  display: grid;
+  gap: 10px;
+}
+
+.monitor-followup-card--active{
+  border-color: rgba(59,130,246,.28);
+  background: rgba(59,130,246,.07);
+}
+
+.monitor-followup-card--warning{
+  border-color: rgba(245,158,11,.28);
+  background: rgba(245,158,11,.07);
+}
+
+.monitor-followup-card--success{
+  border-color: rgba(34,197,94,.28);
+  background: rgba(34,197,94,.08);
+}
+
+.monitor-followup-card--danger{
+  border-color: rgba(239,68,68,.28);
+  background: rgba(239,68,68,.08);
+}
+
+.monitor-followup-card--neutral{
+  border-color: rgba(148,163,184,.22);
+  background: rgba(148,163,184,.06);
+}
+
+.monitor-followup-card--muted{
+  border-color: rgba(148,163,184,.14);
+  background: rgba(148,163,184,.05);
+}
+
+.monitor-followup-note-box{
+  padding: 10px;
+  border: 1px solid rgba(255,255,255,0.10);
+  border-radius: 10px;
+  display: grid;
+  gap: 6px;
+  background: rgba(0,0,0,0.10);
+}
+
+.monitor-empty-state{
+  border-radius: 12px;
+  padding: 14px;
+  display: grid;
+  gap: 6px;
+  border: 1px solid rgba(255,255,255,0.12);
+}
+
+.monitor-empty-state--success{
+  border-color: rgba(34,197,94,.28);
+  background: rgba(34,197,94,.10);
+}
+
+@media (max-width: 1200px){
+  .monitor-status-grid{
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 920px){
+  .monitor-dossier-row--compact{
+    grid-template-columns: 1fr;
+  }
+
+  .monitor-dossier-row__side{
+    min-width: 0;
+    width: 100%;
+    justify-items: start;
+  }
+
+  .monitor-dossier-row__audit{
+    text-align: left;
+  }
+
+  .monitor-status-grid{
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 560px){
+  .monitor-status-grid{
+    grid-template-columns: 1fr;
+  }
+}
+
+/* =========================================================
+   Monitor UX refinement v2
+   ========================================================= */
+
+.monitor-surface{
+  border: 1px solid rgba(255,255,255,0.12);
+  background: rgba(255,255,255,0.02);
+}
+
+.monitor-surface--active{
+  border-color: rgba(59,130,246,.28);
+  background: rgba(59,130,246,.08);
+}
+
+.monitor-surface--neutral{
+  border-color: rgba(148,163,184,.20);
+  background: rgba(148,163,184,.06);
+}
+
+.monitor-surface--success{
+  border-color: rgba(34,197,94,.28);
+  background: rgba(34,197,94,.10);
+}
+
+.monitor-surface--warning{
+  border-color: rgba(245,158,11,.28);
+  background: rgba(245,158,11,.09);
+}
+
+.monitor-surface--danger{
+  border-color: rgba(239,68,68,.28);
+  background: rgba(239,68,68,.09);
+}
+
+.monitor-surface--muted{
+  border-color: rgba(148,163,184,.14);
+  background: rgba(148,163,184,.05);
+}
+
+.monitor-link-tag{
+  cursor: pointer;
+}
+
+.monitor-link-tag:hover{
+  filter: brightness(1.08);
+}
+
+.monitor-tag--selected{
+  box-shadow: 0 0 0 2px rgba(255,255,255,0.10) inset;
+  border-color: rgba(255,255,255,0.22);
+}
+
+.monitor-dossier-row{
+  width: 100%;
+  padding: 12px;
+  border-radius: 14px;
+  color: inherit;
+  display: grid;
+  gap: 10px;
+}
+
+.monitor-dossier-row--button{
+  border: 0;
+  text-align: left;
+  cursor: pointer;
+}
+
+.monitor-dossier-row--compact{
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 16px;
+}
+
+.monitor-dossier-row__main{
+  min-width: 0;
+  display: grid;
+  gap: 6px;
+}
+
+.monitor-dossier-row__title-row{
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.monitor-dossier-row__title{
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.monitor-dossier-row__title-tags{
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.monitor-dossier-row__sub{
+  font-size: 13px;
+  color: var(--muted);
+  line-height: 1.2;
+}
+
+.monitor-dossier-row__meta{
+  font-size: 13px;
+  color: rgba(255,255,255,.78);
+  line-height: 1.25;
+}
+
+.monitor-dossier-row__chips{
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.monitor-dossier-row__side{
+  min-width: 230px;
+  display: grid;
+  gap: 8px;
+  justify-items: end;
+}
+
+.monitor-dossier-row__audit{
+  font-size: 12px;
+  color: var(--muted);
+  text-align: right;
+  display: grid;
+  gap: 2px;
+}
+
+.monitor-open-action{
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: transparent;
+  color: inherit;
+  font-size: 13px;
+}
+
+.monitor-inline-totals{
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.monitor-form-actions{
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  align-items: center;
+}
+
+.monitor-form-status-btn{
+  min-height: 40px;
+  padding: 10px 14px;
+}
+
+.monitor-primary-action{
+  border-color: rgba(34,197,94,.28);
+  background: rgba(34,197,94,.12);
+}
+
+.monitor-primary-action:hover{
+  background: rgba(34,197,94,.18);
+}
+
+.monitor-chain-card{
+  width: 100%;
+  padding: 10px;
+  border: 1px solid rgba(255,255,255,0.12);
+  border-radius: 10px;
+  background: rgba(255,255,255,0.02);
+  color: inherit;
+  cursor: pointer;
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  align-items: center;
+}
+
+.monitor-chain-card:hover{
+  background: rgba(255,255,255,0.05);
+  border-color: rgba(255,255,255,0.16);
+}
+
+.monitor-status-grid{
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.monitor-status-grid--clickable .monitor-tag{
+  min-height: 30px;
+}
+
+.monitor-section-toggle{
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  background: transparent;
+  border: 0;
+  padding: 0;
+  color: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+
+.monitor-followup-card{
+  padding: 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(255,255,255,0.12);
+  background: rgba(255,255,255,0.02);
+  display: grid;
+  gap: 10px;
+}
+
+.monitor-followup-card--active{
+  border-color: rgba(59,130,246,.28);
+  background: rgba(59,130,246,.07);
+}
+
+.monitor-followup-card--warning{
+  border-color: rgba(245,158,11,.28);
+  background: rgba(245,158,11,.07);
+}
+
+.monitor-followup-card--success{
+  border-color: rgba(34,197,94,.28);
+  background: rgba(34,197,94,.08);
+}
+
+.monitor-followup-card--danger{
+  border-color: rgba(239,68,68,.28);
+  background: rgba(239,68,68,.08);
+}
+
+.monitor-followup-card--neutral{
+  border-color: rgba(148,163,184,.22);
+  background: rgba(148,163,184,.06);
+}
+
+.monitor-followup-card--muted{
+  border-color: rgba(148,163,184,.14);
+  background: rgba(148,163,184,.05);
+}
+
+.monitor-followup-note-box{
+  padding: 10px;
+  border: 1px solid rgba(255,255,255,0.10);
+  border-radius: 10px;
+  display: grid;
+  gap: 6px;
+  background: rgba(0,0,0,0.10);
+}
+
+.monitor-empty-state{
+  border-radius: 12px;
+  padding: 14px;
+  display: grid;
+  gap: 6px;
+  border: 1px solid rgba(255,255,255,0.12);
+}
+
+.monitor-empty-state--success{
+  border-color: rgba(34,197,94,.28);
+  background: rgba(34,197,94,.10);
+}
+
+@media (max-width: 920px){
+  .monitor-dossier-row--compact{
+    grid-template-columns: 1fr;
+  }
+
+  .monitor-dossier-row__side{
+    min-width: 0;
+    width: 100%;
+    justify-items: start;
+  }
+
+  .monitor-dossier-row__audit{
+    text-align: left;
+  }
+
+  .monitor-form-actions{
+    justify-content: flex-start;
+  }
+}
+
+/* =========================================================
+   Monitor UX refinement v3
+   ========================================================= */
+
+.monitor-surface{
+  border: 1px solid rgba(255,255,255,0.12);
+  background: rgba(255,255,255,0.02);
+}
+
+.monitor-surface--active{
+  border-color: rgba(59,130,246,.28);
+  background: rgba(59,130,246,.10);
+}
+
+.monitor-surface--neutral{
+  border-color: rgba(148,163,184,.20);
+  background: rgba(148,163,184,.06);
+}
+
+.monitor-surface--success{
+  border-color: rgba(34,197,94,.28);
+  background: rgba(34,197,94,.12);
+}
+
+.monitor-surface--warning{
+  border-color: rgba(245,158,11,.28);
+  background: rgba(245,158,11,.11);
+}
+
+.monitor-surface--danger{
+  border-color: rgba(239,68,68,.28);
+  background: rgba(239,68,68,.10);
+}
+
+.monitor-surface--muted{
+  border-color: rgba(148,163,184,.14);
+  background: rgba(148,163,184,.05);
+}
+
+.monitor-surface--ready{
+  border-color: rgba(16,185,129,.30);
+  background: rgba(16,185,129,.10);
+}
+
+.monitor-link-tag{
+  cursor: pointer;
+}
+
+.monitor-link-tag:hover{
+  filter: brightness(1.08);
+}
+
+.monitor-tag--selected{
+  box-shadow: 0 0 0 2px rgba(255,255,255,0.10) inset;
+  border-color: rgba(255,255,255,0.22);
+}
+
+.monitor-tag--ready{
+  border-color: rgba(16,185,129,.34);
+  background: rgba(16,185,129,.18);
+  color: rgba(220,252,231,.98);
+}
+
+.monitor-dossier-row{
+  width: 100%;
+  padding: 12px;
+  border-radius: 14px;
+  color: inherit;
+  display: grid;
+  gap: 10px;
+}
+
+.monitor-dossier-row--button{
+  border: 0;
+  text-align: left;
+  cursor: pointer;
+}
+
+.monitor-dossier-row--compact{
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 16px;
+}
+
+.monitor-dossier-row__main{
+  min-width: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.monitor-dossier-row__title-row{
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.monitor-dossier-row__title{
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.monitor-dossier-row__title-tags{
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+}
+
+.monitor-dossier-row__sub{
+  font-size: 13px;
+  color: var(--muted);
+  line-height: 1.2;
+}
+
+.monitor-dossier-row__meta{
+  font-size: 13px;
+  color: rgba(255,255,255,.78);
+  line-height: 1.25;
+}
+
+.monitor-dossier-row__side{
+  min-width: 250px;
+  display: grid;
+  gap: 8px;
+  justify-items: end;
+}
+
+.monitor-dossier-row__audit{
+  font-size: 12px;
+  color: var(--muted);
+  text-align: right;
+  display: grid;
+  gap: 2px;
+}
+
+.monitor-open-action{
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: transparent;
+  color: inherit;
+  font-size: 13px;
+}
+
+.monitor-inline-totals{
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.monitor-inline-totals--prominent .monitor-tag{
+  min-height: 30px;
+  padding: 0 12px;
+}
+
+.monitor-form-actions{
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  align-items: center;
+}
+
+.monitor-form-status-btn{
+  min-height: 42px;
+  padding: 10px 14px;
+}
+
+.monitor-primary-action{
+  border-color: rgba(34,197,94,.30);
+  background: rgba(34,197,94,.14);
+}
+
+.monitor-primary-action:hover{
+  background: rgba(34,197,94,.20);
+}
+
+.monitor-chain-card{
+  width: 100%;
+  padding: 10px;
+  border: 1px solid rgba(255,255,255,0.12);
+  border-radius: 10px;
+  background: rgba(255,255,255,0.02);
+  color: inherit;
+  cursor: pointer;
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  align-items: center;
+}
+
+.monitor-chain-card:hover{
+  background: rgba(255,255,255,0.05);
+  border-color: rgba(255,255,255,0.16);
+}
+
+.monitor-status-grid{
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.monitor-status-grid--clickable .monitor-tag{
+  min-height: 30px;
+}
+
+.monitor-section-toggle{
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  background: transparent;
+  border: 0;
+  padding: 0;
+  color: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+
+.monitor-detail-hero{
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,0.04);
+}
+
+.monitor-detail-filter-panel{
+  background: rgba(255,255,255,0.02);
+}
+
+.monitor-detail-status-block{
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,0.04);
+}
+
+.monitor-followup-card{
+  padding: 14px;
+  border-radius: 12px;
+  border: 1px solid rgba(255,255,255,0.12);
+  background: rgba(255,255,255,0.03);
+  display: grid;
+  gap: 10px;
+}
+
+.monitor-followup-card--active{
+  border-color: rgba(59,130,246,.30);
+  background: rgba(59,130,246,.10);
+}
+
+.monitor-followup-card--warning{
+  border-color: rgba(245,158,11,.30);
+  background: rgba(245,158,11,.10);
+}
+
+.monitor-followup-card--success{
+  border-color: rgba(34,197,94,.30);
+  background: rgba(34,197,94,.11);
+}
+
+.monitor-followup-card--danger{
+  border-color: rgba(239,68,68,.30);
+  background: rgba(239,68,68,.10);
+}
+
+.monitor-followup-card--neutral{
+  border-color: rgba(148,163,184,.22);
+  background: rgba(148,163,184,.07);
+}
+
+.monitor-followup-card--muted{
+  border-color: rgba(148,163,184,.14);
+  background: rgba(148,163,184,.05);
+}
+
+.monitor-followup-note-box{
+  padding: 10px;
+  border: 1px solid rgba(255,255,255,0.10);
+  border-radius: 10px;
+  display: grid;
+  gap: 6px;
+  background: rgba(0,0,0,0.10);
+}
+
+.monitor-empty-state{
+  border-radius: 12px;
+  padding: 14px;
+  display: grid;
+  gap: 6px;
+  border: 1px solid rgba(255,255,255,0.12);
+}
+
+.monitor-empty-state--success{
+  border-color: rgba(34,197,94,.28);
+  background: rgba(34,197,94,.10);
+}
+
+.monitor-info-box{
+  border: 1px solid rgba(255,255,255,0.10);
+  border-radius: 12px;
+  padding: 10px 12px;
+  background: rgba(255,255,255,0.03);
+  font-size: 13px;
+  color: rgba(255,255,255,.86);
+}
+
+@media (max-width: 920px){
+  .monitor-dossier-row--compact{
+    grid-template-columns: 1fr;
+  }
+
+  .monitor-dossier-row__side{
+    min-width: 0;
+    width: 100%;
+    justify-items: start;
+  }
+
+  .monitor-dossier-row__audit{
+    text-align: left;
+  }
+
+  .monitor-form-actions{
+    justify-content: flex-start;
+  }
+
+  .monitor-dossier-row__title-tags{
+    justify-content: flex-start;
+  }
+}
+
+/* =========================================================
+   Monitor UX refinement v4
+   ========================================================= */
+
+.monitor-surface--ready{
+  border-color: rgba(16,185,129,.30);
+  background: rgba(16,185,129,.10);
+}
+
+.monitor-tag--ready{
+  border-color: rgba(16,185,129,.34);
+  background: rgba(16,185,129,.18);
+  color: rgba(220,252,231,.98);
+}
+
+.monitor-inline-totals--large .monitor-tag{
+  min-height: 34px;
+  padding: 0 14px;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.monitor-info-popup{
+  max-width: 420px;
+  border: 1px solid rgba(255,255,255,0.12);
+  border-radius: 14px;
+  padding: 12px 14px;
+  background: #111b26;
+  color: rgba(255,255,255,.92);
+  box-shadow: 0 18px 48px rgba(0,0,0,.45);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.monitor-tag--selected{
+  border-color: rgba(255,255,255,0.96);
+  box-shadow:
+    0 0 0 2px rgba(255,255,255,0.26),
+    0 0 0 5px rgba(255,255,255,0.08);
+}
+
+.monitor-inline-totals--large .monitor-tag{
+  min-height: 38px;
+  padding: 0 15px;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.monitor-surface--ready{
+  border-color: rgba(16,185,129,.30);
+  background: rgba(16,185,129,.10);
+}
+
+.monitor-tag--ready{
+  border-color: rgba(16,185,129,.34);
+  background: rgba(16,185,129,.18);
+  color: rgba(220,252,231,.98);
+}
+
+.monitor-info-popup{
+  max-width: 420px;
+  border: 1px solid rgba(255,255,255,0.14);
+  border-radius: 14px;
+  padding: 12px 14px;
+  background: #111b26;
+  color: rgba(255,255,255,.92);
+  box-shadow: 0 18px 48px rgba(0,0,0,.45);
+  font-size: 13px;
+  line-height: 1.45;
+  z-index: 120;
+}
+
+.monitor-tag--selected{
+  border-color: rgba(255,255,255,0.96);
+  box-shadow:
+    0 0 0 2px rgba(255,255,255,0.26),
+    0 0 0 5px rgba(255,255,255,0.08);
+}
+
+.monitor-inline-totals--large .monitor-tag{
+  min-height: 38px;
+  padding: 0 15px;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.monitor-surface--ready{
+  border-color: rgba(16,185,129,.30);
+  background: rgba(16,185,129,.10);
+}
+
+.monitor-tag--ready{
+  border-color: rgba(16,185,129,.34);
+  background: rgba(16,185,129,.18);
+  color: rgba(220,252,231,.98);
+}
+
+.monitor-info-popup{
+  max-width: 420px;
+  border: 1px solid rgba(255,255,255,0.14);
+  border-radius: 14px;
+  padding: 12px 14px;
+  background: #111b26;
+  color: rgba(255,255,255,.92);
+  box-shadow: 0 18px 48px rgba(0,0,0,.45);
+  font-size: 13px;
+  line-height: 1.45;
+  z-index: 120;
+}

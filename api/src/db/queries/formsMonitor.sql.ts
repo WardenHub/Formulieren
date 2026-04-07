@@ -96,7 +96,12 @@ fu as (
   select
     f.form_instance_id,
     count(*) as follow_up_total_count,
-    sum(case when f.status in (N'OPEN', N'WACHTENOPDERDEN') then 1 else 0 end) as follow_up_open_count,
+    sum(case when f.status = N'OPEN' then 1 else 0 end) as follow_up_open_count,
+    sum(case when f.status = N'WACHTENOPDERDEN' then 1 else 0 end) as follow_up_waiting_count,
+    sum(case when f.status = N'AFGEHANDELD' then 1 else 0 end) as follow_up_done_count,
+    sum(case when f.status = N'AFGEWEZEN' then 1 else 0 end) as follow_up_rejected_count,
+    sum(case when f.status = N'VERVALLEN' then 1 else 0 end) as follow_up_expired_count,
+    sum(case when f.status = N'INFORMATIEF' then 1 else 0 end) as follow_up_informative_count,
     sum(case when f.status in (N'AFGEHANDELD', N'AFGEWEZEN', N'VERVALLEN', N'INFORMATIEF') then 1 else 0 end) as follow_up_terminal_count
   from dbo.FormFollowUpAction f
   group by f.form_instance_id
@@ -106,6 +111,11 @@ filtered as (
     b.*,
     isnull(fu.follow_up_total_count, 0) as follow_up_total_count,
     isnull(fu.follow_up_open_count, 0) as follow_up_open_count,
+    isnull(fu.follow_up_waiting_count, 0) as follow_up_waiting_count,
+    isnull(fu.follow_up_done_count, 0) as follow_up_done_count,
+    isnull(fu.follow_up_rejected_count, 0) as follow_up_rejected_count,
+    isnull(fu.follow_up_expired_count, 0) as follow_up_expired_count,
+    isnull(fu.follow_up_informative_count, 0) as follow_up_informative_count,
     isnull(fu.follow_up_terminal_count, 0) as follow_up_terminal_count
   from base b
   left join fu
@@ -113,10 +123,7 @@ filtered as (
   cross join params p
   where
     p.only_actionable_n = 0
-    or (
-      b.status in (N'INGEDIEND', N'IN_BEHANDELING')
-      or isnull(fu.follow_up_open_count, 0) > 0
-    )
+    or isnull(fu.follow_up_open_count, 0) > 0
 ),
 numbered as (
   select
@@ -155,6 +162,11 @@ select
   n.has_children,
   n.follow_up_total_count,
   n.follow_up_open_count,
+  n.follow_up_waiting_count,
+  n.follow_up_done_count,
+  n.follow_up_rejected_count,
+  n.follow_up_expired_count,
+  n.follow_up_informative_count,
   n.follow_up_terminal_count,
   n.total_count
 from numbered n

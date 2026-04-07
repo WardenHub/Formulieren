@@ -1,97 +1,88 @@
 // src/pages/Monitor/FormsMonitorPage.jsx
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useNavigate } from "react-router-dom";
 
-import {
-  getFormsMonitorList,
-  getFormsMonitorDetail,
-  getFormsMonitorFollowUps,
-  postFormsMonitorStatusAction,
-  postFormsMonitorFollowUpStatusAction,
-  putFormsMonitorFollowUpNote,
-} from "../../api/emberApi.js";
+import { getFormsMonitorList } from "../../api/emberApi.js";
 
 import { SearchIcon } from "@/components/ui/search";
 import { ArrowBigRightIcon } from "@/components/ui/arrow-big-right";
-import { FolderInputIcon } from "@/components/ui/folder-input";
-import { ArchiveIcon } from "@/components/ui/archive";
-import { MessageCircleMoreIcon } from "@/components/ui/message-circle-more";
-import { PlusIcon } from "@/components/ui/plus";
-import { ChevronUpIcon } from "@/components/ui/chevron-up";
 import { RefreshCWIcon } from "@/components/ui/refresh-cw";
 import { RefreshCWOffIcon } from "@/components/ui/refresh-cw-off";
-import { CheckIcon } from "@/components/ui/check";
-import { ClipboardCheckIcon } from "@/components/ui/clipboard-check";
-import { DownloadIcon } from "@/components/ui/download";
-import { HistoryIcon } from "@/components/ui/history";
+import { BadgeAlertIcon } from "@/components/ui/badge-alert";
 
-const LS_KEY = "forms-monitor-state-v7";
-const AUTO_REFRESH_MS = 30000;
-const COPY_FEEDBACK_MS = 1500;
+import {
+  OVERVIEW_LS_KEY,
+  AUTO_REFRESH_MS,
+  STATUS_FILTER_OPTIONS,
+  DEFAULT_SELECTED_STATUSES,
+  formatDateTime,
+  statusLabel,
+  getStatusTone,
+  getToneClass,
+  getCardToneClass,
+  getLastModifiedBy,
+  compactInstallationLine,
+  buildMonitorRowActionCounts,
+  buildMonitorVisibleTotals,
+  rowHasMonitorActionFilter,
+  readStateFromStorage,
+  saveStateToStorage,
+} from "./formsMonitorShared.jsx";
 
-const STATUS_FILTER_OPTIONS = [
-  { key: "INGEDIEND", label: "Ingediend" },
-  { key: "IN_BEHANDELING", label: "In behandeling" },
-  { key: "AFGEHANDELD", label: "Definitief" },
-  { key: "CONCEPT", label: "Concept" },
-  { key: "INGETROKKEN", label: "Ingetrokken" },
-];
-
-const DEFAULT_SELECTED_STATUSES = ["INGEDIEND", "IN_BEHANDELING"];
-
-function formatDateTime(value) {
-  if (!value) return "-";
-  const d = new Date(value);
-  if (Number.isNaN(d.getTime())) return String(value);
-  return d.toLocaleString("nl-NL");
+function getRowFollowUpSummary(row) {
+  return row?.follow_up_counts || row?.follow_up_summary || {};
 }
 
-function statusLabel(status) {
-  if (status === "CONCEPT") return "Concept";
-  if (status === "INGEDIEND") return "Ingediend";
-  if (status === "IN_BEHANDELING") return "In behandeling";
-  if (status === "AFGEHANDELD") return "Definitief";
-  if (status === "INGETROKKEN") return "Ingetrokken";
-  if (status === "OPEN") return "Open";
-  if (status === "WACHTENOPDERDEN") return "Wachten op derden";
-  if (status === "AFGEWEZEN") return "Afgewezen";
-  if (status === "VERVALLEN") return "Vervallen";
-  if (status === "INFORMATIEF") return "Informatief";
-  return status || "Onbekend";
+function getOpenCount(row) {
+  const s = getRowFollowUpSummary(row);
+  return Number(s?.open_count ?? 0);
 }
 
-function getStatusTone(status) {
-  if (status === "IN_BEHANDELING") return "active";
-  if (status === "INGEDIEND") return "neutral";
-  if (status === "AFGEHANDELD") return "success";
-  if (status === "INGETROKKEN") return "muted";
-  if (status === "CONCEPT") return "muted";
-  if (status === "OPEN") return "active";
-  if (status === "WACHTENOPDERDEN") return "warning";
-  if (status === "AFGEWEZEN") return "danger";
-  if (status === "VERVALLEN") return "muted";
-  if (status === "INFORMATIEF") return "muted";
-  return "neutral";
+function getWaitingCount(row) {
+  const s = getRowFollowUpSummary(row);
+  return Number(s?.waiting_count ?? 0);
 }
 
-function getToneClass(tone) {
-  if (tone === "active") return "monitor-tag monitor-tag--active";
-  if (tone === "neutral") return "monitor-tag monitor-tag--neutral";
-  if (tone === "success") return "monitor-tag monitor-tag--success";
-  if (tone === "warning") return "monitor-tag monitor-tag--warning";
-  if (tone === "danger") return "monitor-tag monitor-tag--danger";
-  return "monitor-tag monitor-tag--muted";
+function getDoneCount(row) {
+  const s = getRowFollowUpSummary(row);
+  const explicitDone = s?.done_count;
+  if (explicitDone != null) return Number(explicitDone || 0);
+
+  const terminal = Number(s?.terminal_count ?? 0);
+  return terminal;
 }
 
-function getLastModifiedBy(source) {
-  if (!source) return "-";
+function getRemainingOpenActionCount(row) {
+  return getOpenCount(row) + getWaitingCount(row);
+}
+
+function hasNoRemainingOpenActionPoints(row) {
+  const status = String(row?.status || "").trim();
   return (
-    source.updated_by ||
-    source.last_modified_by ||
-    source.modified_by ||
-    source.submitted_by ||
-    source.created_by ||
-    "-"
+    (status === "INGEDIEND" || status === "IN_BEHANDELING") &&
+    getRemainingOpenActionCount(row) === 0
   );
+}
+
+function getMonitorRowSurfaceClass(row) {
+  if (hasNoRemainingOpenActionPoints(row)) {
+    return "monitor-surface monitor-surface--ready";
+  }
+  return getCardToneClass(row?.status);
+}
+
+function getOverviewStatusChipClass(status, active) {
+  if (!active) return "monitor-tag monitor-tag--muted";
+
+  const st = String(status || "").trim().toUpperCase();
+
+  if (st === "CONCEPT") return "monitor-tag monitor-tag--warning";
+  if (st === "INGEDIEND") return "monitor-tag monitor-tag--active";
+  if (st === "IN_BEHANDELING") return "monitor-tag monitor-tag--warning";
+  if (st === "INGETROKKEN") return "monitor-tag monitor-tag--danger";
+  if (st === "AFGEHANDELD") return "monitor-tag monitor-tag--success";
+
+  return getToneClass(getStatusTone(status));
 }
 
 function StatusTag({ status }) {
@@ -102,11 +93,37 @@ function StatusTag({ status }) {
   );
 }
 
-function SummaryTag({ children, title, tone = "default" }) {
-  const cls =
-    tone === "subtle"
-      ? "monitor-tag monitor-tag--muted"
-      : "monitor-tag monitor-tag--neutral";
+function SummaryTag({
+  children,
+  title,
+  tone = "default",
+  active = false,
+  onClick = null,
+}) {
+  let cls = "monitor-tag monitor-tag--neutral";
+
+  if (tone === "active") cls = "monitor-tag monitor-tag--active";
+  if (tone === "warning") cls = "monitor-tag monitor-tag--warning";
+  if (tone === "success") cls = "monitor-tag monitor-tag--success";
+  if (tone === "danger") cls = "monitor-tag monitor-tag--danger";
+  if (tone === "muted" || tone === "subtle") cls = "monitor-tag monitor-tag--muted";
+  if (tone === "ready") cls = "monitor-tag monitor-tag--ready";
+
+  if (active) cls = `${cls} monitor-tag--selected`;
+
+  if (onClick) {
+    return (
+      <button
+        type="button"
+        className={cls}
+        title={title}
+        onClick={onClick}
+        style={{ cursor: "pointer" }}
+      >
+        {children}
+      </button>
+    );
+  }
 
   return (
     <span className={cls} title={title}>
@@ -122,10 +139,7 @@ function FilterChip({ active, label, title, onClick }) {
       className={active ? "monitor-tag monitor-tag--active" : "monitor-tag monitor-tag--muted"}
       title={title}
       onClick={onClick}
-      style={{
-        cursor: "pointer",
-        opacity: active ? 1 : 0.9,
-      }}
+      style={{ cursor: "pointer", opacity: active ? 1 : 0.9 }}
     >
       {label}
     </button>
@@ -133,16 +147,16 @@ function FilterChip({ active, label, title, onClick }) {
 }
 
 function StatusFilterChip({ status, active, onClick }) {
+  const cls = getOverviewStatusChipClass(status, active);
+  const finalCls = active ? `${cls} monitor-tag--selected` : cls;
+
   return (
     <button
       type="button"
       title={statusLabel(status)}
       onClick={onClick}
-      className={active ? getToneClass(getStatusTone(status)) : "monitor-tag monitor-tag--muted"}
-      style={{
-        cursor: "pointer",
-        opacity: active ? 1 : 0.78,
-      }}
+      className={finalCls}
+      style={{ cursor: "pointer", opacity: active ? 1 : 0.88 }}
     >
       {statusLabel(status)}
     </button>
@@ -173,241 +187,124 @@ function FilterGroup({ label, children, minWidth = 0, grow = false }) {
   );
 }
 
-function compactInstallationLine(item) {
-  const code = item?.installatie_code || item?.atrium_installation_code || "";
-  const name = item?.installatie_naam || "";
-  return [code, name].filter(Boolean).join(" ");
-}
-
-function buildClipboardText({ detailItem, row }) {
-  const vraagNummer =
-    row?.source_item_code ||
-    (row?.source_row_index != null ? String(row.source_row_index) : null) ||
-    "onbekend";
-
-  const formTitel = detailItem?.form_name || detailItem?.form_code || "formulier";
-  const invuller = detailItem?.created_by || detailItem?.submitted_by || "onbekend";
-  const categorie = row?.category || "-";
-  const omschrijving = row?.workflow_title || "Actiepunt";
-  const toelichting = row?.workflow_description || "-";
-
-  const installatieBits = [
-    detailItem?.installatie_code || detailItem?.atrium_installation_code || "",
-    detailItem?.installatie_naam || "",
-    detailItem?.object_code || "",
-    detailItem?.obj_naam || "",
-    detailItem?.gebruiker_code || "",
-    detailItem?.gebruiker_naam || "",
-  ]
-    .filter(Boolean)
-    .join(" ");
-
-  return [
-    `Actiepunt vanuit formulier ${formTitel}; vraag ${vraagNummer}; beoordeeld door ${invuller}.`,
-    `Type; ${categorie}`,
-    `Omschrijving; ${omschrijving}`,
-    `Toelichting formulier; ${toelichting}`,
-    `Installatie; ${installatieBits || "-"}`,
-  ].join("\n");
-}
-
-function readStateFromStorage() {
-  try {
-    const raw = localStorage.getItem(LS_KEY);
-    if (!raw) return null;
-    return JSON.parse(raw);
-  } catch {
-    return null;
-  }
-}
-
-function saveStateToStorage(state) {
-  try {
-    localStorage.setItem(LS_KEY, JSON.stringify(state));
-  } catch {
-    // ignore
-  }
-}
-
-function normalizeNoteValue(value) {
-  if (value == null) return "";
-  return String(value);
-}
-
-function buildRelationRows(item) {
-  if (!item) return [];
-
-  const rows = [];
-
-  const installatieValue = [item.installatie_code || item.atrium_installation_code, item.installatie_naam]
-    .filter(Boolean)
-    .join(" ");
-  if (installatieValue) rows.push({ label: "Installatie", value: installatieValue });
-
-  const objectValue = [item.object_code, item.obj_naam].filter(Boolean).join(" ");
-  if (objectValue) rows.push({ label: "Object", value: objectValue });
-
-  const gebruikerValue = [item.gebruiker_code, item.gebruiker_naam].filter(Boolean).join(" ");
-  if (gebruikerValue) rows.push({ label: "Gebruiker", value: gebruikerValue });
-
-  const beheerderValue = [item.beheerder_code, item.beheerder_naam].filter(Boolean).join(" ");
-  if (beheerderValue) rows.push({ label: "Beheerder", value: beheerderValue });
-
-  const eigenaarValue = [item.eigenaar_code, item.eigenaar_naam].filter(Boolean).join(" ");
-  if (eigenaarValue) rows.push({ label: "Eigenaar", value: eigenaarValue });
-
-  return rows;
-}
-
-function ActionFooter({
-  canFinish,
-  finishBusy,
-  onFinish,
-  onOpenForm,
-  footerOpenIconRef,
-  footerPdfIconRef,
-  footerFinishIconRef,
-}) {
-  return (
-    <div
-      style={{
-        padding: 12,
-        border: "1px solid rgba(255,255,255,0.12)",
-        borderRadius: 12,
-        display: "flex",
-        justifyContent: "flex-end",
-        gap: 8,
-        flexWrap: "wrap",
-      }}
-    >
-      <button
-        type="button"
-        className="btn btn-secondary"
-        onClick={onOpenForm}
-        style={{ display: "inline-flex", alignItems: "center", gap: 8 }}
-        onMouseEnter={() => footerOpenIconRef.current?.startAnimation?.()}
-        onMouseLeave={() => footerOpenIconRef.current?.stopAnimation?.()}
-      >
-        <ArrowBigRightIcon ref={footerOpenIconRef} size={18} className="nav-anim-icon" />
-        Open formulier
-      </button>
-
-      <button
-        type="button"
-        className="btn btn-secondary"
-        disabled
-        title="PDF-export volgt later"
-        style={{ display: "inline-flex", alignItems: "center", gap: 8 }}
-        onMouseEnter={() => footerPdfIconRef.current?.startAnimation?.()}
-        onMouseLeave={() => footerPdfIconRef.current?.stopAnimation?.()}
-      >
-        <DownloadIcon ref={footerPdfIconRef} size={18} className="nav-anim-icon" />
-        PDF
-      </button>
-
-      {canFinish && (
-        <button
-          type="button"
-          className="btn"
-          disabled={finishBusy}
-          onClick={onFinish}
-          style={{ display: "inline-flex", alignItems: "center", gap: 8 }}
-          onMouseEnter={() => footerFinishIconRef.current?.startAnimation?.()}
-          onMouseLeave={() => footerFinishIconRef.current?.stopAnimation?.()}
-        >
-          <ClipboardCheckIcon ref={footerFinishIconRef} size={18} className="nav-anim-icon" />
-          Formulier definitief maken
-        </button>
-      )}
-    </div>
-  );
-}
-
 export default function FormsMonitorPage() {
-  const storedState = useMemo(() => readStateFromStorage(), []);
+  const storedState = useMemo(() => readStateFromStorage(OVERVIEW_LS_KEY), []);
+  const navigate = useNavigate();
 
   const searchIconRef = useRef(null);
   const refreshIconRef = useRef(null);
   const refreshOffIconRef = useRef(null);
-  const openIconRef = useRef(null);
-  const pdfIconRef = useRef(null);
-  const finishIconRef = useRef(null);
-  const footerOpenIconRef = useRef(null);
-  const footerPdfIconRef = useRef(null);
-  const footerFinishIconRef = useRef(null);
-  const setIngediendIconRef = useRef(null);
-  const setConceptIconRef = useRef(null);
-  const propsToggleIconRef = useRef(null);
-  const relationToggleIconRef = useRef(null);
-
-  const noteSaveTimersRef = useRef({});
-  const copyResetTimersRef = useRef({});
+  const openIconRefById = useRef({});
+  const infoIconRef = useRef(null);
+  const infoBtnRef = useRef(null);
+  const infoPopupRef = useRef(null);
 
   const [listLoading, setListLoading] = useState(true);
-  const [detailLoading, setDetailLoading] = useState(false);
-  const [followUpsLoading, setFollowUpsLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [infoOpen, setInfoOpen] = useState(false);
+  const [infoPopupStyle, setInfoPopupStyle] = useState(null);
 
   const [filters, setFilters] = useState({
     q: storedState?.filters?.q ?? "",
     mine: storedState?.filters?.mine ?? true,
     onlyActionable: storedState?.filters?.onlyActionable ?? false,
+    noRemainingOpenActionPoints: storedState?.filters?.noRemainingOpenActionPoints ?? false,
     selectedStatuses:
-      Array.isArray(storedState?.filters?.selectedStatuses) &&
-      storedState.filters.selectedStatuses.length > 0
+      Array.isArray(storedState?.filters?.selectedStatuses)
         ? storedState.filters.selectedStatuses
         : DEFAULT_SELECTED_STATUSES,
+    actionStatusFilter: storedState?.filters?.actionStatusFilter ?? "ALL",
     take: 200,
     skip: 0,
   });
 
   const [items, setItems] = useState([]);
-  const [selectedId, setSelectedId] = useState(storedState?.selectedId ?? null);
-  const [propertiesOpen, setPropertiesOpen] = useState(storedState?.propertiesOpen ?? false);
-  const [relationsOpen, setRelationsOpen] = useState(storedState?.relationsOpen ?? false);
   const [autoRefreshEnabled, setAutoRefreshEnabled] = useState(
-    storedState?.autoRefreshEnabled ?? true
+    storedState?.autoRefreshEnabled ?? false
   );
 
-  const [detail, setDetail] = useState(null);
-  const [followUps, setFollowUps] = useState([]);
-  const [followUpSummary, setFollowUpSummary] = useState(null);
-
-  const [formActionBusy, setFormActionBusy] = useState(false);
-  const [followUpBusyId, setFollowUpBusyId] = useState(null);
-
-  const [noteDrafts, setNoteDrafts] = useState(storedState?.noteDrafts ?? {});
-  const [noteSavingById, setNoteSavingById] = useState({});
-  const [noteSavedById, setNoteSavedById] = useState({});
-  const [copiedById, setCopiedById] = useState({});
+  const effectiveSelectedStatuses = useMemo(() => {
+    if (Array.isArray(filters.selectedStatuses) && filters.selectedStatuses.length > 0) {
+      return filters.selectedStatuses;
+    }
+    return STATUS_FILTER_OPTIONS.map((opt) => opt.key);
+  }, [filters.selectedStatuses]);
 
   const visibleItems = useMemo(() => {
-    const selectedStatusesSet = new Set(filters.selectedStatuses || []);
-    return (items || []).filter((x) => selectedStatusesSet.has(x.status));
-  }, [items, filters.selectedStatuses]);
+    const selectedStatusesSet = new Set(effectiveSelectedStatuses || []);
 
-  useEffect(() => {
-    saveStateToStorage({
-      filters,
-      selectedId,
-      propertiesOpen,
-      relationsOpen,
-      autoRefreshEnabled,
-      noteDrafts,
-    });
-  }, [filters, selectedId, propertiesOpen, relationsOpen, autoRefreshEnabled, noteDrafts]);
+    return (items || [])
+      .filter((x) => selectedStatusesSet.has(x.status))
+      .filter((x) => {
+        if (!filters.noRemainingOpenActionPoints) return true;
+        return hasNoRemainingOpenActionPoints(x);
+      })
+      .filter((x) => {
+        if (!filters.onlyActionable) return true;
+        return getRemainingOpenActionCount(x) > 0;
+      })
+      .filter((x) => {
+        if (!filters.actionStatusFilter || filters.actionStatusFilter === "ALL") return true;
 
-  useEffect(() => {
-    return () => {
-      Object.values(noteSaveTimersRef.current).forEach((timerId) => {
-        if (timerId) window.clearTimeout(timerId);
+        if (filters.actionStatusFilter === "OPEN") {
+          return getRemainingOpenActionCount(x) > 0;
+        }
+
+        return rowHasMonitorActionFilter(x, filters.actionStatusFilter);
       });
+  }, [items, filters, effectiveSelectedStatuses]);
 
-      Object.values(copyResetTimersRef.current).forEach((timerId) => {
-        if (timerId) window.clearTimeout(timerId);
-      });
+  const visibleTotals = useMemo(() => {
+    const base = buildMonitorVisibleTotals(visibleItems);
+    const fallback = visibleItems.reduce(
+      (acc, row) => {
+        acc.open += getOpenCount(row);
+        acc.waiting += getWaitingCount(row);
+        acc.done += getDoneCount(row);
+        return acc;
+      },
+      { open: 0, waiting: 0, done: 0 }
+    );
+
+    return {
+      open: Number(base?.open ?? fallback.open),
+      waiting: Number(base?.waiting ?? fallback.waiting),
+      done: Number(base?.done ?? fallback.done),
     };
-  }, []);
+  }, [visibleItems]);
+
+  useEffect(() => {
+    saveStateToStorage(OVERVIEW_LS_KEY, {
+      filters,
+      autoRefreshEnabled,
+    });
+  }, [filters, autoRefreshEnabled]);
+
+  useEffect(() => {
+    function onDocMouseDown(e) {
+      const btn = infoBtnRef.current;
+      const popup = infoPopupRef.current;
+
+      if (btn?.contains(e.target)) return;
+      if (popup?.contains(e.target)) return;
+
+      setInfoOpen(false);
+    }
+
+    function onKeyDown(e) {
+      if (e.key === "Escape") setInfoOpen(false);
+    }
+
+    if (infoOpen) {
+      document.addEventListener("mousedown", onDocMouseDown);
+      document.addEventListener("keydown", onKeyDown);
+
+      return () => {
+        document.removeEventListener("mousedown", onDocMouseDown);
+        document.removeEventListener("keydown", onKeyDown);
+      };
+    }
+  }, [infoOpen]);
 
   function toggleStatusFilter(statusKey) {
     setFilters((prev) => {
@@ -422,292 +319,129 @@ export default function FormsMonitorPage() {
     });
   }
 
-  async function loadList(preferredId = null) {
+  async function loadList(nextFilters = filters) {
     setListLoading(true);
     setError(null);
 
     try {
       const res = await getFormsMonitorList({
-        q: filters.q,
-        mine: filters.mine,
-        onlyActionable: filters.onlyActionable,
+        q: nextFilters.q,
+        mine: nextFilters.mine,
+        onlyActionable: nextFilters.onlyActionable,
         includeWithdrawn: true,
-        take: filters.take,
-        skip: filters.skip,
+        take: nextFilters.take,
+        skip: nextFilters.skip,
       });
 
-      const nextItems = Array.isArray(res?.items) ? res.items : [];
-      setItems(nextItems);
-
-      const selectedStatusesSet = new Set(filters.selectedStatuses || []);
-      const visibleNextItems = nextItems.filter((x) => selectedStatusesSet.has(x.status));
-
-      const preferred =
-        preferredId != null && Number.isInteger(Number(preferredId))
-          ? Number(preferredId)
-          : null;
-
-      const currentStillExists = visibleNextItems.some(
-        (x) => Number(x.form_instance_id) === Number(selectedId)
-      );
-
-      const nextSelectedId =
-        (preferred != null &&
-          visibleNextItems.some((x) => Number(x.form_instance_id) === preferred) &&
-          preferred) ||
-        (currentStillExists ? selectedId : null) ||
-        visibleNextItems[0]?.form_instance_id ||
-        null;
-
-      setSelectedId(nextSelectedId != null ? Number(nextSelectedId) : null);
+      setItems(Array.isArray(res?.items) ? res.items : []);
     } catch (e) {
       setError(e?.message || String(e));
       setItems([]);
-      setSelectedId(null);
     } finally {
       setListLoading(false);
     }
   }
 
-  async function loadDetail(instanceId) {
-    const cleanId = Number(instanceId);
-    if (!Number.isInteger(cleanId) || cleanId <= 0) {
-      setDetail(null);
-      setFollowUps([]);
-      setFollowUpSummary(null);
-      return;
-    }
-
-    setDetailLoading(true);
-    setFollowUpsLoading(true);
-    setError(null);
-
-    try {
-      const [detailRes, followUpsRes] = await Promise.all([
-        getFormsMonitorDetail(cleanId, { autoClaim: true }),
-        getFormsMonitorFollowUps(cleanId),
-      ]);
-
-      setDetail(detailRes || null);
-
-      const rows = Array.isArray(followUpsRes?.items) ? followUpsRes.items : [];
-      setFollowUps(rows);
-      setFollowUpSummary(followUpsRes?.summary || detailRes?.follow_up_summary || null);
-
-      setNoteDrafts((prev) => {
-        const next = { ...prev };
-        for (const row of rows) {
-          const key = String(row.follow_up_action_id);
-          if (document.activeElement?.dataset?.noteId === key) continue;
-          next[key] = normalizeNoteValue(row.note);
-        }
-        return next;
-      });
-    } catch (e) {
-      setError(e?.message || String(e));
-      setDetail(null);
-      setFollowUps([]);
-      setFollowUpSummary(null);
-    } finally {
-      setDetailLoading(false);
-      setFollowUpsLoading(false);
-    }
-  }
-
-  async function refreshDetailAndList(preferredId = null) {
-    const targetId = preferredId ?? selectedId;
-    await loadList(targetId);
-    if (targetId != null) {
-      await loadDetail(targetId);
-    }
-  }
-
   useEffect(() => {
-    loadList(storedState?.selectedId ?? null);
+    loadList();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
-  useEffect(() => {
-    const selectedStillVisible = visibleItems.some(
-      (x) => Number(x.form_instance_id) === Number(selectedId)
-    );
-
-    if (!selectedStillVisible) {
-      setSelectedId(visibleItems[0]?.form_instance_id ?? null);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [visibleItems]);
-
-  useEffect(() => {
-    if (selectedId == null) {
-      setDetail(null);
-      setFollowUps([]);
-      setFollowUpSummary(null);
-      return;
-    }
-
-    loadDetail(selectedId);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedId]);
 
   useEffect(() => {
     if (!autoRefreshEnabled) return;
 
     const intervalId = window.setInterval(() => {
       if (document.hidden) return;
-      refreshDetailAndList();
+      loadList();
     }, AUTO_REFRESH_MS);
 
     return () => window.clearInterval(intervalId);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filters.q, filters.mine, filters.onlyActionable, filters.selectedStatuses, selectedId, autoRefreshEnabled]);
+  }, [
+    filters.q,
+    filters.mine,
+    filters.onlyActionable,
+    filters.noRemainingOpenActionPoints,
+    filters.selectedStatuses,
+    filters.actionStatusFilter,
+    autoRefreshEnabled,
+  ]);
 
   async function applySearch() {
-    await loadList(null);
+    await loadList();
   }
 
-  async function handleFormAction(action) {
-    const item = detail?.item;
-    if (!item?.form_instance_id || !action || formActionBusy) return;
-
-    const needsConfirm = action === "set_ingediend" || action === "set_concept";
-    if (needsConfirm) {
-      const ok = window.confirm(
-        `Weet je zeker dat je deze statusactie wilt uitvoeren?\n\n${action === "set_ingediend" ? "Terug naar ingediend" : "Terug naar concept"}`
-      );
-      if (!ok) return;
-    }
-
-    setFormActionBusy(true);
-
-    try {
-      await postFormsMonitorStatusAction(item.form_instance_id, action);
-      await refreshDetailAndList(item.form_instance_id);
-    } catch (e) {
-      window.alert(e?.message || String(e));
-    } finally {
-      setFormActionBusy(false);
-    }
+  function clearSearch() {
+    setFilters((prev) => ({ ...prev, q: "" }));
   }
 
-  async function handleFollowUpAction(followUpActionId, action) {
-    if (!followUpActionId || !action || followUpBusyId) return;
-
-    setFollowUpBusyId(followUpActionId);
-
-    try {
-      await postFormsMonitorFollowUpStatusAction(followUpActionId, {
-        action,
-      });
-
-      await refreshDetailAndList(detail?.item?.form_instance_id || null);
-    } catch (e) {
-      window.alert(e?.message || String(e));
-    } finally {
-      setFollowUpBusyId(null);
-    }
+  function openRow(row) {
+    navigate(`/monitor/formulieren/${row.form_instance_id}`);
   }
 
-  async function handleCopyClipboard(row) {
-    const key = String(row?.follow_up_action_id || "");
-    if (!key) return;
-
-    try {
-      const text = buildClipboardText({
-        detailItem: detail?.item || {},
-        row,
-      });
-
-      await navigator.clipboard.writeText(text);
-
-      setCopiedById((prev) => ({
-        ...prev,
-        [key]: true,
-      }));
-
-      if (copyResetTimersRef.current[key]) {
-        window.clearTimeout(copyResetTimersRef.current[key]);
-      }
-
-      copyResetTimersRef.current[key] = window.setTimeout(() => {
-        setCopiedById((prev) => ({
-          ...prev,
-          [key]: false,
-        }));
-      }, COPY_FEEDBACK_MS);
-    } catch (e) {
-      window.alert(e?.message || String(e));
-    }
+  async function toggleMine() {
+    const next = {
+      ...filters,
+      mine: !filters.mine,
+    };
+    setFilters(next);
+    await loadList(next);
   }
 
-  async function saveNoteNow(followUpActionId, noteValue) {
-    if (!followUpActionId) return;
+  async function toggleOnlyActionable() {
+    const next = {
+      ...filters,
+      onlyActionable: !filters.onlyActionable,
+      noRemainingOpenActionPoints: false,
+    };
+    setFilters(next);
+    await loadList(next);
+  }
 
-    setNoteSavingById((prev) => ({
+  async function toggleNoRemainingOpenActionPoints() {
+    const next = {
+      ...filters,
+      noRemainingOpenActionPoints: !filters.noRemainingOpenActionPoints,
+      mine: false,
+      onlyActionable: false,
+    };
+    setFilters(next);
+    await loadList(next);
+  }
+
+  function setActionStatusFilter(nextKey) {
+    setFilters((prev) => ({
       ...prev,
-      [followUpActionId]: true,
+      actionStatusFilter: prev.actionStatusFilter === nextKey ? "ALL" : nextKey,
     }));
-    setNoteSavedById((prev) => ({
-      ...prev,
-      [followUpActionId]: false,
-    }));
-
-    try {
-      await putFormsMonitorFollowUpNote(followUpActionId, {
-        note: noteValue,
-      });
-
-      setFollowUps((prev) =>
-        prev.map((row) =>
-          String(row.follow_up_action_id) === String(followUpActionId)
-            ? { ...row, note: noteValue }
-            : row
-        )
-      );
-
-      setNoteSavedById((prev) => ({
-        ...prev,
-        [followUpActionId]: true,
-      }));
-
-      window.setTimeout(() => {
-        setNoteSavedById((prev) => ({
-          ...prev,
-          [followUpActionId]: false,
-        }));
-      }, 1800);
-    } catch (e) {
-      window.alert(e?.message || String(e));
-    } finally {
-      setNoteSavingById((prev) => ({
-        ...prev,
-        [followUpActionId]: false,
-      }));
-    }
   }
 
-  function scheduleNoteSave(followUpActionId, nextValue) {
-    const existingTimer = noteSaveTimersRef.current[followUpActionId];
-    if (existingTimer) {
-      window.clearTimeout(existingTimer);
+  function toggleInfoPopup() {
+    if (infoOpen) {
+      setInfoOpen(false);
+      return;
     }
 
-    noteSaveTimersRef.current[followUpActionId] = window.setTimeout(() => {
-      saveNoteNow(followUpActionId, nextValue);
-    }, 700);
-  }
+    const btn = infoBtnRef.current;
+    if (!btn) {
+      setInfoOpen(true);
+      setInfoPopupStyle(null);
+      return;
+    }
 
-  function handleNoteChange(followUpActionId, nextValue) {
-    setNoteDrafts((prev) => ({
-      ...prev,
-      [followUpActionId]: nextValue,
-    }));
-    scheduleNoteSave(followUpActionId, nextValue);
-  }
+    const rect = btn.getBoundingClientRect();
+    const popupWidth = 420;
+    const left = Math.max(12, Math.min(rect.left, window.innerWidth - popupWidth - 12));
 
-  const allowedActions = detail?.allowed_actions || {};
-  const item = detail?.item || null;
-  const relationRows = useMemo(() => buildRelationRows(item), [item]);
+    setInfoPopupStyle({
+      position: "fixed",
+      top: Math.round(rect.bottom + 8),
+      left,
+      width: popupWidth,
+      zIndex: 120,
+    });
+    setInfoOpen(true);
+  }
 
   return (
     <div>
@@ -717,7 +451,7 @@ export default function FormsMonitorPage() {
             <div className="inst-title">
               <h1>Monitor formulieren</h1>
               <div className="muted" style={{ fontSize: 13 }}>
-                Overzicht, opvolging en afhandeling van formulierdossiers
+                Overzicht formulieren
               </div>
             </div>
           </div>
@@ -757,12 +491,7 @@ export default function FormsMonitorPage() {
             gap: 12,
           }}
         >
-          <div
-            style={{
-              display: "grid",
-              gap: 10,
-            }}
-          >
+          <div style={{ display: "grid", gap: 10 }}>
             <div
               style={{
                 display: "flex",
@@ -771,24 +500,28 @@ export default function FormsMonitorPage() {
                 flexWrap: "wrap",
               }}
             >
-              <FilterGroup label="Filters" minWidth={260}>
+              <FilterGroup label="Weergave" minWidth={240}>
                 <FilterChip
                   active={Boolean(filters.mine)}
-                  label="Eigen"
-                  title="Toon standaard alleen eigen formulieren"
-                  onClick={() => setFilters((prev) => ({ ...prev, mine: !prev.mine }))}
+                  label="Alleen eigen formulieren"
+                  title="Toon alleen formulieren van de huidige gebruiker"
+                  onClick={toggleMine}
                 />
+              </FilterGroup>
 
+              <FilterGroup label="Slimme filters" minWidth={360}>
                 <FilterChip
                   active={Boolean(filters.onlyActionable)}
                   label="Open actiepunten"
-                  title="Met openstaande actiepunten"
-                  onClick={() =>
-                    setFilters((prev) => ({
-                      ...prev,
-                      onlyActionable: !prev.onlyActionable,
-                    }))
-                  }
+                  title="Toon alleen formulieren met openstaande actiepunten; inclusief wachten op derden"
+                  onClick={toggleOnlyActionable}
+                />
+
+                <FilterChip
+                  active={Boolean(filters.noRemainingOpenActionPoints)}
+                  label="Geen resterende openstaande actiepunten"
+                  title="Formulieren zonder open of wachtende actiepunten"
+                  onClick={toggleNoRemainingOpenActionPoints}
                 />
               </FilterGroup>
 
@@ -797,23 +530,25 @@ export default function FormsMonitorPage() {
                   <StatusFilterChip
                     key={opt.key}
                     status={opt.key}
-                    active={filters.selectedStatuses.includes(opt.key)}
+                    active={effectiveSelectedStatuses.includes(opt.key)}
                     onClick={() => toggleStatusFilter(opt.key)}
                   />
                 ))}
               </FilterGroup>
             </div>
 
-            <input
-              className="input"
-              style={{ width: "100%" }}
-              placeholder="Zoek op installatie, object, relatie, formulier of gebruiker"
-              value={filters.q}
-              onChange={(e) => setFilters((prev) => ({ ...prev, q: e.target.value }))}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") applySearch();
-              }}
-            />
+            <div className="searchbar">
+              <SearchIcon size={18} className="nav-anim-icon" />
+              <input
+                className="searchbar-input"
+                placeholder="Zoek op installatie, object, relatie, formulier, invuller of opmerking"
+                value={filters.q}
+                onChange={(e) => setFilters((prev) => ({ ...prev, q: e.target.value }))}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") applySearch();
+                }}
+              />
+            </div>
 
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
               <button
@@ -831,7 +566,7 @@ export default function FormsMonitorPage() {
               <button
                 type="button"
                 className="btn btn-secondary"
-                onClick={() => refreshDetailAndList()}
+                onClick={() => loadList()}
                 onMouseEnter={() => refreshIconRef.current?.startAnimation?.()}
                 onMouseLeave={() => refreshIconRef.current?.stopAnimation?.()}
                 style={{ display: "inline-flex", alignItems: "center", gap: 8 }}
@@ -839,6 +574,16 @@ export default function FormsMonitorPage() {
                 <RefreshCWIcon ref={refreshIconRef} size={18} />
                 Verversen
               </button>
+
+              {filters.q ? (
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  onClick={clearSearch}
+                >
+                  Zoektekst wissen
+                </button>
+              ) : null}
             </div>
           </div>
         </div>
@@ -847,749 +592,205 @@ export default function FormsMonitorPage() {
 
         <div
           style={{
+            padding: 12,
+            border: "1px solid rgba(255,255,255,0.12)",
+            borderRadius: 12,
             display: "grid",
-            gap: 12,
-            gridTemplateColumns: "minmax(360px, 460px) minmax(0, 1fr)",
-            alignItems: "start",
+            gap: 10,
           }}
         >
-          <div style={{ display: "grid", gap: 12 }}>
-            <div
-              style={{
-                padding: 12,
-                border: "1px solid rgba(255,255,255,0.12)",
-                borderRadius: 12,
-                display: "grid",
-                gap: 10,
-              }}
-            >
-              <div style={{ fontWeight: 600 }}>Formulierdossiers</div>
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              gap: 10,
+              alignItems: "center",
+              flexWrap: "wrap",
+            }}
+          >
+            <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+              <div style={{ fontWeight: 600 }}>Formulierafhandelingen</div>
 
-              {listLoading ? (
-                <div className="muted">laden; monitorlijst</div>
-              ) : visibleItems.length === 0 ? (
-                <div className="muted">Geen dossiers gevonden.</div>
-              ) : (
-                <div style={{ display: "grid", gap: 10 }}>
-                  {visibleItems.map((row) => {
-                    const selected = Number(row.form_instance_id) === Number(selectedId);
+              <button
+                ref={infoBtnRef}
+                type="button"
+                className="icon-btn"
+                title="Klik op de statuslabels om de zichtbare formulieren te filteren op actiepuntstatus."
+                onClick={toggleInfoPopup}
+                onMouseEnter={() => infoIconRef.current?.startAnimation?.()}
+                onMouseLeave={() => infoIconRef.current?.stopAnimation?.()}
+              >
+                <BadgeAlertIcon ref={infoIconRef} size={18} className="nav-anim-icon" />
+              </button>
+            </div>
 
-                    return (
-                      <div
-                        key={row.form_instance_id}
-                        role="button"
-                        tabIndex={0}
-                        onClick={() => setSelectedId(Number(row.form_instance_id))}
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter" || e.key === " ") {
-                            e.preventDefault();
-                            setSelectedId(Number(row.form_instance_id));
-                          }
-                        }}
-                        style={{
-                          padding: 12,
-                          border: selected
-                            ? "1px solid rgba(255,255,255,0.32)"
-                            : "1px solid rgba(255,255,255,0.12)",
-                          borderRadius: 12,
-                          background: selected ? "rgba(255,255,255,0.04)" : "transparent",
-                          display: "grid",
-                          gap: 8,
-                          cursor: "pointer",
-                          outline: "none",
-                        }}
-                        title="Selecteer dossier"
-                      >
-                        <div
-                          style={{
-                            display: "flex",
-                            justifyContent: "space-between",
-                            gap: 10,
-                            alignItems: "flex-start",
-                            flexWrap: "wrap",
-                          }}
-                        >
-                          <div style={{ minWidth: 0 }}>
-                            <div style={{ fontWeight: 600 }}>
-                              {row.form_name || row.form_code || `Formulier ${row.form_instance_id}`}
-                            </div>
-                            <div className="muted" style={{ fontSize: 13 }}>
-                              {compactInstallationLine(row) || "-"}
-                            </div>
-                          </div>
-
-                          <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
-                            <StatusTag status={row.status} />
-                          </div>
-                        </div>
-
-                        <div
-                          style={{
-                            display: "flex",
-                            justifyContent: "space-between",
-                            gap: 10,
-                            alignItems: "flex-start",
-                            flexWrap: "wrap",
-                          }}
-                        >
-                          <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-                            <SummaryTag title="Documentnummer">
-                              {row.form_instance_id ?? "-"}
-                            </SummaryTag>
-
-                            <SummaryTag title="Formulierversie">
-                              v{row.version_label || "-"}
-                            </SummaryTag>
-
-                            <SummaryTag title="Openstaande actiepunten">
-                              {row.follow_up_summary?.open_count ?? 0} open
-                            </SummaryTag>
-
-                            {(row.relations?.has_children || row.parent_instance_id) && (
-                              <SummaryTag title="Onderdeel van keten">
-                                keten
-                              </SummaryTag>
-                            )}
-                          </div>
-
-                          <div
-                            className="muted"
-                            style={{
-                              fontSize: 12,
-                              display: "grid",
-                              gap: 2,
-                              textAlign: "right",
-                            }}
-                          >
-                            <div>
-                              Laatste wijziging: {formatDateTime(row.updated_at || row.created_at)}
-                            </div>
-                            <div>
-                              Laatst gewijzigd door: {getLastModifiedBy(row)}
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
+            <div className="muted" style={{ fontSize: 12 }}>
+              {listLoading ? "laden..." : `${visibleItems.length} dossier(s) zichtbaar`}
             </div>
           </div>
 
-          <div
-            style={{
-              padding: 12,
-              border: "1px solid rgba(255,255,255,0.12)",
-              borderRadius: 12,
-              display: "grid",
-              gap: 12,
-            }}
-          >
-            {!selectedId ? (
-              <div className="muted">Geen dossier geselecteerd.</div>
-            ) : detailLoading ? (
-              <div className="muted">laden; detail</div>
-            ) : !item ? (
-              <div className="muted">Detail niet beschikbaar.</div>
-            ) : (
-              <>
-                <div
-                  style={{
-                    display: "flex",
-                    justifyContent: "space-between",
-                    gap: 12,
-                    alignItems: "flex-start",
-                    flexWrap: "wrap",
-                  }}
-                >
-                  <div style={{ display: "grid", gap: 6, minWidth: 0 }}>
-                    <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-                      <div style={{ fontWeight: 700, fontSize: 18 }}>
-                        {item.form_name || item.form_code}
-                      </div>
+          {!listLoading && visibleItems.length > 0 && (
+            <div className="monitor-inline-totals monitor-inline-totals--prominent">
+              <SummaryTag
+                title="Toon formulieren met openstaande actiepunten; inclusief wachten op derden"
+                tone="active"
+                active={filters.actionStatusFilter === "OPEN"}
+                onClick={() => setActionStatusFilter("OPEN")}
+              >
+                Open {visibleTotals.open + visibleTotals.waiting}
+              </SummaryTag>
 
-                      <StatusTag status={item.status} />
+              <SummaryTag
+                title="Toon formulieren met actiepunten die wachten op derden"
+                tone="warning"
+                active={filters.actionStatusFilter === "WACHTENOPDERDEN"}
+                onClick={() => setActionStatusFilter("WACHTENOPDERDEN")}
+              >
+                Wachten op derden {visibleTotals.waiting}
+              </SummaryTag>
 
-                      <SummaryTag title="Documentnummer">
-                        {item.form_instance_id ?? "-"}
-                      </SummaryTag>
+              <SummaryTag
+                title="Toon formulieren met afgehandelde actiepunten"
+                tone="success"
+                active={filters.actionStatusFilter === "DONE"}
+                onClick={() => setActionStatusFilter("DONE")}
+              >
+                Afgehandeld {visibleTotals.done}
+              </SummaryTag>
+            </div>
+          )}
 
-                      <SummaryTag title="Formulierversie">
-                        v{item.version_label || "-"}
-                      </SummaryTag>
+          {infoOpen && infoPopupStyle && (
+            <div
+              ref={infoPopupRef}
+              className="monitor-info-popup"
+              style={infoPopupStyle}
+            >
+              Klik op een statuslabel om de zichtbare formulierafhandelingen te filteren op die actiepuntstatus. Klik nogmaals op hetzelfde label om die filter weer uit te zetten.
+            </div>
+          )}
 
-                      <SummaryTag title="Openstaande actiepunten">
-                        {followUpSummary?.open_count ?? detail.follow_up_summary?.open_count ?? 0} open
-                      </SummaryTag>
-                    </div>
+          {listLoading ? (
+            <div className="muted">laden; monitorlijst</div>
+          ) : visibleItems.length === 0 ? (
+            <div className="muted">Geen formulieren gevonden.</div>
+          ) : (
+            <div style={{ display: "grid", gap: 8 }}>
+              {visibleItems.map((row) => {
+                const iconRef =
+                  openIconRefById.current[row.form_instance_id] ||
+                  (openIconRefById.current[row.form_instance_id] = { current: null });
 
-                    {item.instance_title ? (
-                      <div className="muted" style={{ fontSize: 13 }}>
-                        {item.instance_title}
-                      </div>
-                    ) : null}
-                  </div>
+                const actionCountsRaw = buildMonitorRowActionCounts(row);
+                const actionCounts = {
+                  open:
+                    Number(actionCountsRaw?.open ?? getOpenCount(row)),
+                  waiting:
+                    Number(actionCountsRaw?.waiting ?? getWaitingCount(row)),
+                  done:
+                    Number(actionCountsRaw?.done ?? getDoneCount(row)),
+                };
 
-                  <div
-                    style={{
-                      display: "flex",
-                      gap: 8,
-                      alignItems: "center",
-                      flexWrap: "wrap",
-                      justifyContent: "flex-end",
-                    }}
-                  >
-                    {allowedActions.set_ingediend && (
-                      <button
-                        type="button"
-                        className="btn btn-secondary"
-                        disabled={formActionBusy}
-                        onClick={() => handleFormAction("set_ingediend")}
-                        style={{ display: "inline-flex", alignItems: "center", gap: 8 }}
-                        onMouseEnter={() => setIngediendIconRef.current?.startAnimation?.()}
-                        onMouseLeave={() => setIngediendIconRef.current?.stopAnimation?.()}
-                      >
-                        <FolderInputIcon ref={setIngediendIconRef} size={18} className="nav-anim-icon" />
-                        Terug naar ingediend
-                      </button>
-                    )}
+                const isReady = hasNoRemainingOpenActionPoints(row);
 
-                    {allowedActions.set_concept && (
-                      <button
-                        type="button"
-                        className="btn btn-secondary"
-                        disabled={formActionBusy}
-                        onClick={() => handleFormAction("set_concept")}
-                        style={{ display: "inline-flex", alignItems: "center", gap: 8 }}
-                        onMouseEnter={() => setConceptIconRef.current?.startAnimation?.()}
-                        onMouseLeave={() => setConceptIconRef.current?.stopAnimation?.()}
-                      >
-                        <HistoryIcon ref={setConceptIconRef} size={18} className="nav-anim-icon" />
-                        Terug naar concept
-                      </button>
-                    )}
-
-                    <button
-                      type="button"
-                      className="btn btn-secondary"
-                      onClick={() => {
-                        const url = `/installaties/${encodeURIComponent(item.atrium_installation_code)}/formulieren/${encodeURIComponent(item.form_instance_id)}`;
-                        window.open(url, "_blank", "noopener");
-                      }}
-                      onMouseEnter={() => openIconRef.current?.startAnimation?.()}
-                      onMouseLeave={() => openIconRef.current?.stopAnimation?.()}
-                      style={{ display: "inline-flex", alignItems: "center", gap: 8 }}
-                    >
-                      <ArrowBigRightIcon ref={openIconRef} size={18} className="nav-anim-icon" />
-                      Open formulier
-                    </button>
-
-                    <button
-                      type="button"
-                      className="btn btn-secondary"
-                      disabled
-                      title="PDF-export volgt later"
-                      style={{ display: "inline-flex", alignItems: "center", gap: 8 }}
-                      onMouseEnter={() => pdfIconRef.current?.startAnimation?.()}
-                      onMouseLeave={() => pdfIconRef.current?.stopAnimation?.()}
-                    >
-                      <DownloadIcon ref={pdfIconRef} size={18} className="nav-anim-icon" />
-                      PDF
-                    </button>
-
-                    {allowedActions.set_afgehandeld && (
-                      <button
-                        type="button"
-                        className="btn"
-                        disabled={formActionBusy}
-                        onClick={() => handleFormAction("set_afgehandeld")}
-                        style={{ display: "inline-flex", alignItems: "center", gap: 8 }}
-                        onMouseEnter={() => finishIconRef.current?.startAnimation?.()}
-                        onMouseLeave={() => finishIconRef.current?.stopAnimation?.()}
-                      >
-                        <ClipboardCheckIcon ref={finishIconRef} size={18} className="nav-anim-icon" />
-                        Formulier definitief maken
-                      </button>
-                    )}
-                  </div>
-                </div>
-
-                <div
-                  style={{
-                    padding: 12,
-                    border: "1px solid rgba(255,255,255,0.12)",
-                    borderRadius: 12,
-                    display: "grid",
-                    gap: 10,
-                  }}
-                >
+                return (
                   <button
+                    key={row.form_instance_id}
                     type="button"
-                    onClick={() => setPropertiesOpen((prev) => !prev)}
-                    onMouseEnter={() => propsToggleIconRef.current?.startAnimation?.()}
-                    onMouseLeave={() => propsToggleIconRef.current?.stopAnimation?.()}
-                    style={{
-                      width: "100%",
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "space-between",
-                      gap: 12,
-                      background: "transparent",
-                      border: "none",
-                      padding: 0,
-                      cursor: "pointer",
-                      textAlign: "left",
-                    }}
-                    title={propertiesOpen ? "Inklappen" : "Uitklappen"}
+                    className={`${getMonitorRowSurfaceClass(row)} monitor-dossier-row monitor-dossier-row--compact monitor-dossier-row--button`}
+                    onClick={() => openRow(row)}
+                    title="Open formulierafhandeling"
                   >
-                    <div style={{ fontWeight: 600 }}>Formuliereigenschappen</div>
-
-                    <div style={{ flex: "0 0 auto", display: "inline-flex", alignItems: "center" }}>
-                      {!propertiesOpen ? (
-                        <PlusIcon
-                          ref={propsToggleIconRef}
-                          size={18}
-                          className="nav-anim-icon"
-                        />
-                      ) : (
-                        <ChevronUpIcon
-                          ref={propsToggleIconRef}
-                          size={18}
-                          className="nav-anim-icon"
-                        />
-                      )}
-                    </div>
-                  </button>
-
-                  {propertiesOpen && (
-                    <div className="cf-grid">
-                      <div className="cf-row">
-                        <div className="cf-label">
-                          <div className="cf-label-text cf-label-text--accent">Aangemaakt op</div>
+                    <div className="monitor-dossier-row__main">
+                      <div className="monitor-dossier-row__title-row">
+                        <div className="monitor-dossier-row__title">
+                          {row.form_name || row.form_code || `Formulier ${row.form_instance_id}`}
                         </div>
-                        <div className="cf-control">
-                          <input className="input" readOnly value={formatDateTime(item.created_at)} />
-                        </div>
-                      </div>
 
-                      <div className="cf-row">
-                        <div className="cf-label">
-                          <div className="cf-label-text cf-label-text--accent">Aangemaakt door</div>
-                        </div>
-                        <div className="cf-control">
-                          <input className="input" readOnly value={item.created_by ?? ""} />
+                        <div className="monitor-dossier-row__title-tags">
+                          <SummaryTag title="Documentnummer" tone="muted">
+                            {row.form_instance_id ?? "-"}
+                          </SummaryTag>
+
+                          <SummaryTag title="Formulierversie" tone="muted">
+                            v{row.version_label || "-"}
+                          </SummaryTag>
+
+                          {row.parent_instance_id ? (
+                            <button
+                              type="button"
+                              className="monitor-tag monitor-tag--active monitor-link-tag"
+                              title="Open parent formulier"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                navigate(`/monitor/formulieren/${row.parent_instance_id}`);
+                              }}
+                            >
+                              vervolg op formulier #{row.parent_instance_id}
+                            </button>
+                          ) : null}
+
+                          {isReady ? (
+                            <SummaryTag title="Geen resterende openstaande actiepunten" tone="ready">
+                              geen openstaande actiepunten
+                            </SummaryTag>
+                          ) : null}
                         </div>
                       </div>
 
-                      <div className="cf-row">
-                        <div className="cf-label">
-                          <div className="cf-label-text cf-label-text--accent">Laatste wijziging</div>
-                        </div>
-                        <div className="cf-control">
-                          <input
-                            className="input"
-                            readOnly
-                            value={formatDateTime(item.updated_at || item.created_at)}
-                          />
-                        </div>
+                      <div className="monitor-dossier-row__sub">
+                        {compactInstallationLine(row) || "-"}
                       </div>
 
-                      <div className="cf-row">
-                        <div className="cf-label">
-                          <div className="cf-label-text cf-label-text--accent">Gewijzigd door</div>
+                      {row.instance_title ? (
+                        <div className="monitor-dossier-row__meta">
+                          {row.instance_title}
                         </div>
-                        <div className="cf-control">
-                          <input
-                            className="input"
-                            readOnly
-                            value={getLastModifiedBy(item)}
-                          />
-                        </div>
-                      </div>
+                      ) : null}
 
-                      <div className="cf-row wide">
-                        <div className="cf-label">
-                          <div className="cf-label-text cf-label-text--accent">Documentnummer</div>
-                        </div>
-                        <div className="cf-control">
-                          <input className="input" readOnly value={item.form_instance_id ?? ""} />
-                        </div>
+                      <div className="monitor-inline-totals">
+                        <SummaryTag title="Aantal openstaande actiepunten; inclusief wachten op derden" tone="active">
+                          Open {actionCounts.open + actionCounts.waiting}
+                        </SummaryTag>
+
+                        <SummaryTag title="Aantal wacht op derden" tone="warning">
+                          Wachten op derden {actionCounts.waiting}
+                        </SummaryTag>
+
+                        <SummaryTag title="Aantal afgehandelde actiepunten" tone="success">
+                          Afgehandeld {actionCounts.done}
+                        </SummaryTag>
                       </div>
                     </div>
-                  )}
-                </div>
 
-                <div
-                  style={{
-                    padding: 12,
-                    border: "1px solid rgba(255,255,255,0.12)",
-                    borderRadius: 12,
-                    display: "grid",
-                    gap: 10,
-                  }}
-                >
-                  <button
-                    type="button"
-                    onClick={() => setRelationsOpen((prev) => !prev)}
-                    onMouseEnter={() => relationToggleIconRef.current?.startAnimation?.()}
-                    onMouseLeave={() => relationToggleIconRef.current?.stopAnimation?.()}
-                    style={{
-                      width: "100%",
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "space-between",
-                      gap: 12,
-                      background: "transparent",
-                      border: "none",
-                      padding: 0,
-                      cursor: "pointer",
-                      textAlign: "left",
-                    }}
-                    title={relationsOpen ? "Inklappen" : "Uitklappen"}
-                  >
-                    <div style={{ fontWeight: 600 }}>Relatiedata</div>
+                    <div className="monitor-dossier-row__side">
+                      <div style={{ display: "flex", justifyContent: "flex-end" }}>
+                        <StatusTag status={row.status} />
+                      </div>
 
-                    <div style={{ flex: "0 0 auto", display: "inline-flex", alignItems: "center" }}>
-                      {!relationsOpen ? (
-                        <PlusIcon
-                          ref={relationToggleIconRef}
-                          size={18}
-                          className="nav-anim-icon"
-                        />
-                      ) : (
-                        <ChevronUpIcon
-                          ref={relationToggleIconRef}
-                          size={18}
-                          className="nav-anim-icon"
-                        />
-                      )}
-                    </div>
-                  </button>
-
-                  {relationsOpen && (
-                    <div className="cf-grid">
-                      {relationRows.map((row) => (
-                        <div className="cf-row" key={row.label}>
-                          <div className="cf-label">
-                            <div className="cf-label-text cf-label-text--accent">
-                              {row.label}
-                            </div>
-                          </div>
-                          <div className="cf-control">
-                            <input className="input" readOnly value={row.value} />
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-
-                {item.instance_note ? (
-                  <div
-                    style={{
-                      padding: 12,
-                      border: "1px solid rgba(255,255,255,0.12)",
-                      borderRadius: 12,
-                      display: "grid",
-                      gap: 8,
-                    }}
-                  >
-                    <div style={{ fontWeight: 600 }}>Formulieropmerking</div>
-                    <div style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>
-                      {item.instance_note}
-                    </div>
-                  </div>
-                ) : null}
-
-                {(detail.parent || (Array.isArray(detail.children) && detail.children.length > 0)) && (
-                  <div
-                    style={{
-                      padding: 12,
-                      border: "1px solid rgba(255,255,255,0.12)",
-                      borderRadius: 12,
-                      display: "grid",
-                      gap: 10,
-                    }}
-                  >
-                    <div style={{ fontWeight: 600 }}>Keten</div>
-
-                    {detail.parent && (
-                      <div
-                        style={{
-                          padding: 10,
-                          border: "1px solid rgba(255,255,255,0.12)",
-                          borderRadius: 10,
-                          display: "grid",
-                          gap: 6,
-                        }}
-                      >
-                        <div style={{ fontWeight: 600 }}>
-                          Parent #{detail.parent.form_instance_id}
-                        </div>
-                        <div className="muted" style={{ fontSize: 13 }}>
-                          {detail.parent.form_name || detail.parent.form_code || "-"}
+                      <div className="monitor-dossier-row__audit">
+                        <div>
+                          Laatste wijziging: {formatDateTime(row.updated_at || row.created_at)}
                         </div>
                         <div>
-                          <StatusTag status={detail.parent.status} />
+                          Laatst gewijzigd door: {getLastModifiedBy(row)}
                         </div>
                       </div>
-                    )}
 
-                    {Array.isArray(detail.children) && detail.children.length > 0 && (
-                      <div style={{ display: "grid", gap: 8 }}>
-                        {detail.children.map((child) => (
-                          <div
-                            key={child.form_instance_id}
-                            style={{
-                              padding: 10,
-                              border: "1px solid rgba(255,255,255,0.12)",
-                              borderRadius: 10,
-                              display: "flex",
-                              justifyContent: "space-between",
-                              gap: 10,
-                              alignItems: "center",
-                              flexWrap: "wrap",
-                            }}
-                          >
-                            <div>
-                              <div style={{ fontWeight: 600 }}>
-                                Child #{child.form_instance_id}
-                              </div>
-                              <div className="muted" style={{ fontSize: 13 }}>
-                                {child.form_name || child.form_code || "-"}
-                              </div>
-                            </div>
-
-                            <StatusTag status={child.status} />
-                          </div>
-                        ))}
+                      <div
+                        className="monitor-open-action"
+                        onMouseEnter={() => iconRef.current?.startAnimation?.()}
+                        onMouseLeave={() => iconRef.current?.stopAnimation?.()}
+                      >
+                        <span>Open formulierafhandeling</span>
+                        <ArrowBigRightIcon ref={iconRef} size={18} className="nav-anim-icon" />
                       </div>
-                    )}
-                  </div>
-                )}
-
-                <div
-                  style={{
-                    padding: 12,
-                    border: "1px solid rgba(255,255,255,0.12)",
-                    borderRadius: 12,
-                    display: "grid",
-                    gap: 10,
-                  }}
-                >
-                  <div
-                    style={{
-                      display: "flex",
-                      justifyContent: "space-between",
-                      gap: 10,
-                      alignItems: "center",
-                      flexWrap: "wrap",
-                    }}
-                  >
-                    <div style={{ fontWeight: 600 }}>Actiepunten</div>
-
-                    <div className="muted" style={{ fontSize: 12 }}>
-                      {followUpsLoading ? "laden..." : `${followUps.length} regel(s)`}
                     </div>
-                  </div>
-
-                  {followUpsLoading ? (
-                    <div className="muted">laden; actiepunten</div>
-                  ) : followUps.length === 0 ? (
-                    <div className="muted">Geen actiepunten gevonden.</div>
-                  ) : (
-                    <div style={{ display: "grid", gap: 10 }}>
-                      {followUps.map((row) => {
-                        const noteKey = String(row.follow_up_action_id);
-                        const noteValue = noteDrafts[noteKey] ?? normalizeNoteValue(row.note);
-                        const noteSaving = Boolean(noteSavingById[noteKey]);
-                        const noteSaved = Boolean(noteSavedById[noteKey]);
-                        const copied = Boolean(copiedById[noteKey]);
-
-                        return (
-                          <div
-                            key={row.follow_up_action_id}
-                            style={{
-                              padding: 12,
-                              border: "1px solid rgba(255,255,255,0.12)",
-                              borderRadius: 12,
-                              display: "grid",
-                              gap: 10,
-                            }}
-                          >
-                            <div
-                              style={{
-                                display: "flex",
-                                justifyContent: "space-between",
-                                gap: 10,
-                                alignItems: "flex-start",
-                                flexWrap: "wrap",
-                              }}
-                            >
-                              <div style={{ minWidth: 0, display: "grid", gap: 6 }}>
-                                <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-                                  <div style={{ fontWeight: 600 }}>
-                                    {row.workflow_title || "Actiepunt"}
-                                  </div>
-                                  <StatusTag status={row.status} />
-                                </div>
-
-                                {row.workflow_description ? (
-                                  <div className="muted" style={{ fontSize: 13 }}>
-                                    {row.workflow_description}
-                                  </div>
-                                ) : null}
-                              </div>
-
-                              <div
-                                style={{
-                                  display: "flex",
-                                  gap: 6,
-                                  alignItems: "center",
-                                  justifyContent: "flex-end",
-                                  flexWrap: "wrap",
-                                  marginLeft: "auto",
-                                }}
-                              >
-                                {row.category ? (
-                                  <SummaryTag title="Categorie">
-                                    {row.category}
-                                  </SummaryTag>
-                                ) : null}
-
-                                {String(row.certificate_impact || "").toLowerCase() === "yes" ? (
-                                  <SummaryTag title="Dit actiepunt blokkeert het certificaat">
-                                    Blokkeert certificaat
-                                  </SummaryTag>
-                                ) : null}
-
-                                {row.source_item_code || row.source_row_index != null ? (
-                                  <SummaryTag title="Vraagnummer">
-                                    vraag {row.source_item_code || row.source_row_index}
-                                  </SummaryTag>
-                                ) : null}
-                              </div>
-                            </div>
-
-                            <div className="muted" style={{ fontSize: 12 }}>
-                              Laatste wijziging; {formatDateTime(row.updated_at || row.created_at)}
-                            </div>
-
-                            <div
-                              style={{
-                                padding: 10,
-                                border: "1px solid rgba(255,255,255,0.10)",
-                                borderRadius: 10,
-                                display: "grid",
-                                gap: 6,
-                              }}
-                            >
-                              <div style={{ fontWeight: 600, display: "flex", gap: 8, alignItems: "center" }}>
-                                <MessageCircleMoreIcon size={16} />
-                                Notitie
-                              </div>
-
-                              <textarea
-                                className="cf-textarea"
-                                rows={3}
-                                data-note-id={noteKey}
-                                placeholder="Werknotitie of interne toelichting"
-                                value={noteValue}
-                                onChange={(e) => handleNoteChange(noteKey, e.target.value)}
-                              />
-
-                              <div className="muted" style={{ fontSize: 12 }}>
-                                {noteSaving ? "opslaan..." : noteSaved ? "opgeslagen" : "wijzigingen worden automatisch opgeslagen"}
-                              </div>
-                            </div>
-
-                            <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
-                              <button
-                                type="button"
-                                className="btn btn-secondary"
-                                onClick={() => handleCopyClipboard(row)}
-                                style={{ display: "inline-flex", alignItems: "center", gap: 8 }}
-                              >
-                                {copied ? (
-                                  <CheckIcon size={18} className="nav-anim-icon" />
-                                ) : (
-                                  <ArchiveIcon size={18} />
-                                )}
-                                {copied ? "Actietekst gekopieerd" : "Kopieer actietekst"}
-                              </button>
-
-                              <div style={{ marginLeft: "auto", display: "flex", gap: 8, flexWrap: "wrap" }}>
-                                <button
-                                  type="button"
-                                  className="btn btn-secondary"
-                                  disabled={followUpBusyId === row.follow_up_action_id}
-                                  onClick={() => handleFollowUpAction(row.follow_up_action_id, "set_open")}
-                                >
-                                  Open
-                                </button>
-
-                                <button
-                                  type="button"
-                                  className="btn btn-secondary"
-                                  disabled={followUpBusyId === row.follow_up_action_id}
-                                  onClick={() => handleFollowUpAction(row.follow_up_action_id, "set_waiting_third_party")}
-                                >
-                                  Wachten op derden
-                                </button>
-
-                                <button
-                                  type="button"
-                                  className="btn btn-secondary"
-                                  disabled={followUpBusyId === row.follow_up_action_id}
-                                  onClick={() => handleFollowUpAction(row.follow_up_action_id, "set_rejected")}
-                                >
-                                  Afgewezen
-                                </button>
-
-                                <button
-                                  type="button"
-                                  className="btn btn-secondary"
-                                  disabled={followUpBusyId === row.follow_up_action_id}
-                                  onClick={() => handleFollowUpAction(row.follow_up_action_id, "set_vervallen")}
-                                >
-                                  Vervallen
-                                </button>
-
-                                <button
-                                  type="button"
-                                  className="btn"
-                                  disabled={followUpBusyId === row.follow_up_action_id}
-                                  onClick={() => handleFollowUpAction(row.follow_up_action_id, "mark_done")}
-                                  style={{ display: "inline-flex", alignItems: "center", gap: 8 }}
-                                >
-                                  <CheckIcon size={18} className="nav-anim-icon" />
-                                  Actiepunt afronden
-                                </button>
-                              </div>
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
-                </div>
-
-                <ActionFooter
-                  canFinish={allowedActions.set_afgehandeld}
-                  finishBusy={formActionBusy}
-                  onFinish={() => handleFormAction("set_afgehandeld")}
-                  onOpenForm={() => {
-                    const url = `/installaties/${encodeURIComponent(item.atrium_installation_code)}/formulieren/${encodeURIComponent(item.form_instance_id)}`;
-                    window.open(url, "_blank", "noopener");
-                  }}
-                  footerOpenIconRef={footerOpenIconRef}
-                  footerPdfIconRef={footerPdfIconRef}
-                  footerFinishIconRef={footerFinishIconRef}
-                />
-              </>
-            )}
-          </div>
+                  </button>
+                );
+              })}
+            </div>
+          )}
         </div>
       </div>
     </div>

@@ -2,6 +2,7 @@
 import type { Request, Response } from "express";
 import * as service from "../services/installationsService.js";
 import * as formsService from "../services/formsService.js";
+import * as documentFilesService from "../services/installationDocumentFilesService.js";
 
 // -------------------- Installations --------------------
 
@@ -131,6 +132,100 @@ export async function putDocuments(req: any, res: any) {
 
     console.error(err);
     return res.status(500).json({ error: "putDocuments failed" });
+  }
+}
+
+export async function uploadDocumentFile(req: any, res: any) {
+  try {
+    const code = String(req.params.code || "");
+    const documentId = String(req.params.documentId || "");
+    const file = req.file;
+
+    const result = await documentFilesService.uploadDocumentFile(code, documentId, file, req.user);
+    return res.json(result);
+  } catch (err: any) {
+    const msg = (err?.message || String(err)).toLowerCase();
+
+    if (msg.includes("missing file")) {
+      return res.status(400).json({ error: "missing file" });
+    }
+    if (msg.includes("document not found")) {
+      return res.status(404).json({ error: "document not found" });
+    }
+    if (msg.includes("document already has file")) {
+      return res.status(409).json({ error: "document already has file" });
+    }
+
+    console.error(err);
+    return res.status(500).json({ error: "uploadDocumentFile failed" });
+  }
+}
+
+export async function getDocumentDownloadUrl(req: any, res: any) {
+  try {
+    const code = String(req.params.code || "");
+    const documentId = String(req.params.documentId || "");
+
+    const result = await documentFilesService.getDocumentDownloadUrl(code, documentId);
+    return res.json(result);
+  } catch (err: any) {
+    const msg = (err?.message || String(err)).toLowerCase();
+
+    if (msg.includes("document not found")) {
+      return res.status(404).json({ error: "document not found" });
+    }
+    if (msg.includes("document has no file")) {
+      return res.status(404).json({ error: "document has no file" });
+    }
+
+    console.error(err);
+    return res.status(500).json({ error: "getDocumentDownloadUrl failed" });
+  }
+}
+
+export async function createDocumentReplacement(req: any, res: any) {
+  try {
+    const code = String(req.params.code || "");
+    const documentId = String(req.params.documentId || "");
+    const payload = req.body || {};
+
+    const result = await documentFilesService.createReplacementDocument(code, documentId, payload, req.user);
+    return res.json(result);
+  } catch (err: any) {
+    const msg = (err?.message || String(err)).toLowerCase();
+
+    if (msg.includes("parent document not found")) {
+      return res.status(404).json({ error: "parent document not found" });
+    }
+    if (msg.includes("parent document invalid")) {
+      return res.status(409).json({ error: "parent document invalid" });
+    }
+
+    console.error(err);
+    return res.status(500).json({ error: "createDocumentReplacement failed" });
+  }
+}
+
+export async function createDocumentAttachment(req: any, res: any) {
+  try {
+    const code = String(req.params.code || "");
+    const documentId = String(req.params.documentId || "");
+    const payload = req.body || {};
+
+    const result = await documentFilesService.createAttachmentDocument(code, documentId, payload, req.user);
+    return res.json(result);
+  } catch (err: any) {
+    const msg = (err?.message || String(err)).toLowerCase();
+
+    if (msg.includes("parent document not found")) {
+      return res.status(404).json({ error: "parent document not found" });
+    }
+    if (msg.includes("parent document invalid")) {
+      return res.status(409).json({ error: "parent document invalid" });
+    }
+
+    console.error(err);
+    return res.status(500).json({ error: "createDocumentAttachment failed" });
   }
 }
 
@@ -581,5 +676,33 @@ export async function getInstallationComponents(req: any, res: Response) {
 
     console.error(err);
     return res.status(500).json({ error: "getInstallationComponents failed" });
+  }
+}
+
+export async function downloadDocumentFile(req: any, res: any) {
+  try {
+    const code = String(req.params.code || "");
+    const documentId = String(req.params.documentId || "");
+
+    const result = await documentFilesService.downloadDocumentFile(code, documentId);
+
+    res.setHeader("Content-Type", result.contentType || "application/octet-stream");
+    res.setHeader("Content-Length", String(result.contentLength ?? result.buffer.length));
+    res.setHeader("Content-Disposition", result.contentDisposition);
+    res.setHeader("Cache-Control", "no-store");
+
+    return res.status(200).send(result.buffer);
+  } catch (err: any) {
+    const msg = (err?.message || String(err)).toLowerCase();
+
+    if (msg.includes("document not found")) {
+      return res.status(404).json({ error: "document not found" });
+    }
+    if (msg.includes("document has no file")) {
+      return res.status(404).json({ error: "document has no file" });
+    }
+
+    console.error(err);
+    return res.status(500).json({ error: "downloadDocumentFile failed" });
   }
 }

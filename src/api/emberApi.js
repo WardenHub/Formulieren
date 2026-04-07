@@ -1,5 +1,5 @@
 // src/api/emberApi.js
-import { httpJson } from "./http";
+import { httpJson, httpUpload } from "./http";
 
 export function apiGet(path) {
   return httpJson(path);
@@ -57,6 +57,40 @@ export function setInstallationType(code, installation_type_key) {
 
 export function putDocuments(code, documents) {
   return apiPut(`/installations/${code}/documents`, { documents });
+}
+
+export function uploadInstallationDocumentFile(code, documentId, file) {
+  const fd = new FormData();
+  fd.append("file", file);
+
+  return httpUpload(
+    `/installations/${encodeURIComponent(code)}/documents/${encodeURIComponent(documentId)}/upload`,
+    fd
+  );
+}
+
+export function getInstallationDocumentDownloadUrl(code, documentId) {
+  return apiGet(
+    `/installations/${encodeURIComponent(code)}/documents/${encodeURIComponent(documentId)}/download-url`
+  );
+}
+
+export function getInstallationDocumentDownloadEndpoint(code, documentId) {
+  return `/installations/${encodeURIComponent(code)}/documents/${encodeURIComponent(documentId)}/download`;
+}
+
+export function createInstallationDocumentReplacement(code, documentId, payload = {}) {
+  return apiPost(
+    `/installations/${encodeURIComponent(code)}/documents/${encodeURIComponent(documentId)}/replacements`,
+    payload
+  );
+}
+
+export function createInstallationDocumentAttachment(code, documentId, payload = {}) {
+  return apiPost(
+    `/installations/${encodeURIComponent(code)}/documents/${encodeURIComponent(documentId)}/attachments`,
+    payload
+  );
 }
 
 export async function searchInstallations(q, take = 25) {
@@ -297,3 +331,4 @@ export function saveAdminFormConfig(formId, payload) {
 export function createAdminFormVersion(formId, payload) {
   return apiPost(`/admin/forms/${encodeURIComponent(formId)}/versions`, payload ?? {});
 }
+
