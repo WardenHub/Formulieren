@@ -1,3 +1,4 @@
+// api/src/services/blobStorageService.ts
 import { DefaultAzureCredential } from "@azure/identity";
 import {
   BlobServiceClient,
@@ -58,11 +59,13 @@ function tryGetAccountKeyFromConnectionString() {
   if (!cs) return null;
 
   const parts = cs.split(";").map((x) => x.trim()).filter(Boolean);
-  const map = new Map(parts.map((p) => {
-    const i = p.indexOf("=");
-    if (i < 0) return [p, ""];
-    return [p.slice(0, i), p.slice(i + 1)];
-  }));
+  const map = new Map(
+    parts.map((p) => {
+      const i = p.indexOf("=");
+      if (i < 0) return [p, ""];
+      return [p.slice(0, i), p.slice(i + 1)];
+    })
+  );
 
   const accountName = map.get("AccountName") || "";
   const accountKey = map.get("AccountKey") || "";
@@ -94,29 +97,14 @@ async function getContainerClient() {
   return container;
 }
 
-export function buildInstallationDocumentStorageKey(
-  installationCode: string,
-  originalFileName: string,
-  documentId: string
-) {
-  const { baseName, extension } = splitFileNameParts(originalFileName);
-  const safeInstallationCode = sanitizePart(installationCode) || installationCode;
-  const safeDocumentId = sanitizePart(documentId) || documentId;
-
-  return `installaties/${safeInstallationCode}/bestanden/${safeDocumentId}/${baseName}${extension}`;
-}
-
-export async function uploadInstallationDocumentBlob(args: {
-  installationCode: string;
-  documentId: string;
-  fileName: string;
+async function uploadBlob(args: {
+  storageKey: string;
   contentType?: string | null;
   buffer: Buffer;
 }) {
-  const { installationCode, documentId, fileName, contentType, buffer } = args;
+  const { storageKey, contentType, buffer } = args;
 
   const container = await getContainerClient();
-  const storageKey = buildInstallationDocumentStorageKey(installationCode, fileName, documentId);
   const blob = container.getBlockBlobClient(storageKey);
 
   await blob.uploadData(buffer, {
@@ -132,7 +120,7 @@ export async function uploadInstallationDocumentBlob(args: {
   };
 }
 
-export async function deleteInstallationDocumentBlob(storageKey: string) {
+async function deleteBlob(storageKey: string) {
   if (!storageKey) return;
 
   const container = await getContainerClient();
@@ -140,7 +128,7 @@ export async function deleteInstallationDocumentBlob(storageKey: string) {
   await blob.deleteIfExists();
 }
 
-export async function createInstallationDocumentDownloadUrl(args: {
+async function createDownloadUrl(args: {
   storageKey: string;
   expiresInSeconds?: number;
   downloadFileName?: string | null;
@@ -155,10 +143,17 @@ export async function createInstallationDocumentDownloadUrl(args: {
   const startsOn = new Date(Date.now() - 5 * 60 * 1000);
   const expiresOn = new Date(Date.now() + expiresInSeconds * 1000);
 
+  const contentDisposition = downloadFileName
+    ? `inline; filename="${String(downloadFileName).replace(/"/g, "")}"`
+    : undefined;
+
   const shared = tryGetAccountKeyFromConnectionString();
 
   if (shared) {
-    const credential = new StorageSharedKeyCredential(shared.accountName, shared.accountKey);
+    const credential = new StorageSharedKeyCredential(
+      shared.accountName,
+      shared.accountKey
+    );
 
     const sas = generateBlobSASQueryParameters(
       {
@@ -167,9 +162,7 @@ export async function createInstallationDocumentDownloadUrl(args: {
         permissions: BlobSASPermissions.parse("r"),
         startsOn,
         expiresOn,
-        contentDisposition: downloadFileName
-          ? `inline; filename="${String(downloadFileName).replace(/"/g, "")}"`
-          : undefined,
+        contentDisposition,
       },
       credential
     ).toString();
@@ -178,7 +171,10 @@ export async function createInstallationDocumentDownloadUrl(args: {
   }
 
   const accountName = getAccountName();
-  const userDelegationKey = await blobServiceClient.getUserDelegationKey(startsOn, expiresOn);
+  const userDelegationKey = await blobServiceClient.getUserDelegationKey(
+    startsOn,
+    expiresOn
+  );
 
   const sas = generateBlobSASQueryParameters(
     {
@@ -187,9 +183,7 @@ export async function createInstallationDocumentDownloadUrl(args: {
       permissions: BlobSASPermissions.parse("r"),
       startsOn,
       expiresOn,
-      contentDisposition: downloadFileName
-        ? `inline; filename="${String(downloadFileName).replace(/"/g, "")}"`
-        : undefined,
+      contentDisposition,
     },
     userDelegationKey,
     accountName
@@ -198,7 +192,7 @@ export async function createInstallationDocumentDownloadUrl(args: {
   return `${blob.url}?${sas}`;
 }
 
-export async function downloadInstallationDocumentBlob(storageKey: string) {
+async function downloadBlob(storageKey: string) {
   if (!storageKey) {
     throw new Error("missing storageKey");
   }
@@ -231,4 +225,112 @@ export async function downloadInstallationDocumentBlob(storageKey: string) {
     contentType: response.contentType || "application/octet-stream",
     contentLength: response.contentLength ?? buffer.length,
   };
+}
+
+/* =========================================================
+   installatie-documenten
+   ========================================================= */
+
+export function buildInstallationDocumentStorageKey(
+  installationCode: string,
+  originalFileName: string,
+  documentId: string
+) {
+  const { baseName, extension } = splitFileNameParts(originalFileName);
+  const safeInstallationCode = sanitizePart(installationCode) || installationCode;
+  const safeDocumentId = sanitizePart(documentId) || documentId;
+
+  return `installaties/${safeInstallationCode}/bestanden/${safeDocumentId}/${baseName}${extension}`;
+}
+
+export async function uploadInstallationDocumentBlob(args: {
+  installationCode: string;
+  documentId: string;
+  fileName: string;
+  contentType?: string | null;
+  buffer: Buffer;
+}) {
+  const storageKey = buildInstallationDocumentStorageKey(
+    args.installationCode,
+    args.fileName,
+    args.documentId
+  );
+
+  return uploadBlob({
+    storageKey,
+    contentType: args.contentType,
+    buffer: args.buffer,
+  });
+}
+
+export async function deleteInstallationDocumentBlob(storageKey: string) {
+  return deleteBlob(storageKey);
+}
+
+export async function createInstallationDocumentDownloadUrl(args: {
+  storageKey: string;
+  expiresInSeconds?: number;
+  downloadFileName?: string | null;
+}) {
+  return createDownloadUrl(args);
+}
+
+export async function downloadInstallationDocumentBlob(storageKey: string) {
+  return downloadBlob(storageKey);
+}
+
+/* =========================================================
+   form-instance-documenten
+   ========================================================= */
+
+export function buildFormInstanceDocumentStorageKey(
+  installationCode: string,
+  formInstanceId: string,
+  originalFileName: string,
+  documentId: string
+) {
+  const { baseName, extension } = splitFileNameParts(originalFileName);
+  const safeInstallationCode = sanitizePart(installationCode) || installationCode;
+  const safeFormInstanceId = sanitizePart(formInstanceId) || formInstanceId;
+  const safeDocumentId = sanitizePart(documentId) || documentId;
+
+  return `installaties/${safeInstallationCode}/formulieren/${safeFormInstanceId}/bestanden/${safeDocumentId}/${baseName}${extension}`;
+}
+
+export async function uploadFormInstanceDocumentBlob(args: {
+  installationCode: string;
+  formInstanceId: string;
+  documentId: string;
+  fileName: string;
+  contentType?: string | null;
+  buffer: Buffer;
+}) {
+  const storageKey = buildFormInstanceDocumentStorageKey(
+    args.installationCode,
+    args.formInstanceId,
+    args.fileName,
+    args.documentId
+  );
+
+  return uploadBlob({
+    storageKey,
+    contentType: args.contentType,
+    buffer: args.buffer,
+  });
+}
+
+export async function deleteFormInstanceDocumentBlob(storageKey: string) {
+  return deleteBlob(storageKey);
+}
+
+export async function createFormInstanceDocumentDownloadUrl(args: {
+  storageKey: string;
+  expiresInSeconds?: number;
+  downloadFileName?: string | null;
+}) {
+  return createDownloadUrl(args);
+}
+
+export async function downloadFormInstanceDocumentBlob(storageKey: string) {
+  return downloadBlob(storageKey);
 }

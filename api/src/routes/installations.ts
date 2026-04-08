@@ -1,3 +1,4 @@
+// api/src/routes/installations.ts
 import { Router } from "express";
 import multer from "multer";
 import {
@@ -37,6 +38,16 @@ import {
   getFormPrefill,
   getInstallationComponents,
   previewSubmitFormInstance,
+  getFormInstanceDocuments,
+  putFormInstanceDocuments,
+  uploadFormInstanceDocumentFile,
+  getFormInstanceDocumentDownloadUrl,
+  downloadFormInstanceDocumentFile,
+  createFormInstanceDocumentReplacement,
+  createFormInstanceDocumentAttachment,
+  putFormInstanceDocumentLabels,
+  putFormInstanceDocumentFollowUps,
+  deleteFormInstanceDocument,
 } from "../controllers/installationsController.js";
 
 import { requireRole } from "../middleware/roleMiddleware.js";
@@ -128,6 +139,67 @@ router.post("/:code/forms/instances/:instanceId/submit-preview", requireRole("ad
 router.post("/:code/forms/instances/:instanceId/submit", requireRole("admin", "gebruiker"), submitFormInstance);
 router.post("/:code/forms/instances/:instanceId/withdraw", requireRole("admin", "gebruiker"), withdrawFormInstance);
 router.post("/:code/forms/instances/:instanceId/reopen", requireRole("admin", "gebruiker"), reopenFormInstance);
+
+router.get(
+  "/:code/forms/instances/:instanceId/documents",
+  requireRole("admin", "gebruiker"),
+  getFormInstanceDocuments
+);
+
+router.put(
+  "/:code/forms/instances/:instanceId/documents",
+  requireRole("admin", "gebruiker"),
+  putFormInstanceDocuments
+);
+
+router.post(
+  "/:code/forms/instances/:instanceId/documents/:documentId/upload",
+  requireRole("admin", "gebruiker"),
+  upload.single("file"),
+  uploadFormInstanceDocumentFile
+);
+
+router.get(
+  "/:code/forms/instances/:instanceId/documents/:documentId/download-url",
+  requireRole("admin", "gebruiker"),
+  getFormInstanceDocumentDownloadUrl
+);
+
+router.get(
+  "/:code/forms/instances/:instanceId/documents/:documentId/download",
+  requireRole("admin", "gebruiker"),
+  downloadFormInstanceDocumentFile
+);
+
+router.post(
+  "/:code/forms/instances/:instanceId/documents/:documentId/replacements",
+  requireRole("admin", "gebruiker"),
+  createFormInstanceDocumentReplacement
+);
+
+router.post(
+  "/:code/forms/instances/:instanceId/documents/:documentId/attachments",
+  requireRole("admin", "gebruiker"),
+  createFormInstanceDocumentAttachment
+);
+
+router.put(
+  "/:code/forms/instances/:instanceId/documents/:documentId/labels",
+  requireRole("admin", "gebruiker"),
+  putFormInstanceDocumentLabels
+);
+
+router.put(
+  "/:code/forms/instances/:instanceId/documents/:documentId/follow-ups",
+  requireRole("admin", "gebruiker"),
+  putFormInstanceDocumentFollowUps
+);
+
+router.delete(
+  "/:code/forms/instances/:instanceId/documents/:documentId",
+  requireRole("admin", "gebruiker"),
+  deleteFormInstanceDocument
+);
 
 // offline-light import
 router.post("/:code/forms/import", requireRole("admin", "gebruiker"), importFormAnswerFile);

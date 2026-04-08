@@ -3,6 +3,7 @@ import type { Request, Response } from "express";
 import * as service from "../services/installationsService.js";
 import * as formsService from "../services/formsService.js";
 import * as documentFilesService from "../services/installationDocumentFilesService.js";
+import * as formDocumentFilesService from "../services/formInstanceDocumentFilesService.js";
 
 // -------------------- Installations --------------------
 
@@ -704,5 +705,298 @@ export async function downloadDocumentFile(req: any, res: any) {
 
     console.error(err);
     return res.status(500).json({ error: "downloadDocumentFile failed" });
+  }
+}
+
+export async function getFormInstanceDocuments(req: any, res: Response) {
+  try {
+    const code = String(req.params.code || "");
+    const instanceId = String(req.params.instanceId || "");
+
+    const data = await formDocumentFilesService.getFormInstanceDocuments(code, instanceId);
+    return res.json(data);
+  } catch (err: any) {
+    console.error(err);
+    return res.status(500).json({ error: "getFormInstanceDocuments failed" });
+  }
+}
+
+export async function putFormInstanceDocuments(req: any, res: any) {
+  try {
+    const code = String(req.params.code || "");
+    const instanceId = String(req.params.instanceId || "");
+    const items = req.body?.items;
+
+    const result = await formDocumentFilesService.upsertFormInstanceDocuments(
+      code,
+      instanceId,
+      items,
+      req.user
+    );
+
+    return res.json(result);
+  } catch (err: any) {
+    const msg = String(err?.message || err).toLowerCase();
+
+    if (msg.includes("form instance not found")) {
+      return res.status(404).json({ error: "form instance not found" });
+    }
+    if (msg.includes("form instance not editable")) {
+      return res.status(409).json({ error: "form instance not editable" });
+    }
+
+    console.error(err);
+    return res.status(500).json({ error: "putFormInstanceDocuments failed" });
+  }
+}
+
+export async function uploadFormInstanceDocumentFile(req: any, res: any) {
+  try {
+    const code = String(req.params.code || "");
+    const instanceId = String(req.params.instanceId || "");
+    const documentId = String(req.params.documentId || "");
+    const file = req.file;
+
+    const result = await formDocumentFilesService.uploadDocumentFile(
+      code,
+      instanceId,
+      documentId,
+      file,
+      req.user
+    );
+
+    return res.json(result);
+  } catch (err: any) {
+    const msg = String(err?.message || err).toLowerCase();
+
+    if (msg.includes("missing file")) {
+      return res.status(400).json({ error: "missing file" });
+    }
+    if (msg.includes("document not found")) {
+      return res.status(404).json({ error: "document not found" });
+    }
+    if (msg.includes("document already has file")) {
+      return res.status(409).json({ error: "document already has file" });
+    }
+    if (msg.includes("form instance not editable")) {
+      return res.status(409).json({ error: "form instance not editable" });
+    }
+
+    console.error(err);
+    return res.status(500).json({ error: "uploadFormInstanceDocumentFile failed" });
+  }
+}
+
+export async function getFormInstanceDocumentDownloadUrl(req: any, res: any) {
+  try {
+    const code = String(req.params.code || "");
+    const instanceId = String(req.params.instanceId || "");
+    const documentId = String(req.params.documentId || "");
+
+    const result = await formDocumentFilesService.getDocumentDownloadUrl(
+      code,
+      instanceId,
+      documentId
+    );
+
+    return res.json(result);
+  } catch (err: any) {
+    const msg = String(err?.message || err).toLowerCase();
+
+    if (msg.includes("document not found")) {
+      return res.status(404).json({ error: "document not found" });
+    }
+    if (msg.includes("document has no file")) {
+      return res.status(404).json({ error: "document has no file" });
+    }
+
+    console.error(err);
+    return res.status(500).json({ error: "getFormInstanceDocumentDownloadUrl failed" });
+  }
+}
+
+export async function downloadFormInstanceDocumentFile(req: any, res: any) {
+  try {
+    const code = String(req.params.code || "");
+    const instanceId = String(req.params.instanceId || "");
+    const documentId = String(req.params.documentId || "");
+
+    const result = await formDocumentFilesService.downloadDocumentFile(
+      code,
+      instanceId,
+      documentId
+    );
+
+    res.setHeader("Content-Type", result.contentType || "application/octet-stream");
+    res.setHeader("Content-Length", String(result.contentLength ?? result.buffer.length));
+    res.setHeader("Content-Disposition", result.contentDisposition);
+    res.setHeader("Cache-Control", "no-store");
+
+    return res.status(200).send(result.buffer);
+  } catch (err: any) {
+    const msg = String(err?.message || err).toLowerCase();
+
+    if (msg.includes("document not found")) {
+      return res.status(404).json({ error: "document not found" });
+    }
+    if (msg.includes("document has no file")) {
+      return res.status(404).json({ error: "document has no file" });
+    }
+
+    console.error(err);
+    return res.status(500).json({ error: "downloadFormInstanceDocumentFile failed" });
+  }
+}
+
+export async function createFormInstanceDocumentReplacement(req: any, res: any) {
+  try {
+    const code = String(req.params.code || "");
+    const instanceId = String(req.params.instanceId || "");
+    const documentId = String(req.params.documentId || "");
+    const payload = req.body || {};
+
+    const result = await formDocumentFilesService.createReplacementDocument(
+      code,
+      instanceId,
+      documentId,
+      payload,
+      req.user
+    );
+
+    return res.json(result);
+  } catch (err: any) {
+    const msg = String(err?.message || err).toLowerCase();
+
+    if (msg.includes("parent document not found")) {
+      return res.status(404).json({ error: "parent document not found" });
+    }
+    if (msg.includes("parent document invalid")) {
+      return res.status(409).json({ error: "parent document invalid" });
+    }
+    if (msg.includes("form instance not editable")) {
+      return res.status(409).json({ error: "form instance not editable" });
+    }
+
+    console.error(err);
+    return res.status(500).json({ error: "createFormInstanceDocumentReplacement failed" });
+  }
+}
+
+export async function createFormInstanceDocumentAttachment(req: any, res: any) {
+  try {
+    const code = String(req.params.code || "");
+    const instanceId = String(req.params.instanceId || "");
+    const documentId = String(req.params.documentId || "");
+    const payload = req.body || {};
+
+    const result = await formDocumentFilesService.createAttachmentDocument(
+      code,
+      instanceId,
+      documentId,
+      payload,
+      req.user
+    );
+
+    return res.json(result);
+  } catch (err: any) {
+    const msg = String(err?.message || err).toLowerCase();
+
+    if (msg.includes("parent document not found")) {
+      return res.status(404).json({ error: "parent document not found" });
+    }
+    if (msg.includes("parent document invalid")) {
+      return res.status(409).json({ error: "parent document invalid" });
+    }
+    if (msg.includes("form instance not editable")) {
+      return res.status(409).json({ error: "form instance not editable" });
+    }
+
+    console.error(err);
+    return res.status(500).json({ error: "createFormInstanceDocumentAttachment failed" });
+  }
+}
+
+export async function putFormInstanceDocumentLabels(req: any, res: any) {
+  try {
+    const code = String(req.params.code || "");
+    const instanceId = String(req.params.instanceId || "");
+    const documentId = String(req.params.documentId || "");
+    const labels = req.body?.labels ?? [];
+
+    const result = await formDocumentFilesService.replaceDocumentLabels(
+      code,
+      instanceId,
+      documentId,
+      labels,
+      req.user
+    );
+
+    return res.json(result);
+  } catch (err: any) {
+    const msg = String(err?.message || err).toLowerCase();
+
+    if (msg.includes("form instance document not editable")) {
+      return res.status(409).json({ error: "form instance document not editable" });
+    }
+
+    console.error(err);
+    return res.status(500).json({ error: "putFormInstanceDocumentLabels failed" });
+  }
+}
+
+export async function putFormInstanceDocumentFollowUps(req: any, res: any) {
+  try {
+    const code = String(req.params.code || "");
+    const instanceId = String(req.params.instanceId || "");
+    const documentId = String(req.params.documentId || "");
+    const items = req.body?.items ?? [];
+
+    const result = await formDocumentFilesService.replaceDocumentFollowUps(
+      code,
+      instanceId,
+      documentId,
+      items,
+      req.user
+    );
+
+    return res.json(result);
+  } catch (err: any) {
+    const msg = String(err?.message || err).toLowerCase();
+
+    if (msg.includes("form instance document not found")) {
+      return res.status(404).json({ error: "form instance document not found" });
+    }
+
+    console.error(err);
+    return res.status(500).json({ error: "putFormInstanceDocumentFollowUps failed" });
+  }
+}
+
+export async function deleteFormInstanceDocument(req: any, res: any) {
+  try {
+    const code = String(req.params.code || "");
+    const instanceId = String(req.params.instanceId || "");
+    const documentId = String(req.params.documentId || "");
+
+    const result = await formDocumentFilesService.deleteDocument(
+      code,
+      instanceId,
+      documentId,
+      req.user
+    );
+
+    return res.json(result);
+  } catch (err: any) {
+    const msg = String(err?.message || err).toLowerCase();
+
+    if (msg.includes("form instance document not found")) {
+      return res.status(404).json({ error: "form instance document not found" });
+    }
+    if (msg.includes("form instance not editable")) {
+      return res.status(409).json({ error: "form instance not editable" });
+    }
+
+    console.error(err);
+    return res.status(500).json({ error: "deleteFormInstanceDocument failed" });
   }
 }

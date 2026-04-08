@@ -1,5 +1,5 @@
 // src/api/emberApi.js
-import { httpJson, httpUpload } from "./http";
+import { httpJson, httpUpload, httpDownload } from "./http";
 
 export function apiGet(path) {
   return httpJson(path);
@@ -77,6 +77,12 @@ export function getInstallationDocumentDownloadUrl(code, documentId) {
 
 export function getInstallationDocumentDownloadEndpoint(code, documentId) {
   return `/installations/${encodeURIComponent(code)}/documents/${encodeURIComponent(documentId)}/download`;
+}
+
+export function downloadInstallationDocumentFile(code, documentId) {
+  return httpDownload(
+    `/installations/${encodeURIComponent(code)}/documents/${encodeURIComponent(documentId)}/download`
+  );
 }
 
 export function createInstallationDocumentReplacement(code, documentId, payload = {}) {
@@ -239,9 +245,91 @@ export function getFormPrefill(code, formCode, keys) {
   );
 }
 
-
 export function getInstallationComponents(code) {
   return apiGet(`/installations/${encodeURIComponent(code)}/components`);
+}
+
+export function getFormInstanceDocuments(code, formInstanceId) {
+  return apiGet(
+    `/installations/${encodeURIComponent(code)}/forms/instances/${encodeURIComponent(formInstanceId)}/documents`
+  );
+}
+
+export function putFormInstanceDocuments(code, formInstanceId, items) {
+  return apiPut(
+    `/installations/${encodeURIComponent(code)}/forms/instances/${encodeURIComponent(formInstanceId)}/documents`,
+    { items: Array.isArray(items) ? items : [] }
+  );
+}
+
+export function uploadFormInstanceDocumentFile(code, formInstanceId, documentId, file) {
+  const fd = new FormData();
+  fd.append("file", file);
+
+  return httpUpload(
+    `/installations/${encodeURIComponent(code)}/forms/instances/${encodeURIComponent(formInstanceId)}/documents/${encodeURIComponent(documentId)}/upload`,
+    fd
+  );
+}
+
+export function getFormInstanceDocumentDownloadUrl(code, formInstanceId, documentId) {
+  return apiGet(
+    `/installations/${encodeURIComponent(code)}/forms/instances/${encodeURIComponent(formInstanceId)}/documents/${encodeURIComponent(documentId)}/download-url`
+  );
+}
+
+export function getFormInstanceDocumentDownloadEndpoint(code, formInstanceId, documentId) {
+  return `/installations/${encodeURIComponent(code)}/forms/instances/${encodeURIComponent(formInstanceId)}/documents/${encodeURIComponent(documentId)}/download`;
+}
+
+export function downloadFormInstanceDocumentFile(code, formInstanceId, documentId) {
+  return httpDownload(
+    `/installations/${encodeURIComponent(code)}/forms/instances/${encodeURIComponent(formInstanceId)}/documents/${encodeURIComponent(documentId)}/download`
+  );
+}
+
+export function putFormInstanceDocumentLabels(code, formInstanceId, documentId, labels) {
+  return apiPut(
+    `/installations/${encodeURIComponent(code)}/forms/instances/${encodeURIComponent(formInstanceId)}/documents/${encodeURIComponent(documentId)}/labels`,
+    { labels: Array.isArray(labels) ? labels : [] }
+  );
+}
+
+export function putFormInstanceDocumentFollowUps(code, formInstanceId, documentId, items) {
+  return apiPut(
+    `/installations/${encodeURIComponent(code)}/forms/instances/${encodeURIComponent(formInstanceId)}/documents/${encodeURIComponent(documentId)}/follow-ups`,
+    { items: Array.isArray(items) ? items : [] }
+  );
+}
+
+export function createFormInstanceDocumentReplacement(
+  code,
+  formInstanceId,
+  documentId,
+  payload = {}
+) {
+  return apiPost(
+    `/installations/${encodeURIComponent(code)}/forms/instances/${encodeURIComponent(formInstanceId)}/documents/${encodeURIComponent(documentId)}/replacements`,
+    payload
+  );
+}
+
+export function createFormInstanceDocumentAttachment(
+  code,
+  formInstanceId,
+  documentId,
+  payload = {}
+) {
+  return apiPost(
+    `/installations/${encodeURIComponent(code)}/forms/instances/${encodeURIComponent(formInstanceId)}/documents/${encodeURIComponent(documentId)}/attachments`,
+    payload
+  );
+}
+
+export function deleteFormInstanceDocument(code, formInstanceId, documentId) {
+  return apiDelete(
+    `/installations/${encodeURIComponent(code)}/forms/instances/${encodeURIComponent(formInstanceId)}/documents/${encodeURIComponent(documentId)}`
+  );
 }
 
 // forms monitor
@@ -331,4 +419,3 @@ export function saveAdminFormConfig(formId, payload) {
 export function createAdminFormVersion(formId, payload) {
   return apiPost(`/admin/forms/${encodeURIComponent(formId)}/versions`, payload ?? {});
 }
-

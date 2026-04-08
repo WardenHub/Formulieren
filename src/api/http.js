@@ -24,6 +24,27 @@ async function buildHeaders(extraHeaders = {}) {
   };
 }
 
+function parseFilenameFromDisposition(value) {
+  const raw = String(value || "");
+  if (!raw) return null;
+
+  const utf8Match = raw.match(/filename\*=UTF-8''([^;]+)/i);
+  if (utf8Match?.[1]) {
+    try {
+      return decodeURIComponent(utf8Match[1]);
+    } catch {
+      return utf8Match[1];
+    }
+  }
+
+  const plainMatch = raw.match(/filename="([^"]+)"/i) || raw.match(/filename=([^;]+)/i);
+  if (plainMatch?.[1]) {
+    return String(plainMatch[1]).trim().replace(/^"|"$/g, "");
+  }
+
+  return null;
+}
+
 export async function httpJson(path, options = {}) {
   const url = buildUrl(path);
 
@@ -95,4 +116,44 @@ export async function httpUpload(path, formData, options = {}) {
   }
 
   return res.json();
+}
+
+export async function httpDownload(path, options = {}) {
+  const url = buildUrl(path);
+
+  const headers = await buildHeaders({
+    ...(options.headers || {}),
+    Accept: "*/*",
+  });
+
+  const res = await fetch(url, {
+    ...options,
+    method: options.method || "GET",
+    credentials: "omit",
+    headers,
+  });
+
+  if (res.status === 401) {
+    throw new Error("unauthorized");
+  }
+
+  if (!res.ok) {
+    const ct = res.headers.get("content-type") || "";
+    if (ct.includes("application/json")) {
+      const data = await res.json().catch(() => null);
+      throw new Error(data?.error || `Request failed (${res.status})`);
+    }
+
+    const text = await res.text().catch(() => "");
+    throw new Error(text || `Request failed (${res.status})`);
+  }
+
+  const blob = await res.blob();
+  const fileName = parseFilenameFromDisposition(res.headers.get("content-disposition")) || null;
+
+  return {
+    blob,
+    fileName,
+    contentType: res.headers.get("content-type") || blob.type || "application/octet-stream",
+  };
 }

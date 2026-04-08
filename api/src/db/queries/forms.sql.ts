@@ -1066,3 +1066,802 @@ select
   @instanceId as form_instance_id,
   N'CONCEPT' as status;
 `;
+
+// =========================================================
+// form instance documents - context
+// =========================================================
+
+export const getFormInstanceDocumentContextSql = `
+-- expects:
+--   @code nvarchar(...)
+--   @instanceId bigint
+--   @documentId uniqueidentifier
+
+select top 1
+  d.form_instance_document_id,
+  d.form_instance_id,
+  d.installation_id,
+  d.atrium_installation_code,
+  d.parent_document_id,
+  d.relation_type,
+  d.title,
+  d.note,
+  d.document_number,
+  d.document_date,
+  d.revision,
+  d.file_name,
+  d.mime_type,
+  d.file_size_bytes,
+  d.uploaded_at,
+  d.uploaded_by,
+  d.file_last_modified_at,
+  d.file_last_modified_by,
+  d.storage_provider,
+  d.storage_key,
+  d.storage_url,
+  d.checksum_sha256,
+  d.source_system,
+  d.source_reference,
+  d.image_width_px,
+  d.image_height_px,
+  d.image_variant,
+  d.is_active,
+  d.created_at,
+  d.created_by,
+  d.updated_at,
+  d.updated_by,
+  fi.status as form_instance_status
+from dbo.FormInstanceDocument d
+join dbo.FormInstance fi
+  on fi.form_instance_id = d.form_instance_id
+where d.form_instance_document_id = @documentId
+  and d.form_instance_id = @instanceId
+  and d.atrium_installation_code = @code;
+`;
+
+// =========================================================
+// form instance documents - list
+// =========================================================
+
+export const getFormInstanceDocumentsSql = `
+-- expects:
+--   @code nvarchar(...)
+--   @instanceId bigint
+
+;with docs as (
+  select
+    d.form_instance_document_id,
+    d.form_instance_id,
+    d.parent_document_id,
+    d.relation_type,
+    d.title,
+    d.note,
+    d.document_number,
+    d.document_date,
+    d.revision,
+    d.file_name,
+    d.mime_type,
+    d.file_size_bytes,
+    d.uploaded_at,
+    d.uploaded_by,
+    d.file_last_modified_at,
+    d.file_last_modified_by,
+    d.storage_provider,
+    d.storage_key,
+    d.storage_url,
+    d.checksum_sha256,
+    d.source_system,
+    d.source_reference,
+    d.image_width_px,
+    d.image_height_px,
+    d.image_variant,
+    d.is_active,
+    d.created_at,
+    d.created_by,
+    d.updated_at,
+    d.updated_by
+  from dbo.FormInstanceDocument d
+  where d.form_instance_id = @instanceId
+    and d.atrium_installation_code = @code
+    and isnull(d.is_active, 1) = 1
+),
+labels as (
+  select
+    lm.form_instance_document_id,
+    l.label_key,
+    l.display_name,
+    l.description,
+    l.sort_order,
+    lm.is_primary
+  from dbo.FormInstanceDocumentLabelMap lm
+  join dbo.FormInstanceDocumentLabel l
+    on l.label_key = lm.label_key
+),
+followups as (
+  select
+    m.form_instance_document_id,
+    fa.follow_up_action_id,
+    fa.source_fingerprint,
+    fa.workflow_title,
+    fa.category,
+    fa.status,
+    m.is_primary
+  from dbo.FormInstanceDocumentFollowUpActionMap m
+  join dbo.FormFollowUpAction fa
+    on fa.follow_up_action_id = m.follow_up_action_id
+)
+select
+  d.*,
+  (
+    select
+      l.label_key,
+      l.display_name,
+      l.description,
+      l.sort_order,
+      l.is_primary
+    from labels l
+    where l.form_instance_document_id = d.form_instance_document_id
+    order by l.is_primary desc, l.sort_order asc, l.display_name asc
+    for json path
+  ) as labels_json,
+  (
+    select
+      f.follow_up_action_id,
+      f.source_fingerprint,
+      f.workflow_title,
+      f.category,
+      f.status,
+      f.is_primary
+    from followups f
+    where f.form_instance_document_id = d.form_instance_document_id
+    order by f.is_primary desc, f.workflow_title asc
+    for json path
+  ) as follow_ups_json
+from docs d
+order by
+  case
+    when d.parent_document_id is null then 0
+    else 1
+  end asc,
+  d.created_at desc;
+`;
+
+// =========================================================
+// form instance documents - upsert metadata batch
+// - only concept
+// - metadata only, no file upload here
+// =========================================================
+
+export const upsertFormInstanceDocumentsSql = `
+-- expects:
+--   @code nvarchar(...)
+--   @instanceId bigint
+--   @itemsJson nvarchar(max)
+--   @updatedBy nvarchar(...)
+
+if not exists (
+  select 1
+  from dbo.FormInstance
+  where form_instance_id = @instanceId
+    and atrium_installation_code = @code
+)
+begin
+  throw 50000, 'form instance not found', 1;
+end;
+
+if exists (
+  select 1
+  from dbo.FormInstance
+  where form_instance_id = @instanceId
+    and atrium_installation_code = @code
+    and status <> N'CONCEPT'
+)
+begin
+  throw 50000, 'form instance not editable', 1;
+end;
+
+declare @installationId uniqueidentifier;
+select top 1 @installationId = installation_id
+from dbo.FormInstance
+where form_instance_id = @instanceId
+  and atrium_installation_code = @code;
+
+declare @items table (
+  form_instance_document_id uniqueidentifier null,
+  title nvarchar(250) null,
+  note nvarchar(2000) null,
+  document_number nvarchar(200) null,
+  document_date date null,
+  revision nvarchar(50) null,
+  image_variant nvarchar(30) null,
+  is_active bit null
+);
+
+insert into @items (
+  form_instance_document_id,
+  title,
+  note,
+  document_number,
+  document_date,
+  revision,
+  image_variant,
+  is_active
+)
+select
+  try_convert(uniqueidentifier, json_value(j.value, '$.form_instance_document_id')),
+  nullif(ltrim(rtrim(convert(nvarchar(250), json_value(j.value, '$.title')))), N''),
+  nullif(ltrim(rtrim(convert(nvarchar(2000), json_value(j.value, '$.note')))), N''),
+  nullif(ltrim(rtrim(convert(nvarchar(200), json_value(j.value, '$.document_number')))), N''),
+  try_convert(date, json_value(j.value, '$.document_date')),
+  nullif(ltrim(rtrim(convert(nvarchar(50), json_value(j.value, '$.revision')))), N''),
+  nullif(ltrim(rtrim(convert(nvarchar(30), json_value(j.value, '$.image_variant')))), N''),
+  try_convert(bit, json_value(j.value, '$.is_active'))
+from openjson(@itemsJson) j;
+
+-- insert new
+insert into dbo.FormInstanceDocument (
+  form_instance_document_id,
+  form_instance_id,
+  installation_id,
+  atrium_installation_code,
+  parent_document_id,
+  relation_type,
+  title,
+  note,
+  document_number,
+  document_date,
+  revision,
+  image_variant,
+  source_system,
+  is_active,
+  created_at,
+  created_by,
+  updated_at,
+  updated_by
+)
+select
+  newid(),
+  @instanceId,
+  @installationId,
+  @code,
+  null,
+  null,
+  i.title,
+  i.note,
+  i.document_number,
+  i.document_date,
+  i.revision,
+  i.image_variant,
+  N'Ember',
+  isnull(i.is_active, 1),
+  sysutcdatetime(),
+  @updatedBy,
+  sysutcdatetime(),
+  @updatedBy
+from @items i
+where i.form_instance_document_id is null;
+
+-- update existing
+update d
+set
+  title = i.title,
+  note = i.note,
+  document_number = i.document_number,
+  document_date = i.document_date,
+  revision = i.revision,
+  image_variant = i.image_variant,
+  is_active = isnull(i.is_active, d.is_active),
+  updated_at = sysutcdatetime(),
+  updated_by = @updatedBy
+from dbo.FormInstanceDocument d
+join @items i
+  on i.form_instance_document_id = d.form_instance_document_id
+where d.form_instance_id = @instanceId
+  and d.atrium_installation_code = @code;
+
+select
+  d.form_instance_document_id,
+  d.form_instance_id,
+  d.parent_document_id,
+  d.relation_type,
+  d.title,
+  d.note,
+  d.document_number,
+  d.document_date,
+  d.revision,
+  d.file_name,
+  d.mime_type,
+  d.file_size_bytes,
+  d.uploaded_at,
+  d.uploaded_by,
+  d.storage_provider,
+  d.storage_key,
+  d.image_width_px,
+  d.image_height_px,
+  d.image_variant,
+  d.is_active,
+  d.created_at,
+  d.created_by,
+  d.updated_at,
+  d.updated_by
+from dbo.FormInstanceDocument d
+where d.form_instance_id = @instanceId
+  and d.atrium_installation_code = @code
+order by d.created_at desc;
+`;
+
+// =========================================================
+// form instance documents - set file
+// =========================================================
+
+export const setFormInstanceDocumentFileSql = `
+-- expects:
+--   @code nvarchar(...)
+--   @instanceId bigint
+--   @documentId uniqueidentifier
+--   @fileName nvarchar(...)
+--   @mimeType nvarchar(...)
+--   @fileSizeBytes bigint
+--   @storageProvider nvarchar(...)
+--   @storageKey nvarchar(...)
+--   @storageUrl nvarchar(...) (nullable)
+--   @checksumSha256 char(64) (nullable)
+--   @imageWidthPx int (nullable)
+--   @imageHeightPx int (nullable)
+--   @updatedBy nvarchar(...)
+
+if not exists (
+  select 1
+  from dbo.FormInstance fi
+  where fi.form_instance_id = @instanceId
+    and fi.atrium_installation_code = @code
+    and fi.status = N'CONCEPT'
+)
+begin
+  throw 50000, 'form instance not editable', 1;
+end;
+
+update dbo.FormInstanceDocument
+set
+  file_name = @fileName,
+  mime_type = @mimeType,
+  file_size_bytes = @fileSizeBytes,
+  uploaded_at = sysutcdatetime(),
+  uploaded_by = @updatedBy,
+  file_last_modified_at = sysutcdatetime(),
+  file_last_modified_by = @updatedBy,
+  storage_provider = @storageProvider,
+  storage_key = @storageKey,
+  storage_url = @storageUrl,
+  checksum_sha256 = @checksumSha256,
+  image_width_px = @imageWidthPx,
+  image_height_px = @imageHeightPx,
+  updated_at = sysutcdatetime(),
+  updated_by = @updatedBy
+where form_instance_document_id = @documentId
+  and form_instance_id = @instanceId
+  and atrium_installation_code = @code;
+
+select top 1
+  d.form_instance_document_id,
+  d.form_instance_id,
+  d.parent_document_id,
+  d.relation_type,
+  d.title,
+  d.note,
+  d.document_number,
+  d.document_date,
+  d.revision,
+  d.file_name,
+  d.mime_type,
+  d.file_size_bytes,
+  d.uploaded_at,
+  d.uploaded_by,
+  d.file_last_modified_at,
+  d.file_last_modified_by,
+  d.storage_provider,
+  d.storage_key,
+  d.storage_url,
+  d.checksum_sha256,
+  d.image_width_px,
+  d.image_height_px,
+  d.image_variant,
+  d.is_active,
+  d.created_at,
+  d.created_by,
+  d.updated_at,
+  d.updated_by
+from dbo.FormInstanceDocument d
+where d.form_instance_document_id = @documentId
+  and d.form_instance_id = @instanceId
+  and d.atrium_installation_code = @code;
+`;
+
+// =========================================================
+// form instance documents - replacement
+// =========================================================
+
+export const createFormInstanceDocumentReplacementSql = `
+-- expects:
+--   @code nvarchar(...)
+--   @instanceId bigint
+--   @parentDocumentId uniqueidentifier
+--   @title nvarchar(...) nullable
+--   @note nvarchar(...) nullable
+--   @documentNumber nvarchar(...) nullable
+--   @documentDate date nullable
+--   @revision nvarchar(...) nullable
+--   @createdBy nvarchar(...)
+
+declare @installationId uniqueidentifier;
+declare @newId uniqueidentifier = newid();
+
+select top 1
+  @installationId = fi.installation_id
+from dbo.FormInstance fi
+where fi.form_instance_id = @instanceId
+  and fi.atrium_installation_code = @code
+  and fi.status = N'CONCEPT';
+
+if @installationId is null
+begin
+  throw 50000, 'form instance not editable', 1;
+end;
+
+if not exists (
+  select 1
+  from dbo.FormInstanceDocument parent_d
+  where parent_d.form_instance_document_id = @parentDocumentId
+    and parent_d.form_instance_id = @instanceId
+    and parent_d.atrium_installation_code = @code
+)
+begin
+  throw 50000, 'parent document not found', 1;
+end;
+
+insert into dbo.FormInstanceDocument (
+  form_instance_document_id,
+  form_instance_id,
+  installation_id,
+  atrium_installation_code,
+  parent_document_id,
+  relation_type,
+  title,
+  note,
+  document_number,
+  document_date,
+  revision,
+  source_system,
+  is_active,
+  created_at,
+  created_by,
+  updated_at,
+  updated_by
+)
+values (
+  @newId,
+  @instanceId,
+  @installationId,
+  @code,
+  @parentDocumentId,
+  N'VERVANGING',
+  @title,
+  @note,
+  @documentNumber,
+  @documentDate,
+  @revision,
+  N'Ember',
+  1,
+  sysutcdatetime(),
+  @createdBy,
+  sysutcdatetime(),
+  @createdBy
+);
+
+select top 1
+  d.form_instance_document_id,
+  d.form_instance_id,
+  d.parent_document_id,
+  d.relation_type,
+  d.title,
+  d.note,
+  d.document_number,
+  d.document_date,
+  d.revision,
+  d.file_name,
+  d.mime_type,
+  d.file_size_bytes,
+  d.uploaded_at,
+  d.uploaded_by,
+  d.storage_provider,
+  d.storage_key,
+  d.image_width_px,
+  d.image_height_px,
+  d.image_variant,
+  d.is_active,
+  d.created_at,
+  d.created_by,
+  d.updated_at,
+  d.updated_by
+from dbo.FormInstanceDocument d
+where d.form_instance_document_id = @newId;
+`;
+
+// =========================================================
+// form instance documents - attachment
+// =========================================================
+
+export const createFormInstanceDocumentAttachmentSql = `
+-- expects:
+--   @code nvarchar(...)
+--   @instanceId bigint
+--   @parentDocumentId uniqueidentifier
+--   @title nvarchar(...) nullable
+--   @note nvarchar(...) nullable
+--   @documentNumber nvarchar(...) nullable
+--   @documentDate date nullable
+--   @revision nvarchar(...) nullable
+--   @createdBy nvarchar(...)
+
+declare @installationId uniqueidentifier;
+declare @newId uniqueidentifier = newid();
+
+select top 1
+  @installationId = fi.installation_id
+from dbo.FormInstance fi
+where fi.form_instance_id = @instanceId
+  and fi.atrium_installation_code = @code
+  and fi.status = N'CONCEPT';
+
+if @installationId is null
+begin
+  throw 50000, 'form instance not editable', 1;
+end;
+
+if not exists (
+  select 1
+  from dbo.FormInstanceDocument parent_d
+  where parent_d.form_instance_document_id = @parentDocumentId
+    and parent_d.form_instance_id = @instanceId
+    and parent_d.atrium_installation_code = @code
+)
+begin
+  throw 50000, 'parent document not found', 1;
+end;
+
+insert into dbo.FormInstanceDocument (
+  form_instance_document_id,
+  form_instance_id,
+  installation_id,
+  atrium_installation_code,
+  parent_document_id,
+  relation_type,
+  title,
+  note,
+  document_number,
+  document_date,
+  revision,
+  source_system,
+  is_active,
+  created_at,
+  created_by,
+  updated_at,
+  updated_by
+)
+values (
+  @newId,
+  @instanceId,
+  @installationId,
+  @code,
+  @parentDocumentId,
+  N'BIJLAGE',
+  @title,
+  @note,
+  @documentNumber,
+  @documentDate,
+  @revision,
+  N'Ember',
+  1,
+  sysutcdatetime(),
+  @createdBy,
+  sysutcdatetime(),
+  @createdBy
+);
+
+select top 1
+  d.form_instance_document_id,
+  d.form_instance_id,
+  d.parent_document_id,
+  d.relation_type,
+  d.title,
+  d.note,
+  d.document_number,
+  d.document_date,
+  d.revision,
+  d.file_name,
+  d.mime_type,
+  d.file_size_bytes,
+  d.uploaded_at,
+  d.uploaded_by,
+  d.storage_provider,
+  d.storage_key,
+  d.image_width_px,
+  d.image_height_px,
+  d.image_variant,
+  d.is_active,
+  d.created_at,
+  d.created_by,
+  d.updated_at,
+  d.updated_by
+from dbo.FormInstanceDocument d
+where d.form_instance_document_id = @newId;
+`;
+
+// =========================================================
+// form instance documents - save label map
+// =========================================================
+
+export const replaceFormInstanceDocumentLabelsSql = `
+-- expects:
+--   @code nvarchar(...)
+--   @instanceId bigint
+--   @documentId uniqueidentifier
+--   @labelsJson nvarchar(max)
+--   @updatedBy nvarchar(...)
+
+if not exists (
+  select 1
+  from dbo.FormInstanceDocument d
+  join dbo.FormInstance fi
+    on fi.form_instance_id = d.form_instance_id
+  where d.form_instance_document_id = @documentId
+    and d.form_instance_id = @instanceId
+    and d.atrium_installation_code = @code
+    and fi.status = N'CONCEPT'
+)
+begin
+  throw 50000, 'form instance document not editable', 1;
+end;
+
+delete from dbo.FormInstanceDocumentLabelMap
+where form_instance_document_id = @documentId;
+
+insert into dbo.FormInstanceDocumentLabelMap (
+  form_instance_document_id,
+  label_key,
+  is_primary,
+  created_at,
+  created_by
+)
+select
+  @documentId,
+  convert(nvarchar(50), json_value(j.value, '$.label_key')),
+  isnull(try_convert(bit, json_value(j.value, '$.is_primary')), 0),
+  sysutcdatetime(),
+  @updatedBy
+from openjson(@labelsJson) j
+where nullif(ltrim(rtrim(convert(nvarchar(50), json_value(j.value, '$.label_key')))), N'') is not null;
+
+select
+  lm.form_instance_document_id,
+  lm.label_key,
+  l.display_name,
+  l.description,
+  l.sort_order,
+  lm.is_primary
+from dbo.FormInstanceDocumentLabelMap lm
+join dbo.FormInstanceDocumentLabel l
+  on l.label_key = lm.label_key
+where lm.form_instance_document_id = @documentId
+order by lm.is_primary desc, l.sort_order asc, l.display_name asc;
+`;
+
+// =========================================================
+// form instance documents - save follow up map
+// =========================================================
+
+export const replaceFormInstanceDocumentFollowUpsSql = `
+-- expects:
+--   @code nvarchar(...)
+--   @instanceId bigint
+--   @documentId uniqueidentifier
+--   @itemsJson nvarchar(max)
+--   @updatedBy nvarchar(...)
+
+if not exists (
+  select 1
+  from dbo.FormInstanceDocument d
+  join dbo.FormInstance fi
+    on fi.form_instance_id = d.form_instance_id
+  where d.form_instance_document_id = @documentId
+    and d.form_instance_id = @instanceId
+    and d.atrium_installation_code = @code
+    and fi.status = N'CONCEPT'
+)
+begin
+  throw 50000, 'form instance document not editable', 1;
+end;
+
+delete from dbo.FormInstanceDocumentFollowUpActionMap
+where form_instance_document_id = @documentId;
+
+insert into dbo.FormInstanceDocumentFollowUpActionMap (
+  form_instance_document_id,
+  follow_up_action_id,
+  is_primary,
+  created_at,
+  created_by
+)
+select
+  @documentId,
+  try_convert(uniqueidentifier, json_value(j.value, '$.follow_up_action_id')),
+  isnull(try_convert(bit, json_value(j.value, '$.is_primary')), 0),
+  sysutcdatetime(),
+  @updatedBy
+from openjson(@itemsJson) j
+where try_convert(uniqueidentifier, json_value(j.value, '$.follow_up_action_id')) is not null
+  and exists (
+    select 1
+    from dbo.FormFollowUpAction fa
+    where fa.follow_up_action_id = try_convert(uniqueidentifier, json_value(j.value, '$.follow_up_action_id'))
+      and fa.form_instance_id = @instanceId
+  );
+
+select
+  m.form_instance_document_id,
+  fa.follow_up_action_id,
+  fa.source_fingerprint,
+  fa.workflow_title,
+  fa.category,
+  fa.status,
+  m.is_primary
+from dbo.FormInstanceDocumentFollowUpActionMap m
+join dbo.FormFollowUpAction fa
+  on fa.follow_up_action_id = m.follow_up_action_id
+where m.form_instance_document_id = @documentId
+order by m.is_primary desc, fa.workflow_title asc;
+`;
+
+export const deleteFormInstanceDocumentSql = `
+-- expects:
+--   @code nvarchar(...)
+--   @instanceId bigint
+--   @documentId uniqueidentifier
+--   @updatedBy nvarchar(...)
+
+if not exists (
+  select 1
+  from dbo.FormInstance fi
+  where fi.form_instance_id = @instanceId
+    and fi.atrium_installation_code = @code
+    and fi.status = N'CONCEPT'
+)
+begin
+  throw 50000, 'form instance not editable', 1;
+end;
+
+if not exists (
+  select 1
+  from dbo.FormInstanceDocument d
+  where d.form_instance_document_id = @documentId
+    and d.form_instance_id = @instanceId
+    and d.atrium_installation_code = @code
+    and isnull(d.is_active, 1) = 1
+)
+begin
+  throw 50000, 'form instance document not found', 1;
+end;
+
+update dbo.FormInstanceDocument
+set
+  is_active = 0,
+  updated_at = sysutcdatetime(),
+  updated_by = @updatedBy
+where form_instance_document_id = @documentId
+  and form_instance_id = @instanceId
+  and atrium_installation_code = @code;
+
+select
+  @documentId as form_instance_document_id,
+  cast(1 as bit) as ok;
+`;

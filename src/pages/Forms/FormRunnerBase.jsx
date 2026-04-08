@@ -1,4 +1,5 @@
-// src/pages/Forms/FormRunnerBase.jsx
+//src/pages/Forms/FormRunnerBase.jsx
+
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 
@@ -20,6 +21,7 @@ import { ChevronUpIcon } from "@/components/ui/chevron-up";
 import { PlusIcon } from "@/components/ui/plus";
 import { ChevronsDownUpIcon } from "@/components/ui/chevrons-down-up";
 import { ChevronsUpDownIcon } from "@/components/ui/chevrons-up-down";
+import { AttachFileIcon } from "@/components/ui/attach-file";
 
 import {
   getFormInstance,
@@ -32,6 +34,7 @@ import {
 } from "../../api/emberApi.js";
 
 import FormPageNavigator from "./shared/FormPageNavigator.jsx";
+import FormContextPanel from "./shared/FormContextPanel";
 
 import {
   normalizeInstanceResponse,
@@ -313,10 +316,12 @@ export default function FormRunnerBase({ mode }) {
   const [hasValidatedOnce, setHasValidatedOnce] = useState(false);
   const [validationListOpen, setValidationListOpen] = useState(true);
   const [instanceMetaOpen, setInstanceMetaOpen] = useState(false);
+  const [contextPanelOpen, setContextPanelOpen] = useState(false);
 
   const [debugCards, setDebugCards] = useState(defaultDebugCards);
 
   const backIconRef = useRef(null);
+  const contextToggleIconRef = useRef(null);
 
   const validateIconRef = useRef(null);
   const validateOkIconRef = useRef(null);
@@ -502,6 +507,34 @@ export default function FormRunnerBase({ mode }) {
       setValidationListOpen(true);
     }
   }, [validationSummary]);
+
+  useEffect(() => {
+    if (isDebug) return undefined;
+
+    const originalOverflow = document.body.style.overflow;
+    if (contextPanelOpen) {
+      document.body.style.overflow = "hidden";
+    } else {
+      document.body.style.overflow = originalOverflow || "";
+    }
+
+    return () => {
+      document.body.style.overflow = originalOverflow || "";
+    };
+  }, [contextPanelOpen, isDebug]);
+
+  useEffect(() => {
+    if (!contextPanelOpen || isDebug) return undefined;
+
+    function onKeyDown(e) {
+      if (e.key === "Escape") {
+        setContextPanelOpen(false);
+      }
+    }
+
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [contextPanelOpen, isDebug]);
 
   function animateDebugToggle(key) {
     debugToggleIconRef.current[key]?.startAnimation?.();
@@ -2004,6 +2037,123 @@ export default function FormRunnerBase({ mode }) {
             </div>
           )}
         </div>
+      )}
+
+      {!isDebug && (
+        <>
+          {!contextPanelOpen && (
+            <button
+              type="button"
+              className="icon-btn"
+              title="Context en bijlagen openen"
+              onClick={() => setContextPanelOpen(true)}
+              onMouseEnter={() => contextToggleIconRef.current?.startAnimation?.()}
+              onMouseLeave={() => contextToggleIconRef.current?.stopAnimation?.()}
+              style={{
+                position: "fixed",
+                right: 18,
+                top: "50%",
+                transform: "translateY(-50%)",
+                zIndex: 62,
+                width: 48,
+                height: 48,
+                borderRadius: 999,
+                background: "rgba(20,20,20,0.92)",
+                border: "1px solid rgba(255,255,255,0.14)",
+                boxShadow: "0 14px 34px rgba(0,0,0,0.28)",
+                display: "inline-flex",
+                alignItems: "center",
+                justifyContent: "center",
+              }}
+            >
+              <AttachFileIcon ref={contextToggleIconRef} size={20} />
+            </button>
+          )}
+
+          {contextPanelOpen && (
+            <>
+              <button
+                type="button"
+                aria-label="Sluit context en bijlagen"
+                onClick={() => setContextPanelOpen(false)}
+                style={{
+                  position: "fixed",
+                  inset: 0,
+                  zIndex: 70,
+                  border: "none",
+                  background: "rgba(0,0,0,0.32)",
+                  padding: 0,
+                  margin: 0,
+                  cursor: "pointer",
+                }}
+              />
+
+              <div
+                style={{
+                  position: "fixed",
+                  top: 0,
+                  right: 0,
+                  bottom: 0,
+                  width: "min(560px, 100vw)",
+                  zIndex: 71,
+                  padding: 14,
+                  display: "grid",
+                  gridTemplateRows: "auto 1fr",
+                  gap: 12,
+                  background: "rgba(8,8,8,0.70)",
+                  backdropFilter: "blur(10px)",
+                  boxShadow: "-16px 0 40px rgba(0,0,0,0.30)",
+                }}
+              >
+                <div
+                  className="card"
+                  style={{
+                    padding: 10,
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                    gap: 10,
+                  }}
+                >
+                  <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
+                    <AttachFileIcon size={18} />
+                    <div style={{ minWidth: 0 }}>
+                      <div style={{ fontWeight: 900, fontSize: 15 }}>Context en bijlagen</div>
+                      <div className="muted" style={{ fontSize: 12 }}>
+                        Installatiebestanden en formulierbijlagen
+                      </div>
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    className="icon-btn"
+                    title="Sluiten"
+                    onClick={() => setContextPanelOpen(false)}
+                  >
+                    <ChevronUpIcon size={18} style={{ transform: "rotate(90deg)" }} />
+                  </button>
+                </div>
+
+                <div
+                  style={{
+                    minHeight: 0,
+                    overflow: "auto",
+                    paddingRight: 2,
+                  }}
+                >
+                  <FormContextPanel
+                    code={code}
+                    instanceId={instanceId}
+                    canEdit={canEditAnswers}
+                    embedded={true}
+                    documentsTabHref={`/installaties/${encodeURIComponent(code)}?tab=documents`}
+                  />
+                </div>
+              </div>
+            </>
+          )}
+        </>
       )}
 
       {isDebug && (

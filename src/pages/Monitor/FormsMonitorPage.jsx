@@ -1,4 +1,3 @@
-// src/pages/Monitor/FormsMonitorPage.jsx
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
@@ -13,8 +12,6 @@ import { BadgeAlertIcon } from "@/components/ui/badge-alert";
 import {
   OVERVIEW_LS_KEY,
   AUTO_REFRESH_MS,
-  STATUS_FILTER_OPTIONS,
-  DEFAULT_SELECTED_STATUSES,
   formatDateTime,
   statusLabel,
   getStatusTone,
@@ -28,6 +25,31 @@ import {
   readStateFromStorage,
   saveStateToStorage,
 } from "./formsMonitorShared.jsx";
+
+const STATUS_GROUP_OPTIONS = [
+  {
+    key: "TODO",
+    label: "Nog te verwerken",
+    statuses: ["INGEDIEND", "IN_BEHANDELING"],
+  },
+  {
+    key: "CONCEPT",
+    label: "Concept",
+    statuses: ["CONCEPT"],
+  },
+  {
+    key: "INGETROKKEN",
+    label: "Ingetrokken",
+    statuses: ["INGETROKKEN"],
+  },
+  {
+    key: "AFGEHANDELD",
+    label: "Definitief",
+    statuses: ["AFGEHANDELD"],
+  },
+];
+
+const DEFAULT_SELECTED_STATUS_GROUPS = ["TODO"];
 
 function getRowFollowUpSummary(row) {
   return row?.follow_up_counts || row?.follow_up_summary || {};
@@ -48,8 +70,7 @@ function getDoneCount(row) {
   const explicitDone = s?.done_count;
   if (explicitDone != null) return Number(explicitDone || 0);
 
-  const terminal = Number(s?.terminal_count ?? 0);
-  return terminal;
+  return Number(s?.terminal_count ?? 0);
 }
 
 function getRemainingOpenActionCount(row) {
@@ -71,18 +92,31 @@ function getMonitorRowSurfaceClass(row) {
   return getCardToneClass(row?.status);
 }
 
-function getOverviewStatusChipClass(status, active) {
+function getStatusGroupChipClass(groupKey, active) {
   if (!active) return "monitor-tag monitor-tag--muted";
 
-  const st = String(status || "").trim().toUpperCase();
+  if (groupKey === "TODO") return "monitor-tag monitor-tag--active";
+  if (groupKey === "CONCEPT") return "monitor-tag monitor-tag--warning";
+  if (groupKey === "INGETROKKEN") return "monitor-tag monitor-tag--danger";
+  if (groupKey === "AFGEHANDELD") return "monitor-tag monitor-tag--success";
 
-  if (st === "CONCEPT") return "monitor-tag monitor-tag--warning";
-  if (st === "INGEDIEND") return "monitor-tag monitor-tag--active";
-  if (st === "IN_BEHANDELING") return "monitor-tag monitor-tag--warning";
-  if (st === "INGETROKKEN") return "monitor-tag monitor-tag--danger";
-  if (st === "AFGEHANDELD") return "monitor-tag monitor-tag--success";
+  return "monitor-tag monitor-tag--neutral";
+}
 
-  return getToneClass(getStatusTone(status));
+function buildEffectiveStatuses(selectedGroupKeys) {
+  const keys = Array.isArray(selectedGroupKeys) ? selectedGroupKeys : [];
+  if (keys.length === 0) {
+    return STATUS_GROUP_OPTIONS.flatMap((opt) => opt.statuses);
+  }
+
+  const set = new Set();
+  for (const key of keys) {
+    const group = STATUS_GROUP_OPTIONS.find((opt) => opt.key === key);
+    for (const status of group?.statuses || []) {
+      set.add(status);
+    }
+  }
+  return Array.from(set);
 }
 
 function StatusTag({ status }) {
@@ -139,48 +173,82 @@ function FilterChip({ active, label, title, onClick }) {
       className={active ? "monitor-tag monitor-tag--active" : "monitor-tag monitor-tag--muted"}
       title={title}
       onClick={onClick}
-      style={{ cursor: "pointer", opacity: active ? 1 : 0.9 }}
+      style={{
+        cursor: "pointer",
+        opacity: active ? 1 : 0.9,
+      }}
     >
       {label}
     </button>
   );
 }
 
-function StatusFilterChip({ status, active, onClick }) {
-  const cls = getOverviewStatusChipClass(status, active);
+function StatusGroupFilterChip({ option, active, onClick }) {
+  const cls = getStatusGroupChipClass(option.key, active);
   const finalCls = active ? `${cls} monitor-tag--selected` : cls;
 
   return (
     <button
       type="button"
-      title={statusLabel(status)}
+      title={option.label}
       onClick={onClick}
       className={finalCls}
-      style={{ cursor: "pointer", opacity: active ? 1 : 0.88 }}
+      style={{
+        cursor: "pointer",
+        opacity: active ? 1 : 0.88,
+      }}
     >
-      {statusLabel(status)}
+      {option.label}
     </button>
   );
 }
 
-function FilterGroup({ label, children, minWidth = 0, grow = false }) {
+function FilterGroup({
+  label,
+  children,
+  minWidth = 0,
+  grow = false,
+  extra = null,
+}) {
   return (
     <div
       style={{
         minWidth,
-        flex: grow ? "1 1 360px" : "0 1 auto",
-        display: "grid",
-        gap: 8,
-        padding: 10,
+        flex: grow ? "1 1 420px" : "1 1 280px",
+        display: "flex",
+        flexDirection: "column",
+        gap: 10,
+        padding: 12,
         border: "1px solid rgba(255,255,255,0.10)",
         borderRadius: 12,
         background: "rgba(255,255,255,0.02)",
+        minHeight: 96,
       }}
     >
-      <div className="muted" style={{ fontSize: 12, fontWeight: 600 }}>
-        {label}
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 8,
+          minHeight: 20,
+          flexWrap: "wrap",
+        }}
+      >
+        <div className="muted" style={{ fontSize: 12, fontWeight: 600 }}>
+          {label}
+        </div>
+        {extra}
       </div>
-      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+
+      <div
+        style={{
+          display: "flex",
+          gap: 8,
+          flexWrap: "wrap",
+          alignItems: "center",
+          alignContent: "flex-start",
+        }}
+      >
         {children}
       </div>
     </div>
@@ -198,21 +266,31 @@ export default function FormsMonitorPage() {
   const infoIconRef = useRef(null);
   const infoBtnRef = useRef(null);
   const infoPopupRef = useRef(null);
+  const statusInfoIconRef = useRef(null);
+  const statusInfoBtnRef = useRef(null);
+  const statusInfoPopupRef = useRef(null);
 
   const [listLoading, setListLoading] = useState(true);
   const [error, setError] = useState(null);
   const [infoOpen, setInfoOpen] = useState(false);
   const [infoPopupStyle, setInfoPopupStyle] = useState(null);
+  const [statusInfoOpen, setStatusInfoOpen] = useState(false);
+  const [statusInfoPopupStyle, setStatusInfoPopupStyle] = useState(null);
 
   const [filters, setFilters] = useState({
     q: storedState?.filters?.q ?? "",
     mine: storedState?.filters?.mine ?? true,
     onlyActionable: storedState?.filters?.onlyActionable ?? false,
     noRemainingOpenActionPoints: storedState?.filters?.noRemainingOpenActionPoints ?? false,
-    selectedStatuses:
-      Array.isArray(storedState?.filters?.selectedStatuses)
-        ? storedState.filters.selectedStatuses
-        : DEFAULT_SELECTED_STATUSES,
+    selectedStatusGroups:
+      Array.isArray(storedState?.filters?.selectedStatusGroups)
+        ? storedState.filters.selectedStatusGroups
+        : (
+            Array.isArray(storedState?.filters?.selectedStatuses) &&
+            storedState.filters.selectedStatuses.length > 0
+          )
+            ? ["TODO"]
+            : DEFAULT_SELECTED_STATUS_GROUPS,
     actionStatusFilter: storedState?.filters?.actionStatusFilter ?? "ALL",
     take: 200,
     skip: 0,
@@ -224,11 +302,8 @@ export default function FormsMonitorPage() {
   );
 
   const effectiveSelectedStatuses = useMemo(() => {
-    if (Array.isArray(filters.selectedStatuses) && filters.selectedStatuses.length > 0) {
-      return filters.selectedStatuses;
-    }
-    return STATUS_FILTER_OPTIONS.map((opt) => opt.key);
-  }, [filters.selectedStatuses]);
+    return buildEffectiveStatuses(filters.selectedStatusGroups);
+  }, [filters.selectedStatusGroups]);
 
   const visibleItems = useMemo(() => {
     const selectedStatusesSet = new Set(effectiveSelectedStatuses || []);
@@ -284,18 +359,26 @@ export default function FormsMonitorPage() {
     function onDocMouseDown(e) {
       const btn = infoBtnRef.current;
       const popup = infoPopupRef.current;
+      const statusBtn = statusInfoBtnRef.current;
+      const statusPopup = statusInfoPopupRef.current;
 
       if (btn?.contains(e.target)) return;
       if (popup?.contains(e.target)) return;
+      if (statusBtn?.contains(e.target)) return;
+      if (statusPopup?.contains(e.target)) return;
 
       setInfoOpen(false);
+      setStatusInfoOpen(false);
     }
 
     function onKeyDown(e) {
-      if (e.key === "Escape") setInfoOpen(false);
+      if (e.key === "Escape") {
+        setInfoOpen(false);
+        setStatusInfoOpen(false);
+      }
     }
 
-    if (infoOpen) {
+    if (infoOpen || statusInfoOpen) {
       document.addEventListener("mousedown", onDocMouseDown);
       document.addEventListener("keydown", onKeyDown);
 
@@ -304,17 +387,17 @@ export default function FormsMonitorPage() {
         document.removeEventListener("keydown", onKeyDown);
       };
     }
-  }, [infoOpen]);
+  }, [infoOpen, statusInfoOpen]);
 
-  function toggleStatusFilter(statusKey) {
+  function toggleStatusGroup(groupKey) {
     setFilters((prev) => {
-      const current = new Set(prev.selectedStatuses || []);
-      if (current.has(statusKey)) current.delete(statusKey);
-      else current.add(statusKey);
+      const current = new Set(prev.selectedStatusGroups || []);
+      if (current.has(groupKey)) current.delete(groupKey);
+      else current.add(groupKey);
 
       return {
         ...prev,
-        selectedStatuses: Array.from(current),
+        selectedStatusGroups: Array.from(current),
       };
     });
   }
@@ -362,7 +445,7 @@ export default function FormsMonitorPage() {
     filters.mine,
     filters.onlyActionable,
     filters.noRemainingOpenActionPoints,
-    filters.selectedStatuses,
+    filters.selectedStatusGroups,
     filters.actionStatusFilter,
     autoRefreshEnabled,
   ]);
@@ -416,31 +499,45 @@ export default function FormsMonitorPage() {
     }));
   }
 
+  function openPopupNearButton(buttonEl, setStyle, width = 420) {
+    if (!buttonEl) {
+      setStyle(null);
+      return;
+    }
+
+    const rect = buttonEl.getBoundingClientRect();
+    const viewportWidth = window.innerWidth;
+    const popupWidth = Math.min(width, viewportWidth - 24);
+    const left = Math.max(12, Math.min(rect.left, viewportWidth - popupWidth - 12));
+
+    setStyle({
+      position: "fixed",
+      top: Math.round(rect.bottom + 8),
+      left,
+      width: popupWidth,
+      maxWidth: "calc(100vw - 24px)",
+      zIndex: 120,
+    });
+  }
+
   function toggleInfoPopup() {
     if (infoOpen) {
       setInfoOpen(false);
       return;
     }
 
-    const btn = infoBtnRef.current;
-    if (!btn) {
-      setInfoOpen(true);
-      setInfoPopupStyle(null);
+    openPopupNearButton(infoBtnRef.current, setInfoPopupStyle, 420);
+    setInfoOpen(true);
+  }
+
+  function toggleStatusInfoPopup() {
+    if (statusInfoOpen) {
+      setStatusInfoOpen(false);
       return;
     }
 
-    const rect = btn.getBoundingClientRect();
-    const popupWidth = 420;
-    const left = Math.max(12, Math.min(rect.left, window.innerWidth - popupWidth - 12));
-
-    setInfoPopupStyle({
-      position: "fixed",
-      top: Math.round(rect.bottom + 8),
-      left,
-      width: popupWidth,
-      zIndex: 120,
-    });
-    setInfoOpen(true);
+    openPopupNearButton(statusInfoBtnRef.current, setStatusInfoPopupStyle, 460);
+    setStatusInfoOpen(true);
   }
 
   return (
@@ -494,13 +591,13 @@ export default function FormsMonitorPage() {
           <div style={{ display: "grid", gap: 10 }}>
             <div
               style={{
-                display: "flex",
+                display: "grid",
                 gap: 10,
+                gridTemplateColumns: "minmax(220px, 280px) minmax(280px, 420px) minmax(320px, 1fr)",
                 alignItems: "stretch",
-                flexWrap: "wrap",
               }}
             >
-              <FilterGroup label="Weergave" minWidth={240}>
+              <FilterGroup label="Weergave" minWidth={0}>
                 <FilterChip
                   active={Boolean(filters.mine)}
                   label="Alleen eigen formulieren"
@@ -509,7 +606,7 @@ export default function FormsMonitorPage() {
                 />
               </FilterGroup>
 
-              <FilterGroup label="Slimme filters" minWidth={360}>
+              <FilterGroup label="Slimme filters" minWidth={0}>
                 <FilterChip
                   active={Boolean(filters.onlyActionable)}
                   label="Open actiepunten"
@@ -525,17 +622,63 @@ export default function FormsMonitorPage() {
                 />
               </FilterGroup>
 
-              <FilterGroup label="Status" minWidth={360} grow>
-                {STATUS_FILTER_OPTIONS.map((opt) => (
-                  <StatusFilterChip
+              <FilterGroup
+                label="Status"
+                minWidth={0}
+                grow
+                extra={
+                  <button
+                    ref={statusInfoBtnRef}
+                    type="button"
+                    className="icon-btn"
+                    title="Uitleg statusverloop"
+                    onClick={toggleStatusInfoPopup}
+                    onMouseEnter={() => statusInfoIconRef.current?.startAnimation?.()}
+                    onMouseLeave={() => statusInfoIconRef.current?.stopAnimation?.()}
+                  >
+                    <BadgeAlertIcon ref={statusInfoIconRef} size={18} className="nav-anim-icon" />
+                  </button>
+                }
+              >
+                {STATUS_GROUP_OPTIONS.map((opt) => (
+                  <StatusGroupFilterChip
                     key={opt.key}
-                    status={opt.key}
-                    active={effectiveSelectedStatuses.includes(opt.key)}
-                    onClick={() => toggleStatusFilter(opt.key)}
+                    option={opt}
+                    active={(filters.selectedStatusGroups || []).includes(opt.key)}
+                    onClick={() => toggleStatusGroup(opt.key)}
                   />
                 ))}
               </FilterGroup>
             </div>
+
+            <style>
+              {`
+                @media (max-width: 1180px) {
+                  .monitor-filters-grid {
+                    grid-template-columns: 1fr 1fr !important;
+                  }
+                  .monitor-filters-grid .monitor-status-group {
+                    grid-column: 1 / -1;
+                  }
+                }
+
+                @media (max-width: 760px) {
+                  .monitor-filters-grid {
+                    grid-template-columns: 1fr !important;
+                  }
+                  .monitor-filters-grid .monitor-status-group {
+                    grid-column: auto;
+                  }
+                }
+              `}
+            </style>
+
+            <div
+              className="monitor-filters-grid"
+              style={{
+                display: "none",
+              }}
+            />
 
             <div className="searchbar">
               <SearchIcon size={18} className="nav-anim-icon" />
@@ -550,7 +693,14 @@ export default function FormsMonitorPage() {
               />
             </div>
 
-            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <div
+              style={{
+                display: "flex",
+                gap: 8,
+                flexWrap: "wrap",
+                alignItems: "center",
+              }}
+            >
               <button
                 type="button"
                 className="btn btn-secondary"
@@ -630,7 +780,14 @@ export default function FormsMonitorPage() {
           </div>
 
           {!listLoading && visibleItems.length > 0 && (
-            <div className="monitor-inline-totals monitor-inline-totals--prominent">
+            <div
+              style={{
+                display: "flex",
+                gap: 8,
+                flexWrap: "wrap",
+                alignItems: "center",
+              }}
+            >
               <SummaryTag
                 title="Toon formulieren met openstaande actiepunten; inclusief wachten op derden"
                 tone="active"
@@ -670,6 +827,46 @@ export default function FormsMonitorPage() {
             </div>
           )}
 
+          {statusInfoOpen && statusInfoPopupStyle && (
+            <div
+              ref={statusInfoPopupRef}
+              className="monitor-info-popup"
+              style={statusInfoPopupStyle}
+            >
+              <div style={{ display: "grid", gap: 8 }}>
+                <div style={{ fontWeight: 700 }}>Statusverloop formulieren</div>
+
+                <div>
+                  <strong>Nog te verwerken</strong> bevat <strong>Ingediend</strong> en <strong>In behandeling</strong>.
+                </div>
+
+                <div>
+                  <strong>Ingediend</strong>; het formulier is aangeleverd en wacht nog op inhoudelijke afhandeling.
+                </div>
+
+                <div>
+                  <strong>In behandeling</strong>; de formulierafhandeling is gestart en er lopen nog actiepunten of opvolging.
+                </div>
+
+                <div>
+                  <strong>Concept</strong>; het formulier is nog niet definitief ingediend door de invuller.
+                </div>
+
+                <div>
+                  <strong>Ingetrokken</strong>; het formulier is teruggetrokken en hoort normaal niet meer in de lopende werkvoorraad.
+                </div>
+
+                <div>
+                  <strong>Definitief</strong>; de formulierafhandeling is afgerond.
+                </div>
+
+                <div className="muted" style={{ fontSize: 12 }}>
+                  Chronologisch verloopt dit meestal als; Concept → Ingediend → In behandeling → Definitief.
+                </div>
+              </div>
+            </div>
+          )}
+
           {listLoading ? (
             <div className="muted">laden; monitorlijst</div>
           ) : visibleItems.length === 0 ? (
@@ -683,12 +880,9 @@ export default function FormsMonitorPage() {
 
                 const actionCountsRaw = buildMonitorRowActionCounts(row);
                 const actionCounts = {
-                  open:
-                    Number(actionCountsRaw?.open ?? getOpenCount(row)),
-                  waiting:
-                    Number(actionCountsRaw?.waiting ?? getWaitingCount(row)),
-                  done:
-                    Number(actionCountsRaw?.done ?? getDoneCount(row)),
+                  open: Number(actionCountsRaw?.open ?? getOpenCount(row)),
+                  waiting: Number(actionCountsRaw?.waiting ?? getWaitingCount(row)),
+                  done: Number(actionCountsRaw?.done ?? getDoneCount(row)),
                 };
 
                 const isReady = hasNoRemainingOpenActionPoints(row);
@@ -748,7 +942,14 @@ export default function FormsMonitorPage() {
                         </div>
                       ) : null}
 
-                      <div className="monitor-inline-totals">
+                      <div
+                        style={{
+                          display: "flex",
+                          gap: 8,
+                          flexWrap: "wrap",
+                          alignItems: "center",
+                        }}
+                      >
                         <SummaryTag title="Aantal openstaande actiepunten; inclusief wachten op derden" tone="active">
                           Open {actionCounts.open + actionCounts.waiting}
                         </SummaryTag>
@@ -793,6 +994,28 @@ export default function FormsMonitorPage() {
           )}
         </div>
       </div>
+
+      <style>
+        {`
+          @media (max-width: 1180px) {
+            .inst-body .monitor-filters-top-grid {
+              grid-template-columns: 1fr 1fr !important;
+            }
+            .inst-body .monitor-filters-top-grid .monitor-status-group {
+              grid-column: 1 / -1;
+            }
+          }
+
+          @media (max-width: 760px) {
+            .inst-body .monitor-filters-top-grid {
+              grid-template-columns: 1fr !important;
+            }
+            .inst-body .monitor-filters-top-grid .monitor-status-group {
+              grid-column: auto;
+            }
+          }
+        `}
+      </style>
     </div>
   );
 }
