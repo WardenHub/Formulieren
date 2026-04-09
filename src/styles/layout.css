@@ -2797,18 +2797,20 @@ input[type="date"].input{
 
 .home-news-item-row{
   display: grid;
-  grid-template-columns: 76px minmax(0, 1fr);
-  gap: 10px;
+  grid-template-columns: 96px minmax(0, 1fr);
+  gap: 12px;
   align-items: center;
 }
 
 .home-news-thumb-wrap{
-  width: 76px;
-  height: 56px;
-  border-radius: 10px;
+  width: 96px;
+  height: 72px;
+  border-radius: 12px;
   overflow: hidden;
   background: rgba(255,255,255,0.04);
   border: 1px solid rgba(255,255,255,0.08);
+  box-shadow: 0 6px 18px rgba(0,0,0,0.20);
+  flex: 0 0 auto;
 }
 
 .home-news-thumb{
@@ -2816,6 +2818,11 @@ input[type="date"].input{
   height: 100%;
   object-fit: cover;
   display: block;
+  transition: transform 180ms ease;
+}
+
+.home-news-item:hover .home-news-thumb{
+  transform: scale(1.04);
 }
 
 .home-news-thumb-fallback{

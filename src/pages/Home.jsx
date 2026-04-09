@@ -41,7 +41,13 @@ function scheduleAfterFirstPaint(fn) {
 
 function newsImageSrc(rawUrl) {
   if (!rawUrl) return "";
-  return `/home/news/image?url=${encodeURIComponent(rawUrl)}`;
+
+  const base = String(import.meta.env.VITE_API_BASE || "").trim().replace(/\/+$/, "");
+  if (!base) {
+    return `/home/news/image?url=${encodeURIComponent(rawUrl)}`;
+  }
+
+  return `${base}/home/news/image?url=${encodeURIComponent(rawUrl)}`;
 }
 
 function AnimatedHomeCard({ to, Icon, title, text }) {
