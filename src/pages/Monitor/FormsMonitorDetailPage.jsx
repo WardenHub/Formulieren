@@ -25,6 +25,7 @@ import { BadgeAlertIcon } from "@/components/ui/badge-alert";
 import { PartyPopperIcon } from "@/components/ui/party-popper";
 import { ChevronsDownUpIcon } from "@/components/ui/chevrons-down-up";
 import { ChevronsUpDownIcon } from "@/components/ui/chevrons-up-down";
+import { pushRecentHomeItem } from "../../lib/recentHomeItems.js";
 
 import {
   DETAIL_UI_LS_KEY,
@@ -600,6 +601,18 @@ export default function FormsMonitorDetailPage() {
 
   const CollapseIcon = anyOpenInDetail ? ChevronsDownUpIcon : ChevronsUpDownIcon;
   const collapseBtnTitle = anyOpenInDetail ? "Alles inklappen" : "Alles uitklappen";
+
+  useEffect(() => {
+    if (!item?.form_instance_id) return;
+
+    pushRecentHomeItem({
+      kind: "monitor",
+      key: String(item.form_instance_id),
+      title: item.instance_title || item.form_name || item.form_code || `Monitor ${item.form_instance_id}`,
+      subtitle: `${item.form_name || item.form_code || "Formulier"} ; #${item.form_instance_id}`,
+      to: `/monitor/formulieren/${encodeURIComponent(item.form_instance_id)}`,
+    });
+  }, [item]);
 
   return (
     <div>

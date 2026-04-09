@@ -1,4 +1,4 @@
-// src/api/emberApi.js
+// /src/api/emberApi.js
 import { httpJson, httpUpload, httpDownload } from "./http";
 
 export function apiGet(path) {
@@ -25,6 +25,10 @@ export function apiPost(path, bodyObj) {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(bodyObj ?? {}),
   });
+}
+
+export function getHomeNews() {
+  return apiGet("/home/news");
 }
 
 export function getInstallation(code) {

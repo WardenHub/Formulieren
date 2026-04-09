@@ -27,6 +27,7 @@ import { ChevronsDownUpIcon } from "@/components/ui/chevrons-down-up";
 import { ChevronsUpDownIcon } from "@/components/ui/chevrons-up-down";
 import { CogIcon } from "@/components/ui/cog";
 import { RefreshCWIcon } from "@/components/ui/refresh-cw";
+import { pushRecentHomeItem } from "../../lib/recentHomeItems.js";
 
 import {
   getInstallation,
@@ -482,6 +483,24 @@ export default function InstallationDetails() {
     return `Installatie ${name}`;
   }, [installation, code]);
 
+    useEffect(() => {
+    if (!installation || !code) return;
+
+    const name =
+      installation?.name ||
+      installation?.obj_naam ||
+      installation?.atrium_installation_code ||
+      code;
+
+    pushRecentHomeItem({
+      kind: "installation",
+      key: String(code),
+      title: `Installatie ${name}`,
+      subtitle: `Code ${code}`,
+      to: `/installaties/${encodeURIComponent(code)}`,
+    });
+  }, [installation, code]);
+  
   const isAdmin = Boolean(installation?.is_admin || installation?.isAdmin || installation?.user_is_admin);
 
   const tabs = useMemo(() => {

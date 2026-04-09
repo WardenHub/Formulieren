@@ -1,4 +1,4 @@
-// / api/src/app.ts
+// /api/src/app.ts
 import express from "express";
 import cors from "cors";
 import { authMiddleware } from "./middleware/authMiddleware.js";
@@ -8,6 +8,7 @@ import installationsRouter from "./routes/installations.js";
 import installationTypesRouter from "./routes/installationTypes.js";
 import formsMonitorRouter from "./routes/formsMonitor.js";
 import adminFormsRouter from "./routes/adminForms.js";
+import homeRouter from "./routes/home.js";
 
 const app = express();
 const RAW_ORIGINS = (process.env.CORS_ORIGINS || "")
@@ -15,15 +16,15 @@ const RAW_ORIGINS = (process.env.CORS_ORIGINS || "")
   .map(s => s.trim())
   .filter(Boolean);
 
-function norm(o) {
+function norm(o: string | undefined | null) {
   return (o || "").replace(/\/+$/, "");
 }
 
 const ALLOWED = new Set(RAW_ORIGINS.map(norm));
+
 app.use(express.json());
 app.use(cors({
   origin: (origin, cb) => {
-    // allow non-browser calls (no Origin), health checks, curl, etc.
     if (!origin) return cb(null, true);
 
     const o = norm(origin);
@@ -34,14 +35,12 @@ app.use(cors({
   credentials: true,
 }));
 
-
 console.log("node", process.version);
 console.log("db auth mode", process.env.DB_AUTH || "aad");
 console.log("sql server", process.env.SQL_SERVER);
 console.log("sql database", process.env.SQL_DATABASE);
 console.log("node env", process.env.NODE_ENV);
 console.log("dev auth", process.env.DEV_AUTH);
-
 
 const required = ["SQL_SERVER", "SQL_DATABASE"];
 for (const k of required) {
@@ -65,19 +64,20 @@ app.get("/health", async (req, res) => {
     res.json({
       api: "ok",
       db: pool?.connected ? 1 : 0,
-      "Jesse" : "Blij 😁",
+      Jesse: "Blij 😁",
     });
   } catch (err) {
     res.status(500).json({ api: "ok", db: "error" });
   }
 });
 
-// alles hieronder vereist user + roles
 app.use(authMiddleware);
+
 app.use("/installations", installationsRouter);
 app.use("/installation-types", installationTypesRouter);
 app.use("/admin/forms", adminFormsRouter);
 app.use("/forms-monitor", formsMonitorRouter);
+app.use("/home", homeRouter);
 
 app.get("/me", (req: any, res) => {
   res.json({ user: req.user, roles: req.roles || [] });

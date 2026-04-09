@@ -22,6 +22,8 @@ import { PlusIcon } from "@/components/ui/plus";
 import { ChevronsDownUpIcon } from "@/components/ui/chevrons-down-up";
 import { ChevronsUpDownIcon } from "@/components/ui/chevrons-up-down";
 import { AttachFileIcon } from "@/components/ui/attach-file";
+import { pushRecentHomeItem } from "../../lib/recentHomeItems.js";
+
 
 import {
   getFormInstance,
@@ -442,6 +444,18 @@ export default function FormRunnerBase({ mode }) {
   const currentParentInstanceId = useMemo(() => {
     return normalizeMetadataParentId(instanceMetadata?.parent_instance_id);
   }, [instanceMetadata]);
+
+  useEffect(() => {
+    if (!code || !instanceId || !instance) return;
+
+    pushRecentHomeItem({
+      kind: "form",
+      key: String(instanceId),
+      title: instance.instance_title || instance.form_name || instance.form_code || `Formulier ${instanceId}`,
+      subtitle: `${statusLabel(instance.status)} ; ${instance.form_name || instance.form_code || ""}`.trim(),
+      to: `/installaties/${encodeURIComponent(code)}/formulieren/${encodeURIComponent(instanceId)}`,
+    });
+  }, [code, instanceId, instance]);
 
   useEffect(() => {
     const hasTitle = String(savedInstanceMetadata?.instance_title || "").trim().length > 0;
