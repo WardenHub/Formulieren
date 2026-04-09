@@ -7,12 +7,17 @@ const ROLE_GROUPS: Record<string, string> = {
   documentbeheerder: "7cadb29c-c15c-4e1e-acff-71214865e00a",
 };
 
+const APP_ROLE_MAP: Record<string, string> = {
+  "Ember.Admin": "admin",
+  "Ember.Gebruiker": "gebruiker",
+  "Ember.Documentbeheerder": "documentbeheerder",
+};
+
 function isDevAuthEnabled() {
   const nodeEnv = (process.env.NODE_ENV || "").toLowerCase();
   const devAuth = (process.env.DEV_AUTH || "").trim();
   return nodeEnv === "development" && devAuth === "1";
 }
-
 
 const credential = new DefaultAzureCredential();
 
@@ -37,6 +42,26 @@ function getClaim(principal: any, claimType: string) {
   const claims = principal?.claims || [];
   const found = claims.find((c: any) => c.typ === claimType);
   return found?.val || null;
+}
+
+function getClaims(principal: any, claimType: string) {
+  const claims = principal?.claims || [];
+  return claims
+    .filter((c: any) => c.typ === claimType)
+    .map((c: any) => c.val)
+    .filter(Boolean);
+}
+
+function uniqueStrings(values: string[]) {
+  return [...new Set(values.filter(Boolean))];
+}
+
+function mapAppRolesToInternalRoles(appRoles: string[]) {
+  return uniqueStrings(
+    appRoles
+      .map((role) => APP_ROLE_MAP[role])
+      .filter(Boolean)
+  );
 }
 
 async function graphGet(url: string) {
@@ -72,7 +97,19 @@ function mapGroupsToRoles(groupIds: string[]) {
     if (groupIds.includes(groupId)) roles.push(role);
   }
 
-  return roles;
+  return uniqueStrings(roles);
+}
+
+function getAppRolesFromPrincipal(principal: any) {
+  // x-ms-client-principal claims kunnen meerdere "roles" entries bevatten
+  // Sommige omgevingen gebruiken ook de volledige URI-vorm; we ondersteunen beide veilig.
+  const directRoles = getClaims(principal, "roles");
+  const uriRoles = getClaims(
+    principal,
+    "http://schemas.microsoft.com/ws/2008/06/identity/claims/role"
+  );
+
+  return uniqueStrings([...directRoles, ...uriRoles]);
 }
 
 export async function authMiddleware(req: any, res: any, next: any) {
@@ -113,6 +150,19 @@ export async function authMiddleware(req: any, res: any, next: any) {
       name: getClaim(principal, "name") || null,
     };
 
+    const appRolesFromClaims = getAppRolesFromPrincipal(principal);
+    const mappedAppRoles = mapAppRolesToInternalRoles(appRolesFromClaims);
+
+    // Nieuwe voorkeursroute:
+    // als app roles aanwezig zijn, gebruik die direct en sla Graph over.
+    // Dit is sneller en werkt goed voor gasten en interne users.
+    if (mappedAppRoles.length > 0) {
+      req.roles = mappedAppRoles;
+      return next();
+    }
+
+    // Oude fallback-route:
+    // behoud bestaand gedrag voor users die nog via groepen gemapt worden.
     const cached = rolesCache.get(userObjectId);
     if (cached && cached.expiresAt > Date.now()) {
       req.roles = cached.roles || [];
