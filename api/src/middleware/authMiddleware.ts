@@ -152,6 +152,9 @@ export async function authMiddleware(req: any, res: any, next: any) {
 
     const appRolesFromClaims = getAppRolesFromPrincipal(principal);
     const mappedAppRoles = mapAppRolesToInternalRoles(appRolesFromClaims);
+    // 👇 HIER
+console.log("[AUTH] raw roles from token:", appRolesFromClaims);
+console.log("[AUTH] mapped roles:", mappedAppRoles);
 
     // Nieuwe voorkeursroute:
     // als app roles aanwezig zijn, gebruik die direct en sla Graph over.
