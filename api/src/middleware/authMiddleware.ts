@@ -2,7 +2,7 @@
 import { DefaultAzureCredential } from "@azure/identity";
 
 const ROLE_GROUPS: Record<string, string> = {
-  admin: "03ba899f-0af6-4d81-9ab7-023a0cc42455",
+  admin: "b0b4c5d3-d918-46a6-971e-c734afa21536", 
   gebruiker: "64e2c12f-73d5-4b2a-9d56-fc465e3cc9bf",
   documentbeheerder: "7cadb29c-c15c-4e1e-acff-71214865e00a",
 };

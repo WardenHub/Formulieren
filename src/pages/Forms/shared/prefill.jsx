@@ -1,11 +1,9 @@
-// src/pages/Forms/shared/prefill.jsx
-
 import {
   deepClone,
   deepEqual,
   formatTodayISODate,
   isEmptyAnswer,
-} from "./surveyCore.jsx"; 
+} from "./surveyCore.jsx";
 
 export function walkElements(node, fn) {
   if (!node || typeof node !== "object") return;
@@ -215,6 +213,33 @@ export function resolveBindValue(bind, prefillPayload, emberFilter) {
   return undefined;
 }
 
+function cloneBindableValue(value) {
+  if (value === null || value === undefined) return value;
+  if (typeof value !== "object") return value;
+  return deepClone(value);
+}
+
+function getQuestionValueName(question, fallbackName) {
+  const valueName = String(question?.valueName || "").trim();
+  if (valueName) return valueName;
+  return String(fallbackName || "").trim();
+}
+
+function setQuestionBoundValue(model, question, questionName, nextValue, dataBag) {
+  const targetName = getQuestionValueName(question, questionName);
+  if (!targetName) return;
+
+  const clonedValue = cloneBindableValue(nextValue);
+
+  if (question && typeof question.value !== "undefined") {
+    question.value = clonedValue;
+  } else {
+    model.setValue(targetName, clonedValue);
+  }
+
+  dataBag[targetName] = clonedValue;
+}
+
 export function applyBindings({
   model,
   prefillPayload,
@@ -233,23 +258,25 @@ export function applyBindings({
     const refreshable = Boolean(bind.refreshable);
     if (onlyRefreshable && !refreshable) continue;
 
-    const q = model.getQuestionByName?.(item.name);
+    const q = model.getQuestionByName?.(item.name) || null;
     const liveFilter = q?.jsonObj?.ember?.filter || null;
     const filterCfg = item.filter || liveFilter;
 
-    let nextVal = resolveBindValue(bind, prefillPayload);
+    let nextVal = resolveBindValue(bind, prefillPayload, filterCfg);
     if (nextVal === undefined) continue;
 
     nextVal = applyArrayFilter(nextVal, filterCfg);
 
-    const curVal = data[item.name];
+    const valueKey = getQuestionValueName(q, item.name);
+    const curVal = data[valueKey];
     const lastApplied = nextApplied[item.name];
 
     if (isRefresh) {
       const canRefresh = isEmptyAnswer(curVal) || deepEqual(curVal, lastApplied);
       if (!canRefresh) continue;
-      data[item.name] = nextVal;
-      nextApplied[item.name] = nextVal;
+
+      setQuestionBoundValue(model, q, item.name, nextVal, data);
+      nextApplied[item.name] = cloneBindableValue(nextVal);
       continue;
     }
 
@@ -263,12 +290,11 @@ export function applyBindings({
             : false;
 
     if (shouldOverwrite) {
-      data[item.name] = nextVal;
-      nextApplied[item.name] = nextVal;
+      setQuestionBoundValue(model, q, item.name, nextVal, data);
+      nextApplied[item.name] = cloneBindableValue(nextVal);
     }
   }
 
-  model.data = data;
   return nextApplied;
 }
 
