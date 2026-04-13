@@ -305,6 +305,7 @@ export default function FormRunnerBase({ mode }) {
 
   const [prefillPayload, setPrefillPayload] = useState(null);
   const [runtimeReady, setRuntimeReady] = useState(false);
+  const [surveyRenderKey, setSurveyRenderKey] = useState(1);
   const [answersPreview, setAnswersPreview] = useState({});
   const [lastAppliedMap, setLastAppliedMap] = useState({});
 
@@ -928,6 +929,7 @@ export default function FormRunnerBase({ mode }) {
 
       setDirty(false);
       setRuntimeReady(true);
+      setSurveyRenderKey((prev) => prev + 1);
       lastLoadedKeyRef.current = key;
     } catch (e) {
       setError(translateApiError(e, status));
@@ -1042,6 +1044,8 @@ export default function FormRunnerBase({ mode }) {
       if (result.changed) {
         setDirty(true);
       }
+
+      setSurveyRenderKey((prev) => prev + 1);
 
       setPrefillRefreshOk(true);
       prefillRefreshIconRef.current?.startAnimation?.();
@@ -2047,7 +2051,7 @@ export default function FormRunnerBase({ mode }) {
             </div>
           ) : (
             <div style={{ opacity: canEditAnswers ? 1 : 0.82 }}>
-              <Survey model={model} />
+              <Survey key={surveyRenderKey} model={model} />
             </div>
           )}
         </div>

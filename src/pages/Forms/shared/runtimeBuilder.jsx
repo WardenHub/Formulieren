@@ -1,5 +1,3 @@
-// src/pages/Forms/shared/runtimeBuilder.jsx
-
 import { ItemValue, Model } from "survey-core";
 import { getFormPrefill } from "@/api/emberApi.js";
 
@@ -9,12 +7,15 @@ import {
   injectChoicesIntoSurveyJson,
   applyChoices,
   applyBindings,
+  collectEmberMeta,
+  applyArrayFilter,
 } from "./prefill.jsx";
 
 import {
   getAnswersObject,
   safeSurveyParse,
   deepEqual,
+  deepClone,
 } from "./surveyCore.jsx";
 
 import {
@@ -151,6 +152,89 @@ export function buildRuntimeMergedData({
   return mergedData;
 }
 
+function isComplexValue(value) {
+  return value !== null && typeof value === "object";
+}
+
+function getQuestionValueName(question, fallbackName) {
+  const valueName = String(question?.valueName || "").trim();
+  if (valueName) return valueName;
+  return String(fallbackName || "").trim();
+}
+
+function rebuildBoundComplexQuestions(model, prefillPayload) {
+  if (!model) return;
+
+  const payload = normalizeRuntimePrefillPayload(prefillPayload);
+  const payloadValues = payload?.values || payload?.prefill?.values || {};
+  const { binds } = collectEmberMeta(model);
+
+  for (const item of binds) {
+    const bind = item?.bind || {};
+    if (String(bind.kind || "") !== "prefill") continue;
+
+    const key = String(bind.key || "").trim();
+    if (!key) continue;
+
+    const q = model.getQuestionByName?.(item.name) || null;
+    if (!q) continue;
+
+    const valueName = getQuestionValueName(q, item.name);
+    if (!valueName) continue;
+
+    const liveFilter = q?.jsonObj?.ember?.filter || null;
+    const filterCfg = item?.filter || liveFilter || null;
+
+    let nextValue = payloadValues[key];
+    if (nextValue === undefined) continue;
+
+    if (Array.isArray(nextValue)) {
+      nextValue = applyArrayFilter(nextValue, filterCfg);
+    }
+
+    if (!isComplexValue(nextValue)) continue;
+
+    const cloned = deepClone(nextValue);
+
+    try {
+      model.setValue(valueName, undefined);
+      model.setValue(valueName, cloned);
+    } catch {
+      try {
+        q.value = undefined;
+        q.value = cloned;
+      } catch {
+      }
+    }
+  }
+}
+
+function forceSurveyRefresh(model) {
+  if (!model) return;
+
+  try {
+    const page = model.currentPage || null;
+
+    if (page) {
+      const pages = Array.isArray(model.visiblePages) ? model.visiblePages : [];
+      const idx = pages.indexOf(page);
+
+      if (idx >= 0) {
+        model.currentPage = null;
+        model.currentPage = page;
+      }
+    }
+  } catch {
+    // stil
+  }
+
+  try {
+    model.render?.();
+  } catch {
+    // stil
+  }
+}
+
 export function applyRuntimePrefillToModel({
   model,
   prefillPayload,
@@ -164,7 +248,7 @@ export function applyRuntimePrefillToModel({
   }
 
   const effectivePrefillPayload = normalizeRuntimePrefillPayload(prefillPayload);
-  const beforeData = model.data && typeof model.data === "object" ? { ...model.data } : {};
+  const beforeData = model.data && typeof model.data === "object" ? deepClone(model.data) : {};
 
   applyChoices(model, effectivePrefillPayload, ItemValue);
 
@@ -176,10 +260,15 @@ export function applyRuntimePrefillToModel({
     isRefresh,
   });
 
+  if (isRefresh) {
+    rebuildBoundComplexQuestions(model, effectivePrefillPayload);
+    forceSurveyRefresh(model);
+  }
+
   applyRuntimeInstanceFields(model, instance);
   syncAllMatrixQuestionVisualErrors(model);
 
-  const afterData = model.data && typeof model.data === "object" ? { ...model.data } : {};
+  const afterData = model.data && typeof model.data === "object" ? deepClone(model.data) : {};
   const changed = !deepEqual(beforeData, afterData);
 
   return {

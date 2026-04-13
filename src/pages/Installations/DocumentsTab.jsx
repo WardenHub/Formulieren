@@ -6,7 +6,7 @@ import {
   getDocuments,
   uploadInstallationDocumentFile,
   getInstallationDocumentDownloadUrl,
-  getInstallationDocumentDownloadEndpoint,
+  downloadInstallationDocumentFile,
   createInstallationDocumentReplacement,
   createInstallationDocumentAttachment,
 } from "../../api/emberApi.js";
@@ -1046,28 +1046,39 @@ const DocumentsTab = forwardRef(function DocumentsTab(
     }
   }
 
-  async function handleDownloadDocument(row) {
-    setError(null);
-    setActionBusyKey(`download:${row.document_id}`);
+async function handleDownloadDocument(row) {
+  setError(null);
+  setActionBusyKey(`download:${row.document_id}`);
 
-    try {
-      const downloadPath = getInstallationDocumentDownloadEndpoint(code, row.document_id);
-      const url = buildApiUrl(downloadPath);
+  try {
+    const result = await downloadInstallationDocumentFile(code, row.document_id);
 
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = row.file_name || row.title || "document";
-      a.rel = "noopener";
-      a.style.display = "none";
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-    } catch (e) {
-      setError(e?.message || String(e));
-    } finally {
-      setActionBusyKey(null);
-    }
+    const blobUrl = window.URL.createObjectURL(result.blob);
+    const fileName =
+      result.fileName ||
+      row.file_name ||
+      row.title ||
+      "document";
+
+    const a = document.createElement("a");
+    a.href = blobUrl;
+    a.download = fileName;
+    a.rel = "noopener";
+    a.style.display = "none";
+
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+
+    window.setTimeout(() => {
+      window.URL.revokeObjectURL(blobUrl);
+    }, 1000);
+  } catch (e) {
+    setError(e?.message || String(e));
+  } finally {
+    setActionBusyKey(null);
   }
+}
 
   async function handleUploadForRow(typeKey, row, file) {
     if (!file) return;
