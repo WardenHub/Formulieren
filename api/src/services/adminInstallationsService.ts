@@ -6,14 +6,11 @@ import {
   saveAdminInstallationSectionsSql,
   saveAdminInstallationFieldsSql,
   saveAdminInstallationDocumentsSql,
+  saveAdminInstallationExternalFieldsSql,
 } from "../db/queries/adminInstallations.sql.js";
 
 function getUserDisplayName(user: any) {
   return user?.name || user?.upn || user?.objectId || "unknown";
-}
-
-function isPlainObject(value: any) {
-  return !!value && typeof value === "object" && !Array.isArray(value);
 }
 
 function normalizeNullableString(value: any) {
@@ -53,6 +50,7 @@ export async function getAdminInstallationsCatalog() {
   const documentTypes = Array.isArray(recordsets[5]) ? recordsets[5] : [];
   const documentTypeLinks = Array.isArray(recordsets[6]) ? recordsets[6] : [];
   const documentTypeRequirements = Array.isArray(recordsets[7]) ? recordsets[7] : [];
+  const externalFields = Array.isArray(recordsets[8]) ? recordsets[8] : [];
 
   return {
     installationTypes: installationTypes.map((r: any) => ({
@@ -101,6 +99,17 @@ export async function getAdminInstallationsCatalog() {
       document_type_key: r.document_type_key,
       installation_type_key: r.installation_type_key,
       is_required: r.is_required === true,
+    })),
+    externalFields: externalFields.map((r: any) => ({
+      field_key: r.field_key,
+      section_key: r.section_key ?? null,
+      label: r.label ?? "",
+      sort_order: r.sort_order == null ? null : Number(r.sort_order),
+      source_type: r.source_type ?? null,
+      fabric_table: r.fabric_table ?? null,
+      fabric_column: r.fabric_column ?? null,
+      notes: r.notes ?? null,
+      is_active: r.is_active === false ? false : true,
     })),
   };
 }
@@ -205,7 +214,7 @@ export async function saveAdminInstallationDocuments(items: any[], user: any) {
     sort_order: normalizeNullableNumber(x?.sort_order ?? (index + 1) * 10),
     is_active: normalizeBool(x?.is_active, true),
     applicability_type_keys: uniqueStrings(x?.applicability_type_keys),
-    required_type_keys: uniqueStrings(x?.required_type_keys),
+    desired_type_keys: uniqueStrings(x?.desired_type_keys ?? x?.required_type_keys),
   }));
 
   if (normalized.length === 0) {
@@ -217,17 +226,50 @@ export async function saveAdminInstallationDocuments(items: any[], user: any) {
     if (!item.document_type_name) return { ok: false, error: "document_type_name is verplicht" };
 
     const applicabilitySet = new Set(item.applicability_type_keys);
-    for (const typeKey of item.required_type_keys) {
+    for (const typeKey of item.desired_type_keys) {
       if (applicabilitySet.size > 0 && !applicabilitySet.has(typeKey)) {
         return {
           ok: false,
-          error: `required_type_keys bevat ${typeKey} voor ${item.document_type_key}, maar dat type is niet van toepassing`,
+          error: `desired_type_keys bevat ${typeKey} voor ${item.document_type_key}, maar dat type is niet van toepassing`,
         };
       }
     }
   }
 
   await sqlQuery(saveAdminInstallationDocumentsSql, {
+    itemsJson: JSON.stringify(normalized),
+    updatedBy: getUserDisplayName(user),
+  });
+
+  return await getAdminInstallationsCatalog();
+}
+
+export async function saveAdminInstallationExternalFields(items: any[], user: any) {
+  const normalized = (Array.isArray(items) ? items : []).map((x, index) => ({
+    field_key: normalizeNullableString(x?.field_key),
+    section_key: normalizeNullableString(x?.section_key),
+    label: normalizeNullableString(x?.label),
+    sort_order: normalizeNullableNumber(x?.sort_order ?? (index + 1) * 10),
+    source_type: normalizeNullableString(x?.source_type) || "fabric",
+    fabric_table: normalizeNullableString(x?.fabric_table),
+    fabric_column: normalizeNullableString(x?.fabric_column),
+    notes: normalizeNullableString(x?.notes),
+    is_active: normalizeBool(x?.is_active, true),
+  }));
+
+  if (normalized.length === 0) {
+    return { ok: false, error: "geen geldige atriumvelden ontvangen" };
+  }
+
+  for (const item of normalized) {
+    if (!item.field_key) return { ok: false, error: "field_key is verplicht" };
+    if (!item.label) return { ok: false, error: `label is verplicht voor ${item.field_key}` };
+    if (!item.source_type) return { ok: false, error: `source_type is verplicht voor ${item.field_key}` };
+    if (!item.fabric_table) return { ok: false, error: `fabric_table is verplicht voor ${item.field_key}` };
+    if (!item.fabric_column) return { ok: false, error: `fabric_column is verplicht voor ${item.field_key}` };
+  }
+
+  await sqlQuery(saveAdminInstallationExternalFieldsSql, {
     itemsJson: JSON.stringify(normalized),
     updatedBy: getUserDisplayName(user),
   });

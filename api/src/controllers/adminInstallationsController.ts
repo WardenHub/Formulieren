@@ -3,6 +3,10 @@
 import type { Request, Response } from "express";
 import * as service from "../services/adminInstallationsService.js";
 
+function isErrorResult(value: any): value is { ok: false; error: string } {
+  return !!value && typeof value === "object" && value.ok === false;
+}
+
 export async function getAdminInstallationsCatalog(req: Request, res: Response) {
   try {
     const data = await service.getAdminInstallationsCatalog();
@@ -18,7 +22,7 @@ export async function saveAdminInstallationTypes(req: any, res: Response) {
     const items = req.body?.items;
     const data = await service.saveAdminInstallationTypes(items, req.user);
 
-    if (data?.ok === false) {
+    if (isErrorResult(data)) {
       return res.status(400).json(data);
     }
 
@@ -34,7 +38,7 @@ export async function saveAdminInstallationSections(req: any, res: Response) {
     const items = req.body?.items;
     const data = await service.saveAdminInstallationSections(items, req.user);
 
-    if (data?.ok === false) {
+    if (isErrorResult(data)) {
       return res.status(400).json(data);
     }
 
@@ -50,7 +54,7 @@ export async function saveAdminInstallationFields(req: any, res: Response) {
     const items = req.body?.items;
     const data = await service.saveAdminInstallationFields(items, req.user);
 
-    if (data?.ok === false) {
+    if (isErrorResult(data)) {
       return res.status(400).json(data);
     }
 
@@ -66,7 +70,7 @@ export async function saveAdminInstallationDocuments(req: any, res: Response) {
     const items = req.body?.items;
     const data = await service.saveAdminInstallationDocuments(items, req.user);
 
-    if (data?.ok === false) {
+    if (isErrorResult(data)) {
       return res.status(400).json(data);
     }
 
@@ -74,5 +78,21 @@ export async function saveAdminInstallationDocuments(req: any, res: Response) {
   } catch (err) {
     console.error(err);
     return res.status(500).json({ error: "saveAdminInstallationDocuments failed" });
+  }
+}
+
+export async function saveAdminInstallationExternalFields(req: any, res: Response) {
+  try {
+    const items = req.body?.items;
+    const data = await service.saveAdminInstallationExternalFields(items, req.user);
+
+    if (isErrorResult(data)) {
+      return res.status(400).json(data);
+    }
+
+    return res.json(data);
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ error: "saveAdminInstallationExternalFields failed" });
   }
 }

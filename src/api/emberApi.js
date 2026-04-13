@@ -444,3 +444,7 @@ export function saveAdminInstallationFields(items) {
 export function saveAdminInstallationDocuments(items) {
   return apiPut("/admin/installations/documents", { items: items ?? [] });
 }
+
+export function saveAdminInstallationExternalFields(items) {
+  return apiPut("/admin/installations/external-fields", { items: items ?? [] });
+}

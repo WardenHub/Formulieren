@@ -83,6 +83,24 @@ from dbo.DocumentTypeRequirement r
 order by
   r.document_type_key,
   r.installation_type_key;
+
+select
+  efd.field_key,
+  efd.sectie_key as section_key,
+  efd.display_name as label,
+  efd.sort_order,
+  efd.source_type,
+  efd.fabric_table,
+  efd.fabric_column,
+  efd.notes,
+  efd.is_active
+from dbo.ExternalFieldDefinition efd
+where efd.source_type = 'fabric'
+order by
+  case when efd.sectie_key is null then 1 else 0 end,
+  efd.sectie_key,
+  case when efd.sort_order is null then 999999 else efd.sort_order end,
+  efd.field_key;
 `;
 
 export const saveAdminInstallationTypesSql = `
@@ -366,7 +384,7 @@ from (
     convert(nvarchar(50), json_value(j.value, '$.document_type_key')) as document_type_key,
     convert(nvarchar(50), a.value) as installation_type_key
   from openjson(@itemsJson) j
-  cross apply openjson(json_query(j.value, '$.required_type_keys')) a
+  cross apply openjson(json_query(j.value, '$.desired_type_keys')) a
 ) src
 where exists (
   select 1
@@ -385,6 +403,65 @@ and (
     where x.document_type_key = src.document_type_key
       and x.installation_type_key = src.installation_type_key
   )
+);
+
+commit tran;
+
+select cast(1 as bit) as ok;
+`;
+
+export const saveAdminInstallationExternalFieldsSql = `
+if isjson(@itemsJson) <> 1
+begin
+  throw 50000, 'itemsJson must be valid json', 1;
+end;
+
+begin tran;
+
+merge dbo.ExternalFieldDefinition as tgt
+using (
+  select
+    convert(nvarchar(200), json_value(j.value, '$.field_key')) as field_key,
+    convert(nvarchar(100), json_value(j.value, '$.section_key')) as section_key,
+    convert(nvarchar(250), json_value(j.value, '$.label')) as label,
+    try_convert(int, json_value(j.value, '$.sort_order')) as sort_order,
+    convert(nvarchar(50), json_value(j.value, '$.source_type')) as source_type,
+    convert(nvarchar(200), json_value(j.value, '$.fabric_table')) as fabric_table,
+    convert(nvarchar(200), json_value(j.value, '$.fabric_column')) as fabric_column,
+    convert(nvarchar(2000), json_value(j.value, '$.notes')) as notes,
+    try_convert(bit, json_value(j.value, '$.is_active')) as is_active
+  from openjson(@itemsJson) j
+) as src
+on tgt.field_key = src.field_key
+when matched then update set
+  tgt.sectie_key = src.section_key,
+  tgt.display_name = src.label,
+  tgt.sort_order = src.sort_order,
+  tgt.source_type = src.source_type,
+  tgt.fabric_table = src.fabric_table,
+  tgt.fabric_column = src.fabric_column,
+  tgt.notes = src.notes,
+  tgt.is_active = isnull(src.is_active, 1)
+when not matched then insert (
+  field_key,
+  sectie_key,
+  display_name,
+  sort_order,
+  source_type,
+  fabric_table,
+  fabric_column,
+  notes,
+  is_active
+) values (
+  src.field_key,
+  src.section_key,
+  src.label,
+  src.sort_order,
+  src.source_type,
+  src.fabric_table,
+  src.fabric_column,
+  src.notes,
+  isnull(src.is_active, 1)
 );
 
 commit tran;

@@ -1,10 +1,10 @@
 // src/pages/Admin/AdminInstallationsTab.jsx
-
 import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
 import Tabs from "../../components/Tabs.jsx";
 import { CogIcon } from "@/components/ui/cog";
 import { TornadoIcon } from "@/components/ui/tornado";
 import { FileStackIcon } from "@/components/ui/file-stack";
+import { BookTextIcon } from "@/components/ui/book-text.jsx";
 
 import {
   getAdminInstallationsCatalog,
@@ -12,11 +12,13 @@ import {
   saveAdminInstallationSections,
   saveAdminInstallationFields,
   saveAdminInstallationDocuments,
+  saveAdminInstallationExternalFields,
 } from "../../api/emberApi.js";
 
 import AdminInstallationTypesTab from "./AdminInstallationTypesTab.jsx";
 import AdminInstallationFieldsTab from "./AdminInstallationFieldsTab.jsx";
 import AdminInstallationDocumentsTab from "./AdminInstallationDocumentsTab.jsx";
+import AdminInstallationExternalFieldsTab from "./AdminInstallationExternalFieldsTab.jsx";
 
 const EMPTY_HEADER_STATE = {
   visible: false,
@@ -33,6 +35,7 @@ const AdminInstallationsTab = forwardRef(function AdminInstallationsTab(
   const typesRef = useRef(null);
   const fieldsRef = useRef(null);
   const documentsRef = useRef(null);
+  const externalFieldsRef = useRef(null);
 
   const [activeTab, setActiveTab] = useState("types");
   const [catalog, setCatalog] = useState(null);
@@ -50,6 +53,10 @@ const AdminInstallationsTab = forwardRef(function AdminInstallationsTab(
   const [documentsDirty, setDocumentsDirty] = useState(false);
   const [documentsSaving, setDocumentsSaving] = useState(false);
   const [documentsSaveOk, setDocumentsSaveOk] = useState(false);
+
+  const [externalFieldsDirty, setExternalFieldsDirty] = useState(false);
+  const [externalFieldsSaving, setExternalFieldsSaving] = useState(false);
+  const [externalFieldsSaveOk, setExternalFieldsSaveOk] = useState(false);
 
   async function loadAll() {
     setLoading(true);
@@ -74,6 +81,7 @@ const AdminInstallationsTab = forwardRef(function AdminInstallationsTab(
     if (activeTab === "types") return typesDirty && !typesSaving;
     if (activeTab === "fields") return fieldsDirty && !fieldsSaving;
     if (activeTab === "documents") return documentsDirty && !documentsSaving;
+    if (activeTab === "external_fields") return externalFieldsDirty && !externalFieldsSaving;
     return false;
   }
 
@@ -81,6 +89,7 @@ const AdminInstallationsTab = forwardRef(function AdminInstallationsTab(
     if (activeTab === "types") return typesDirty && !typesSaving;
     if (activeTab === "fields") return fieldsDirty && !fieldsSaving;
     if (activeTab === "documents") return documentsDirty && !documentsSaving;
+    if (activeTab === "external_fields") return externalFieldsDirty && !externalFieldsSaving;
     return false;
   }
 
@@ -95,6 +104,10 @@ const AdminInstallationsTab = forwardRef(function AdminInstallationsTab(
     }
     if (activeTab === "documents") {
       documentsRef.current?.save?.();
+      return;
+    }
+    if (activeTab === "external_fields") {
+      externalFieldsRef.current?.save?.();
     }
   }
 
@@ -133,13 +146,21 @@ const AdminInstallationsTab = forwardRef(function AdminInstallationsTab(
               saved: fieldsSaveOk,
               pulse: fieldsDirty,
             }
-          : {
-              visible: true,
-              disabled: !documentsDirty,
-              saving: documentsSaving,
-              saved: documentsSaveOk,
-              pulse: documentsDirty,
-            };
+          : activeTab === "documents"
+            ? {
+                visible: true,
+                disabled: !documentsDirty,
+                saving: documentsSaving,
+                saved: documentsSaveOk,
+                pulse: documentsDirty,
+              }
+            : {
+                visible: true,
+                disabled: !externalFieldsDirty,
+                saving: externalFieldsSaving,
+                saved: externalFieldsSaveOk,
+                pulse: externalFieldsDirty,
+              };
 
     onHeaderSaveStateChange?.(nextState);
   }, [
@@ -153,6 +174,9 @@ const AdminInstallationsTab = forwardRef(function AdminInstallationsTab(
     documentsDirty,
     documentsSaving,
     documentsSaveOk,
+    externalFieldsDirty,
+    externalFieldsSaving,
+    externalFieldsSaveOk,
     onHeaderSaveStateChange,
   ]);
 
@@ -229,6 +253,28 @@ const AdminInstallationsTab = forwardRef(function AdminInstallationsTab(
             }}
             onSave={async (items) => {
               const res = await saveAdminInstallationDocuments(items);
+              setCatalog(res || null);
+            }}
+          />
+        ),
+      },
+      {
+        key: "external_fields",
+        label: "Atriumvelden",
+        Icon: BookTextIcon,
+        content: (
+          <AdminInstallationExternalFieldsTab
+            ref={externalFieldsRef}
+            catalog={catalog}
+            loading={loading}
+            onDirtyChange={setExternalFieldsDirty}
+            onSavingChange={setExternalFieldsSaving}
+            onSaveOk={() => {
+              setExternalFieldsSaveOk(true);
+              window.setTimeout(() => setExternalFieldsSaveOk(false), 2000);
+            }}
+            onSave={async (items) => {
+              const res = await saveAdminInstallationExternalFields(items);
               setCatalog(res || null);
             }}
           />
