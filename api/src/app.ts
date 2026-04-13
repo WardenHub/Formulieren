@@ -11,7 +11,6 @@ import adminFormsRouter from "./routes/adminForms.js";
 import homeRouter from "./routes/home.js";
 
 const app = express();
-
 const RAW_ORIGINS = (process.env.CORS_ORIGINS || "")
   .split(",")
   .map((s) => s.trim())
@@ -24,17 +23,19 @@ function norm(o: string | undefined | null) {
 const ALLOWED = new Set(RAW_ORIGINS.map(norm));
 
 app.use(express.json());
-app.use(cors({
-  origin: (origin, cb) => {
-    if (!origin) return cb(null, true);
+app.use(
+  cors({
+    origin: (origin, cb) => {
+      if (!origin) return cb(null, true);
 
-    const o = norm(origin);
-    if (ALLOWED.has(o)) return cb(null, true);
+      const o = norm(origin);
+      if (ALLOWED.has(o)) return cb(null, true);
 
-    return cb(new Error(`cors blocked origin: ${origin}`));
-  },
-  credentials: true,
-}));
+      return cb(new Error(`cors blocked origin: ${origin}`));
+    },
+    credentials: true,
+  })
+);
 
 console.log("node", process.version);
 console.log("db auth mode", process.env.DB_AUTH || "aad");
@@ -77,9 +78,10 @@ app.get("/health", async (req, res) => {
   }
 });
 
+
 app.use("/home", homeRouter);
 
-/* alles hieronder vereist user + roles */
+
 app.use(authMiddleware);
 
 app.use("/installations", installationsRouter);
