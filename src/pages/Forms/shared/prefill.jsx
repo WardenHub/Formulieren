@@ -240,6 +240,51 @@ function setQuestionBoundValue(model, question, questionName, nextValue, dataBag
   dataBag[targetName] = clonedValue;
 }
 
+function isCurrentValueCompatibleWithLastApplied(currentValue, lastAppliedValue) {
+  if (lastAppliedValue === undefined) return false;
+
+  if (
+    currentValue === null ||
+    currentValue === undefined ||
+    lastAppliedValue === null ||
+    lastAppliedValue === undefined
+  ) {
+    return currentValue === lastAppliedValue;
+  }
+
+  if (Array.isArray(lastAppliedValue)) {
+    if (!Array.isArray(currentValue)) return false;
+    if (currentValue.length !== lastAppliedValue.length) return false;
+
+    for (let i = 0; i < lastAppliedValue.length; i++) {
+      if (!isCurrentValueCompatibleWithLastApplied(currentValue[i], lastAppliedValue[i])) {
+        return false;
+      }
+    }
+
+    return true;
+  }
+
+  if (typeof lastAppliedValue === "object") {
+    if (typeof currentValue !== "object" || Array.isArray(currentValue)) return false;
+
+    for (const key of Object.keys(lastAppliedValue)) {
+      if (!isCurrentValueCompatibleWithLastApplied(currentValue[key], lastAppliedValue[key])) {
+        return false;
+      }
+    }
+
+    return true;
+  }
+
+  return deepEqual(currentValue, lastAppliedValue);
+}
+
+function canRefreshBoundValue(curVal, lastApplied) {
+  if (isEmptyAnswer(curVal)) return true;
+  return isCurrentValueCompatibleWithLastApplied(curVal, lastApplied);
+}
+
 export function applyBindings({
   model,
   prefillPayload,
@@ -272,7 +317,7 @@ export function applyBindings({
     const lastApplied = nextApplied[item.name];
 
     if (isRefresh) {
-      const canRefresh = isEmptyAnswer(curVal) || deepEqual(curVal, lastApplied);
+      const canRefresh = canRefreshBoundValue(curVal, lastApplied);
       if (!canRefresh) continue;
 
       setQuestionBoundValue(model, q, item.name, nextVal, data);
