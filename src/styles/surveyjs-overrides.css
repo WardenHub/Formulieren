@@ -454,3 +454,170 @@
     --ember-form-nav-top: 52px;
   }
 }
+/* =========================================================
+   Ember dark-theme contrast fixes ; SurveyJS action icons
+   - matrixdynamic remove icon always visible
+   - progress text / page indicator readable
+   - action buttons should not be black-on-black
+   ========================================================= */
+
+.sd-root-modern .sd-action,
+.sd-root-modern .sd-action > svg,
+.sd-root-modern .sd-action svg,
+.sd-root-modern .sd-btn-icon,
+.sd-root-modern .sd-btn-icon > svg,
+.sd-root-modern .sd-navigation__complete-btn,
+.sd-root-modern .sd-matrixdynamic__remove-btn,
+.sd-root-modern .sd-matrixdynamic__remove,
+.sd-root-modern .sd-matrixdynamic__remove-button {
+  color: rgba(255, 255, 255, 0.72) !important;
+  fill: rgba(255, 255, 255, 0.72) !important;
+  stroke: rgba(255, 255, 255, 0.72) !important;
+  opacity: 1 !important;
+}
+
+.sd-root-modern .sd-action:hover,
+.sd-root-modern .sd-action:hover > svg,
+.sd-root-modern .sd-action:hover svg,
+.sd-root-modern .sd-btn-icon:hover,
+.sd-root-modern .sd-btn-icon:hover > svg,
+.sd-root-modern .sd-matrixdynamic__remove-btn:hover,
+.sd-root-modern .sd-matrixdynamic__remove:hover,
+.sd-root-modern .sd-matrixdynamic__remove-button:hover {
+  color: rgba(255, 255, 255, 0.96) !important;
+  fill: rgba(255, 255, 255, 0.96) !important;
+  stroke: rgba(255, 255, 255, 0.96) !important;
+  opacity: 1 !important;
+}
+
+/* Remove-row button in matrixdynamic should never disappear on dark background */
+.sd-root-modern .sd-matrixdynamic__remove-btn,
+.sd-root-modern .sd-matrixdynamic__remove,
+.sd-root-modern .sd-matrixdynamic__remove-button,
+.sd-root-modern .sd-matrixdynamic__remove-btn .sd-action,
+.sd-root-modern .sd-matrixdynamic__remove .sd-action,
+.sd-root-modern .sd-matrixdynamic__remove-button .sd-action {
+  visibility: visible !important;
+  opacity: 1 !important;
+}
+
+/* If SurveyJS applies muted state classes, keep them readable */
+.sd-root-modern .sd-action--hidden,
+.sd-root-modern .sd-action--disabled,
+.sd-root-modern .sd-navigation__prev-btn[disabled],
+.sd-root-modern .sd-navigation__next-btn[disabled] {
+  opacity: 0.55 !important;
+}
+
+/* Bottom progress text ; e.g. "Pagina 5 van 8" */
+.sd-root-modern .sd-progress__text,
+.sd-root-modern .sd-progress-buttons__page-title,
+.sd-root-modern .sd-progress-buttons__page-description,
+.sd-root-modern .sd-navigation__progress,
+.sd-root-modern .sd-body__navigation .sd-progress__text,
+.sd-root-modern .sd-body__navigation .sd-navigation__progress {
+  color: rgba(255, 255, 255, 0.72) !important;
+  opacity: 1 !important;
+}
+
+/* Progress numbers / labels should remain readable in all states */
+.sd-root-modern .sd-progress-buttons__list-element,
+.sd-root-modern .sd-progress-buttons__list-element span,
+.sd-root-modern .sd-progress-buttons__list-element button {
+  color: rgba(255, 255, 255, 0.72) !important;
+}
+
+.sd-root-modern .sd-progress-buttons__list-element--current,
+.sd-root-modern .sd-progress-buttons__list-element--current span,
+.sd-root-modern .sd-progress-buttons__list-element--current button {
+  color: rgba(255, 255, 255, 0.96) !important;
+}
+
+/* Time/date picker icons inside matrix rows */
+.sd-root-modern .sd-input__control-icon,
+.sd-root-modern .sd-input__control-icon svg,
+.sd-root-modern .sd-input__suffix,
+.sd-root-modern .sd-input__suffix svg {
+  color: rgba(255, 255, 255, 0.72) !important;
+  fill: rgba(255, 255, 255, 0.72) !important;
+  stroke: rgba(255, 255, 255, 0.72) !important;
+  opacity: 1 !important;
+}
+
+/* =========================================================
+   Ember ; matrixdynamic remove button polish
+   ========================================================= */
+
+.sd-root-modern .sd-matrixdynamic__remove,
+.sd-root-modern .sd-matrixdynamic__remove-btn,
+.sd-root-modern .sd-matrixdynamic__remove-button {
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+  min-width: auto !important;
+  width: auto !important;
+  height: auto !important;
+  padding: 0 !important;
+}
+
+.sd-root-modern .sd-matrixdynamic__remove .sd-action,
+.sd-root-modern .sd-matrixdynamic__remove-btn .sd-action,
+.sd-root-modern .sd-matrixdynamic__remove-button .sd-action,
+.sd-root-modern .sd-matrixdynamic__remove .sd-btn-icon,
+.sd-root-modern .sd-matrixdynamic__remove-btn .sd-btn-icon,
+.sd-root-modern .sd-matrixdynamic__remove-button .sd-btn-icon {
+  width: 34px !important;
+  height: 34px !important;
+  min-width: 34px !important;
+  min-height: 34px !important;
+  border-radius: 999px !important;
+  background: rgba(255, 255, 255, 0.04) !important;
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+  box-shadow: none !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  transition:
+    background 0.16s ease,
+    border-color 0.16s ease,
+    transform 0.16s ease,
+    opacity 0.16s ease !important;
+}
+
+.sd-root-modern .sd-matrixdynamic__remove .sd-action:hover,
+.sd-root-modern .sd-matrixdynamic__remove-btn .sd-action:hover,
+.sd-root-modern .sd-matrixdynamic__remove-button .sd-action:hover,
+.sd-root-modern .sd-matrixdynamic__remove .sd-btn-icon:hover,
+.sd-root-modern .sd-matrixdynamic__remove-btn .sd-btn-icon:hover,
+.sd-root-modern .sd-matrixdynamic__remove-button .sd-btn-icon:hover {
+  background: rgba(249, 115, 22, 0.12) !important;
+  border-color: rgba(249, 115, 22, 0.30) !important;
+  transform: translateY(-1px) !important;
+}
+
+.sd-root-modern .sd-matrixdynamic__remove .sd-action svg,
+.sd-root-modern .sd-matrixdynamic__remove-btn .sd-action svg,
+.sd-root-modern .sd-matrixdynamic__remove-button .sd-action svg,
+.sd-root-modern .sd-matrixdynamic__remove .sd-btn-icon svg,
+.sd-root-modern .sd-matrixdynamic__remove-btn .sd-btn-icon svg,
+.sd-root-modern .sd-matrixdynamic__remove-button .sd-btn-icon svg {
+  width: 16px !important;
+  height: 16px !important;
+  stroke-width: 1.8 !important;
+}
+
+.sd-root-modern .sd-matrixdynamic__remove-cell,
+.sd-root-modern td.sd-matrixdynamic__remove,
+.sd-root-modern td.sd-matrixdynamic__remove-cell {
+  background: transparent !important;
+  width: 52px !important;
+  min-width: 52px !important;
+  text-align: center !important;
+  padding-left: 8px !important;
+  padding-right: 8px !important;
+}
+
+/* voorkom zwarte hover-tile rechts */
+.sd-root-modern .sd-matrixdynamic__row td:last-child {
+  background: transparent !important;
+}

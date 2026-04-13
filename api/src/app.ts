@@ -11,9 +11,10 @@ import adminFormsRouter from "./routes/adminForms.js";
 import homeRouter from "./routes/home.js";
 
 const app = express();
+
 const RAW_ORIGINS = (process.env.CORS_ORIGINS || "")
   .split(",")
-  .map(s => s.trim())
+  .map((s) => s.trim())
   .filter(Boolean);
 
 function norm(o: string | undefined | null) {
@@ -54,7 +55,12 @@ if ((process.env.DB_AUTH || "aad") === "sql") {
 }
 
 app.get("/", (req, res) => {
-  console.log("hit /", new Date().toISOString(), "auth", req.headers.authorization ? "yes" : "no");
+  console.log(
+    "hit /",
+    new Date().toISOString(),
+    "auth",
+    req.headers.authorization ? "yes" : "no"
+  );
   res.json({ ok: true, service: "ember-api", blij: "Jesse" });
 });
 
@@ -66,18 +72,20 @@ app.get("/health", async (req, res) => {
       db: pool?.connected ? 1 : 0,
       Jesse: "Blij 😁",
     });
-  } catch (err) {
+  } catch {
     res.status(500).json({ api: "ok", db: "error" });
   }
 });
 
+app.use("/home", homeRouter);
+
+/* alles hieronder vereist user + roles */
 app.use(authMiddleware);
 
 app.use("/installations", installationsRouter);
 app.use("/installation-types", installationTypesRouter);
 app.use("/admin/forms", adminFormsRouter);
 app.use("/forms-monitor", formsMonitorRouter);
-app.use("/home", homeRouter);
 
 app.get("/me", (req: any, res) => {
   res.json({ user: req.user, roles: req.roles || [] });
