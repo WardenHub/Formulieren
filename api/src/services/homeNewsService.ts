@@ -35,7 +35,7 @@ function extractTag(block: string, tagName: string): string {
 function parseItems(xml: string, take: number): HomeNewsItem[] {
   const itemBlocks = Array.from(
     xml.matchAll(/<item\b[\s\S]*?<\/item>/gi),
-    m => m[0]
+    (m) => m[0]
   );
 
   return itemBlocks
@@ -108,9 +108,11 @@ export async function fetchHomeNews(): Promise<HomeNewsItem[]> {
   }
 }
 
-export async function fetchHomeNewsImage(url: string): Promise<{ buffer: Buffer, contentType: string | null } | null> {
+export async function fetchHomeNewsImage(
+  url: string
+): Promise<{ buffer: Buffer, contentType: string | null } | null> {
   const auth = getRssAuthHeader();
-  const timeoutMs = Number(process.env.HOME_NEWS_TIMEOUT_MS || 2500);
+  const timeoutMs = Number(process.env.HOME_NEWS_IMAGE_TIMEOUT_MS || 10000);
 
   if (!auth) return null;
 
@@ -128,7 +130,10 @@ export async function fetchHomeNewsImage(url: string): Promise<{ buffer: Buffer,
     });
 
     if (!res.ok) {
-      console.warn("[home-news-image] upstream image failed", res.status);
+      console.warn("[home-news-image] upstream image failed", {
+        status: res.status,
+        url,
+      });
       return null;
     }
 
@@ -143,6 +148,7 @@ export async function fetchHomeNewsImage(url: string): Promise<{ buffer: Buffer,
       cause: err?.cause?.message || null,
       name: err?.name || null,
       url,
+      timeoutMs,
     });
     return null;
   } finally {

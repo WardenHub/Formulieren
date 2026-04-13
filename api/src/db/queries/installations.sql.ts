@@ -130,17 +130,29 @@ select
   dt.sectie_key as section_key,
   dt.sort_order,
   dt.is_active,
-  cast(0 as bit) as is_required
+  cast(
+    case
+      when @installationTypeKey is not null
+       and exists (
+         select 1
+         from dbo.DocumentTypeRequirement r
+         where r.document_type_key = dt.document_type_key
+           and r.installation_type_key = @installationTypeKey
+           and r.is_required = 1
+       )
+      then 1
+      else 0
+    end
+    as bit
+  ) as is_required
 from dbo.DocumentType dt
 where dt.is_active = 1
 and (
-  -- geen mappings => beschikbaar voor alle types (ook als installatietype nog null is)
   not exists (
     select 1
     from dbo.DocumentTypeInstallationType x
     where x.document_type_key = dt.document_type_key
   )
-  -- wel mappings => alleen zichtbaar bij match (en alleen als type bekend is)
   or (
     @installationTypeKey is not null
     and exists (

@@ -8,6 +8,7 @@ import installationsRouter from "./routes/installations.js";
 import installationTypesRouter from "./routes/installationTypes.js";
 import formsMonitorRouter from "./routes/formsMonitor.js";
 import adminFormsRouter from "./routes/adminForms.js";
+import adminInstallationsRouter from "./routes/adminInstallations.js";
 import homeRouter from "./routes/home.js";
 
 const app = express();
@@ -87,6 +88,7 @@ app.use(authMiddleware);
 app.use("/installations", installationsRouter);
 app.use("/installation-types", installationTypesRouter);
 app.use("/admin/forms", adminFormsRouter);
+app.use("/admin/installations", adminInstallationsRouter);
 app.use("/forms-monitor", formsMonitorRouter);
 
 app.get("/me", (req: any, res) => {

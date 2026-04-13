@@ -423,3 +423,24 @@ export function saveAdminFormConfig(formId, payload) {
 export function createAdminFormVersion(formId, payload) {
   return apiPost(`/admin/forms/${encodeURIComponent(formId)}/versions`, payload ?? {});
 }
+
+// admin installations
+export function getAdminInstallationsCatalog() {
+  return apiGet("/admin/installations");
+}
+
+export function saveAdminInstallationTypes(items) {
+  return apiPut("/admin/installations/types", { items: items ?? [] });
+}
+
+export function saveAdminInstallationSections(items) {
+  return apiPut("/admin/installations/sections", { items: items ?? [] });
+}
+
+export function saveAdminInstallationFields(items) {
+  return apiPut("/admin/installations/fields", { items: items ?? [] });
+}
+
+export function saveAdminInstallationDocuments(items) {
+  return apiPut("/admin/installations/documents", { items: items ?? [] });
+}

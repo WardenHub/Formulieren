@@ -1,13 +1,15 @@
 // /src/pages/Admin/AdminPage.jsx
-
-import { forwardRef, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Tabs from "../../components/Tabs.jsx";
 import SaveButton from "../../components/SaveButton.jsx";
 import AdminFormsTab from "./AdminFormsTab.jsx";
+import AdminInstallationsTab from "./AdminInstallationsTab.jsx";
 import { BrainIcon } from "@/components/ui/brain";
+import { CogIcon } from "@/components/ui/cog";
 
 export default function AdminPage() {
   const formsRef = useRef(null);
+  const installationsRef = useRef(null);
 
   const [activeTab, setActiveTab] = useState("forms");
 
@@ -20,8 +22,15 @@ export default function AdminPage() {
   });
 
   useEffect(() => {
+    function getActiveRef() {
+      if (activeTab === "forms") return formsRef.current;
+      if (activeTab === "installations") return installationsRef.current;
+      return null;
+    }
+
     function onBeforeUnload(e) {
-      if (activeTab === "forms" && formsRef.current?.hasUnsavedChanges?.()) {
+      const ref = getActiveRef();
+      if (ref?.hasUnsavedChanges?.()) {
         e.preventDefault();
         e.returnValue = "";
       }
@@ -32,13 +41,20 @@ export default function AdminPage() {
   }, [activeTab]);
 
   useEffect(() => {
+    function getActiveRef() {
+      if (activeTab === "forms") return formsRef.current;
+      if (activeTab === "installations") return installationsRef.current;
+      return null;
+    }
+
     function onKeyDown(e) {
       const key = String(e.key || "");
 
       if (e.altKey && (key === "s" || key === "S")) {
-        if (activeTab === "forms" && formsRef.current?.canSaveActiveTab?.()) {
+        const ref = getActiveRef();
+        if (ref?.canSaveActiveTab?.()) {
           e.preventDefault();
-          formsRef.current?.saveActiveTab?.();
+          ref.saveActiveTab?.();
         }
       }
     }
@@ -60,6 +76,17 @@ export default function AdminPage() {
           />
         ),
       },
+      {
+        key: "installations",
+        label: "Installaties",
+        Icon: CogIcon,
+        content: (
+          <AdminInstallationsTab
+            ref={installationsRef}
+            onHeaderSaveStateChange={setHeaderSaveState}
+          />
+        ),
+      },
     ];
   }, []);
 
@@ -67,7 +94,19 @@ export default function AdminPage() {
     return tabs.find((t) => t.key === activeTab)?.content ?? null;
   }, [tabs, activeTab]);
 
-  const showHeaderSave = activeTab === "forms" && headerSaveState.visible;
+  const showHeaderSave =
+    (activeTab === "forms" || activeTab === "installations") &&
+    headerSaveState.visible;
+
+  function handleSaveClick() {
+    if (activeTab === "forms") {
+      formsRef.current?.saveActiveTab?.();
+      return;
+    }
+    if (activeTab === "installations") {
+      installationsRef.current?.saveActiveTab?.();
+    }
+  }
 
   return (
     <div>
@@ -89,7 +128,7 @@ export default function AdminPage() {
                 saving={headerSaveState.saving}
                 saved={headerSaveState.saved}
                 pulse={headerSaveState.pulse}
-                onClick={() => formsRef.current?.saveActiveTab?.()}
+                onClick={handleSaveClick}
               />
             )}
           </div>
