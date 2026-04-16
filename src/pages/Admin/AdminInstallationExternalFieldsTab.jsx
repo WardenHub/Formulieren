@@ -8,6 +8,20 @@ import { ArrowUpIcon } from "@/components/ui/arrow-up";
 import { ArrowDownIcon } from "@/components/ui/arrow-down";
 
 function buildDraft(catalog) {
+  const typeLinks = Array.isArray(catalog?.externalFieldTypeLinks) ? catalog.externalFieldTypeLinks : [];
+  const applicabilityByField = new Map();
+
+  for (const link of typeLinks) {
+    const fieldKey = String(link?.field_key || "").trim();
+    const typeKey = String(link?.installation_type_key || "").trim();
+    if (!fieldKey || !typeKey) continue;
+
+    if (!applicabilityByField.has(fieldKey)) {
+      applicabilityByField.set(fieldKey, []);
+    }
+    applicabilityByField.get(fieldKey).push(typeKey);
+  }
+
   const externalFields = Array.isArray(catalog?.externalFields)
     ? catalog.externalFields
         .map((x, index) => ({
@@ -20,6 +34,7 @@ function buildDraft(catalog) {
           fabric_table: x.fabric_table ?? "",
           fabric_column: x.fabric_column ?? "",
           notes: x.notes ?? "",
+          applicability_type_keys: [...new Set(applicabilityByField.get(x.field_key) || [])],
         }))
         .sort((a, b) => {
           const sa = Number(a?.sort_order ?? 0);
@@ -44,6 +59,10 @@ function reindex(items) {
     ...row,
     sort_order: (index + 1) * 10,
   }));
+}
+
+function uniqueStrings(values) {
+  return [...new Set((Array.isArray(values) ? values : []).map((x) => String(x || "").trim()).filter(Boolean))];
 }
 
 function statusBadge(isActive) {
@@ -109,6 +128,18 @@ const AdminInstallationExternalFieldsTab = forwardRef(function AdminInstallation
   }, [saving, onSavingChange]);
 
   const sections = Array.isArray(catalog?.sections) ? catalog.sections : [];
+  const installationTypes = Array.isArray(catalog?.installationTypes) ? catalog.installationTypes : [];
+
+  const activeInstallationTypes = useMemo(() => {
+    return installationTypes
+      .filter((x) => x?.is_active !== false)
+      .sort((a, b) => {
+        const sa = Number(a?.sort_order ?? 999999);
+        const sb = Number(b?.sort_order ?? 999999);
+        if (sa !== sb) return sa - sb;
+        return String(a?.display_name || "").localeCompare(String(b?.display_name || ""));
+      });
+  }, [installationTypes]);
 
   const groupedSections = useMemo(() => {
     const sectionMap = new Map();
@@ -147,6 +178,19 @@ const AdminInstallationExternalFieldsTab = forwardRef(function AdminInstallation
 
   function setRow(index, patch) {
     setDraft((prev) => prev.map((row, i) => (i === index ? { ...row, ...patch } : row)));
+  }
+
+  function toggleApplicabilityType(index, typeKey) {
+    const row = draft[index];
+    if (!row) return;
+
+    const current = new Set(uniqueStrings(row.applicability_type_keys));
+    if (current.has(typeKey)) current.delete(typeKey);
+    else current.add(typeKey);
+
+    setRow(index, {
+      applicability_type_keys: [...current],
+    });
   }
 
   function confirmTechnicalChange(row, fieldLabel, oldValue, nextValue) {
@@ -211,6 +255,7 @@ const AdminInstallationExternalFieldsTab = forwardRef(function AdminInstallation
         fabric_table: "AtriumInstallationBase",
         fabric_column: "",
         notes: "",
+        applicability_type_keys: [],
       },
     ]);
   }
@@ -223,6 +268,7 @@ const AdminInstallationExternalFieldsTab = forwardRef(function AdminInstallation
       const payload = draft.map((row, index) => ({
         ...row,
         sort_order: normalizeNumber(row.sort_order, (index + 1) * 10),
+        applicability_type_keys: uniqueStrings(row.applicability_type_keys),
       }));
 
       await onSave?.(payload);
@@ -243,9 +289,10 @@ const AdminInstallationExternalFieldsTab = forwardRef(function AdminInstallation
       <div className="admin-panel">
         <div className="admin-toolbar">
           <div className="admin-toolbar-title">
-            <div style={{ fontWeight: 700 }}>Atriumvelden</div>
-            <div className="muted" style={{ fontSize: 13 }}>
-              Beheer van velden die uit Atrium/Fabric worden opgehaald. Je beheert hier label, sectie, sortering, toelichting en ook de technische bronvelden.
+            <div className="admin-panel-title">Atriumvelden</div>
+            <div className="admin-panel-subtitle">
+              Beheer van velden die uit Atrium/Fabric worden opgehaald. Je beheert hier label, sectie,
+              sortering, toelichting en per installatiesoort de zichtbaarheid.
             </div>
           </div>
 
@@ -265,7 +312,10 @@ const AdminInstallationExternalFieldsTab = forwardRef(function AdminInstallation
 
         <div className="admin-chip-row">
           <span className="admin-chip admin-chip--warning">
-            Bij twijfel hier GEEN wijzigingen doen (Opmerking/toelichging wijzigen kan prima - overige wijzigingen IN OVERLEG).
+            Bij twijfel technische bronvelden niet aanpassen zonder overleg.
+          </span>
+          <span className="admin-chip admin-chip--info">
+            Geen geselecteerde installatiesoorten = zichtbaar voor alle types
           </span>
         </div>
 
@@ -311,6 +361,9 @@ const AdminInstallationExternalFieldsTab = forwardRef(function AdminInstallation
 
                         const fieldOpenKey = row.field_key || `__field_${fieldIndex}`;
                         const isFieldOpen = openFieldKeys[fieldOpenKey] === true;
+                        const selectedTypeCount = Array.isArray(row.applicability_type_keys)
+                          ? row.applicability_type_keys.length
+                          : 0;
 
                         return (
                           <div key={`${row.field_key || "new"}:${fieldIndex}`} className="admin-subcard">
@@ -340,9 +393,11 @@ const AdminInstallationExternalFieldsTab = forwardRef(function AdminInstallation
                                 </div>
 
                                 <div className="admin-row-summary-cell">
-                                  <div className="admin-row-summary-label">Bron</div>
+                                  <div className="admin-row-summary-label">Toepassing</div>
                                   <div className="admin-row-summary-value admin-row-summary-value--muted">
-                                    {row.fabric_table || "-"} · {row.fabric_column || "-"}
+                                    {selectedTypeCount > 0
+                                      ? `${selectedTypeCount} installatiesoorten`
+                                      : "Alle installatiesoorten"}
                                   </div>
                                 </div>
 
@@ -364,8 +419,8 @@ const AdminInstallationExternalFieldsTab = forwardRef(function AdminInstallation
                                 <div className="admin-toolbar">
                                   <div className="admin-toolbar-title">
                                     <div className="admin-subcard-title">Instellingen</div>
-                                    <div className="muted" style={{ fontSize: 13 }}>
-                                      Presentatie en broninstellingen voor dit Atriumveld.
+                                    <div className="muted admin-inline-help">
+                                      Presentatie, zichtbaarheid en broninstellingen voor dit Atriumveld.
                                     </div>
                                   </div>
 
@@ -481,6 +536,57 @@ const AdminInstallationExternalFieldsTab = forwardRef(function AdminInstallation
                                         <option value="1">Ja</option>
                                         <option value="0">Nee</option>
                                       </select>
+                                    </div>
+                                  </div>
+
+                                  <div className="cf-row wide">
+                                    <div className="cf-label">
+                                      <div className="cf-label-text">Toepasbare installatiesoorten</div>
+                                    </div>
+                                    <div className="cf-control">
+                                      <div className="admin-check-grid">
+                                        {activeInstallationTypes.length === 0 ? (
+                                          <div className="admin-empty-note">
+                                            Geen actieve installatiesoorten gevonden.
+                                          </div>
+                                        ) : (
+                                          activeInstallationTypes.map((type) => {
+                                            const typeKey = type.installation_type_key;
+                                            const checked = Array.isArray(row.applicability_type_keys)
+                                              ? row.applicability_type_keys.includes(typeKey)
+                                              : false;
+
+                                            return (
+                                              <label key={typeKey} className="admin-check-row admin-check-row--toggle">
+                                                <div className="admin-check-row-main">
+                                                  <div className="admin-check-row-title">
+                                                    {type.display_name || typeKey}
+                                                  </div>
+                                                  <div className="admin-check-row-sub">
+                                                    {typeKey}
+                                                  </div>
+                                                </div>
+
+                                                <span className="admin-chip admin-chip--muted-soft">
+                                                  {checked ? "Geselecteerd" : "Niet geselecteerd"}
+                                                </span>
+
+                                                <div className="admin-check-toggle">
+                                                  <input
+                                                    type="checkbox"
+                                                    checked={checked}
+                                                    onChange={() => toggleApplicabilityType(fieldIndex, typeKey)}
+                                                  />
+                                                </div>
+                                              </label>
+                                            );
+                                          })
+                                        )}
+                                      </div>
+
+                                      <div className="admin-info-inline" style={{ marginTop: 8 }}>
+                                        Laat alles leeg om dit veld voor alle installatiesoorten zichtbaar te maken.
+                                      </div>
                                     </div>
                                   </div>
 

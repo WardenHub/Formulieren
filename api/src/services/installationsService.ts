@@ -115,17 +115,17 @@ export async function getCatalog(code: string) {
   const [sections, externalFields, customFields, documentTypes, optionRows] =
     await Promise.all([
       sqlQuery(getCatalogSectionsSql),
-      sqlQuery(getCatalogExternalFieldsSql),
 
       // belangrijk: param altijd meegeven (ook null)
+      sqlQuery(getCatalogExternalFieldsSql, { installationTypeKey }),
+
       sqlQuery(getCatalogCustomFieldsSql, { installationTypeKey }),
 
       sqlQuery(getCatalogDocumentTypesSql, { installationTypeKey }),
 
-      // NEW: dropdown options
       sqlQuery(getCatalogCustomFieldOptionsSql),
     ]);
-
+    
   const fields = [...externalFields, ...customFields];
 
   // group options by field_key -> [{value,label}]

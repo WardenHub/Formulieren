@@ -101,6 +101,14 @@ order by
   efd.sectie_key,
   case when efd.sort_order is null then 999999 else efd.sort_order end,
   efd.field_key;
+
+select
+  x.field_key,
+  x.installation_type_key
+from dbo.ExternalFieldDefinitionType x
+order by
+  x.field_key,
+  x.installation_type_key;
 `;
 
 export const saveAdminInstallationTypesSql = `
@@ -462,6 +470,34 @@ when not matched then insert (
   src.fabric_column,
   src.notes,
   isnull(src.is_active, 1)
+);
+
+delete t
+from dbo.ExternalFieldDefinitionType t
+where exists (
+  select 1
+  from openjson(@itemsJson) j
+  where convert(nvarchar(200), json_value(j.value, '$.field_key')) = t.field_key
+);
+
+insert into dbo.ExternalFieldDefinitionType (
+  field_key,
+  installation_type_key
+)
+select
+  src.field_key,
+  src.installation_type_key
+from (
+  select distinct
+    convert(nvarchar(200), json_value(j.value, '$.field_key')) as field_key,
+    convert(nvarchar(50), a.value) as installation_type_key
+  from openjson(@itemsJson) j
+  cross apply openjson(json_query(j.value, '$.applicability_type_keys')) a
+) src
+where exists (
+  select 1
+  from dbo.InstallationType it
+  where it.installation_type_key = src.installation_type_key
 );
 
 commit tran;

@@ -46,7 +46,8 @@ order by
 // note; ExternalFieldDefinition has no data_type; we default to 'string'
 // ------------------------------
 export const getCatalogExternalFieldsSql = `
--- external fields
+-- expects: @installationTypeKey (nullable)
+
 select
   efd.field_key,
   efd.sectie_key as section_key,
@@ -61,15 +62,30 @@ select
   efd.notes,
   efd.is_active
 from dbo.ExternalFieldDefinition efd
+where efd.is_active = 1
+and (
+  not exists (
+    select 1
+    from dbo.ExternalFieldDefinitionType x
+    where x.field_key = efd.field_key
+  )
+  or (
+    @installationTypeKey is not null
+    and exists (
+      select 1
+      from dbo.ExternalFieldDefinitionType x
+      where x.field_key = efd.field_key
+        and x.installation_type_key = @installationTypeKey
+    )
+  )
+)
 order by
   case when efd.sectie_key is null then 1 else 0 end,
   efd.sectie_key,
   case when efd.sort_order is null then 999999 else efd.sort_order end,
   efd.display_name,
   efd.field_key;
-
 `;
-
 
 // ------------------------------
 // catalog; custom fields (editable)

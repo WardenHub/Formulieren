@@ -2582,3 +2582,115 @@ input[type="date"].input{
     grid-template-columns: 1fr;
   }
 }
+
+/* =========================================================
+   Admin installation external fields
+   ========================================================= */
+
+.admin-check-row--toggle{
+  cursor: pointer;
+}
+
+.admin-check-row--toggle:hover{
+  background: rgba(255,255,255,0.05);
+  border-color: rgba(255,255,255,0.16);
+}
+
+.admin-inline-help{
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+/* =========================================================
+   Atrium tab
+   ========================================================= */
+
+.atrium-tab{
+  display: grid;
+  gap: 12px;
+}
+
+.atrium-tab-title{
+  margin: 0;
+}
+
+.atrium-section-list{
+  display: grid;
+  gap: 10px;
+}
+
+.atrium-section-card{
+  padding: 12px;
+  border: 1px solid rgba(255,255,255,0.12);
+  border-radius: 12px;
+  background: rgba(255,255,255,0.02);
+}
+
+.atrium-section-head{
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  background: transparent;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  text-align: left;
+}
+
+.atrium-section-head-main{
+  min-width: 0;
+  display: grid;
+  gap: 6px;
+}
+
+.atrium-section-title{
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.atrium-section-meta{
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  align-items: center;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.atrium-section-head-icon{
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+}
+
+.atrium-section-body{
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.atrium-field-row{
+  display: grid;
+  grid-template-columns: 260px 1fr;
+  gap: 12px;
+  align-items: baseline;
+}
+
+.atrium-field-label{
+  color: var(--muted);
+  min-width: 0;
+}
+
+.atrium-field-value{
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 760px){
+  .atrium-field-row{
+    grid-template-columns: 1fr;
+    gap: 4px;
+  }
+}

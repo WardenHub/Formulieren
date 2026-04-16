@@ -51,6 +51,7 @@ export async function getAdminInstallationsCatalog() {
   const documentTypeLinks = Array.isArray(recordsets[6]) ? recordsets[6] : [];
   const documentTypeRequirements = Array.isArray(recordsets[7]) ? recordsets[7] : [];
   const externalFields = Array.isArray(recordsets[8]) ? recordsets[8] : [];
+  const externalFieldTypeLinks = Array.isArray(recordsets[9]) ? recordsets[9] : [];
 
   return {
     installationTypes: installationTypes.map((r: any) => ({
@@ -110,6 +111,10 @@ export async function getAdminInstallationsCatalog() {
       fabric_column: r.fabric_column ?? null,
       notes: r.notes ?? null,
       is_active: r.is_active === false ? false : true,
+    })),
+    externalFieldTypeLinks: externalFieldTypeLinks.map((r: any) => ({
+      field_key: r.field_key,
+      installation_type_key: r.installation_type_key,
     })),
   };
 }
@@ -255,6 +260,7 @@ export async function saveAdminInstallationExternalFields(items: any[], user: an
     fabric_column: normalizeNullableString(x?.fabric_column),
     notes: normalizeNullableString(x?.notes),
     is_active: normalizeBool(x?.is_active, true),
+    applicability_type_keys: uniqueStrings(x?.applicability_type_keys),
   }));
 
   if (normalized.length === 0) {
