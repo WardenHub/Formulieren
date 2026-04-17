@@ -11,6 +11,7 @@ import AdminPage from "../pages/Admin/AdminPage.jsx";
 import FormsMonitorPage from "../pages/Monitor/FormsMonitorPage.jsx";
 import FormsMonitorDetailPage from "../pages/Monitor/FormsMonitorDetailPage.jsx";
 import NotFound from "../pages/NotFound.jsx";
+import ProfilePage from "../pages/Profile/ProfilePage.jsx";
 
 export default function AppRoutes() {
   return (
@@ -31,7 +32,7 @@ export default function AppRoutes() {
 
         <Route path="/monitor/formulieren" element={<FormsMonitorPage />} />
         <Route path="/monitor/formulieren/:instanceId" element={<FormsMonitorDetailPage />} />
-
+        <Route path="/profiel" element={<ProfilePage />} />
         <Route path="/dev/formdev" element={<SurveyDesigner />} />
         <Route path="/admin" element={<AdminPage />} />
         <Route path="*" element={<NotFound />} />

@@ -448,3 +448,31 @@ export function saveAdminInstallationDocuments(items) {
 export function saveAdminInstallationExternalFields(items) {
   return apiPut("/admin/installations/external-fields", { items: items ?? [] });
 }
+
+export function getMyProfile() {
+  return apiGet("/me/profile");
+}
+
+export function putMyProfile(payload) {
+  return apiPut("/me/profile", payload ?? {});
+}
+
+export function uploadMyAvatar(file) {
+  const fd = new FormData();
+  fd.append("file", file);
+  return httpUpload("/me/profile/avatar", fd);
+}
+
+export function deleteMyAvatar() {
+  return apiDelete("/me/profile/avatar");
+}
+
+export function uploadMySignature(file) {
+  const fd = new FormData();
+  fd.append("file", file);
+  return httpUpload("/me/profile/signature", fd);
+}
+
+export function deleteMySignature() {
+  return apiDelete("/me/profile/signature");
+}

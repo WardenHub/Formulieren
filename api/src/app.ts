@@ -10,6 +10,7 @@ import formsMonitorRouter from "./routes/formsMonitor.js";
 import adminFormsRouter from "./routes/adminForms.js";
 import adminInstallationsRouter from "./routes/adminInstallations.js";
 import homeRouter from "./routes/home.js";
+import profileRouter from "./routes/profile.js";
 
 const app = express();
 const RAW_ORIGINS = (process.env.CORS_ORIGINS || "")
@@ -79,12 +80,10 @@ app.get("/health", async (req, res) => {
   }
 });
 
-
 app.use("/home", homeRouter);
 
-
 app.use(authMiddleware);
-
+app.use("/me/profile", profileRouter);
 app.use("/installations", installationsRouter);
 app.use("/installation-types", installationTypesRouter);
 app.use("/admin/forms", adminFormsRouter);

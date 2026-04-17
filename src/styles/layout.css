@@ -14,6 +14,34 @@
   --shadow: 0 12px 40px rgba(0,0,0,.45);
 }
 
+html[data-appearance="dark"]{
+  color-scheme: dark;
+
+  --bg: #0b0f14;
+  --surface: #0f1620;
+  --surface-2: #111b26;
+
+  --border: rgba(255,255,255,.08);
+  --text: rgba(255,255,255,.92);
+  --muted: rgba(255,255,255,.62);
+
+  --shadow: 0 12px 40px rgba(0,0,0,.45);
+}
+
+html[data-appearance="light"]{
+  color-scheme: light;
+
+  --bg: #f4f7fb;
+  --surface: #ffffff;
+  --surface-2: #f7fafc;
+
+  --border: rgba(15,23,42,.10);
+  --text: rgba(15,23,42,.94);
+  --muted: rgba(51,65,85,.72);
+
+  --shadow: 0 12px 32px rgba(15,23,42,.12);
+}
+
 *{ box-sizing: border-box; }
 
 html, body, #root{ height: 100%; }
@@ -91,6 +119,25 @@ a{ color: inherit; text-decoration: none; }
 
 .icon-btn--danger:hover{
   background: rgba(239, 68, 68, 0.16);
+}
+
+.icon-btn--avatar{
+  padding: 0;
+  overflow: hidden;
+}
+
+.avatar-badge{
+  width: 30px;
+  height: 30px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 800;
+  border: 1px solid var(--border);
+  background: rgba(255,255,255,.08);
+  color: var(--text);
 }
 
 /* =========================================================
@@ -173,25 +220,94 @@ a{ color: inherit; text-decoration: none; }
   position: absolute;
   right: 0;
   top: 48px;
-  width: 280px;
+  width: 320px;
   background: var(--surface-2);
   border: 1px solid var(--border);
-  border-radius: 16px;
+  border-radius: 18px;
   box-shadow: var(--shadow);
-  padding: 8px;
+  padding: 10px;
+  display: grid;
+  gap: 8px;
+}
+
+.avatar-menu-head{
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 8px 4px;
+}
+
+.avatar-menu-head-badge{
+  width: 46px;
+  height: 46px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 15px;
+  font-weight: 800;
+  border: 1px solid var(--border);
+  background: rgba(255,255,255,.08);
+  color: var(--text);
+  flex: 0 0 auto;
+}
+
+.avatar-menu-head-text{
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.avatar-menu-name{
+  font-weight: 750;
+  line-height: 1.2;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.avatar-menu-email{
+  font-size: 13px;
+  color: var(--muted);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.avatar-menu-divider{
+  height: 1px;
+  background: var(--border);
+  margin: 2px 0 0;
 }
 
 .menu-item{
-  display: block;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
   padding: 12px;
   border-radius: 12px;
   border: 1px solid transparent;
   color: var(--text);
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
 }
 
 .menu-item:hover{
   background: rgba(255,255,255,.05);
   border-color: var(--border);
+}
+
+.menu-item.danger{
+  border-color: rgba(239, 68, 68, 0.16);
+}
+
+.menu-item.danger:hover{
+  background: rgba(239, 68, 68, 0.12);
+  border-color: rgba(239, 68, 68, 0.28);
 }
 
 /* =========================================================
@@ -2692,5 +2808,369 @@ input[type="date"].input{
   .atrium-field-row{
     grid-template-columns: 1fr;
     gap: 4px;
+  }
+}
+
+/* =========================================================
+   Profile
+   ========================================================= */
+
+.profile-grid{
+  display: grid;
+  gap: 14px;
+}
+
+.profile-hero{
+  padding: 16px;
+}
+
+.profile-hero-main{
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.profile-avatar-large{
+  width: 84px;
+  height: 84px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 28px;
+  font-weight: 900;
+  border: 1px solid var(--border);
+  background: rgba(255,255,255,.08);
+  color: var(--text);
+  flex: 0 0 auto;
+}
+
+.profile-hero-text{
+  min-width: 0;
+  display: grid;
+  gap: 6px;
+}
+
+.profile-hero-name{
+  font-size: 24px;
+  font-weight: 850;
+  line-height: 1.1;
+}
+
+.profile-two-col{
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.profile-section-title{
+  font-weight: 750;
+  font-size: 16px;
+}
+
+.profile-media-preview{
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: rgba(255,255,255,0.02);
+}
+
+.profile-avatar-preview{
+  width: 56px;
+  height: 56px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  font-weight: 850;
+  border: 1px solid var(--border);
+  background: rgba(255,255,255,.08);
+  color: var(--text);
+  flex: 0 0 auto;
+}
+
+.profile-media-meta{
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.profile-signature-preview{
+  min-height: 124px;
+  border: 1px dashed var(--border);
+  border-radius: 14px;
+  background: rgba(255,255,255,0.02);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 14px;
+}
+
+.profile-signature-preview-inner{
+  width: 100%;
+  min-height: 92px;
+  border-radius: 10px;
+  background: rgba(255,255,255,0.04);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--muted);
+  font-style: italic;
+}
+
+.profile-signature-preview-empty{
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.profile-action-row{
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.profile-stats-title{
+  font-weight: 700;
+  margin-top: 4px;
+}
+
+.profile-stats-grid{
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 10px;
+}
+
+@media (max-width: 1100px){
+  .profile-two-col{
+    grid-template-columns: 1fr;
+  }
+
+  .profile-stats-grid{
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 640px){
+  .profile-stats-grid{
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .avatar-menu{
+    width: min(320px, calc(100vw - 24px));
+  }
+}
+
+/* =========================================================
+   Profile signature modal
+   ========================================================= */
+
+.profile-signature-modal-backdrop{
+  position: fixed;
+  inset: 0;
+  z-index: 120;
+  background: rgba(0,0,0,0.42);
+  backdrop-filter: blur(3px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+
+.profile-signature-modal{
+  width: min(860px, calc(100vw - 24px));
+  max-width: 100%;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  box-shadow: var(--shadow);
+  padding: 16px;
+  display: grid;
+  gap: 14px;
+}
+
+.profile-signature-modal-head{
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.profile-signature-pad-shell{
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background:
+    linear-gradient(to bottom, rgba(255,255,255,0.02), rgba(255,255,255,0.01)),
+    repeating-linear-gradient(
+      to bottom,
+      transparent 0,
+      transparent 37px,
+      rgba(255,255,255,0.06) 38px
+    );
+  overflow: hidden;
+  min-height: 220px;
+}
+
+html[data-appearance="light"] .profile-signature-pad-shell{
+  background:
+    linear-gradient(to bottom, rgba(15,23,42,0.01), rgba(15,23,42,0.00)),
+    repeating-linear-gradient(
+      to bottom,
+      transparent 0,
+      transparent 37px,
+      rgba(15,23,42,0.08) 38px
+    );
+}
+
+.profile-signature-pad-canvas{
+  display: block;
+  width: 100%;
+  height: 100%;
+  touch-action: none;
+  cursor: crosshair;
+}
+
+.profile-signature-modal-actions{
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.profile-signature-modal-actions-right{
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+@media (max-width: 640px){
+  .profile-signature-modal{
+    padding: 12px;
+    border-radius: 16px;
+  }
+
+  .profile-signature-modal-actions{
+    justify-content: stretch;
+  }
+
+  .profile-signature-modal-actions-right{
+    width: 100%;
+    justify-content: flex-end;
+  }
+}
+
+/* =========================================================
+   Profile media preview
+   ========================================================= */
+
+.profile-avatar-image{
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  border-radius: inherit;
+}
+
+.profile-signature-image{
+  max-width: 100%;
+  max-height: 120px;
+  display: block;
+  object-fit: contain;
+}
+
+/* =========================================================
+   Profile signature modal
+   ========================================================= */
+
+.profile-signature-modal-backdrop{
+  position: fixed;
+  inset: 0;
+  z-index: 120;
+  background: rgba(0,0,0,0.42);
+  backdrop-filter: blur(3px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+
+.profile-signature-modal{
+  width: min(860px, calc(100vw - 24px));
+  max-width: 100%;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  box-shadow: var(--shadow);
+  padding: 16px;
+  display: grid;
+  gap: 14px;
+}
+
+.profile-signature-modal-head{
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.profile-signature-pad-shell{
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background:
+    linear-gradient(to bottom, rgba(255,255,255,1), rgba(255,255,255,1)),
+    repeating-linear-gradient(
+      to bottom,
+      transparent 0,
+      transparent 37px,
+      rgba(15,23,42,0.10) 38px
+    );
+  overflow: hidden;
+  min-height: 220px;
+}
+
+.profile-signature-pad-canvas{
+  display: block;
+  width: 100%;
+  height: 100%;
+  touch-action: none;
+  cursor: crosshair;
+  background: transparent;
+}
+
+.profile-signature-modal-actions{
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.profile-signature-modal-actions-right{
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+@media (max-width: 640px){
+  .profile-signature-modal{
+    padding: 12px;
+    border-radius: 16px;
+  }
+
+  .profile-signature-modal-actions{
+    justify-content: stretch;
+  }
+
+  .profile-signature-modal-actions-right{
+    width: 100%;
+    justify-content: flex-end;
   }
 }

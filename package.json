@@ -17,6 +17,8 @@
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
     "react-router-dom": "^7.12.0",
+    "react-signature-canvas": "^1.1.0-alpha.2",
+    "signature_pad": "^5.1.3",
     "survey-core": "^2.5.9",
     "survey-react-ui": "^2.5.9",
     "tailwind-merge": "^3.4.0"

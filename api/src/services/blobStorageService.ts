@@ -334,3 +334,87 @@ export async function createFormInstanceDocumentDownloadUrl(args: {
 export async function downloadFormInstanceDocumentBlob(storageKey: string) {
   return downloadBlob(storageKey);
 }
+
+/* =========================================================
+   user profile media
+   ========================================================= */
+
+export function buildUserProfileAvatarStorageKey(
+  userObjectId: string,
+  originalFileName: string,
+  avatarId: string
+) {
+  const { baseName, extension } = splitFileNameParts(originalFileName);
+  const safeUserObjectId = sanitizePart(userObjectId) || userObjectId;
+  const safeAvatarId = sanitizePart(avatarId) || avatarId;
+
+  return `gebruikers/${safeUserObjectId}/avatar/${safeAvatarId}/${baseName}${extension}`;
+}
+
+export async function uploadUserProfileAvatarBlob(args: {
+  userObjectId: string;
+  avatarId: string;
+  fileName: string;
+  contentType?: string | null;
+  buffer: Buffer;
+}) {
+  const storageKey = buildUserProfileAvatarStorageKey(
+    args.userObjectId,
+    args.fileName,
+    args.avatarId
+  );
+
+  return uploadBlob({
+    storageKey,
+    contentType: args.contentType,
+    buffer: args.buffer,
+  });
+}
+
+export async function deleteUserProfileAvatarBlob(storageKey: string) {
+  return deleteBlob(storageKey);
+}
+
+export async function downloadUserProfileAvatarBlob(storageKey: string) {
+  return downloadBlob(storageKey);
+}
+
+export function buildUserProfileSignatureStorageKey(
+  userObjectId: string,
+  originalFileName: string,
+  signatureId: string
+) {
+  const { baseName, extension } = splitFileNameParts(originalFileName);
+  const safeUserObjectId = sanitizePart(userObjectId) || userObjectId;
+  const safeSignatureId = sanitizePart(signatureId) || signatureId;
+
+  return `gebruikers/${safeUserObjectId}/handtekening/${safeSignatureId}/${baseName}${extension}`;
+}
+
+export async function uploadUserProfileSignatureBlob(args: {
+  userObjectId: string;
+  signatureId: string;
+  fileName: string;
+  contentType?: string | null;
+  buffer: Buffer;
+}) {
+  const storageKey = buildUserProfileSignatureStorageKey(
+    args.userObjectId,
+    args.fileName,
+    args.signatureId
+  );
+
+  return uploadBlob({
+    storageKey,
+    contentType: args.contentType,
+    buffer: args.buffer,
+  });
+}
+
+export async function deleteUserProfileSignatureBlob(storageKey: string) {
+  return deleteBlob(storageKey);
+}
+
+export async function downloadUserProfileSignatureBlob(storageKey: string) {
+  return downloadBlob(storageKey);
+}
