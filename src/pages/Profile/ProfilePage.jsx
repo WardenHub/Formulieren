@@ -36,21 +36,35 @@ function resolveAvatarImageSrc(data, avatarPreviewUrl) {
   return (
     data?.effective?.avatar_url ||
     data?.effective?.avatar_download_url ||
+    data?.effective?.avatar_preview_url ||
     data?.avatar?.download_url ||
     data?.avatar?.preview_url ||
     data?.avatar?.url ||
+    data?.avatar?.storage_url ||
     null
   );
 }
 
-function resolveSignatureImageSrc(data) {
+function resolveSignatureImageSrc(data, signaturePreviewUrl) {
+  if (signaturePreviewUrl) return signaturePreviewUrl;
+
   return (
     data?.effective?.signature_url ||
     data?.effective?.signature_download_url ||
+    data?.effective?.signature_preview_url ||
     data?.signature?.download_url ||
     data?.signature?.preview_url ||
     data?.signature?.url ||
+    data?.signature?.storage_url ||
     null
+  );
+}
+
+function dispatchProfileUpdated(payload) {
+  window.dispatchEvent(
+    new CustomEvent("ember:profile-updated", {
+      detail: payload || null,
+    })
   );
 }
 
@@ -82,6 +96,7 @@ export default function ProfilePage() {
   const [data, setData] = useState(null);
   const [signaturePadOpen, setSignaturePadOpen] = useState(false);
   const [avatarPreviewUrl, setAvatarPreviewUrl] = useState(null);
+  const [signaturePreviewUrl, setSignaturePreviewUrl] = useState(null);
 
   const [draft, setDraft] = useState({
     preferred_display_name: "",
@@ -93,11 +108,10 @@ export default function ProfilePage() {
 
   useEffect(() => {
     return () => {
-      if (avatarPreviewUrl) {
-        URL.revokeObjectURL(avatarPreviewUrl);
-      }
+      if (avatarPreviewUrl) URL.revokeObjectURL(avatarPreviewUrl);
+      if (signaturePreviewUrl) URL.revokeObjectURL(signaturePreviewUrl);
     };
-  }, [avatarPreviewUrl]);
+  }, [avatarPreviewUrl, signaturePreviewUrl]);
 
   async function loadProfile() {
     setLoading(true);
@@ -113,6 +127,8 @@ export default function ProfilePage() {
         avatar_source_preference: res?.profile?.avatar_source_preference || "uploaded",
         signature_source_preference: res?.profile?.signature_source_preference || "uploaded",
       });
+
+      dispatchProfileUpdated(res || null);
     } catch (e) {
       setError(e?.message || String(e));
       setData(null);
@@ -137,6 +153,21 @@ export default function ProfilePage() {
     );
   }, [draft, data]);
 
+  useEffect(() => {
+    function onKeyDown(e) {
+      const key = String(e.key || "").toLowerCase();
+      if (!e.altKey || key !== "s") return;
+
+      e.preventDefault();
+      if (!saving && isDirty) {
+        handleSave();
+      }
+    }
+
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [saving, isDirty, draft, data]);
+
   async function handleSave() {
     if (!isDirty) return;
 
@@ -153,6 +184,8 @@ export default function ProfilePage() {
         avatar_source_preference: res?.profile?.avatar_source_preference || "uploaded",
         signature_source_preference: res?.profile?.signature_source_preference || "uploaded",
       });
+
+      dispatchProfileUpdated(res || null);
     } catch (e) {
       setError(e?.message || String(e));
     } finally {
@@ -187,6 +220,8 @@ export default function ProfilePage() {
         ...prev,
         avatar_source_preference: res?.profile?.avatar_source_preference || "uploaded",
       }));
+
+      dispatchProfileUpdated(res || null);
     } catch (err) {
       setError(err?.message || String(err));
     } finally {
@@ -213,6 +248,8 @@ export default function ProfilePage() {
         URL.revokeObjectURL(avatarPreviewUrl);
       }
       setAvatarPreviewUrl(null);
+
+      dispatchProfileUpdated(res || null);
     } catch (err) {
       setError(err?.message || String(err));
     } finally {
@@ -230,6 +267,13 @@ export default function ProfilePage() {
       return;
     }
 
+    const nextPreviewUrl = URL.createObjectURL(file);
+
+    if (signaturePreviewUrl) {
+      URL.revokeObjectURL(signaturePreviewUrl);
+    }
+    setSignaturePreviewUrl(nextPreviewUrl);
+
     setUploadingSignature(true);
     setError(null);
 
@@ -240,6 +284,8 @@ export default function ProfilePage() {
         ...prev,
         signature_source_preference: res?.profile?.signature_source_preference || "uploaded",
       }));
+
+      dispatchProfileUpdated(res || null);
     } catch (err) {
       setError(err?.message || String(err));
     } finally {
@@ -261,6 +307,13 @@ export default function ProfilePage() {
         ...prev,
         signature_source_preference: res?.profile?.signature_source_preference || "none",
       }));
+
+      if (signaturePreviewUrl) {
+        URL.revokeObjectURL(signaturePreviewUrl);
+      }
+      setSignaturePreviewUrl(null);
+
+      dispatchProfileUpdated(res || null);
     } catch (err) {
       setError(err?.message || String(err));
     } finally {
@@ -269,6 +322,13 @@ export default function ProfilePage() {
   }
 
   async function handleSaveDrawnSignature(file) {
+    const nextPreviewUrl = URL.createObjectURL(file);
+
+    if (signaturePreviewUrl) {
+      URL.revokeObjectURL(signaturePreviewUrl);
+    }
+    setSignaturePreviewUrl(nextPreviewUrl);
+
     setUploadingSignature(true);
     setError(null);
 
@@ -280,6 +340,8 @@ export default function ProfilePage() {
         signature_source_preference: res?.profile?.signature_source_preference || "uploaded",
       }));
       setSignaturePadOpen(false);
+
+      dispatchProfileUpdated(res || null);
     } catch (err) {
       setError(err?.message || String(err));
     } finally {
@@ -293,7 +355,7 @@ export default function ProfilePage() {
   const stats = data?.stats || null;
 
   const avatarImageSrc = resolveAvatarImageSrc(data, avatarPreviewUrl);
-  const signatureImageSrc = resolveSignatureImageSrc(data);
+  const signatureImageSrc = resolveSignatureImageSrc(data, signaturePreviewUrl);
 
   return (
     <div className="profile-page">
