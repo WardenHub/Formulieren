@@ -1,5 +1,4 @@
 // /api/src/services/profileService.ts
-
 import crypto from "node:crypto";
 import { sqlQuery } from "../db/index.js";
 import {
@@ -15,6 +14,7 @@ import {
   setUserProfileSignatureFileSql,
   deactivateActiveUserProfileSignatureSql,
   getUserProfileStatsSql,
+  getUserDirectorySql,
 } from "../db/queries/profile.sql.js";
 import {
   uploadUserProfileAvatarBlob,
@@ -135,6 +135,12 @@ function buildInitials(name: string | null, email: string | null) {
   return source.slice(0, 2).toUpperCase();
 }
 
+function buildTeamsDeepLink(email: string | null) {
+  const safe = String(email || "").trim();
+  if (!safe) return null;
+  return `https://teams.microsoft.com/l/chat/0/0?users=${encodeURIComponent(safe)}`;
+}
+
 async function ensureProfile(user: any) {
   const userObjectId = String(user?.objectId || "").trim();
   if (!userObjectId) {
@@ -182,14 +188,14 @@ async function loadProfileParts(user: any) {
   const signatureMode = profile.signature_source_preference || "uploaded";
 
   const avatarUrl =
-  avatar?.has_file && avatarMode === "uploaded"
-    ? "/me/profile/avatar/file"
-    : null;
+    avatar?.has_file && avatarMode === "uploaded"
+      ? "/me/profile/avatar/file"
+      : null;
 
-const signatureUrl =
-  signature?.has_file && signatureMode === "uploaded"
-    ? "/me/profile/signature/file"
-    : null;
+  const signatureUrl =
+    signature?.has_file && signatureMode === "uploaded"
+      ? "/me/profile/signature/file"
+      : null;
 
   return {
     profile,
@@ -239,8 +245,63 @@ const signatureUrl =
   };
 }
 
+function mapDirectoryRow(row: any, currentUserObjectId: string | null) {
+  const preferredDisplayName = row?.preferred_display_name ?? null;
+  const displayNameSnapshot = row?.display_name_snapshot ?? null;
+  const emailSnapshot = row?.email_snapshot ?? null;
+  const effectiveDisplayName =
+    preferredDisplayName || displayNameSnapshot || emailSnapshot || "Gebruiker";
+
+  const hasAvatarFile = !!row?.avatar_storage_key;
+  const avatarMode = row?.avatar_source_preference ?? "uploaded";
+  const avatarUrl =
+    hasAvatarFile && avatarMode === "uploaded"
+      ? `/me/profile/directory/${encodeURIComponent(String(row.user_object_id || ""))}/avatar/file`
+      : null;
+
+  return {
+    user_object_id: row?.user_object_id ?? null,
+    email: emailSnapshot,
+    display_name_snapshot: displayNameSnapshot,
+    preferred_display_name: preferredDisplayName,
+    effective_display_name: effectiveDisplayName,
+    initials: buildInitials(effectiveDisplayName, emailSnapshot),
+    profile_note: row?.profile_note ?? null,
+
+    avatar: {
+      has_file: hasAvatarFile,
+      file_name: row?.avatar_file_name ?? null,
+      mime_type: row?.avatar_mime_type ?? null,
+      file_size_bytes:
+        row?.avatar_file_size_bytes == null ? null : Number(row.avatar_file_size_bytes),
+      url: avatarUrl,
+    },
+
+    stats: {
+      forms_total: Number(row?.total_forms ?? 0),
+      follow_ups_total: Number(row?.total_follow_ups ?? 0),
+      follow_ups_open: Number(row?.open_follow_ups ?? 0),
+      follow_ups_done: Number(row?.done_follow_ups ?? 0),
+    },
+
+    teams_chat_url: buildTeamsDeepLink(emailSnapshot),
+    is_current_user:
+      !!currentUserObjectId &&
+      String(row?.user_object_id || "") === String(currentUserObjectId),
+  };
+}
+
 export async function getMyProfile(user: any) {
   return loadProfileParts(user);
+}
+
+export async function getDirectory(user: any) {
+  const rows = await sqlQuery(getUserDirectorySql, {});
+  const currentUserObjectId = String(user?.objectId || "").trim() || null;
+
+  return {
+    items: (rows || []).map((row: any) => mapDirectoryRow(row, currentUserObjectId)),
+  };
 }
 
 export async function updateMyProfile(payload: any, user: any) {
@@ -308,13 +369,16 @@ export async function uploadMyAvatar(file: Express.Multer.File, user: any) {
       actor: actorName(user),
     });
 
+    const currentRows = await sqlQuery(getUserProfileSql, { userObjectId });
+    const current = currentRows?.[0] ?? null;
+
     await sqlQuery(updateUserProfileSql, {
       userObjectId,
-      preferredDisplayName: null,
-      profileNote: null,
-      appearancePreference: "system",
+      preferredDisplayName: current?.preferred_display_name ?? null,
+      profileNote: current?.profile_note ?? null,
+      appearancePreference: current?.appearance_preference ?? "system",
       avatarSourcePreference: "uploaded",
-      signatureSourcePreference: "uploaded",
+      signatureSourcePreference: current?.signature_source_preference ?? "uploaded",
       actor: actorName(user),
     });
 
@@ -346,6 +410,19 @@ export async function deleteMyAvatar(user: any) {
 
   await sqlQuery(deactivateActiveUserProfileAvatarSql, {
     userObjectId,
+    actor: actorName(user),
+  });
+
+  const profileRows = await sqlQuery(getUserProfileSql, { userObjectId });
+  const currentProfile = profileRows?.[0] ?? null;
+
+  await sqlQuery(updateUserProfileSql, {
+    userObjectId,
+    preferredDisplayName: currentProfile?.preferred_display_name ?? null,
+    profileNote: currentProfile?.profile_note ?? null,
+    appearancePreference: currentProfile?.appearance_preference ?? "system",
+    avatarSourcePreference: currentProfile?.avatar_source_preference ?? "uploaded",
+    signatureSourcePreference: currentProfile?.signature_source_preference ?? "uploaded",
     actor: actorName(user),
   });
 

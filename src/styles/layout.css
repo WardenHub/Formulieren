@@ -3264,3 +3264,188 @@ html[data-appearance="light"] .profile-signature-pad-shell{
   object-fit: contain;
   margin: 0 auto;
 }
+
+.avatar-menu-header{
+  padding: 12px 12px 10px;
+  border-bottom: 1px solid rgba(255,255,255,.08);
+  margin-bottom: 4px;
+}
+
+.avatar-menu-header-main{
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.avatar-menu-header-avatar{
+  width: 40px;
+  height: 40px;
+  border-radius: 999px;
+  overflow: hidden;
+  background: rgba(255,255,255,.06);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+}
+
+.avatar-menu-header-text{
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.avatar-menu-name{
+  font-weight: 700;
+  font-size: 14px;
+  line-height: 1.2;
+}
+
+.avatar-menu-note{
+  font-size: 12px;
+  color: rgba(255,255,255,.62);
+  line-height: 1.35;
+}
+
+.directory-grid{
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 16px;
+}
+
+.directory-card{
+  position: relative;
+  border: 1px solid rgba(255,255,255,.08);
+  border-radius: 18px;
+  background: rgba(255,255,255,.02);
+  box-shadow: 0 10px 30px rgba(0,0,0,.25);
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.directory-card--current{
+  border-color: rgba(110,168,255,.45);
+  box-shadow: 0 12px 32px rgba(24,72,140,.22);
+}
+
+.directory-card-rank{
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  font-size: 12px;
+  font-weight: 700;
+  color: rgba(255,255,255,.62);
+  background: rgba(255,255,255,.05);
+  border: 1px solid rgba(255,255,255,.08);
+  border-radius: 999px;
+  padding: 4px 8px;
+}
+
+.directory-card-header{
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  padding-right: 48px;
+}
+
+.directory-card-avatar{
+  width: 64px;
+  height: 64px;
+  border-radius: 999px;
+  overflow: hidden;
+  background: rgba(255,255,255,.06);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+}
+
+.directory-card-avatar-image{
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.directory-card-avatar-fallback{
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 800;
+  font-size: 22px;
+  color: rgba(255,255,255,.95);
+}
+
+.directory-card-headtext{
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.directory-card-name{
+  font-size: 18px;
+  font-weight: 800;
+  line-height: 1.2;
+}
+
+.directory-card-email{
+  font-size: 13px;
+  color: rgba(255,255,255,.62);
+  line-height: 1.35;
+  word-break: break-word;
+}
+
+.directory-card-note{
+  min-height: 54px;
+  font-size: 14px;
+  line-height: 1.5;
+  color: rgba(255,255,255,.9);
+  padding: 12px 14px;
+  border-radius: 14px;
+  background: rgba(255,255,255,.03);
+  border: 1px solid rgba(255,255,255,.06);
+}
+
+.directory-card-note--empty{
+  color: rgba(255,255,255,.45);
+  font-style: italic;
+}
+
+.directory-card-badges{
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.directory-card-actions{
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  margin-top: auto;
+}
+
+.directory-card-teams-btn{
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.directory-card-teams-logo{
+  width: 18px;
+  height: 18px;
+  object-fit: contain;
+  display: block;
+}
+
+@media (max-width: 720px){
+  .directory-grid{
+    grid-template-columns: 1fr;
+  }
+}

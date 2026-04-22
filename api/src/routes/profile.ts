@@ -4,6 +4,7 @@ import { Router } from "express";
 import multer from "multer";
 import {
   getMyProfile,
+  getDirectory,
   updateMyProfile,
   uploadMyAvatar,
   deleteMyAvatar,
@@ -11,6 +12,7 @@ import {
   deleteMySignature,
   getMyAvatarFile,
   getMySignatureFile,
+  getDirectoryAvatarFile,
 } from "../controllers/profileController.js";
 
 const router = Router();
@@ -22,16 +24,18 @@ const upload = multer({
   },
 });
 
-router.get("/avatar/file", getMyAvatarFile);
-router.get("/signature/file", getMySignatureFile);
-
 router.get("/", getMyProfile);
 router.put("/", updateMyProfile);
 
-router.post("/avatar", upload.single("file"), uploadMyAvatar);
+router.get("/avatar/file", getMyAvatarFile);
 router.delete("/avatar", deleteMyAvatar);
+router.post("/avatar", upload.single("file"), uploadMyAvatar);
 
-router.post("/signature", upload.single("file"), uploadMySignature);
+router.get("/signature/file", getMySignatureFile);
 router.delete("/signature", deleteMySignature);
+router.post("/signature", upload.single("file"), uploadMySignature);
+
+router.get("/directory", getDirectory);
+router.get("/directory/:userObjectId/avatar/file", getDirectoryAvatarFile);
 
 export default router;

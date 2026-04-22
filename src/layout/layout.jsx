@@ -1,7 +1,6 @@
 // src/layout/layout.jsx
-
-import { httpJson } from "../api/http";
-import { Outlet, NavLink, useLocation } from "react-router-dom";
+import { httpJson, fetchProtectedObjectUrl } from "../api/http";
+import { Outlet, NavLink, useLocation, Link } from "react-router-dom";
 import { useEffect, useRef, useState } from "react";
 import "../styles/layout.css";
 import { logout } from "../auth/msal";
@@ -11,12 +10,13 @@ import { HomeIcon } from "@/components/ui/home";
 import { SearchIcon } from "@/components/ui/search";
 import { BrainIcon } from "@/components/ui/brain";
 import { MonitorCheckIcon } from "@/components/ui/monitor-check";
+import { IdCardIcon } from "@/components/ui/id-card";
 
 function initialsFromProfilePayload(profileData) {
-  return profileData?.effective?.initials || "🙂";
+  return profileData?.effective?.initials || profileData?.profile?.initials || "E";
 }
 
-function resolveLayoutAvatarSrc(profileData) {
+function resolveLayoutAvatarPath(profileData) {
   return (
     profileData?.effective?.avatar_url ||
     profileData?.effective?.avatar_download_url ||
@@ -24,7 +24,7 @@ function resolveLayoutAvatarSrc(profileData) {
     profileData?.avatar?.download_url ||
     profileData?.avatar?.preview_url ||
     profileData?.avatar?.url ||
-    profileData?.avatar?.storage_url ||
+    profileData?.profile?.avatar_url ||
     null
   );
 }
@@ -34,6 +34,7 @@ export default function Layout() {
   const [avatarOpen, setAvatarOpen] = useState(false);
   const [roles, setRoles] = useState([]);
   const [profileData, setProfileData] = useState(null);
+  const [avatarObjectUrl, setAvatarObjectUrl] = useState(null);
 
   const menuRef = useRef(null);
   const location = useLocation();
@@ -94,36 +95,27 @@ export default function Layout() {
     async function loadMe() {
       try {
         const data = await httpJson("/me");
-        if (!cancelled) setRoles(data.roles ?? []);
+        if (cancelled) return;
+        setRoles(data.roles ?? []);
+        setProfileData(data || null);
       } catch (err) {
         console.error("me fetch failed", err);
-        if (!cancelled) setRoles([]);
+        if (!cancelled) {
+          setRoles([]);
+          setProfileData(null);
+        }
       }
     }
 
     loadMe();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  useEffect(() => {
-    let cancelled = false;
-
-    async function loadProfile() {
-      try {
-        const data = await httpJson("/me/profile");
-        if (!cancelled) setProfileData(data || null);
-      } catch (err) {
-        console.error("profile fetch failed", err);
-        if (!cancelled) setProfileData(null);
-      }
-    }
-
-    loadProfile();
 
     function onProfileUpdated(e) {
-      setProfileData(e?.detail || null);
+      setProfileData((prev) => ({
+        ...(prev || {}),
+        ...(e?.detail || {}),
+        user: prev?.user || null,
+        roles: prev?.roles || roles,
+      }));
     }
 
     window.addEventListener("ember:profile-updated", onProfileUpdated);
@@ -131,10 +123,64 @@ export default function Layout() {
       cancelled = true;
       window.removeEventListener("ember:profile-updated", onProfileUpdated);
     };
-  }, []);
+  }, [roles]);
 
-  const avatarSrc = resolveLayoutAvatarSrc(profileData);
+  useEffect(() => {
+    let cancelled = false;
+    let nextObjectUrl = null;
+
+    async function loadAvatarObjectUrl() {
+      const mediaPath = resolveLayoutAvatarPath(profileData);
+
+      if (!mediaPath) {
+        setAvatarObjectUrl((prev) => {
+          if (prev) URL.revokeObjectURL(prev);
+          return null;
+        });
+        return;
+      }
+
+      try {
+        nextObjectUrl = await fetchProtectedObjectUrl(mediaPath);
+        if (cancelled) {
+          if (nextObjectUrl) URL.revokeObjectURL(nextObjectUrl);
+          return;
+        }
+
+        setAvatarObjectUrl((prev) => {
+          if (prev) URL.revokeObjectURL(prev);
+          return nextObjectUrl;
+        });
+      } catch (err) {
+        console.error("avatar media fetch failed", err);
+        if (!cancelled) {
+          setAvatarObjectUrl((prev) => {
+            if (prev) URL.revokeObjectURL(prev);
+            return null;
+          });
+        }
+      }
+    }
+
+    loadAvatarObjectUrl();
+
+    return () => {
+      cancelled = true;
+      if (nextObjectUrl) URL.revokeObjectURL(nextObjectUrl);
+    };
+  }, [profileData]);
+
   const avatarInitials = initialsFromProfilePayload(profileData);
+  const profileDisplayName =
+    profileData?.profile?.effective_display_name ||
+    profileData?.profile?.display_name ||
+    profileData?.user?.name ||
+    "Gebruiker";
+
+  const profileNote =
+    profileData?.profile?.profile_note ||
+    profileData?.profile_note ||
+    null;
 
   return (
     <div className="app-shell">
@@ -157,9 +203,9 @@ export default function Layout() {
             aria-label="account"
             onClick={() => setAvatarOpen((v) => !v)}
           >
-            {avatarSrc ? (
+            {avatarObjectUrl ? (
               <img
-                src={avatarSrc}
+                src={avatarObjectUrl}
                 alt="Profiel"
                 className="topbar-avatar-image"
               />
@@ -170,6 +216,37 @@ export default function Layout() {
 
           {avatarOpen && (
             <div className="avatar-menu" role="menu">
+              <div className="avatar-menu-header">
+                <div className="avatar-menu-header-main">
+                  <div className="avatar-menu-header-avatar">
+                    {avatarObjectUrl ? (
+                      <img
+                        src={avatarObjectUrl}
+                        alt="Profiel"
+                        className="topbar-avatar-image"
+                      />
+                    ) : (
+                      <span className="topbar-avatar-fallback">{avatarInitials}</span>
+                    )}
+                  </div>
+
+                  <div className="avatar-menu-header-text">
+                    <div className="avatar-menu-name">{profileDisplayName}</div>
+                    {profileNote ? (
+                      <div className="avatar-menu-note">{profileNote}</div>
+                    ) : null}
+                  </div>
+                </div>
+              </div>
+
+              <Link className="menu-item" to="/profiel">
+                Profiel
+              </Link>
+
+              <Link className="menu-item" to="/smoelenboek">
+                Smoelenboek
+              </Link>
+
               <a
                 className="menu-item"
                 href="https://kennis.wardenburg.nl/Main/Werkwijze/Ember/"
@@ -208,6 +285,10 @@ export default function Layout() {
 
           <AnimatedNavLink to="/monitor/formulieren" Icon={MonitorCheckIcon}>
             Monitor
+          </AnimatedNavLink>
+
+          <AnimatedNavLink to="/smoelenboek" Icon={IdCardIcon}>
+            Smoelenboek
           </AnimatedNavLink>
 
           {roles.includes("admin") && (

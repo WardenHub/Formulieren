@@ -476,3 +476,11 @@ export function uploadMySignature(file) {
 export function deleteMySignature() {
   return apiDelete("/me/profile/signature");
 }
+
+export function getMe() {
+  return apiGet("/me");
+}
+
+export function getUserDirectory() {
+  return apiGet("/me/profile/directory");
+}

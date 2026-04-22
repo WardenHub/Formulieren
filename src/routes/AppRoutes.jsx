@@ -12,6 +12,7 @@ import FormsMonitorPage from "../pages/Monitor/FormsMonitorPage.jsx";
 import FormsMonitorDetailPage from "../pages/Monitor/FormsMonitorDetailPage.jsx";
 import NotFound from "../pages/NotFound.jsx";
 import ProfilePage from "../pages/Profile/ProfilePage.jsx";
+import DirectoryPage from "../pages/Profile/DirectoryPage.jsx";
 
 export default function AppRoutes() {
   return (
@@ -21,10 +22,7 @@ export default function AppRoutes() {
         <Route path="/installaties" element={<InstallationsIndex />} />
         <Route path="/installaties/:code" element={<InstallationDetails />} />
 
-        {/* Form runner (echte runner) */}
         <Route path="/installaties/:code/formulieren/:instanceId" element={<FormRunner />} />
-
-        {/* Debug JSON runner (ruwe editor) */}
         <Route
           path="/installaties/:code/formulieren/:instanceId/debug"
           element={<FormRunnerDebug />}
@@ -33,6 +31,7 @@ export default function AppRoutes() {
         <Route path="/monitor/formulieren" element={<FormsMonitorPage />} />
         <Route path="/monitor/formulieren/:instanceId" element={<FormsMonitorDetailPage />} />
         <Route path="/profiel" element={<ProfilePage />} />
+        <Route path="/smoelenboek" element={<DirectoryPage />} />
         <Route path="/dev/formdev" element={<SurveyDesigner />} />
         <Route path="/admin" element={<AdminPage />} />
         <Route path="*" element={<NotFound />} />

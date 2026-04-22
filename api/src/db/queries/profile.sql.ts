@@ -440,3 +440,77 @@ select
 from form_stats fs
 cross join follow_up_stats fu;
 `;
+
+export const getUserDirectorySql = `
+;with form_counts as (
+  select
+    fi.created_by,
+    count(*) as total_forms
+  from dbo.FormInstance fi
+  group by fi.created_by
+),
+follow_up_counts as (
+  select
+    fi.created_by,
+    count(*) as total_follow_ups,
+    sum(case when fua.status = N'OPEN' then 1 else 0 end) as open_follow_ups,
+    sum(case when fua.status = N'AFGEHANDELD' then 1 else 0 end) as done_follow_ups
+  from dbo.FormInstance fi
+  left join dbo.FormFollowUpAction fua
+    on fua.form_instance_id = fi.form_instance_id
+  group by fi.created_by
+)
+select
+  up.user_object_id,
+  up.email_snapshot,
+  up.display_name_snapshot,
+  up.preferred_display_name,
+  up.profile_note,
+  up.avatar_source_preference,
+  up.updated_at,
+
+  a.avatar_id,
+  a.file_name as avatar_file_name,
+  a.mime_type as avatar_mime_type,
+  a.file_size_bytes as avatar_file_size_bytes,
+  a.storage_key as avatar_storage_key,
+  a.storage_url as avatar_storage_url,
+  a.created_at as avatar_created_at,
+
+  isnull(fc.total_forms, 0) as total_forms,
+  isnull(fuc.total_follow_ups, 0) as total_follow_ups,
+  isnull(fuc.open_follow_ups, 0) as open_follow_ups,
+  isnull(fuc.done_follow_ups, 0) as done_follow_ups
+from dbo.UserProfile up
+left join (
+  select *
+  from (
+    select
+      a.*,
+      row_number() over (
+        partition by a.user_object_id
+        order by a.created_at desc, a.avatar_id desc
+      ) as rn
+    from dbo.UserProfileAvatar a
+    where isnull(a.is_active, 1) = 1
+  ) x
+  where x.rn = 1
+) a
+  on a.user_object_id = up.user_object_id
+left join form_counts fc
+  on fc.created_by = up.email_snapshot
+  or fc.created_by = up.display_name_snapshot
+  or fc.created_by = up.preferred_display_name
+left join follow_up_counts fuc
+  on fuc.created_by = up.email_snapshot
+  or fuc.created_by = up.display_name_snapshot
+  or fuc.created_by = up.preferred_display_name
+order by
+  isnull(fc.total_forms, 0) desc,
+  coalesce(
+    nullif(ltrim(rtrim(up.preferred_display_name)), N''),
+    nullif(ltrim(rtrim(up.display_name_snapshot)), N''),
+    nullif(ltrim(rtrim(up.email_snapshot)), N''),
+    N'Gebruiker'
+  ) asc;
+`;

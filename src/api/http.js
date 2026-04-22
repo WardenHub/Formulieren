@@ -157,3 +157,8 @@ export async function httpDownload(path, options = {}) {
     contentType: res.headers.get("content-type") || blob.type || "application/octet-stream",
   };
 }
+
+export async function fetchProtectedObjectUrl(path, options = {}) {
+  const { blob } = await httpDownload(path, options);
+  return URL.createObjectURL(blob);
+}

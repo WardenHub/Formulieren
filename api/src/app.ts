@@ -110,6 +110,7 @@ app.get("/me", async (req: any, res) => {
         display_name: profile?.profile?.effective_display_name || null,
         initials: profile?.effective?.initials || null,
         avatar_url: profile?.effective?.avatar_url || null,
+        profile_note: profile?.profile?.profile_note || null,
       },
     });
   } catch (err) {
