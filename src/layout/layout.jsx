@@ -112,7 +112,7 @@ export default function Layout() {
 
     async function loadProfile() {
       try {
-        const data = await httpJson("/profile/me");
+        const data = await httpJson("/me/profile");
         if (!cancelled) setProfileData(data || null);
       } catch (err) {
         console.error("profile fetch failed", err);

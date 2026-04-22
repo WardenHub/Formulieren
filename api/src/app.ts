@@ -11,6 +11,7 @@ import adminFormsRouter from "./routes/adminForms.js";
 import adminInstallationsRouter from "./routes/adminInstallations.js";
 import homeRouter from "./routes/home.js";
 import profileRouter from "./routes/profile.js";
+import * as profileService from "./services/profileService.js";
 
 const app = express();
 const RAW_ORIGINS = (process.env.CORS_ORIGINS || "")
@@ -90,8 +91,34 @@ app.use("/admin/forms", adminFormsRouter);
 app.use("/admin/installations", adminInstallationsRouter);
 app.use("/forms-monitor", formsMonitorRouter);
 
-app.get("/me", (req: any, res) => {
-  res.json({ user: req.user, roles: req.roles || [] });
+app.get("/me", async (req: any, res) => {
+  try {
+    const base = {
+      user: req.user,
+      roles: req.roles || [],
+    };
+
+    if (!req.user?.objectId) {
+      return res.json(base);
+    }
+
+    const profile = await profileService.getMyProfile(req.user);
+
+    return res.json({
+      ...base,
+      profile: {
+        display_name: profile?.profile?.effective_display_name || null,
+        initials: profile?.effective?.initials || null,
+        avatar_url: profile?.effective?.avatar_url || null,
+      },
+    });
+  } catch (err) {
+    console.error(err);
+    return res.json({
+      user: req.user,
+      roles: req.roles || [],
+    });
+  }
 });
 
 app.get("/forms/definitions", requireRole("admin"), (req, res) => {

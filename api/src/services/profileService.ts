@@ -181,21 +181,41 @@ async function loadProfileParts(user: any) {
   const avatarMode = profile.avatar_source_preference || "uploaded";
   const signatureMode = profile.signature_source_preference || "uploaded";
 
+  const avatarUrl =
+  avatar?.has_file && avatarMode === "uploaded"
+    ? "/me/profile/avatar/file"
+    : null;
+
+const signatureUrl =
+  signature?.has_file && signatureMode === "uploaded"
+    ? "/me/profile/signature/file"
+    : null;
+
   return {
     profile,
     avatar,
     signature,
     effective: {
       initials: buildInitials(profile.effective_display_name, profile.email_snapshot),
+
       avatar_mode: avatarMode,
       avatar_uploaded_available: !!avatar?.has_file,
       avatar_microsoft_available: true,
       avatar_has_any:
         (!!avatar?.has_file && avatarMode === "uploaded") ||
         avatarMode === "microsoft",
+
+      avatar_url: avatarUrl,
+      avatar_preview_url: avatarUrl,
+      avatar_download_url: avatarUrl,
+
       signature_mode: signatureMode,
       signature_uploaded_available: !!signature?.has_file,
       signature_has_any: !!signature?.has_file && signatureMode === "uploaded",
+
+      signature_url: signatureUrl,
+      signature_preview_url: signatureUrl,
+      signature_download_url: signatureUrl,
     },
     stats: {
       forms: {

@@ -1,7 +1,61 @@
 // /api/src/controllers/profileController.ts
-
+import {
+  downloadUserProfileAvatarBlob,
+  downloadUserProfileSignatureBlob,
+} from "../services/blobStorageService.js";
+import { sqlQuery } from "../db/index.js";
+import {
+  getActiveUserProfileAvatarSql,
+  getActiveUserProfileSignatureSql,
+} from "../db/queries/profile.sql.js";
 import type { Request, Response } from "express";
 import * as service from "../services/profileService.js";
+
+export async function getMyAvatarFile(req: any, res: Response) {
+  try {
+    const userObjectId = String(req.user?.objectId || "").trim();
+    if (!userObjectId) return res.status(400).end();
+
+    const rows = await sqlQuery(getActiveUserProfileAvatarSql, { userObjectId });
+    const row = rows?.[0];
+
+    if (!row?.storage_key) {
+      return res.status(404).end();
+    }
+
+    const blob = await downloadUserProfileAvatarBlob(String(row.storage_key));
+
+    res.setHeader("Content-Type", blob.contentType || "application/octet-stream");
+    res.setHeader("Content-Length", String(blob.contentLength || blob.buffer.length));
+    return res.send(blob.buffer);
+  } catch (err) {
+    console.error(err);
+    return res.status(500).end();
+  }
+}
+
+export async function getMySignatureFile(req: any, res: Response) {
+  try {
+    const userObjectId = String(req.user?.objectId || "").trim();
+    if (!userObjectId) return res.status(400).end();
+
+    const rows = await sqlQuery(getActiveUserProfileSignatureSql, { userObjectId });
+    const row = rows?.[0];
+
+    if (!row?.storage_key) {
+      return res.status(404).end();
+    }
+
+    const blob = await downloadUserProfileSignatureBlob(String(row.storage_key));
+
+    res.setHeader("Content-Type", blob.contentType || "application/octet-stream");
+    res.setHeader("Content-Length", String(blob.contentLength || blob.buffer.length));
+    return res.send(blob.buffer);
+  } catch (err) {
+    console.error(err);
+    return res.status(500).end();
+  }
+}
 
 export async function getMyProfile(req: any, res: Response) {
   try {

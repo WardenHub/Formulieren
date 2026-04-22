@@ -9,6 +9,8 @@ import {
   deleteMyAvatar,
   uploadMySignature,
   deleteMySignature,
+  getMyAvatarFile,
+  getMySignatureFile,
 } from "../controllers/profileController.js";
 
 const router = Router();
@@ -19,6 +21,9 @@ const upload = multer({
     fileSize: 10 * 1024 * 1024,
   },
 });
+
+router.get("/avatar/file", getMyAvatarFile);
+router.get("/signature/file", getMySignatureFile);
 
 router.get("/", getMyProfile);
 router.put("/", updateMyProfile);
