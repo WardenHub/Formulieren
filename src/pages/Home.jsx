@@ -11,6 +11,7 @@ import { MonitorCheckIcon } from "@/components/ui/monitor-check";
 import { BrainIcon } from "@/components/ui/brain";
 import { ArrowBigRightIcon } from "@/components/ui/arrow-big-right";
 import { FileCheckIcon } from "@/components/ui/file-check";
+import { IdCardIcon } from "@/components/ui/id-card";
 
 function formatDate(value) {
   if (!value) return "";
@@ -200,6 +201,13 @@ export default function Home() {
               Icon={MonitorCheckIcon}
               title="Monitor"
               text="Bekijk en verwerk formulieren."
+            />
+
+            <AnimatedHomeCard
+              to="/smoelenboek"
+              Icon={IdCardIcon}
+              title="Smoelenboek"
+              text="Bekijk collega’s in Ember, profielfoto’s, profielnotities en activiteit."
             />
 
             {roles.includes("admin") && (

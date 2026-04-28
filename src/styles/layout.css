@@ -3449,3 +3449,91 @@ html[data-appearance="light"] .profile-signature-pad-shell{
     grid-template-columns: 1fr;
   }
 }
+
+.backdrop{
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,.35);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity .18s ease;
+  z-index: 20;
+}
+
+.backdrop.show{
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.sidebar{
+  position: fixed;
+  top: 56px;
+  left: 0;
+  bottom: 0;
+  width: 280px;
+  max-width: calc(100vw - 32px);
+  z-index: 30;
+  pointer-events: none;
+}
+
+.sidebar.open{
+  pointer-events: auto;
+}
+
+.nav{
+  pointer-events: auto;
+}
+
+.nav-link{
+  position: relative;
+  z-index: 31;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.directory-card-note:empty{
+  display: none;
+}
+
+.backdrop{
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,.35);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity .18s ease;
+  z-index: 20;
+}
+
+.backdrop.show{
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.sidebar{
+  z-index: 40;
+}
+
+.sidebar.open{
+  pointer-events: auto;
+}
+
+.sidebar.open .nav,
+.sidebar.open .nav-link{
+  pointer-events: auto;
+}
+
+.nav-link{
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  width: 100%;
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
+}
+
+.nav-link.active{
+  background: rgba(255,255,255,.07);
+}

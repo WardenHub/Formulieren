@@ -1,9 +1,11 @@
 //src/pages/Profile/DirectoryPage.jsx
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { getUserDirectory } from "../../api/emberApi.js";
 import { fetchProtectedObjectUrl } from "../../api/http.js";
 import teamsLogo from "../../assets/teams-logo.png";
+import { ChevronLeftIcon } from "@/components/ui/chevron-left";
 
 function DirectoryAvatar({ item }) {
   const [src, setSrc] = useState(null);
@@ -70,6 +72,9 @@ function DirectoryAvatar({ item }) {
 }
 
 export default function DirectoryPage() {
+  const navigate = useNavigate();
+  const backIconRef = useRef(null);
+
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [items, setItems] = useState([]);
@@ -123,6 +128,17 @@ export default function DirectoryPage() {
       <div className="inst-sticky">
         <div className="inst-sticky-row">
           <div className="inst-sticky-left">
+            <button
+              type="button"
+              className="icon-btn"
+              title="terug naar home"
+              onClick={() => navigate("/")}
+              onMouseEnter={() => backIconRef.current?.startAnimation?.()}
+              onMouseLeave={() => backIconRef.current?.stopAnimation?.()}
+            >
+              <ChevronLeftIcon ref={backIconRef} size={18} />
+            </button>
+
             <div className="inst-title">
               <h1>Smoelenboek</h1>
               <div className="muted" style={{ fontSize: 13 }}>
@@ -173,11 +189,7 @@ export default function DirectoryPage() {
                     <div className="directory-card-note">
                       {item.profile_note}
                     </div>
-                  ) : (
-                    <div className="directory-card-note directory-card-note--empty">
-                      Geen opmerking toegevoegd
-                    </div>
-                  )}
+                  ) : null}
 
                   <div className="directory-card-badges">
                     <span className="monitor-tag monitor-tag--success">

@@ -1,6 +1,6 @@
 // src/layout/layout.jsx
 import { httpJson, fetchProtectedObjectUrl } from "../api/http";
-import { Outlet, NavLink, useLocation, Link } from "react-router-dom";
+import { Outlet, useLocation, Link, useNavigate } from "react-router-dom";
 import { useEffect, useRef, useState } from "react";
 import "../styles/layout.css";
 import { logout } from "../auth/msal";
@@ -30,14 +30,23 @@ function resolveLayoutAvatarPath(profileData) {
 }
 
 export default function Layout() {
+  const navigate = useNavigate();
+  const location = useLocation();
+
   const [navOpen, setNavOpen] = useState(false);
   const [avatarOpen, setAvatarOpen] = useState(false);
   const [roles, setRoles] = useState([]);
+  const [meData, setMeData] = useState(null);
   const [profileData, setProfileData] = useState(null);
   const [avatarObjectUrl, setAvatarObjectUrl] = useState(null);
 
   const menuRef = useRef(null);
-  const location = useLocation();
+
+  function go(to) {
+    setNavOpen(false);
+    setAvatarOpen(false);
+    navigate(to);
+  }
 
   function AnimatedMenuItem({ onClick, Icon, children, className = "menu-item" }) {
     const iconRef = useRef(null);
@@ -56,20 +65,23 @@ export default function Layout() {
     );
   }
 
-  function AnimatedNavLink({ to, end, Icon, children }) {
+  function AnimatedNavButton({ to, exact = false, Icon, children }) {
     const iconRef = useRef(null);
+    const active = exact
+      ? location.pathname === to
+      : location.pathname === to || location.pathname.startsWith(`${to}/`);
 
     return (
-      <NavLink
-        to={to}
-        end={end}
-        className="nav-link nav-link--icon"
+      <button
+        type="button"
+        className={`nav-link nav-link--icon${active ? " active" : ""}`}
+        onClick={() => go(to)}
         onMouseEnter={() => iconRef.current?.startAnimation?.()}
         onMouseLeave={() => iconRef.current?.stopAnimation?.()}
       >
         <Icon ref={iconRef} size={18} className="nav-anim-icon" />
         <span>{children}</span>
-      </NavLink>
+      </button>
     );
   }
 
@@ -96,38 +108,55 @@ export default function Layout() {
       try {
         const data = await httpJson("/me");
         if (cancelled) return;
-        setRoles(data.roles ?? []);
-        setProfileData(data || null);
+
+        setMeData(data || null);
+        setRoles(data?.roles ?? []);
       } catch (err) {
         console.error("me fetch failed", err);
         if (!cancelled) {
+          setMeData(null);
           setRoles([]);
-          setProfileData(null);
         }
       }
     }
 
     loadMe();
 
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadProfile() {
+      try {
+        const data = await httpJson("/me/profile");
+        if (!cancelled) setProfileData(data || null);
+      } catch (err) {
+        console.error("profile fetch failed", err);
+        if (!cancelled) setProfileData(null);
+      }
+    }
+
+    loadProfile();
+
     function onProfileUpdated(e) {
-      setProfileData((prev) => ({
-        ...(prev || {}),
-        ...(e?.detail || {}),
-        user: prev?.user || null,
-        roles: prev?.roles || roles,
-      }));
+      setProfileData(e?.detail || null);
     }
 
     window.addEventListener("ember:profile-updated", onProfileUpdated);
+
     return () => {
       cancelled = true;
       window.removeEventListener("ember:profile-updated", onProfileUpdated);
     };
-  }, [roles]);
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
-    let nextObjectUrl = null;
+    let createdUrl = null;
 
     async function loadAvatarObjectUrl() {
       const mediaPath = resolveLayoutAvatarPath(profileData);
@@ -141,15 +170,16 @@ export default function Layout() {
       }
 
       try {
-        nextObjectUrl = await fetchProtectedObjectUrl(mediaPath);
+        createdUrl = await fetchProtectedObjectUrl(mediaPath);
+
         if (cancelled) {
-          if (nextObjectUrl) URL.revokeObjectURL(nextObjectUrl);
+          if (createdUrl) URL.revokeObjectURL(createdUrl);
           return;
         }
 
         setAvatarObjectUrl((prev) => {
           if (prev) URL.revokeObjectURL(prev);
-          return nextObjectUrl;
+          return createdUrl;
         });
       } catch (err) {
         console.error("avatar media fetch failed", err);
@@ -166,26 +196,39 @@ export default function Layout() {
 
     return () => {
       cancelled = true;
-      if (nextObjectUrl) URL.revokeObjectURL(nextObjectUrl);
     };
   }, [profileData]);
 
-  const avatarInitials = initialsFromProfilePayload(profileData);
+  useEffect(() => {
+    return () => {
+      setAvatarObjectUrl((prev) => {
+        if (prev) URL.revokeObjectURL(prev);
+        return null;
+      });
+    };
+  }, []);
+
+  const avatarInitials =
+    initialsFromProfilePayload(profileData) ||
+    meData?.profile?.initials ||
+    "E";
+
   const profileDisplayName =
     profileData?.profile?.effective_display_name ||
-    profileData?.profile?.display_name ||
-    profileData?.user?.name ||
+    meData?.profile?.display_name ||
+    meData?.user?.name ||
     "Gebruiker";
 
   const profileNote =
     profileData?.profile?.profile_note ||
-    profileData?.profile_note ||
+    meData?.profile?.profile_note ||
     null;
 
   return (
     <div className="app-shell">
       <header className="topbar">
         <button
+          type="button"
           className="icon-btn"
           aria-label="menu"
           onClick={() => setNavOpen((v) => !v)}
@@ -199,6 +242,7 @@ export default function Layout() {
 
         <div className="avatar-wrap" ref={menuRef}>
           <button
+            type="button"
             className="icon-btn topbar-avatar-btn"
             aria-label="account"
             onClick={() => setAvatarOpen((v) => !v)}
@@ -239,11 +283,11 @@ export default function Layout() {
                 </div>
               </div>
 
-              <Link className="menu-item" to="/profiel">
+              <Link className="menu-item" to="/profiel" onClick={() => setAvatarOpen(false)}>
                 Profiel
               </Link>
 
-              <Link className="menu-item" to="/smoelenboek">
+              <Link className="menu-item" to="/smoelenboek" onClick={() => setAvatarOpen(false)}>
                 Smoelenboek
               </Link>
 
@@ -252,6 +296,7 @@ export default function Layout() {
                 href="https://kennis.wardenburg.nl/Main/Werkwijze/Ember/"
                 target="_blank"
                 rel="noreferrer"
+                onClick={() => setAvatarOpen(false)}
               >
                 Help
               </a>
@@ -275,26 +320,26 @@ export default function Layout() {
 
       <aside className={`sidebar ${navOpen ? "open" : ""}`}>
         <nav className="nav">
-          <AnimatedNavLink to="/" end Icon={HomeIcon}>
+          <AnimatedNavButton to="/" exact Icon={HomeIcon}>
             Home
-          </AnimatedNavLink>
+          </AnimatedNavButton>
 
-          <AnimatedNavLink to="/installaties" Icon={SearchIcon}>
-            Installatiegegevens
-          </AnimatedNavLink>
+          <AnimatedNavButton to="/installaties" Icon={SearchIcon}>
+            Installaties
+          </AnimatedNavButton>
 
-          <AnimatedNavLink to="/monitor/formulieren" Icon={MonitorCheckIcon}>
+          <AnimatedNavButton to="/monitor/formulieren" Icon={MonitorCheckIcon}>
             Monitor
-          </AnimatedNavLink>
+          </AnimatedNavButton>
 
-          <AnimatedNavLink to="/smoelenboek" Icon={IdCardIcon}>
+          <AnimatedNavButton to="/smoelenboek" Icon={IdCardIcon}>
             Smoelenboek
-          </AnimatedNavLink>
+          </AnimatedNavButton>
 
           {roles.includes("admin") && (
-            <AnimatedNavLink to="/admin" Icon={BrainIcon}>
+            <AnimatedNavButton to="/admin" Icon={BrainIcon}>
               Beheer
-            </AnimatedNavLink>
+            </AnimatedNavButton>
           )}
         </nav>
       </aside>
