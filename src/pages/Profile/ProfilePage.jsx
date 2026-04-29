@@ -25,10 +25,12 @@ function initialsFromProfile(data) {
 }
 
 function statusToneClass(kind) {
-  if (kind === "success") return "monitor-tag monitor-tag--success";
-  if (kind === "warning") return "monitor-tag monitor-tag--warning";
-  if (kind === "active") return "monitor-tag monitor-tag--active";
-  return "monitor-tag monitor-tag--neutral";
+  if (kind === "success") return "ember-label ember-label--success";
+  if (kind === "warning") return "ember-label ember-label--warning";
+  if (kind === "danger") return "ember-label ember-label--danger";
+  if (kind === "active") return "ember-label ember-label--info";
+  if (kind === "muted") return "ember-label ember-label--muted";
+  return "ember-label ember-label--neutral";
 }
 
 function resolveAvatarImagePath(data) {
@@ -64,17 +66,10 @@ function dispatchProfileUpdated(payload) {
 }
 
 function StatTile({ label, value, tone = "neutral" }) {
-  let cls = "monitor-status-tile monitor-status-tile--neutral";
-  if (tone === "active") cls = "monitor-status-tile monitor-status-tile--active";
-  if (tone === "success") cls = "monitor-status-tile monitor-status-tile--success";
-  if (tone === "warning") cls = "monitor-status-tile monitor-status-tile--warning";
-  if (tone === "danger") cls = "monitor-status-tile monitor-status-tile--danger";
-  if (tone === "muted") cls = "monitor-status-tile monitor-status-tile--muted";
-
   return (
-    <div className={cls}>
-      <div className="monitor-status-tile__value">{value ?? 0}</div>
-      <div className="monitor-status-tile__label">{label}</div>
+    <div className={`ember-status-tile ember-status-tile--${tone}`}>
+      <div className="ember-status-tile__value">{value ?? 0}</div>
+      <div className="ember-status-tile__label">{label}</div>
     </div>
   );
 }
@@ -250,9 +245,7 @@ export default function ProfilePage() {
       if (!e.altKey || key !== "s") return;
 
       e.preventDefault();
-      if (!saving && isDirty) {
-        handleSave();
-      }
+      if (!saving && isDirty) handleSave();
     }
 
     window.addEventListener("keydown", onKeyDown);
@@ -296,9 +289,7 @@ export default function ProfilePage() {
 
     const nextPreviewUrl = URL.createObjectURL(file);
 
-    if (avatarPreviewUrl) {
-      URL.revokeObjectURL(avatarPreviewUrl);
-    }
+    if (avatarPreviewUrl) URL.revokeObjectURL(avatarPreviewUrl);
     setAvatarPreviewUrl(nextPreviewUrl);
 
     setUploadingAvatar(true);
@@ -340,9 +331,7 @@ export default function ProfilePage() {
         avatar_source_preference: res?.profile?.avatar_source_preference || "uploaded",
       }));
 
-      if (avatarPreviewUrl) {
-        URL.revokeObjectURL(avatarPreviewUrl);
-      }
+      if (avatarPreviewUrl) URL.revokeObjectURL(avatarPreviewUrl);
       setAvatarPreviewUrl(null);
 
       setAvatarObjectUrl((prev) => {
@@ -370,9 +359,7 @@ export default function ProfilePage() {
 
     const nextPreviewUrl = URL.createObjectURL(file);
 
-    if (signaturePreviewUrl) {
-      URL.revokeObjectURL(signaturePreviewUrl);
-    }
+    if (signaturePreviewUrl) URL.revokeObjectURL(signaturePreviewUrl);
     setSignaturePreviewUrl(nextPreviewUrl);
 
     setUploadingSignature(true);
@@ -414,9 +401,7 @@ export default function ProfilePage() {
         signature_source_preference: res?.profile?.signature_source_preference || "none",
       }));
 
-      if (signaturePreviewUrl) {
-        URL.revokeObjectURL(signaturePreviewUrl);
-      }
+      if (signaturePreviewUrl) URL.revokeObjectURL(signaturePreviewUrl);
       setSignaturePreviewUrl(null);
 
       setSignatureObjectUrl((prev) => {
@@ -435,9 +420,7 @@ export default function ProfilePage() {
   async function handleSaveDrawnSignature(file) {
     const nextPreviewUrl = URL.createObjectURL(file);
 
-    if (signaturePreviewUrl) {
-      URL.revokeObjectURL(signaturePreviewUrl);
-    }
+    if (signaturePreviewUrl) URL.revokeObjectURL(signaturePreviewUrl);
     setSignaturePreviewUrl(nextPreviewUrl);
 
     setUploadingSignature(true);
@@ -474,24 +457,20 @@ export default function ProfilePage() {
   const signatureImageSrc = signaturePreviewUrl || signatureObjectUrl || null;
 
   return (
-    <div className="profile-page">
+    <div className="profile-page ember-page-stack">
       <div className="inst-sticky">
         <div className="inst-sticky-row">
           <div className="inst-sticky-left">
             <div className="inst-title">
               <h1>Profiel</h1>
-              <div className="muted" style={{ fontSize: 13 }}>
+              <div className="ember-page-subtitle">
                 Persoonlijke instellingen en activiteit
               </div>
             </div>
           </div>
 
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <button
-              type="button"
-              className="btn btn-secondary"
-              onClick={loadProfile}
-            >
+          <div className="ember-toolbar">
+            <button type="button" className="btn btn-secondary" onClick={loadProfile}>
               <RefreshCWIcon size={18} className="nav-anim-icon" />
               Verversen
             </button>
@@ -509,7 +488,7 @@ export default function ProfilePage() {
       </div>
 
       <div className="inst-body profile-grid">
-        {error ? <div style={{ color: "salmon" }}>{error}</div> : null}
+        {error ? <div className="ember-error-text">{error}</div> : null}
 
         {loading ? (
           <div className="muted">laden; profiel</div>
@@ -517,30 +496,21 @@ export default function ProfilePage() {
           <div className="muted">Profiel niet beschikbaar.</div>
         ) : (
           <>
-            <div className="profile-hero card">
+            <section className="card profile-hero">
               <div className="profile-hero-main">
                 <div className="profile-avatar-large">
                   {avatarImageSrc ? (
-                    <img
-                      src={avatarImageSrc}
-                      alt="Profielfoto"
-                      className="profile-avatar-image"
-                    />
+                    <img src={avatarImageSrc} alt="Profielfoto" className="profile-avatar-image" />
                   ) : (
                     initialsFromProfile(data)
                   )}
                 </div>
 
                 <div className="profile-hero-text">
-                  <div className="profile-hero-name">
-                    {profile.effective_display_name}
-                  </div>
+                  <div className="profile-hero-name">{profile.effective_display_name}</div>
+                  <div className="ember-page-subtitle">{profile.email_snapshot || "-"}</div>
 
-                  <div className="muted" style={{ fontSize: 13 }}>
-                    {profile.email_snapshot || "-"}
-                  </div>
-
-                  <div className="admin-chip-row">
+                  <div className="ember-label-row">
                     <span className={statusToneClass("active")}>
                       Thema {profile.appearance_preference}
                     </span>
@@ -564,15 +534,13 @@ export default function ProfilePage() {
                   </div>
                 </div>
               </div>
-            </div>
+            </section>
 
             <div className="profile-two-col">
-              <div className="card">
+              <section className="card">
                 <div className="card-head">
                   <div className="profile-section-title">Persoonlijk</div>
-                  <div className="muted" style={{ fontSize: 13 }}>
-                    Kies hoe je in Ember zichtbaar bent
-                  </div>
+                  <div className="ember-page-subtitle">Kies hoe je in Ember zichtbaar bent</div>
                 </div>
 
                 <div className="card-body">
@@ -593,20 +561,12 @@ export default function ProfilePage() {
 
                   <div>
                     <div className="label">Microsoft naam</div>
-                    <input
-                      className="input"
-                      readOnly
-                      value={profile.display_name_snapshot || ""}
-                    />
+                    <input className="input" readOnly value={profile.display_name_snapshot || ""} />
                   </div>
 
                   <div>
                     <div className="label">E-mail</div>
-                    <input
-                      className="input"
-                      readOnly
-                      value={profile.email_snapshot || ""}
-                    />
+                    <input className="input" readOnly value={profile.email_snapshot || ""} />
                   </div>
 
                   <div>
@@ -625,14 +585,12 @@ export default function ProfilePage() {
                     />
                   </div>
                 </div>
-              </div>
+              </section>
 
-              <div className="card">
+              <section className="card">
                 <div className="card-head">
                   <div className="profile-section-title">Weergave</div>
-                  <div className="muted" style={{ fontSize: 13 }}>
-                    Persoonlijke themavoorkeur voor Ember
-                  </div>
+                  <div className="ember-page-subtitle">Persoonlijke themavoorkeur voor Ember</div>
                 </div>
 
                 <div className="card-body">
@@ -654,14 +612,14 @@ export default function ProfilePage() {
                     </select>
                   </div>
                 </div>
-              </div>
+              </section>
             </div>
 
             <div className="profile-two-col">
-              <div className="card">
+              <section className="card">
                 <div className="card-head">
                   <div className="profile-section-title">Profielfoto</div>
-                  <div className="muted" style={{ fontSize: 13 }}>
+                  <div className="ember-page-subtitle">
                     Eigen foto heeft voorrang; anders gebruiken we Microsoft of een placeholder
                   </div>
                 </div>
@@ -670,21 +628,17 @@ export default function ProfilePage() {
                   <div className="profile-media-preview">
                     <div className="profile-avatar-preview">
                       {avatarImageSrc ? (
-                        <img
-                          src={avatarImageSrc}
-                          alt="Profielfoto preview"
-                          className="profile-avatar-image"
-                        />
+                        <img src={avatarImageSrc} alt="Profielfoto preview" className="profile-avatar-image" />
                       ) : (
                         initialsFromProfile(data)
                       )}
                     </div>
 
                     <div className="profile-media-meta">
-                      <div style={{ fontWeight: 700 }}>
+                      <div className="profile-media-title">
                         {avatar?.file_name || "Geen eigen profielfoto geüpload"}
                       </div>
-                      <div className="muted" style={{ fontSize: 13 }}>
+                      <div className="ember-page-subtitle">
                         Actieve bron; {draft.avatar_source_preference}
                       </div>
                     </div>
@@ -713,7 +667,7 @@ export default function ProfilePage() {
                       ref={avatarInputRef}
                       type="file"
                       accept="image/png,image/jpeg,image/webp"
-                      style={{ display: "none" }}
+                      className="ember-hidden-file-input"
                       onChange={handleAvatarFilePicked}
                     />
 
@@ -738,12 +692,12 @@ export default function ProfilePage() {
                     </button>
                   </div>
                 </div>
-              </div>
+              </section>
 
-              <div className="card">
+              <section className="card">
                 <div className="card-head">
                   <div className="profile-section-title">Handtekening</div>
-                  <div className="muted" style={{ fontSize: 13 }}>
+                  <div className="ember-page-subtitle">
                     Deze handtekening kan later in formulier- en documentflows worden gebruikt
                   </div>
                 </div>
@@ -752,20 +706,12 @@ export default function ProfilePage() {
                   <div className="profile-signature-preview">
                     {signatureImageSrc ? (
                       <div className="profile-signature-preview-inner">
-                        <img
-                          src={signatureImageSrc}
-                          alt="Handtekening preview"
-                          className="profile-signature-image"
-                        />
+                        <img src={signatureImageSrc} alt="Handtekening preview" className="profile-signature-image" />
                       </div>
                     ) : signature?.file_name ? (
-                      <div className="profile-signature-preview-inner">
-                        {signature.file_name}
-                      </div>
+                      <div className="profile-signature-preview-inner">{signature.file_name}</div>
                     ) : (
-                      <div className="profile-signature-preview-empty">
-                        Nog geen handtekening ingesteld
-                      </div>
+                      <div className="profile-signature-preview-empty">Nog geen handtekening ingesteld</div>
                     )}
                   </div>
 
@@ -791,7 +737,7 @@ export default function ProfilePage() {
                       ref={signatureInputRef}
                       type="file"
                       accept="image/png,image/jpeg,image/webp"
-                      style={{ display: "none" }}
+                      className="ember-hidden-file-input"
                       onChange={handleSignatureFilePicked}
                     />
 
@@ -826,39 +772,43 @@ export default function ProfilePage() {
                     </button>
                   </div>
                 </div>
-              </div>
+              </section>
             </div>
 
-            <div className="card">
+            <section className="card">
               <div className="card-head">
                 <div className="profile-section-title">Mijn activiteit</div>
-                <div className="muted" style={{ fontSize: 13 }}>
+                <div className="ember-page-subtitle">
                   Aantallen op basis van jouw formulieren en opvolgacties
                 </div>
               </div>
 
               <div className="card-body">
-                <div className="profile-stats-title">Formulieren</div>
-                <div className="profile-stats-grid">
-                  <StatTile label="Totaal" value={stats?.forms?.total ?? 0} tone="neutral" />
-                  <StatTile label="Concept" value={stats?.forms?.concept ?? 0} tone="warning" />
-                  <StatTile label="Ingediend" value={stats?.forms?.ingediend ?? 0} tone="active" />
-                  <StatTile label="In behandeling" value={stats?.forms?.in_behandeling ?? 0} tone="active" />
-                  <StatTile label="Definitief" value={stats?.forms?.afgehandeld ?? 0} tone="success" />
-                  <StatTile label="Ingetrokken" value={stats?.forms?.ingetrokken ?? 0} tone="danger" />
+                <div className="profile-stats-section">
+                  <div className="profile-stats-title">Formulieren</div>
+                  <div className="ember-status-grid ember-status-grid--calm">
+                    <StatTile label="Totaal" value={stats?.forms?.total ?? 0} tone="neutral" />
+                    <StatTile label="Concept" value={stats?.forms?.concept ?? 0} tone="warning" />
+                    <StatTile label="Ingediend" value={stats?.forms?.ingediend ?? 0} tone="active" />
+                    <StatTile label="In behandeling" value={stats?.forms?.in_behandeling ?? 0} tone="active" />
+                    <StatTile label="Definitief" value={stats?.forms?.afgehandeld ?? 0} tone="success" />
+                    <StatTile label="Ingetrokken" value={stats?.forms?.ingetrokken ?? 0} tone="danger" />
+                  </div>
                 </div>
 
-                <div className="profile-stats-title">Opvolgacties</div>
-                <div className="profile-stats-grid">
-                  <StatTile label="Totaal" value={stats?.follow_ups?.total ?? 0} tone="neutral" />
-                  <StatTile label="Open" value={stats?.follow_ups?.open ?? 0} tone="active" />
-                  <StatTile label="Wachten op derden" value={stats?.follow_ups?.waiting ?? 0} tone="warning" />
-                  <StatTile label="Afgehandeld" value={stats?.follow_ups?.done ?? 0} tone="success" />
-                  <StatTile label="Afgewezen" value={stats?.follow_ups?.rejected ?? 0} tone="danger" />
-                  <StatTile label="Vervallen" value={stats?.follow_ups?.expired ?? 0} tone="muted" />
+                <div className="profile-stats-section">
+                  <div className="profile-stats-title">Opvolgacties</div>
+                  <div className="ember-status-grid ember-status-grid--calm">
+                    <StatTile label="Totaal" value={stats?.follow_ups?.total ?? 0} tone="neutral" />
+                    <StatTile label="Open" value={stats?.follow_ups?.open ?? 0} tone="active" />
+                    <StatTile label="Wachten op derden" value={stats?.follow_ups?.waiting ?? 0} tone="warning" />
+                    <StatTile label="Afgehandeld" value={stats?.follow_ups?.done ?? 0} tone="success" />
+                    <StatTile label="Afgewezen" value={stats?.follow_ups?.rejected ?? 0} tone="danger" />
+                    <StatTile label="Vervallen" value={stats?.follow_ups?.expired ?? 0} tone="muted" />
+                  </div>
                 </div>
               </div>
-            </div>
+            </section>
           </>
         )}
       </div>

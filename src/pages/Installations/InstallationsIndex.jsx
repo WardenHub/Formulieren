@@ -1,4 +1,5 @@
 // /src/pages/Installations/InstallationsIndex.jsx
+// /src/pages/Installations/InstallationsIndex.jsx
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 
@@ -47,10 +48,17 @@ export default function InstallationsIndex() {
   const hasQuery = useMemo(() => q.trim().length > 0, [q]);
 
   return (
-    <div style={{ display: "grid", gap: 12 }}>
-      <h1 style={{ margin: 0 }}>Installaties</h1>
+    <div className="installations-index">
+      <div className="page-hero">
+        <div className="page-hero__title-wrap">
+          <h1 className="page-hero__title">Installaties</h1>
+          <div className="page-hero__subtitle">
+            Zoek een installatie op code, naam, object of relatie.
+          </div>
+        </div>
+      </div>
 
-      <div className="searchbar">
+      <div className="searchbar installations-search">
         <SearchIcon size={16} className="muted" />
         <input
           className="searchbar-input"
@@ -61,58 +69,34 @@ export default function InstallationsIndex() {
         />
       </div>
 
-      {err && <p style={{ color: "salmon", margin: 0 }}>{err}</p>}
+      {err && <p className="doc-error">{err}</p>}
 
       {loading && (
-        <div
-          className="muted"
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: 10,
-            margin: 0,
-          }}
-        >
+        <div className="inline-status muted">
           <LoaderPinwheelIcon ref={loaderRef} size={18} aria-label="laden" />
           <span>laden</span>
         </div>
       )}
 
       {!loading && !hasQuery && (
-        <p className="muted" style={{ margin: 0 }}>
-          typ een code om te zoeken
-        </p>
+        <div className="ui-empty">typ een code om te zoeken</div>
       )}
 
       {!loading && hasQuery && items.length === 0 && (
-        <p className="muted" style={{ margin: 0 }}>
-          geen resultaten
-        </p>
+        <div className="ui-empty">geen resultaten</div>
       )}
 
       {!loading && items.length > 0 && (
-        <div className="list">
+        <div className="installations-list">
           {items.map((i) => (
             <Link
               key={i.atrium_installation_code}
               to={`/installaties/${i.atrium_installation_code}`}
-              className="list-row"
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 12,
-              }}
+              className="installations-row"
             >
-              <div style={{ display: "grid", gap: 4 }}>
-                <div
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 8,
-                    minWidth: 0,
-                  }}
-                >
-                  <div style={{ fontWeight: 650 }}>
+              <div className="installations-row__main">
+                <div className="installations-row__top">
+                  <div className="installations-row__code">
                     {i.atrium_installation_code}
                   </div>
 
@@ -124,7 +108,7 @@ export default function InstallationsIndex() {
                   )}
                 </div>
 
-                <div className="muted" style={{ fontSize: 13 }}>
+                <div className="installations-row__name">
                   {i.installation_name || "geen naam"}
                 </div>
               </div>

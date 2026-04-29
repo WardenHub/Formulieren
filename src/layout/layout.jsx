@@ -1,22 +1,27 @@
 // src/layout/layout.jsx
 import { httpJson, fetchProtectedObjectUrl } from "../api/http";
-import { Outlet, useLocation, Link, useNavigate } from "react-router-dom";
-import { useEffect, useRef, useState } from "react";
+import { Outlet, Link, useLocation, useNavigate } from "react-router-dom";
+import { useEffect, useMemo, useRef, useState } from "react";
 import "../styles/layout.css";
 import { logout } from "../auth/msal";
 import { LogoutIcon } from "@/components/ui/logout";
-
+import { applyAppearancePreference } from "../theme/appearance.js";
 import { HomeIcon } from "@/components/ui/home";
 import { SearchIcon } from "@/components/ui/search";
 import { BrainIcon } from "@/components/ui/brain";
 import { MonitorCheckIcon } from "@/components/ui/monitor-check";
 import { IdCardIcon } from "@/components/ui/id-card";
 
-function initialsFromProfilePayload(profileData) {
-  return profileData?.effective?.initials || profileData?.profile?.initials || "E";
+function initialsFromProfilePayload(profileData, meData) {
+  return (
+    profileData?.effective?.initials ||
+    profileData?.profile?.initials ||
+    meData?.profile?.initials ||
+    "E"
+  );
 }
 
-function resolveLayoutAvatarPath(profileData) {
+function resolveLayoutAvatarPath(profileData, meData) {
   return (
     profileData?.effective?.avatar_url ||
     profileData?.effective?.avatar_download_url ||
@@ -25,8 +30,20 @@ function resolveLayoutAvatarPath(profileData) {
     profileData?.avatar?.preview_url ||
     profileData?.avatar?.url ||
     profileData?.profile?.avatar_url ||
+    meData?.profile?.avatar_url ||
     null
   );
+}
+
+function resolveProfileUpdatedKey(profileData, meData) {
+  return [
+    profileData?.effective?.avatar_url || "",
+    profileData?.effective?.avatar_mode || "",
+    profileData?.avatar?.avatar_id || "",
+    profileData?.avatar?.updated_at || "",
+    profileData?.avatar?.uploaded_at || "",
+    meData?.profile?.avatar_url || "",
+  ].join("|");
 }
 
 export default function Layout() {
@@ -39,8 +56,14 @@ export default function Layout() {
   const [meData, setMeData] = useState(null);
   const [profileData, setProfileData] = useState(null);
   const [avatarObjectUrl, setAvatarObjectUrl] = useState(null);
+  const [profileRefreshToken, setProfileRefreshToken] = useState(0);
 
   const menuRef = useRef(null);
+
+  const avatarRefreshKey = useMemo(
+    () => resolveProfileUpdatedKey(profileData, meData),
+    [profileData, meData]
+  );
 
   function go(to) {
     setNavOpen(false);
@@ -125,7 +148,7 @@ export default function Layout() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [profileRefreshToken]);
 
   useEffect(() => {
     let cancelled = false;
@@ -133,7 +156,10 @@ export default function Layout() {
     async function loadProfile() {
       try {
         const data = await httpJson("/me/profile");
-        if (!cancelled) setProfileData(data || null);
+        if (!cancelled) {
+          setProfileData(data || null);
+          applyAppearancePreference(data?.profile?.appearance_preference || "system");
+        }
       } catch (err) {
         console.error("profile fetch failed", err);
         if (!cancelled) setProfileData(null);
@@ -143,7 +169,10 @@ export default function Layout() {
     loadProfile();
 
     function onProfileUpdated(e) {
-      setProfileData(e?.detail || null);
+      const next = e?.detail || null;
+      setProfileData(next);
+      applyAppearancePreference(next?.profile?.appearance_preference || "system");
+      setProfileRefreshToken((n) => n + 1);
     }
 
     window.addEventListener("ember:profile-updated", onProfileUpdated);
@@ -159,7 +188,7 @@ export default function Layout() {
     let createdUrl = null;
 
     async function loadAvatarObjectUrl() {
-      const mediaPath = resolveLayoutAvatarPath(profileData);
+      const mediaPath = resolveLayoutAvatarPath(profileData, meData);
 
       if (!mediaPath) {
         setAvatarObjectUrl((prev) => {
@@ -183,6 +212,7 @@ export default function Layout() {
         });
       } catch (err) {
         console.error("avatar media fetch failed", err);
+
         if (!cancelled) {
           setAvatarObjectUrl((prev) => {
             if (prev) URL.revokeObjectURL(prev);
@@ -196,8 +226,9 @@ export default function Layout() {
 
     return () => {
       cancelled = true;
+      if (createdUrl) URL.revokeObjectURL(createdUrl);
     };
-  }, [profileData]);
+  }, [avatarRefreshKey, profileRefreshToken]);
 
   useEffect(() => {
     return () => {
@@ -208,10 +239,7 @@ export default function Layout() {
     };
   }, []);
 
-  const avatarInitials =
-    initialsFromProfilePayload(profileData) ||
-    meData?.profile?.initials ||
-    "E";
+  const avatarInitials = initialsFromProfilePayload(profileData, meData);
 
   const profileDisplayName =
     profileData?.profile?.effective_display_name ||
@@ -229,14 +257,16 @@ export default function Layout() {
       <header className="topbar">
         <button
           type="button"
-          className="icon-btn"
+          className="icon-btn topbar-menu-btn"
           aria-label="menu"
           onClick={() => setNavOpen((v) => !v)}
         >
-          ☰
+          <span className="topbar-menu-glyph">☰</span>
         </button>
 
-        <div className="brand">Ember</div>
+        <div className="brand" onClick={() => go("/")} role="button" tabIndex={0}>
+          Ember
+        </div>
 
         <div className="topbar-spacer" />
 

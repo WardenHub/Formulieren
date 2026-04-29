@@ -54,25 +54,15 @@ function lower(v) {
   return normStr(v).toLowerCase();
 }
 
-/**
- * Section heuristics for showing company preset buttons.
- * We want presets on:
- * - Installateur sections
- * - Onderhouder sections
- *
- * We use the section_name primarily, but also allow section_key fallback,
- * because new sections often follow inst_installateurs_* / inst_onderhoudsbedrijf_* naming.
- */
 function looksLikeCompanyPresetSection(sectionNameOrKey) {
   const s = lower(sectionNameOrKey);
   if (!s) return false;
 
-  // Cover Dutch variants and common typos/spacing
   return (
     s.includes("installateur") ||
     s.includes("installateurs") ||
     s.includes("onderhouder") ||
-    s.includes("onderhoud") || // catches "onderhoudsbedrijf"
+    s.includes("onderhoud") ||
     s.includes("onderhoudsbedrijf")
   );
 }
@@ -89,7 +79,6 @@ function findFieldKeyByLabel(fields, predicate) {
 function findAddressFieldKey(fields) {
   const arr = Array.isArray(fields) ? fields : [];
 
-  // Build normalized candidates once
   const candidates = arr
     .map((f) => {
       const label = lower(f?.label || "");
@@ -98,17 +87,14 @@ function findAddressFieldKey(fields) {
     })
     .filter((x) => x.field_key);
 
-  // 1) Prefer *_straat keys (new canonical naming)
   for (const c of candidates) {
     if (c.key.includes("_straat") || c.key.endsWith("straat")) return c.field_key;
   }
 
-  // 2) Then accept legacy adres keys
   for (const c of candidates) {
     if (c.key.includes("adres1") || c.key.includes("_adres") || c.key.endsWith("adres")) return c.field_key;
   }
 
-  // 3) Finally fall back to label matching (covers display-only changes)
   for (const c of candidates) {
     if (
       c.label.includes("straat") ||
@@ -133,42 +119,14 @@ function toOption(o) {
 
 function TabLoadingCard({ title = "Laden...", label = "Bezig met gegevens laden." }) {
   return (
-    <div
-      className="card"
-      style={{
-        minHeight: 180,
-        display: "grid",
-        placeItems: "center",
-      }}
-    >
-      <div
-        style={{
-          width: "100%",
-          maxWidth: 360,
-          padding: 24,
-          display: "grid",
-          gap: 10,
-          justifyItems: "center",
-          textAlign: "center",
-        }}
-      >
-        <div
-          style={{
-            width: 64,
-            height: 64,
-            borderRadius: 999,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            background: "rgba(255,255,255,0.08)",
-            boxShadow: "0 0 0 8px rgba(255,255,255,0.04)",
-          }}
-        >
+    <div className="card ember-loading-card">
+      <div className="ember-loading-card-inner">
+        <div className="ember-loading-icon">
           <PlusIcon size={26} className="nav-anim-icon" />
         </div>
 
-        <div style={{ fontWeight: 800, fontSize: 20 }}>{title}</div>
-        <div className="muted" style={{ fontSize: 13 }}>{label}</div>
+        <div className="ember-loading-title">{title}</div>
+        <div className="muted ember-small-text">{label}</div>
       </div>
     </div>
   );
@@ -183,10 +141,10 @@ const CustomFieldsTab = forwardRef(function CustomFieldsTab(
   const [saveError, setSaveError] = useState(null);
 
   const [savedKeys, setSavedKeys] = useState(() => new Set());
-  const savedTimersRef = useRef(new Map()); // field_key -> timeoutId
+  const savedTimersRef = useRef(new Map());
 
-  const toggleIconRefs = useRef({}); // section_key -> iconRef
-  const [openMap, setOpenMap] = useState({}); // section_key -> bool
+  const toggleIconRefs = useRef({});
+  const [openMap, setOpenMap] = useState({});
 
   const customFields = useMemo(() => {
     const fields = catalog?.fields || [];
@@ -213,18 +171,9 @@ const CustomFieldsTab = forwardRef(function CustomFieldsTab(
     return map;
   }, [customValues]);
 
-  // ─────────────────────────────────────────────────────────────
-  // Options support (dropdowns)
-  // We support multiple catalog shapes:
-  // 1) field.options (array)
-  // 2) catalog.*Options as array rows (field_key, option_value, option_label)
-  // 3) NEW backend: catalog.fieldOptions as OBJECT: { [field_key]: [{value,label}] }
-  // Result: Map(field_key -> [{value,label}...])
-  // ─────────────────────────────────────────────────────────────
   const optionsByFieldKey = useMemo(() => {
     const map = new Map();
 
-    // 1) opties direct op het veld
     for (const f of catalog?.fields || []) {
       if (!f?.field_key) continue;
       const arr = Array.isArray(f.options) ? f.options : Array.isArray(f.option_list) ? f.option_list : null;
@@ -234,7 +183,6 @@ const CustomFieldsTab = forwardRef(function CustomFieldsTab(
       if (normalized.length) map.set(f.field_key, normalized);
     }
 
-    // 2) opties als losse lijst op de catalog (array rows)
     const flatLists = [
       catalog?.customFieldOptions,
       catalog?.options,
@@ -253,8 +201,6 @@ const CustomFieldsTab = forwardRef(function CustomFieldsTab(
       }
     }
 
-    // 3) NEW: backend returns fieldOptions as object map
-    // { [field_key]: [{value,label}] }
     const obj = catalog?.fieldOptions;
     if (obj && typeof obj === "object" && !Array.isArray(obj)) {
       for (const [fk, arr] of Object.entries(obj)) {
@@ -269,13 +215,10 @@ const CustomFieldsTab = forwardRef(function CustomFieldsTab(
       }
     }
 
-    // sort & dedupe per field (by value)
     for (const [fk, opts] of map.entries()) {
       const byValue = new Map();
-      for (const o of opts) {
-        // laatste wint; label uit backend is leading
-        byValue.set(o.value, o.label);
-      }
+      for (const o of opts) byValue.set(o.value, o.label);
+
       const unique = Array.from(byValue.entries()).map(([value, label]) => ({ value, label }));
       unique.sort((a, b) => a.label.localeCompare(b.label));
       map.set(fk, unique);
@@ -290,6 +233,7 @@ const CustomFieldsTab = forwardRef(function CustomFieldsTab(
       const v = valuesByKey.get(f.field_key);
       next[f.field_key] = valueToTyped(f, v);
     }
+
     setDraft(next);
     setSaveError(null);
 
@@ -300,11 +244,13 @@ const CustomFieldsTab = forwardRef(function CustomFieldsTab(
 
   const grouped = useMemo(() => {
     const map = new Map();
+
     for (const f of customFields) {
       const k = f.section_key || "overig";
       if (!map.has(k)) map.set(k, []);
       map.get(k).push(f);
     }
+
     return Array.from(map.entries()).map(([section_key, fields]) => ({
       section_key,
       section: sectionsByKey.get(section_key) || { section_key, section_name: section_key },
@@ -312,7 +258,6 @@ const CustomFieldsTab = forwardRef(function CustomFieldsTab(
     }));
   }, [customFields, sectionsByKey]);
 
-  // init defaults: alles dicht
   useEffect(() => {
     setOpenMap((prev) => {
       const next = { ...prev };
@@ -323,7 +268,6 @@ const CustomFieldsTab = forwardRef(function CustomFieldsTab(
     });
   }, [grouped]);
 
-  // notify parent: staat er iets open?
   useEffect(() => {
     const anyOpen = Object.values(openMap).some(Boolean);
     onAnyOpenChange?.(anyOpen);
@@ -331,6 +275,7 @@ const CustomFieldsTab = forwardRef(function CustomFieldsTab(
 
   const dirtyKeys = useMemo(() => {
     const set = new Set();
+
     for (const f of customFields) {
       const original = valueToTyped(f, valuesByKey.get(f.field_key));
       const current = draft[f.field_key] ?? null;
@@ -340,17 +285,18 @@ const CustomFieldsTab = forwardRef(function CustomFieldsTab(
 
       if (String(a ?? "") !== String(b ?? "")) set.add(f.field_key);
     }
+
     return set;
   }, [customFields, draft, valuesByKey]);
 
   const isDirty = dirtyKeys.size > 0;
 
   useEffect(() => {
-    if (typeof onDirtyChange === "function") onDirtyChange(isDirty);
+    onDirtyChange?.(isDirty);
   }, [isDirty, onDirtyChange]);
 
   useEffect(() => {
-    if (typeof onSavingChange === "function") onSavingChange(saving);
+    onSavingChange?.(saving);
   }, [saving, onSavingChange]);
 
   useEffect(() => {
@@ -403,15 +349,8 @@ const CustomFieldsTab = forwardRef(function CustomFieldsTab(
     clearSaved(fieldKey);
   }
 
-  /**
-   * Preset logic review:
-   * - Works by locating keys within the current section by label heuristics.
-   * - Safe for both installateur & onderhouder sections because labels are the same (Naam/Adres/PC+Plaats/etc).
-   * - It does overwrite existing values with preset values (and clears saved markers).
-   */
   function applyCompanyPreset(sectionFields, preset) {
     const fields = Array.isArray(sectionFields) ? sectionFields : [];
-
     const keyAddress = findAddressFieldKey(fields);
 
     const keyPcPlaats = findFieldKeyByLabel(fields, (l) => {
@@ -450,6 +389,7 @@ const CustomFieldsTab = forwardRef(function CustomFieldsTab(
           next[keyPostcode] = preset.postcode ?? null;
           touched.push(keyPostcode);
         }
+
         if (keyPlaats) {
           next[keyPlaats] = preset.plaats ?? null;
           touched.push(keyPlaats);
@@ -501,15 +441,9 @@ const CustomFieldsTab = forwardRef(function CustomFieldsTab(
 
       await putCustomValues(code, changes);
 
-      if (typeof onSaved === "function") {
-        await onSaved();
-      }
-
+      await onSaved?.();
       markSaved(changedKeys);
-
-      if (typeof onSaveOk === "function") {
-        onSaveOk();
-      }
+      onSaveOk?.();
     } catch (e) {
       setSaveError(e?.message || String(e));
     } finally {
@@ -547,17 +481,6 @@ const CustomFieldsTab = forwardRef(function CustomFieldsTab(
 
   useImperativeHandle(ref, () => ({ save, expandAll, collapseAll }));
 
-  if (!catalog) {
-    return (
-      <TabLoadingCard
-        title="Eigenschappen laden..."
-        label="Bezig met catalogus en eigenschappen ophalen."
-      />
-    );
-  }
-
-  if (customFields.length === 0) return <div className="muted">geen eigenschappen beschikbaar</div>;
-
   function isFilledValue(v) {
     if (v === null || v === undefined) return false;
     if (typeof v === "string") return v.trim().length > 0;
@@ -583,18 +506,30 @@ const CustomFieldsTab = forwardRef(function CustomFieldsTab(
       phone: "0598 397 497",
       email: "info@wardenburg.nl",
     },
-    
   };
 
-  return (
-    <div style={{ display: "grid", gap: 12 }}>
-      {saveError && <div style={{ color: "salmon" }}>{saveError}</div>}
+  if (!catalog) {
+    return (
+      <TabLoadingCard
+        title="Eigenschappen laden..."
+        label="Bezig met catalogus en eigenschappen ophalen."
+      />
+    );
+  }
 
-      <div style={{ display: "grid", gap: 10 }}>
+  if (customFields.length === 0) {
+    return <div className="muted">geen eigenschappen beschikbaar</div>;
+  }
+
+  return (
+    <div className="ember-page-stack custom-fields-tab">
+      {saveError && <div className="ember-error-text">{saveError}</div>}
+
+      <div className="custom-fields-tab__sections">
         {grouped.map((g) => {
           const isOpen = Boolean(openMap[g.section_key]);
-
           const totalCount = g.fields.length;
+
           let filledCount = 0;
           for (const f of g.fields) {
             const val = draft[f.field_key];
@@ -602,21 +537,11 @@ const CustomFieldsTab = forwardRef(function CustomFieldsTab(
           }
 
           const sectionName = g.section?.section_name || g.section_key;
-
-          // Updated: show presets for installateur OR onderhouder sections
           const showCompanyPresets =
             looksLikeCompanyPresetSection(sectionName) || looksLikeCompanyPresetSection(g.section_key);
 
           return (
-            <div
-              key={g.section_key}
-              style={{
-                padding: 12,
-                border: "1px solid rgba(255,255,255,0.12)",
-                borderRadius: 12,
-              }}
-            >
-              {/* summary row (NO nested button issue) */}
+            <div key={g.section_key} className={`ember-group-card ${isOpen ? "is-open" : ""}`}>
               <div
                 role="button"
                 tabIndex={0}
@@ -629,65 +554,43 @@ const CustomFieldsTab = forwardRef(function CustomFieldsTab(
                 }}
                 onMouseEnter={() => animateSectionIcon(g.section_key)}
                 onMouseLeave={() => stopSectionIcon(g.section_key)}
-                style={{
-                  width: "100%",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "space-between",
-                  gap: 12,
-                  background: "transparent",
-                  border: "none",
-                  padding: 0,
-                  cursor: "pointer",
-                  textAlign: "left",
-                  outline: "none",
-                }}
+                className="ember-group-toggle"
                 title={isOpen ? "inklappen" : "uitklappen"}
               >
-                <div style={{ display: "flex", alignItems: "baseline", gap: 12, minWidth: 0, flexWrap: "wrap" }}>
-                  <div style={{ fontWeight: 600 }}>{sectionName}</div>
-
-                  <div className="muted" style={{ whiteSpace: "nowrap" }}>
-                    {totalCount} velden
-                  </div>
-
-                  <div className="muted" style={{ whiteSpace: "nowrap" }}>
-                    {filledCount} met waarde
+                <div className="ember-group-main">
+                  <div className="ember-group-title-row">
+                    <div className="ember-group-title">{sectionName}</div>
+                    <span className="ember-meta-text">{totalCount} velden</span>
+                    <span className="ember-meta-text">{filledCount} met waarde</span>
                   </div>
 
                   {showCompanyPresets && (
                     <div
-                      style={{
-                        display: "inline-flex",
-                        gap: 8,
-                        alignItems: "center",
-                        flexWrap: "wrap",
-                        marginLeft: 4,
-                      }}
+                      className="ember-group-presets"
                       onClick={(e) => e.stopPropagation()}
                       onMouseDown={(e) => e.stopPropagation()}
                     >
-                      <span className="muted" style={{ fontSize: 13, whiteSpace: "nowrap" }}>
-                        Vul bedrijf:
-                      </span>
+                      <span className="ember-meta-text">Vul bedrijf:</span>
+
                       {Object.entries(PRESETS)
-                      .map(([key, preset]) => ({ key, ...preset }))
-                      .sort((a, b) => a.name.localeCompare(b.name, "nl"))
-                      .map((preset) => (
-                        <button
-                          key={preset.key}
-                          type="button"
-                          className="btn"
-                          title={`Vul met ${preset.name}`}
-                          onClick={() => applyCompanyPreset(g.fields, preset)}
-                        >
-                          {preset.name}
-                        </button>
-                      ))}
+                        .map(([key, preset]) => ({ key, ...preset }))
+                        .sort((a, b) => a.name.localeCompare(b.name, "nl"))
+                        .map((preset) => (
+                          <button
+                            key={preset.key}
+                            type="button"
+                            className="btn btn-compact"
+                            title={`Vul met ${preset.name}`}
+                            onClick={() => applyCompanyPreset(g.fields, preset)}
+                          >
+                            {preset.name}
+                          </button>
+                        ))}
                     </div>
                   )}
                 </div>
-                <div style={{ flex: "0 0 auto", display: "inline-flex", alignItems: "center" }}>
+
+                <span className="ember-group-icon">
                   {!isOpen ? (
                     <PlusIcon
                       ref={(el) => {
@@ -705,97 +608,104 @@ const CustomFieldsTab = forwardRef(function CustomFieldsTab(
                       className="nav-anim-icon"
                     />
                   )}
-                </div>
+                </span>
               </div>
 
-              {/* details */}
               {isOpen && (
-                <div className="cf-grid" style={{ marginTop: 10 }}>
-                  {g.fields.map((f) => {
-                    const val = draft[f.field_key];
-                    const label = f.label || f.field_key;
-                    const dirty = dirtyKeys.has(f.field_key);
-                    const saved = savedKeys.has(f.field_key);
+                <div className="ember-group-body">
+                  <div className="cf-grid">
+                    {g.fields.map((f) => {
+                      const val = draft[f.field_key];
+                      const label = f.label || f.field_key;
+                      const dirty = dirtyKeys.has(f.field_key);
+                      const saved = savedKeys.has(f.field_key);
 
-                    const opts = optionsByFieldKey.get(f.field_key) || [];
-                    const hasOptions = opts.length > 0;
+                      const opts = optionsByFieldKey.get(f.field_key) || [];
+                      const hasOptions = opts.length > 0;
 
-                    const isWide = f.data_type === "json";
-                    const showAsDropdown = hasOptions && f.data_type === "string";
+                      const isWide = f.data_type === "json";
+                      const showAsDropdown = hasOptions && f.data_type === "string";
 
-                    return (
-                      <div key={f.field_key} className={isWide ? "cf-row wide" : "cf-row"}>
-                        <div className="cf-label">
-                          {saved ? (
-                            <span className="icon-ok icon-ok--green" title="opgeslagen">
-                              <Check size={14} />
-                            </span>
-                          ) : (
-                            <span className={dirty ? "dot dirty" : "dot"} title={dirty ? "gewijzigd" : ""} />
-                          )}
-                          <div className="cf-label-text">{label}</div>
-                        </div>
+                      return (
+                        <div key={f.field_key} className={isWide ? "cf-row wide" : "cf-row"}>
+                          <div className="cf-label">
+                            {saved ? (
+                              <span className="icon-ok icon-ok--green" title="opgeslagen">
+                                <Check size={14} />
+                              </span>
+                            ) : (
+                              <span className={dirty ? "dot dirty" : "dot"} title={dirty ? "gewijzigd" : ""} />
+                            )}
 
-                        <div className="cf-control">
-                          {f.data_type === "bool" ? (
-                            <div className="cf-bool">
-                              <button
-                                type="button"
-                                className={val === true ? "cf-bool-btn active" : "cf-bool-btn"}
-                                onClick={() => setField(f.field_key, true)}
+                            <div className="cf-label-text">{label}</div>
+                          </div>
+
+                          <div className="cf-control">
+                            {f.data_type === "bool" ? (
+                              <div className="cf-bool">
+                                <button
+                                  type="button"
+                                  className={val === true ? "cf-bool-btn active" : "cf-bool-btn"}
+                                  onClick={() => setField(f.field_key, true)}
+                                >
+                                  Ja
+                                </button>
+
+                                <button
+                                  type="button"
+                                  className={val === false ? "cf-bool-btn active" : "cf-bool-btn"}
+                                  onClick={() => setField(f.field_key, false)}
+                                >
+                                  Nee
+                                </button>
+                              </div>
+                            ) : showAsDropdown ? (
+                              <select
+                                className="input"
+                                value={val ?? ""}
+                                onChange={(e) => setField(f.field_key, e.target.value)}
                               >
-                                Ja
-                              </button>
-                              <button
-                                type="button"
-                                className={val === false ? "cf-bool-btn active" : "cf-bool-btn"}
-                                onClick={() => setField(f.field_key, false)}
-                              >
-                                Nee
-                              </button>
-                            </div>
-                          ) : showAsDropdown ? (
-                            <select className="input" value={val ?? ""} onChange={(e) => setField(f.field_key, e.target.value)}>
-                              <option value="">— kies —</option>
-                              {opts.map((o) => (
-                                <option key={o.value} value={o.value}>
-                                  {o.label}
-                                </option>
-                              ))}
-                            </select>
-                          ) : f.data_type === "number" ? (
-                            <input
-                              type="number"
-                              value={val ?? ""}
-                              onChange={(e) => setField(f.field_key, e.target.value)}
-                              className="cf-input"
-                            />
-                          ) : f.data_type === "date" ? (
-                            <input
-                              type="date"
-                              value={formatDateForInput(val)}
-                              onChange={(e) => setField(f.field_key, e.target.value)}
-                              className="cf-input"
-                            />
-                          ) : f.data_type === "json" ? (
-                            <textarea
-                              value={val ?? ""}
-                              onChange={(e) => setField(f.field_key, e.target.value)}
-                              rows={5}
-                              className="cf-textarea"
-                            />
-                          ) : (
-                            <input
-                              type="text"
-                              value={val ?? ""}
-                              onChange={(e) => setField(f.field_key, e.target.value)}
-                              className="input"
-                            />
-                          )}
+                                <option value="">kies</option>
+                                {opts.map((o) => (
+                                  <option key={o.value} value={o.value}>
+                                    {o.label}
+                                  </option>
+                                ))}
+                              </select>
+                            ) : f.data_type === "number" ? (
+                              <input
+                                type="number"
+                                value={val ?? ""}
+                                onChange={(e) => setField(f.field_key, e.target.value)}
+                                className="cf-input"
+                              />
+                            ) : f.data_type === "date" ? (
+                              <input
+                                type="date"
+                                value={formatDateForInput(val)}
+                                onChange={(e) => setField(f.field_key, e.target.value)}
+                                className="cf-input"
+                              />
+                            ) : f.data_type === "json" ? (
+                              <textarea
+                                value={val ?? ""}
+                                onChange={(e) => setField(f.field_key, e.target.value)}
+                                rows={5}
+                                className="cf-textarea"
+                              />
+                            ) : (
+                              <input
+                                type="text"
+                                value={val ?? ""}
+                                onChange={(e) => setField(f.field_key, e.target.value)}
+                                className="input"
+                              />
+                            )}
+                          </div>
                         </div>
-                      </div>
-                    );
-                  })}
+                      );
+                    })}
+                  </div>
                 </div>
               )}
             </div>

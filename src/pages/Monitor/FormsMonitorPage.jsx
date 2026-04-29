@@ -28,29 +28,17 @@ import {
 } from "./formsMonitorShared.jsx";
 
 const STATUS_GROUP_OPTIONS = [
-  {
-    key: "TODO",
-    label: "Nog te verwerken",
-    statuses: ["INGEDIEND", "IN_BEHANDELING"],
-  },
-  {
-    key: "CONCEPT",
-    label: "Concept",
-    statuses: ["CONCEPT"],
-  },
-  {
-    key: "INGETROKKEN",
-    label: "Ingetrokken",
-    statuses: ["INGETROKKEN"],
-  },
-  {
-    key: "AFGEHANDELD",
-    label: "Definitief",
-    statuses: ["AFGEHANDELD"],
-  },
+  { key: "TODO", label: "Nog te verwerken", statuses: ["INGEDIEND", "IN_BEHANDELING"] },
+  { key: "CONCEPT", label: "Concept", statuses: ["CONCEPT"] },
+  { key: "INGETROKKEN", label: "Ingetrokken", statuses: ["INGETROKKEN"] },
+  { key: "AFGEHANDELD", label: "Definitief", statuses: ["AFGEHANDELD"] },
 ];
 
 const DEFAULT_SELECTED_STATUS_GROUPS = ["TODO"];
+
+function cx(...parts) {
+  return parts.filter(Boolean).join(" ");
+}
 
 function getRowFollowUpSummary(row) {
   return row?.follow_up_counts || row?.follow_up_summary || {};
@@ -70,7 +58,6 @@ function getDoneCount(row) {
   const s = getRowFollowUpSummary(row);
   const explicitDone = s?.done_count;
   if (explicitDone != null) return Number(explicitDone || 0);
-
   return Number(s?.terminal_count ?? 0);
 }
 
@@ -87,54 +74,37 @@ function hasNoRemainingOpenActionPoints(row) {
 }
 
 function getMonitorRowSurfaceClass(row) {
-  if (hasNoRemainingOpenActionPoints(row)) {
-    return "monitor-surface monitor-surface--ready";
-  }
+  if (hasNoRemainingOpenActionPoints(row)) return "monitor-surface monitor-surface--ready";
   return getCardToneClass(row?.status);
 }
 
 function getStatusGroupChipClass(groupKey, active) {
   if (!active) return "monitor-tag monitor-tag--muted";
-
   if (groupKey === "TODO") return "monitor-tag monitor-tag--active";
   if (groupKey === "CONCEPT") return "monitor-tag monitor-tag--warning";
   if (groupKey === "INGETROKKEN") return "monitor-tag monitor-tag--danger";
   if (groupKey === "AFGEHANDELD") return "monitor-tag monitor-tag--success";
-
   return "monitor-tag monitor-tag--neutral";
 }
 
 function buildEffectiveStatuses(selectedGroupKeys) {
   const keys = Array.isArray(selectedGroupKeys) ? selectedGroupKeys : [];
-  if (keys.length === 0) {
-    return STATUS_GROUP_OPTIONS.flatMap((opt) => opt.statuses);
-  }
+  if (keys.length === 0) return STATUS_GROUP_OPTIONS.flatMap((opt) => opt.statuses);
 
   const set = new Set();
   for (const key of keys) {
     const group = STATUS_GROUP_OPTIONS.find((opt) => opt.key === key);
-    for (const status of group?.statuses || []) {
-      set.add(status);
-    }
+    for (const status of group?.statuses || []) set.add(status);
   }
+
   return Array.from(set);
 }
 
 function StatusTag({ status }) {
-  return (
-    <span className={getToneClass(getStatusTone(status))}>
-      {statusLabel(status)}
-    </span>
-  );
+  return <span className={getToneClass(getStatusTone(status))}>{statusLabel(status)}</span>;
 }
 
-function SummaryTag({
-  children,
-  title,
-  tone = "default",
-  active = false,
-  onClick = null,
-}) {
+function SummaryTag({ children, title, tone = "default", active = false, onClick = null }) {
   let cls = "monitor-tag monitor-tag--neutral";
 
   if (tone === "active") cls = "monitor-tag monitor-tag--active";
@@ -148,13 +118,7 @@ function SummaryTag({
 
   if (onClick) {
     return (
-      <button
-        type="button"
-        className={cls}
-        title={title}
-        onClick={onClick}
-        style={{ cursor: "pointer" }}
-      >
+      <button type="button" className={cls} title={title} onClick={onClick}>
         {children}
       </button>
     );
@@ -171,13 +135,9 @@ function FilterChip({ active, label, title, onClick }) {
   return (
     <button
       type="button"
-      className={active ? "monitor-tag monitor-tag--active" : "monitor-tag monitor-tag--muted"}
+      className={active ? "monitor-tag monitor-tag--active monitor-tag--selected" : "monitor-tag monitor-tag--muted"}
       title={title}
       onClick={onClick}
-      style={{
-        cursor: "pointer",
-        opacity: active ? 1 : 0.9,
-      }}
     >
       {label}
     </button>
@@ -186,73 +146,29 @@ function FilterChip({ active, label, title, onClick }) {
 
 function StatusGroupFilterChip({ option, active, onClick }) {
   const cls = getStatusGroupChipClass(option.key, active);
-  const finalCls = active ? `${cls} monitor-tag--selected` : cls;
 
   return (
     <button
       type="button"
       title={option.label}
       onClick={onClick}
-      className={finalCls}
-      style={{
-        cursor: "pointer",
-        opacity: active ? 1 : 0.88,
-      }}
+      className={active ? `${cls} monitor-tag--selected` : cls}
     >
       {option.label}
     </button>
   );
 }
 
-function FilterGroup({
-  label,
-  children,
-  minWidth = 0,
-  grow = false,
-  extra = null,
-}) {
+function FilterGroup({ label, children, extra = null, className = "" }) {
   return (
-    <div
-      style={{
-        minWidth,
-        flex: grow ? "1 1 420px" : "1 1 280px",
-        display: "flex",
-        flexDirection: "column",
-        gap: 10,
-        padding: 12,
-        border: "1px solid rgba(255,255,255,0.10)",
-        borderRadius: 12,
-        background: "rgba(255,255,255,0.02)",
-        minHeight: 96,
-      }}
-    >
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: 8,
-          minHeight: 20,
-          flexWrap: "wrap",
-        }}
-      >
-        <div className="muted" style={{ fontSize: 12, fontWeight: 600 }}>
-          {label}
-        </div>
+    <section className={cx("monitor-filter-group", className)}>
+      <div className="monitor-filter-group__head">
+        <div className="monitor-filter-group__label">{label}</div>
         {extra}
       </div>
 
-      <div
-        style={{
-          display: "flex",
-          gap: 8,
-          flexWrap: "wrap",
-          alignItems: "center",
-          alignContent: "flex-start",
-        }}
-      >
-        {children}
-      </div>
-    </div>
+      <div className="monitor-filter-group__chips">{children}</div>
+    </section>
   );
 }
 
@@ -283,24 +199,18 @@ export default function FormsMonitorPage() {
     mine: storedState?.filters?.mine ?? true,
     onlyActionable: storedState?.filters?.onlyActionable ?? false,
     noRemainingOpenActionPoints: storedState?.filters?.noRemainingOpenActionPoints ?? false,
-    selectedStatusGroups:
-      Array.isArray(storedState?.filters?.selectedStatusGroups)
-        ? storedState.filters.selectedStatusGroups
-        : (
-            Array.isArray(storedState?.filters?.selectedStatuses) &&
-            storedState.filters.selectedStatuses.length > 0
-          )
-            ? ["TODO"]
-            : DEFAULT_SELECTED_STATUS_GROUPS,
+    selectedStatusGroups: Array.isArray(storedState?.filters?.selectedStatusGroups)
+      ? storedState.filters.selectedStatusGroups
+      : Array.isArray(storedState?.filters?.selectedStatuses) && storedState.filters.selectedStatuses.length > 0
+        ? ["TODO"]
+        : DEFAULT_SELECTED_STATUS_GROUPS,
     actionStatusFilter: storedState?.filters?.actionStatusFilter ?? "ALL",
     take: 200,
     skip: 0,
   });
 
   const [items, setItems] = useState([]);
-  const [autoRefreshEnabled, setAutoRefreshEnabled] = useState(
-    storedState?.autoRefreshEnabled ?? false
-  );
+  const [autoRefreshEnabled, setAutoRefreshEnabled] = useState(storedState?.autoRefreshEnabled ?? false);
 
   const effectiveSelectedStatuses = useMemo(() => {
     return buildEffectiveStatuses(filters.selectedStatusGroups);
@@ -321,11 +231,7 @@ export default function FormsMonitorPage() {
       })
       .filter((x) => {
         if (!filters.actionStatusFilter || filters.actionStatusFilter === "ALL") return true;
-
-        if (filters.actionStatusFilter === "OPEN") {
-          return getRemainingOpenActionCount(x) > 0;
-        }
-
+        if (filters.actionStatusFilter === "OPEN") return getRemainingOpenActionCount(x) > 0;
         return rowHasMonitorActionFilter(x, filters.actionStatusFilter);
       });
   }, [items, filters, effectiveSelectedStatuses]);
@@ -350,10 +256,7 @@ export default function FormsMonitorPage() {
   }, [visibleItems]);
 
   useEffect(() => {
-    saveStateToStorage(OVERVIEW_LS_KEY, {
-      filters,
-      autoRefreshEnabled,
-    });
+    saveStateToStorage(OVERVIEW_LS_KEY, { filters, autoRefreshEnabled });
   }, [filters, autoRefreshEnabled]);
 
   useEffect(() => {
@@ -379,15 +282,15 @@ export default function FormsMonitorPage() {
       }
     }
 
-    if (infoOpen || statusInfoOpen) {
-      document.addEventListener("mousedown", onDocMouseDown);
-      document.addEventListener("keydown", onKeyDown);
+    if (!infoOpen && !statusInfoOpen) return undefined;
 
-      return () => {
-        document.removeEventListener("mousedown", onDocMouseDown);
-        document.removeEventListener("keydown", onKeyDown);
-      };
-    }
+    document.addEventListener("mousedown", onDocMouseDown);
+    document.addEventListener("keydown", onKeyDown);
+
+    return () => {
+      document.removeEventListener("mousedown", onDocMouseDown);
+      document.removeEventListener("keydown", onKeyDown);
+    };
   }, [infoOpen, statusInfoOpen]);
 
   function toggleStatusGroup(groupKey) {
@@ -432,7 +335,7 @@ export default function FormsMonitorPage() {
   }, []);
 
   useEffect(() => {
-    if (!autoRefreshEnabled) return;
+    if (!autoRefreshEnabled) return undefined;
 
     const intervalId = window.setInterval(() => {
       if (document.hidden) return;
@@ -464,10 +367,7 @@ export default function FormsMonitorPage() {
   }
 
   async function toggleMine() {
-    const next = {
-      ...filters,
-      mine: !filters.mine,
-    };
+    const next = { ...filters, mine: !filters.mine };
     setFilters(next);
     await loadList(next);
   }
@@ -542,19 +442,17 @@ export default function FormsMonitorPage() {
   }
 
   return (
-    <div>
+    <div className="monitor-page">
       <div className="inst-sticky">
         <div className="inst-sticky-row">
           <div className="inst-sticky-left">
             <div className="inst-title">
               <h1>Monitor formulieren</h1>
-              <div className="muted" style={{ fontSize: 13 }}>
-                Overzicht formulieren
-              </div>
+              <div className="ember-page-subtitle">Overzicht formulieren</div>
             </div>
           </div>
 
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <div className="ember-toolbar">
             <button
               type="button"
               className="icon-btn"
@@ -579,110 +477,69 @@ export default function FormsMonitorPage() {
         </div>
       </div>
 
-      <div className="inst-body" style={{ display: "grid", gap: 12 }}>
-        <div
-          style={{
-            padding: 12,
-            border: "1px solid rgba(255,255,255,0.12)",
-            borderRadius: 12,
-            display: "grid",
-            gap: 12,
-          }}
-        >
-          <div style={{ display: "grid", gap: 10 }}>
-            <div
-              style={{
-                display: "grid",
-                gap: 10,
-                gridTemplateColumns: "minmax(220px, 280px) minmax(280px, 420px) minmax(320px, 1fr)",
-                alignItems: "stretch",
-              }}
+      <div className="inst-body monitor-page__body">
+        <section className="card monitor-filter-panel">
+          <div className="monitor-filter-grid">
+            <FilterGroup label="Weergave">
+              <FilterChip
+                active={Boolean(filters.mine)}
+                label="Alleen eigen formulieren"
+                title="Toon alleen formulieren van de huidige gebruiker"
+                onClick={toggleMine}
+              />
+            </FilterGroup>
+
+            <FilterGroup label="Slimme filters">
+              <FilterChip
+                active={Boolean(filters.onlyActionable)}
+                label="Open actiepunten"
+                title="Toon alleen formulieren met openstaande actiepunten; inclusief wachten op derden"
+                onClick={toggleOnlyActionable}
+              />
+
+              <FilterChip
+                active={Boolean(filters.noRemainingOpenActionPoints)}
+                label="Geen resterende openstaande actiepunten"
+                title="Formulieren zonder open of wachtende actiepunten"
+                onClick={toggleNoRemainingOpenActionPoints}
+              />
+            </FilterGroup>
+
+            <FilterGroup
+              label="Status"
+              className="monitor-filter-group--status"
+              extra={
+                <button
+                  ref={statusInfoBtnRef}
+                  type="button"
+                  className="icon-btn monitor-filter-info-btn"
+                  title="Uitleg statusverloop"
+                  onClick={toggleStatusInfoPopup}
+                  onMouseEnter={() => statusInfoIconRef.current?.startAnimation?.()}
+                  onMouseLeave={() => statusInfoIconRef.current?.stopAnimation?.()}
+                >
+                  <BadgeAlertIcon ref={statusInfoIconRef} size={18} className="nav-anim-icon" />
+                </button>
+              }
             >
-              <FilterGroup label="Weergave" minWidth={0}>
-                <FilterChip
-                  active={Boolean(filters.mine)}
-                  label="Alleen eigen formulieren"
-                  title="Toon alleen formulieren van de huidige gebruiker"
-                  onClick={toggleMine}
+              {STATUS_GROUP_OPTIONS.map((opt) => (
+                <StatusGroupFilterChip
+                  key={opt.key}
+                  option={opt}
+                  active={(filters.selectedStatusGroups || []).includes(opt.key)}
+                  onClick={() => toggleStatusGroup(opt.key)}
                 />
-              </FilterGroup>
+              ))}
+            </FilterGroup>
+          </div>
 
-              <FilterGroup label="Slimme filters" minWidth={0}>
-                <FilterChip
-                  active={Boolean(filters.onlyActionable)}
-                  label="Open actiepunten"
-                  title="Toon alleen formulieren met openstaande actiepunten; inclusief wachten op derden"
-                  onClick={toggleOnlyActionable}
-                />
-
-                <FilterChip
-                  active={Boolean(filters.noRemainingOpenActionPoints)}
-                  label="Geen resterende openstaande actiepunten"
-                  title="Formulieren zonder open of wachtende actiepunten"
-                  onClick={toggleNoRemainingOpenActionPoints}
-                />
-              </FilterGroup>
-
-              <FilterGroup
-                label="Status"
-                minWidth={0}
-                grow
-                extra={
-                  <button
-                    ref={statusInfoBtnRef}
-                    type="button"
-                    className="icon-btn"
-                    title="Uitleg statusverloop"
-                    onClick={toggleStatusInfoPopup}
-                    onMouseEnter={() => statusInfoIconRef.current?.startAnimation?.()}
-                    onMouseLeave={() => statusInfoIconRef.current?.stopAnimation?.()}
-                  >
-                    <BadgeAlertIcon ref={statusInfoIconRef} size={18} className="nav-anim-icon" />
-                  </button>
-                }
-              >
-                {STATUS_GROUP_OPTIONS.map((opt) => (
-                  <StatusGroupFilterChip
-                    key={opt.key}
-                    option={opt}
-                    active={(filters.selectedStatusGroups || []).includes(opt.key)}
-                    onClick={() => toggleStatusGroup(opt.key)}
-                  />
-                ))}
-              </FilterGroup>
-            </div>
-
-            <style>
-              {`
-                @media (max-width: 1180px) {
-                  .monitor-filters-grid {
-                    grid-template-columns: 1fr 1fr !important;
-                  }
-                  .monitor-filters-grid .monitor-status-group {
-                    grid-column: 1 / -1;
-                  }
-                }
-
-                @media (max-width: 760px) {
-                  .monitor-filters-grid {
-                    grid-template-columns: 1fr !important;
-                  }
-                  .monitor-filters-grid .monitor-status-group {
-                    grid-column: auto;
-                  }
-                }
-              `}
-            </style>
-
+          <div className="monitor-search-row">
             <div
-              className="monitor-filters-grid"
-              style={{
-                display: "none",
-              }}
-            />
-
-            <div className="searchbar">
-              <SearchIcon size={18} className="nav-anim-icon" />
+              className="searchbar monitor-searchbar"
+              onMouseEnter={() => searchIconRef.current?.startAnimation?.()}
+              onMouseLeave={() => searchIconRef.current?.stopAnimation?.()}
+            >
+              <SearchIcon ref={searchIconRef} size={18} className="nav-anim-icon" />
               <input
                 className="searchbar-input"
                 placeholder="Zoek op installatie, object, relatie, formulier, invuller of opmerking"
@@ -694,23 +551,15 @@ export default function FormsMonitorPage() {
               />
             </div>
 
-            <div
-              style={{
-                display: "flex",
-                gap: 8,
-                flexWrap: "wrap",
-                alignItems: "center",
-              }}
-            >
+            <div className="monitor-search-actions">
               <button
                 type="button"
                 className="btn btn-secondary"
                 onClick={applySearch}
                 onMouseEnter={() => searchIconRef.current?.startAnimation?.()}
                 onMouseLeave={() => searchIconRef.current?.stopAnimation?.()}
-                style={{ display: "inline-flex", alignItems: "center", gap: 8 }}
               >
-                <SearchIcon ref={searchIconRef} size={18} />
+                <SearchIcon size={18} />
                 Zoeken
               </button>
 
@@ -720,52 +569,31 @@ export default function FormsMonitorPage() {
                 onClick={() => loadList()}
                 onMouseEnter={() => refreshIconRef.current?.startAnimation?.()}
                 onMouseLeave={() => refreshIconRef.current?.stopAnimation?.()}
-                style={{ display: "inline-flex", alignItems: "center", gap: 8 }}
               >
                 <RefreshCWIcon ref={refreshIconRef} size={18} />
                 Verversen
               </button>
 
               {filters.q ? (
-                <button
-                  type="button"
-                  className="btn btn-secondary"
-                  onClick={clearSearch}
-                >
+                <button type="button" className="btn btn-secondary" onClick={clearSearch}>
                   Zoektekst wissen
                 </button>
               ) : null}
             </div>
           </div>
-        </div>
+        </section>
 
-        {error && <div style={{ color: "salmon" }}>{error}</div>}
+        {error ? <div className="ember-error-text">{error}</div> : null}
 
-        <div
-          style={{
-            padding: 12,
-            border: "1px solid rgba(255,255,255,0.12)",
-            borderRadius: 12,
-            display: "grid",
-            gap: 10,
-          }}
-        >
-          <div
-            style={{
-              display: "flex",
-              justifyContent: "space-between",
-              gap: 10,
-              alignItems: "center",
-              flexWrap: "wrap",
-            }}
-          >
-            <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-              <div style={{ fontWeight: 600 }}>Formulierafhandelingen</div>
+        <section className="card monitor-results-panel">
+          <div className="monitor-results-head">
+            <div className="monitor-results-title-row">
+              <div className="monitor-results-title">Formulierafhandelingen</div>
 
               <button
                 ref={infoBtnRef}
                 type="button"
-                className="icon-btn"
+                className="icon-btn monitor-filter-info-btn"
                 title="Klik op de statuslabels om de zichtbare formulieren te filteren op actiepuntstatus."
                 onClick={toggleInfoPopup}
                 onMouseEnter={() => infoIconRef.current?.startAnimation?.()}
@@ -775,20 +603,13 @@ export default function FormsMonitorPage() {
               </button>
             </div>
 
-            <div className="muted" style={{ fontSize: 12 }}>
+            <div className="ember-page-subtitle">
               {listLoading ? "laden..." : `${visibleItems.length} dossier(s) zichtbaar`}
             </div>
           </div>
 
           {!listLoading && visibleItems.length > 0 && (
-            <div
-              style={{
-                display: "flex",
-                gap: 8,
-                flexWrap: "wrap",
-                alignItems: "center",
-              }}
-            >
+            <div className="monitor-summary-chips">
               <SummaryTag
                 title="Toon formulieren met openstaande actiepunten; inclusief wachten op derden"
                 tone="active"
@@ -819,51 +640,22 @@ export default function FormsMonitorPage() {
           )}
 
           {infoOpen && infoPopupStyle && (
-            <div
-              ref={infoPopupRef}
-              className="monitor-info-popup"
-              style={infoPopupStyle}
-            >
+            <div ref={infoPopupRef} className="monitor-info-popup" style={infoPopupStyle}>
               Klik op een statuslabel om de zichtbare formulierafhandelingen te filteren op die actiepuntstatus. Klik nogmaals op hetzelfde label om die filter weer uit te zetten.
             </div>
           )}
 
           {statusInfoOpen && statusInfoPopupStyle && (
-            <div
-              ref={statusInfoPopupRef}
-              className="monitor-info-popup"
-              style={statusInfoPopupStyle}
-            >
-              <div style={{ display: "grid", gap: 8 }}>
-                <div style={{ fontWeight: 700 }}>Statusverloop formulieren</div>
-
-                <div>
-                  <strong>Nog te verwerken</strong> bevat <strong>Ingediend</strong> en <strong>In behandeling</strong>.
-                </div>
-
-                <div>
-                  <strong>Ingediend</strong>; het formulier is aangeleverd en wacht nog op inhoudelijke afhandeling.
-                </div>
-
-                <div>
-                  <strong>In behandeling</strong>; de formulierafhandeling is gestart en er lopen nog actiepunten of opvolging.
-                </div>
-
-                <div>
-                  <strong>Concept</strong>; het formulier is nog niet definitief ingediend door de invuller.
-                </div>
-
-                <div>
-                  <strong>Ingetrokken</strong>; het formulier is teruggetrokken en hoort normaal niet meer in de lopende werkvoorraad.
-                </div>
-
-                <div>
-                  <strong>Definitief</strong>; de formulierafhandeling is afgerond.
-                </div>
-
-                <div className="muted" style={{ fontSize: 12 }}>
-                  Chronologisch verloopt dit meestal als; Concept → Ingediend → In behandeling → Definitief.
-                </div>
+            <div ref={statusInfoPopupRef} className="monitor-info-popup" style={statusInfoPopupStyle}>
+              <div className="ui-stack-sm">
+                <div className="monitor-popup-title">Statusverloop formulieren</div>
+                <div><strong>Nog te verwerken</strong> bevat <strong>Ingediend</strong> en <strong>In behandeling</strong>.</div>
+                <div><strong>Ingediend</strong>; het formulier is aangeleverd en wacht nog op inhoudelijke afhandeling.</div>
+                <div><strong>In behandeling</strong>; de formulierafhandeling is gestart en er lopen nog actiepunten of opvolging.</div>
+                <div><strong>Concept</strong>; het formulier is nog niet definitief ingediend door de invuller.</div>
+                <div><strong>Ingetrokken</strong>; het formulier is teruggetrokken en hoort normaal niet meer in de lopende werkvoorraad.</div>
+                <div><strong>Definitief</strong>; de formulierafhandeling is afgerond.</div>
+                <div className="ember-page-subtitle">Chronologisch verloopt dit meestal als; Concept, Ingediend, In behandeling, Definitief.</div>
               </div>
             </div>
           )}
@@ -873,12 +665,8 @@ export default function FormsMonitorPage() {
           ) : visibleItems.length === 0 ? (
             <div className="muted">Geen formulieren gevonden.</div>
           ) : (
-            <div style={{ display: "grid", gap: 8 }}>
+            <div className="monitor-list">
               {visibleItems.map((row) => {
-                const iconRef =
-                  openIconRefById.current[row.form_instance_id] ||
-                  (openIconRefById.current[row.form_instance_id] = { current: null });
-
                 const actionCountsRaw = buildMonitorRowActionCounts(row);
                 const actionCounts = {
                   open: Number(actionCountsRaw?.open ?? getOpenCount(row)),
@@ -887,6 +675,7 @@ export default function FormsMonitorPage() {
                 };
 
                 const isReady = hasNoRemainingOpenActionPoints(row);
+                const id = String(row.form_instance_id);
 
                 return (
                   <button
@@ -938,19 +727,10 @@ export default function FormsMonitorPage() {
                       </div>
 
                       {row.instance_title ? (
-                        <div className="monitor-dossier-row__meta">
-                          {row.instance_title}
-                        </div>
+                        <div className="monitor-dossier-row__meta">{row.instance_title}</div>
                       ) : null}
 
-                      <div
-                        style={{
-                          display: "flex",
-                          gap: 8,
-                          flexWrap: "wrap",
-                          alignItems: "center",
-                        }}
-                      >
+                      <div className="monitor-row-action-chips">
                         <SummaryTag title="Aantal openstaande actiepunten; inclusief wachten op derden" tone="active">
                           Open {actionCounts.open + actionCounts.waiting}
                         </SummaryTag>
@@ -966,26 +746,28 @@ export default function FormsMonitorPage() {
                     </div>
 
                     <div className="monitor-dossier-row__side">
-                      <div style={{ display: "flex", justifyContent: "flex-end" }}>
+                      <div className="monitor-row-status">
                         <StatusTag status={row.status} />
                       </div>
 
                       <div className="monitor-dossier-row__audit">
-                        <div>
-                          Laatste wijziging: {formatDateTime(row.updated_at || row.created_at)}
-                        </div>
-                        <div>
-                          Laatst gewijzigd door: {getLastModifiedBy(row)}
-                        </div>
+                        <div>Laatste wijziging: {formatDateTime(row.updated_at || row.created_at)}</div>
+                        <div>Laatst gewijzigd door: {getLastModifiedBy(row)}</div>
                       </div>
 
                       <div
                         className="monitor-open-action"
-                        onMouseEnter={() => iconRef.current?.startAnimation?.()}
-                        onMouseLeave={() => iconRef.current?.stopAnimation?.()}
+                        onMouseEnter={() => openIconRefById.current[id]?.startAnimation?.()}
+                        onMouseLeave={() => openIconRefById.current[id]?.stopAnimation?.()}
                       >
                         <span>Open formulierafhandeling</span>
-                        <ArrowBigRightIcon ref={iconRef} size={18} className="nav-anim-icon" />
+                        <ArrowBigRightIcon
+                          ref={(el) => {
+                            openIconRefById.current[id] = el;
+                          }}
+                          size={18}
+                          className="nav-anim-icon"
+                        />
                       </div>
                     </div>
                   </button>
@@ -993,30 +775,8 @@ export default function FormsMonitorPage() {
               })}
             </div>
           )}
-        </div>
+        </section>
       </div>
-
-      <style>
-        {`
-          @media (max-width: 1180px) {
-            .inst-body .monitor-filters-top-grid {
-              grid-template-columns: 1fr 1fr !important;
-            }
-            .inst-body .monitor-filters-top-grid .monitor-status-group {
-              grid-column: 1 / -1;
-            }
-          }
-
-          @media (max-width: 760px) {
-            .inst-body .monitor-filters-top-grid {
-              grid-template-columns: 1fr !important;
-            }
-            .inst-body .monitor-filters-top-grid .monitor-status-group {
-              grid-column: auto;
-            }
-          }
-        `}
-      </style>
     </div>
   );
 }

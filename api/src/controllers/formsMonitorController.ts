@@ -1,6 +1,27 @@
 //api/src/controllers/formsMonitorController.ts
 import type { Request, Response } from "express";
 import * as service from "../services/formsMonitorService.js";
+import { buildFormReportPdf } from "../services/formReportPdfService.js";
+
+export async function downloadFormsMonitorPdf(req: any, res: any) {
+  try {
+    const result = await buildFormReportPdf(req.params.formInstanceId, req.user);
+
+    if (result?.error === "not found") {
+      return res.status(404).json({ error: "not found" });
+    }
+
+    res.setHeader("Content-Type", result.contentType);
+    res.setHeader("Content-Length", String(result.contentLength));
+    res.setHeader("Content-Disposition", result.contentDisposition);
+    res.setHeader("Cache-Control", "no-store");
+
+    return res.status(200).send(result.buffer);
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ error: "downloadFormsMonitorPdf failed" });
+  }
+}
 
 export async function getFormsMonitorList(req: any, res: Response) {
   try {

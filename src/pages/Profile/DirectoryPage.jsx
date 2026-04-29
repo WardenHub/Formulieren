@@ -1,11 +1,22 @@
-//src/pages/Profile/DirectoryPage.jsx
+// src/pages/Profile/DirectoryPage.jsx
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { getUserDirectory } from "../../api/emberApi.js";
 import { fetchProtectedObjectUrl } from "../../api/http.js";
 import teamsLogo from "../../assets/teams-logo.png";
+
 import { ChevronLeftIcon } from "@/components/ui/chevron-left";
+import { SearchIcon } from "@/components/ui/search";
+
+const NOTE_MAX = 240;
+
+function truncateNote(value) {
+  const text = String(value || "").trim();
+  if (!text) return "";
+  if (text.length <= NOTE_MAX) return text;
+  return `${text.slice(0, NOTE_MAX).trim()}...`;
+}
 
 function DirectoryAvatar({ item }) {
   const [src, setSrc] = useState(null);
@@ -16,6 +27,7 @@ function DirectoryAvatar({ item }) {
 
     async function load() {
       const path = item?.avatar?.url;
+
       if (!path) {
         setSrc((prev) => {
           if (prev) URL.revokeObjectURL(prev);
@@ -26,6 +38,7 @@ function DirectoryAvatar({ item }) {
 
       try {
         nextUrl = await fetchProtectedObjectUrl(path);
+
         if (cancelled) {
           if (nextUrl) URL.revokeObjectURL(nextUrl);
           return;
@@ -37,6 +50,7 @@ function DirectoryAvatar({ item }) {
         });
       } catch (err) {
         console.error("directory avatar load failed", err);
+
         if (!cancelled) {
           setSrc((prev) => {
             if (prev) URL.revokeObjectURL(prev);
@@ -64,17 +78,15 @@ function DirectoryAvatar({ item }) {
     );
   }
 
-  return (
-    <div className="directory-card-avatar-fallback">
-      {item?.initials || "E"}
-    </div>
-  );
+  return <span>{item?.initials || "E"}</span>;
 }
 
 export default function DirectoryPage() {
   const navigate = useNavigate();
   const backIconRef = useRef(null);
+  const searchIconRef = useRef(null);
 
+  const [q, setQ] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [items, setItems] = useState([]);
@@ -88,9 +100,7 @@ export default function DirectoryPage() {
 
       try {
         const res = await getUserDirectory();
-        if (!cancelled) {
-          setItems(Array.isArray(res?.items) ? res.items : []);
-        }
+        if (!cancelled) setItems(Array.isArray(res?.items) ? res.items : []);
       } catch (err) {
         if (!cancelled) {
           setError(err?.message || String(err));
@@ -102,26 +112,42 @@ export default function DirectoryPage() {
     }
 
     load();
+
     return () => {
       cancelled = true;
     };
   }, []);
 
   const ranked = useMemo(() => {
-    return [...items].sort((a, b) => {
-      const formDiff = Number(b?.stats?.forms_total || 0) - Number(a?.stats?.forms_total || 0);
-      if (formDiff !== 0) return formDiff;
+    const needle = q.trim().toLowerCase();
 
-      const followDiff =
-        Number(b?.stats?.follow_ups_total || 0) - Number(a?.stats?.follow_ups_total || 0);
-      if (followDiff !== 0) return followDiff;
+    return [...items]
+      .filter((item) => {
+        const email = String(item?.email || "").trim().toLowerCase();
+        if (email === "jesse@local") return false;
 
-      return String(a?.effective_display_name || "").localeCompare(
-        String(b?.effective_display_name || ""),
-        "nl"
-      );
-    });
-  }, [items]);
+        if (!needle) return true;
+
+        return [item?.effective_display_name, item?.email, item?.profile_note]
+          .filter(Boolean)
+          .some((value) => String(value).toLowerCase().includes(needle));
+      })
+      .sort((a, b) => {
+        const formDiff =
+          Number(b?.stats?.forms_total || 0) - Number(a?.stats?.forms_total || 0);
+        if (formDiff !== 0) return formDiff;
+
+        const followDiff =
+          Number(b?.stats?.follow_ups_total || 0) -
+          Number(a?.stats?.follow_ups_total || 0);
+        if (followDiff !== 0) return followDiff;
+
+        return String(a?.effective_display_name || "").localeCompare(
+          String(b?.effective_display_name || ""),
+          "nl"
+        );
+      });
+  }, [items, q]);
 
   return (
     <div className="profile-page">
@@ -141,7 +167,7 @@ export default function DirectoryPage() {
 
             <div className="inst-title">
               <h1>Smoelenboek</h1>
-              <div className="muted" style={{ fontSize: 13 }}>
+              <div className="ember-page-subtitle">
                 Collega’s in Ember; gerangschikt op ingevulde formulieren
               </div>
             </div>
@@ -149,97 +175,132 @@ export default function DirectoryPage() {
         </div>
       </div>
 
-      <div className="inst-body">
+      <div className="inst-body ui-stack">
         {loading ? <div className="muted">laden; smoelenboek</div> : null}
-        {error ? <div style={{ color: "salmon" }}>{error}</div> : null}
+        {error ? <div className="ember-error-text">{error}</div> : null}
 
         {!loading && !error ? (
-          <div className="directory-grid">
-            {ranked.map((item, index) => {
-              const formsTotal = Number(item?.stats?.forms_total || 0);
-              const followUpsTotal = Number(item?.stats?.follow_ups_total || 0);
-              const followUpsOpen = Number(item?.stats?.follow_ups_open || 0);
+          <>
+            <div className="directory-toolbar">
+              <div
+                className="directory-search-wrap"
+                onMouseEnter={() => searchIconRef.current?.startAnimation?.()}
+                onMouseLeave={() => searchIconRef.current?.stopAnimation?.()}
+              >
+                <SearchIcon ref={searchIconRef} size={18} className="nav-anim-icon" />
+                <input
+                  className="directory-search"
+                  value={q}
+                  onChange={(e) => setQ(e.target.value)}
+                  placeholder="Zoek op naam, e-mail of profielnotitie"
+                />
+              </div>
 
-              return (
-                <div
-                  key={item.user_object_id || `${item.email}-${index}`}
-                  className={`directory-card ${item?.is_current_user ? "directory-card--current" : ""}`}
-                >
-                  <div className="directory-card-rank">
-                    #{index + 1}
-                  </div>
+              <div className="ember-page-subtitle">
+                {ranked.length} van {items.length} gebruikers
+              </div>
+            </div>
 
-                  <div className="directory-card-header">
-                    <div className="directory-card-avatar">
-                      <DirectoryAvatar item={item} />
-                    </div>
-
-                    <div className="directory-card-headtext">
-                      <div className="directory-card-name">
-                        {item?.effective_display_name || "Gebruiker"}
-                      </div>
-
-                      <div className="directory-card-email">
-                        {item?.email || "-"}
-                      </div>
-                    </div>
-                  </div>
-
-                  {item?.profile_note ? (
-                    <div className="directory-card-note">
-                      {item.profile_note}
-                    </div>
-                  ) : null}
-
-                  <div className="directory-card-badges">
-                    <span className="monitor-tag monitor-tag--success">
-                      {formsTotal} formulieren
-                    </span>
-
-                    {followUpsTotal > 0 ? (
-                      <span className="monitor-tag monitor-tag--active">
-                        {followUpsTotal} opvolgacties
-                      </span>
-                    ) : null}
-
-                    {followUpsOpen > 0 ? (
-                      <span className="monitor-tag monitor-tag--warning">
-                        {followUpsOpen} open
-                      </span>
-                    ) : null}
-
-                    {item?.is_current_user ? (
-                      <span className="monitor-tag monitor-tag--neutral">
-                        Jij
-                      </span>
-                    ) : null}
-                  </div>
-
-                  <div className="directory-card-actions">
-                    {item?.teams_chat_url ? (
-                      <a
-                        className="btn btn-secondary directory-card-teams-btn"
-                        href={item.teams_chat_url}
-                        target="_blank"
-                        rel="noreferrer"
-                      >
-                        <img
-                          src={teamsLogo}
-                          alt="Teams"
-                          className="directory-card-teams-logo"
-                        />
-                        Chat in Teams
-                      </a>
-                    ) : (
-                      <span className="muted" style={{ fontSize: 13 }}>
-                        Geen Teams-link beschikbaar
-                      </span>
-                    )}
-                  </div>
+            {ranked.length === 0 ? (
+              <div className="card ui-stack-sm">
+                <div className="profile-section-title">Geen gebruikers gevonden</div>
+                <div className="ember-page-subtitle">
+                  Pas je zoekterm aan om meer resultaten te tonen.
                 </div>
-              );
-            })}
-          </div>
+              </div>
+            ) : (
+              <div className="directory-grid">
+                {ranked.map((item, index) => {
+                  const formsTotal = Number(item?.stats?.forms_total || 0);
+                  const followUpsTotal = Number(item?.stats?.follow_ups_total || 0);
+                  const followUpsOpen = Number(item?.stats?.follow_ups_open || 0);
+                  const note = truncateNote(item?.profile_note);
+
+                  return (
+                    <div
+                      key={item.user_object_id || `${item.email}-${index}`}
+                      className={`directory-card ${
+                        item?.is_current_user ? "directory-card--current" : ""
+                      }`}
+                    >
+                      <div className="ui-row-between">
+                        <div className="ui-row">
+                          <div className="profile-avatar-preview">
+                            <DirectoryAvatar item={item} />
+                          </div>
+
+                          <div className="ui-stack-sm ui-min-0">
+                            <div className="profile-media-title">
+                              {item?.effective_display_name || "Gebruiker"}
+                            </div>
+                            <div className="ember-page-subtitle">
+                              {item?.email || "-"}
+                            </div>
+                          </div>
+                        </div>
+
+                        <span className="ember-label ember-label--muted">
+                          #{index + 1}
+                        </span>
+                      </div>
+
+                      {note ? (
+                        <div className="ember-page-subtitle">
+                          {note}
+                        </div>
+                      ) : null}
+
+                      <div className="ember-label-row">
+                        <span className="ember-label ember-label--success">
+                          {formsTotal} formulieren
+                        </span>
+
+                        {followUpsTotal > 0 ? (
+                          <span className="ember-label ember-label--info">
+                            {followUpsTotal} opvolgacties
+                          </span>
+                        ) : null}
+
+                        {followUpsOpen > 0 ? (
+                          <span className="ember-label ember-label--warning">
+                            {followUpsOpen} open
+                          </span>
+                        ) : null}
+
+                        {item?.is_current_user ? (
+                          <span className="ember-label ember-label--neutral">
+                            Jij
+                          </span>
+                        ) : null}
+                      </div>
+
+                      <div className="ui-row">
+                        {item?.teams_chat_url ? (
+                          <a
+                            className="btn btn-secondary"
+                            href={item.teams_chat_url}
+                            target="_blank"
+                            rel="noreferrer"
+                          >
+                            <img
+                              src={teamsLogo}
+                              alt=""
+                              className="directory-card-teams-logo"
+                            />
+                            Chat in Teams
+                          </a>
+                        ) : (
+                          <span className="ember-page-subtitle">
+                            Geen Teams-link beschikbaar
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </>
         ) : null}
       </div>
     </div>

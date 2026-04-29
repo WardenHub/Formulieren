@@ -484,3 +484,8 @@ export function getMe() {
 export function getUserDirectory() {
   return apiGet("/me/profile/directory");
 }
+
+export function getFormsMonitorPdfUrl(formInstanceId) {
+  const base = String(import.meta.env.VITE_API_BASE || "").replace(/\/+$/, "");
+  return `${base}/forms-monitor/${encodeURIComponent(formInstanceId)}/pdf`;
+}

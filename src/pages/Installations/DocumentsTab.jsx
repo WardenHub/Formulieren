@@ -11,8 +11,6 @@ import {
   createInstallationDocumentAttachment,
 } from "../../api/emberApi.js";
 
-import { buildApiUrl } from "@/api/http.js";
-
 import { ArchiveIcon } from "@/components/ui/archive";
 import { HistoryIcon } from "@/components/ui/history";
 import { PlusIcon } from "@/components/ui/plus";
@@ -22,6 +20,10 @@ import { DownloadIcon } from "@/components/ui/download";
 import { RefreshCWIcon } from "@/components/ui/refresh-cw";
 import { UploadIcon } from "@/components/ui/upload";
 import { FileTextIcon } from "@/components/ui/file-text";
+
+function cx(...parts) {
+  return parts.filter(Boolean).join(" ");
+}
 
 function isoDate(value) {
   if (!value) return "";
@@ -77,7 +79,7 @@ function openNativeFilePicker(inputEl) {
       return;
     }
   } catch {
-    // ignore; fallback to click
+    // fallback
   }
   inputEl.click();
 }
@@ -88,13 +90,11 @@ function newDraft(typeKey, overrides = {}) {
     document_type_key: typeKey,
     parent_document_id: null,
     relation_type: null,
-
     title: "",
     note: "",
     document_number: "",
     document_date: null,
     revision: "",
-
     has_file: false,
     file_name: null,
     mime_type: null,
@@ -105,13 +105,11 @@ function newDraft(typeKey, overrides = {}) {
     file_last_modified_by: null,
     storage_provider: null,
     storage_key: null,
-
     document_is_active: true,
     created_at: null,
     created_by: null,
     updated_at: null,
     updated_by: null,
-
     ...overrides,
   };
 }
@@ -122,6 +120,7 @@ function flattenTypeDocuments(items) {
 
   function pushDoc(doc) {
     if (!doc || !doc.document_id) return;
+
     const key = String(doc.document_id);
     if (seen.has(key)) return;
     seen.add(key);
@@ -131,13 +130,11 @@ function flattenTypeDocuments(items) {
       document_type_key: doc.document_type_key,
       parent_document_id: doc.parent_document_id ?? null,
       relation_type: doc.relation_type ?? null,
-
       title: doc.title ?? "",
       note: doc.note ?? "",
       document_number: doc.document_number ?? "",
       document_date: doc.document_date ?? null,
       revision: doc.revision ?? "",
-
       has_file: Boolean(doc.has_file || doc.storage_key),
       file_name: doc.file_name ?? null,
       mime_type: doc.mime_type ?? null,
@@ -148,7 +145,6 @@ function flattenTypeDocuments(items) {
       file_last_modified_by: doc.file_last_modified_by ?? null,
       storage_provider: doc.storage_provider ?? null,
       storage_key: doc.storage_key ?? null,
-
       document_is_active: doc.document_is_active ?? true,
       created_at: doc.created_at ?? null,
       created_by: doc.created_by ?? null,
@@ -166,6 +162,7 @@ function flattenTypeDocuments(items) {
 
 function buildRowsByTypeFromDocs(documentTypes, docs) {
   const docsByType = new Map();
+
   for (const dt of docs?.documentTypes || []) {
     docsByType.set(dt.document_type_key, dt);
   }
@@ -207,8 +204,10 @@ function buildDisplayModel(allRows) {
     while (current?.parent_document_id) {
       const parent = byId.get(String(current.parent_document_id));
       if (!parent) break;
+
       const key = String(parent.document_id);
       if (seen.has(key)) break;
+
       seen.add(key);
       history.push(parent);
       current = parent;
@@ -223,13 +222,11 @@ function buildDisplayModel(allRows) {
       ...history.map((x) => String(x.document_id)),
     ]);
 
-    return rows.filter((r) => {
-      return (
-        String(r.relation_type || "").toUpperCase() === "BIJLAGE" &&
-        r.parent_document_id &&
-        validParentIds.has(String(r.parent_document_id))
-      );
-    });
+    return rows.filter((r) => (
+      String(r.relation_type || "").toUpperCase() === "BIJLAGE" &&
+      r.parent_document_id &&
+      validParentIds.has(String(r.parent_document_id))
+    ));
   }
 
   const decorated = mainDocs.map((main) => {
@@ -252,100 +249,21 @@ function buildDisplayModel(allRows) {
 
 function TabLoadingCard({ title = "Laden...", label = "Bezig met gegevens laden." }) {
   return (
-    <div
-      className="card"
-      style={{
-        minHeight: 180,
-        display: "grid",
-        placeItems: "center",
-      }}
-    >
-      <div
-        style={{
-          width: "100%",
-          maxWidth: 360,
-          padding: 24,
-          display: "grid",
-          gap: 10,
-          justifyItems: "center",
-          textAlign: "center",
-        }}
-      >
-        <div
-          style={{
-            width: 64,
-            height: 64,
-            borderRadius: 999,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            background: "rgba(255,255,255,0.08)",
-            boxShadow: "0 0 0 8px rgba(255,255,255,0.04)",
-          }}
-        >
+    <div className="card doc-loading-card">
+      <div className="doc-loading-card__inner">
+        <div className="doc-loading-card__icon">
           <ArchiveIcon size={26} className="doc-anim-icon" />
         </div>
 
-        <div style={{ fontWeight: 800, fontSize: 20 }}>{title}</div>
-        <div className="muted" style={{ fontSize: 13 }}>{label}</div>
+        <div className="doc-loading-card__title">{title}</div>
+        <div className="muted doc-text-sm">{label}</div>
       </div>
     </div>
   );
 }
 
 function StatusChip({ children, tone = "neutral" }) {
-  const toneMap = {
-    neutral: {
-      border: "1px solid rgba(255,255,255,0.12)",
-      background: "rgba(255,255,255,0.05)",
-      color: "rgba(255,255,255,0.88)",
-    },
-    success: {
-      border: "1px solid rgba(34,197,94,0.28)",
-      background: "rgba(34,197,94,0.14)",
-      color: "rgba(220,252,231,0.98)",
-    },
-    info: {
-      border: "1px solid rgba(59,130,246,0.28)",
-      background: "rgba(59,130,246,0.16)",
-      color: "rgba(219,234,254,0.98)",
-    },
-    warning: {
-      border: "1px solid rgba(245,158,11,0.28)",
-      background: "rgba(245,158,11,0.14)",
-      color: "rgba(254,243,199,0.98)",
-    },
-    danger: {
-      border: "1px solid rgba(239,68,68,0.28)",
-      background: "rgba(239,68,68,0.14)",
-      color: "rgba(254,226,226,0.98)",
-    },
-    accent: {
-      border: "1px solid rgba(16,185,129,0.32)",
-      background: "rgba(16,185,129,0.18)",
-      color: "rgba(209,250,229,0.98)",
-    },
-  };
-
-  const style = toneMap[tone] || toneMap.neutral;
-
-  return (
-    <span
-      style={{
-        display: "inline-flex",
-        alignItems: "center",
-        height: 24,
-        padding: "0 10px",
-        borderRadius: 999,
-        fontSize: 12,
-        fontWeight: 700,
-        whiteSpace: "nowrap",
-        ...style,
-      }}
-    >
-      {children}
-    </span>
-  );
+  return <span className={`ember-label ember-label--${tone}`}>{children}</span>;
 }
 
 function AnimatedActionButton({
@@ -393,20 +311,11 @@ function FileOpenIconButton({ onClick, disabled = false, hasFile = false }) {
       }}
       onMouseEnter={() => iconRef.current?.startAnimation?.()}
       onMouseLeave={() => iconRef.current?.stopAnimation?.()}
-      className="icon-btn"
-      style={{
-        width: 40,
-        height: 40,
-        borderRadius: 12,
-        border: hasFile
-          ? "1px solid rgba(34,197,94,0.24)"
-          : "1px solid rgba(255,255,255,0.10)",
-        background: hasFile
-          ? "rgba(34,197,94,0.14)"
-          : "rgba(255,255,255,0.04)",
-        opacity: hasFile ? 1 : 0.65,
-        flex: "0 0 auto",
-      }}
+      className={cx(
+        "icon-btn",
+        "doc-file-open-btn",
+        hasFile ? "doc-file-open-btn--has-file" : "doc-file-open-btn--empty"
+      )}
     >
       <FileTextIcon ref={iconRef} size={18} className="doc-anim-icon" />
     </button>
@@ -429,6 +338,11 @@ function ClickableDropBar({
   return (
     <button
       type="button"
+      className={cx(
+        "doc-dropbar",
+        compact && "doc-dropbar--compact",
+        isDragOver && "doc-dropbar--active"
+      )}
       onClick={(e) => {
         e.stopPropagation();
         onClick?.(e);
@@ -451,46 +365,15 @@ function ClickableDropBar({
       }}
       onMouseEnter={() => iconRef.current?.startAnimation?.()}
       onMouseLeave={() => iconRef.current?.stopAnimation?.()}
-      style={{
-        width: "100%",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "space-between",
-        gap: 12,
-        textAlign: "left",
-        cursor: "pointer",
-        borderRadius: compact ? 12 : 14,
-        border: isDragOver
-          ? "1px solid rgba(59,130,246,0.30)"
-          : "1px dashed rgba(255,255,255,0.14)",
-        background: isDragOver ? "rgba(59,130,246,0.12)" : "rgba(255,255,255,0.02)",
-        padding: compact ? 10 : 12,
-        transition: "all 180ms ease",
-      }}
     >
-      <div style={{ display: "grid", gap: 4, minWidth: 0 }}>
-        <div style={{ fontWeight: 700 }}>{title}</div>
-        {subtitle ? (
-          <div className="muted" style={{ fontSize: 12, lineHeight: 1.3 }}>
-            {subtitle}
-          </div>
-        ) : null}
-      </div>
+      <span className="doc-dropbar__text">
+        <span className="doc-dropbar__title">{title}</span>
+        {subtitle ? <span className="muted doc-dropbar__subtitle">{subtitle}</span> : null}
+      </span>
 
-      <div
-        style={{
-          width: compact ? 34 : 38,
-          height: compact ? 34 : 38,
-          borderRadius: 999,
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          background: isDragOver ? "rgba(59,130,246,0.18)" : "rgba(255,255,255,0.06)",
-          flex: "0 0 auto",
-        }}
-      >
+      <span className="doc-dropbar__icon">
         <UploadIcon ref={iconRef} size={18} className="doc-anim-icon" />
-      </div>
+      </span>
     </button>
   );
 }
@@ -543,6 +426,7 @@ const DocumentsTab = forwardRef(function DocumentsTab(
 
   const documentTypes = useMemo(() => {
     const list = catalog?.documentTypes || [];
+
     return list
       .filter((dt) => dt && dt.is_active !== false)
       .slice()
@@ -568,6 +452,7 @@ const DocumentsTab = forwardRef(function DocumentsTab(
 
   const grouped = useMemo(() => {
     const map = new Map();
+
     for (const dt of documentTypes) {
       const k = dt.section_key || "overig";
       if (!map.has(k)) map.set(k, []);
@@ -616,6 +501,7 @@ const DocumentsTab = forwardRef(function DocumentsTab(
     const anyTypeClosedInsideOpenSection = grouped.some(
       (g) => sectionOpenMap[g.section_key] && g.types.some((dt) => typeOpenMap[dt.document_type_key] === false)
     );
+
     onAnyOpenChange?.(anySectionOpen || anyTypeClosedInsideOpenSection);
   }, [sectionOpenMap, typeOpenMap, grouped, onAnyOpenChange]);
 
@@ -635,9 +521,11 @@ const DocumentsTab = forwardRef(function DocumentsTab(
 
   useEffect(() => {
     if (!accentRowId) return;
+
     const timer = window.setTimeout(() => {
       setAccentRowId((cur) => (cur === accentRowId ? null : cur));
     }, 8000);
+
     return () => window.clearTimeout(timer);
   }, [accentRowId]);
 
@@ -658,11 +546,7 @@ const DocumentsTab = forwardRef(function DocumentsTab(
     window.setTimeout(() => {
       const el = rowRefs.current[String(rowId)];
       if (!el) return;
-      el.scrollIntoView({
-        behavior,
-        block: "center",
-        inline: "nearest",
-      });
+      el.scrollIntoView({ behavior, block: "center", inline: "nearest" });
     }, 120);
   }
 
@@ -684,14 +568,17 @@ const DocumentsTab = forwardRef(function DocumentsTab(
   function openSectionForType(typeKey) {
     const dt = documentTypes.find((x) => x.document_type_key === typeKey);
     const sk = dt?.section_key || "overig";
+
     setSectionOpenMap((m) => ({ ...m, [sk]: true }));
     setTypeOpenMap((m) => ({ ...m, [typeKey]: true }));
+
     return sk;
   }
 
   function setRow(typeKey, rowId, patch, fieldKey) {
     setRowsByType((prev) => {
       const arr = prev[typeKey] || [];
+
       return {
         ...prev,
         [typeKey]: arr.map((r) => (r.document_id === rowId ? { ...r, ...patch } : r)),
@@ -711,9 +598,11 @@ const DocumentsTab = forwardRef(function DocumentsTab(
 
   function updateTitleAndFileName(typeKey, row, nextTitle) {
     const patch = { title: nextTitle };
+
     if (row.has_file && row.file_name) {
       patch.file_name = withPreservedExtension(row.file_name, nextTitle);
     }
+
     setRow(typeKey, row.document_id, patch, "title");
   }
 
@@ -753,11 +642,13 @@ const DocumentsTab = forwardRef(function DocumentsTab(
 
     setRowsByType((prev) => {
       const arr = prev[typeKey] || [];
+
       const drafts = list.map((file) => {
         const draft = newDraft(typeKey, {
           title: fileBaseName(file.name),
           file_name: file.name,
         });
+
         createdRows.push({ rowId: draft.document_id, file });
         return draft;
       });
@@ -861,9 +752,7 @@ const DocumentsTab = forwardRef(function DocumentsTab(
       const hasMetadataChanges = changed.length > 0;
       const hasQueuedFiles = queuedEntries.length > 0;
 
-      if (!hasMetadataChanges && !hasQueuedFiles) {
-        return true;
-      }
+      if (!hasMetadataChanges && !hasQueuedFiles) return true;
 
       if (hasQueuedFiles) {
         for (const item of queuedEntries) {
@@ -923,17 +812,13 @@ const DocumentsTab = forwardRef(function DocumentsTab(
 
           setPendingFilesByRowId((prev) => {
             const next = { ...prev };
-            for (const item of queuedEntries) {
-              delete next[item.rowId];
-            }
+            for (const item of queuedEntries) delete next[item.rowId];
             return next;
           });
 
           setRowStatusById((prev) => {
             const next = { ...prev };
-            for (const item of queuedEntries) {
-              delete next[item.rowId];
-            }
+            for (const item of queuedEntries) delete next[item.rowId];
             return next;
           });
 
@@ -963,6 +848,7 @@ const DocumentsTab = forwardRef(function DocumentsTab(
 
       onSaveOk?.();
       await onSaved?.();
+
       return true;
     } catch (e) {
       setError(e?.message || String(e));
@@ -1003,9 +889,7 @@ const DocumentsTab = forwardRef(function DocumentsTab(
     const isNew = rowId.startsWith("new:");
     const isDirty = Boolean(dirtyRows[rowId]);
 
-    if (!isNew && !isDirty) {
-      return rowId;
-    }
+    if (!isNew && !isDirty) return rowId;
 
     const localSnapshot = {
       ...row,
@@ -1046,39 +930,34 @@ const DocumentsTab = forwardRef(function DocumentsTab(
     }
   }
 
-async function handleDownloadDocument(row) {
-  setError(null);
-  setActionBusyKey(`download:${row.document_id}`);
+  async function handleDownloadDocument(row) {
+    setError(null);
+    setActionBusyKey(`download:${row.document_id}`);
 
-  try {
-    const result = await downloadInstallationDocumentFile(code, row.document_id);
+    try {
+      const result = await downloadInstallationDocumentFile(code, row.document_id);
+      const blobUrl = window.URL.createObjectURL(result.blob);
+      const fileName = result.fileName || row.file_name || row.title || "document";
 
-    const blobUrl = window.URL.createObjectURL(result.blob);
-    const fileName =
-      result.fileName ||
-      row.file_name ||
-      row.title ||
-      "document";
+      const a = document.createElement("a");
+      a.href = blobUrl;
+      a.download = fileName;
+      a.rel = "noopener";
+      a.style.display = "none";
 
-    const a = document.createElement("a");
-    a.href = blobUrl;
-    a.download = fileName;
-    a.rel = "noopener";
-    a.style.display = "none";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
 
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-
-    window.setTimeout(() => {
-      window.URL.revokeObjectURL(blobUrl);
-    }, 1000);
-  } catch (e) {
-    setError(e?.message || String(e));
-  } finally {
-    setActionBusyKey(null);
+      window.setTimeout(() => {
+        window.URL.revokeObjectURL(blobUrl);
+      }, 1000);
+    } catch (e) {
+      setError(e?.message || String(e));
+    } finally {
+      setActionBusyKey(null);
+    }
   }
-}
 
   async function handleUploadForRow(typeKey, row, file) {
     if (!file) return;
@@ -1089,6 +968,7 @@ async function handleDownloadDocument(row) {
 
     try {
       const persistedId = await ensurePersistedRow(typeKey, row);
+
       if (!persistedId) {
         setRowStatus(row.document_id, "error", "opslaan mislukt");
         return;
@@ -1136,6 +1016,7 @@ async function handleDownloadDocument(row) {
       }
 
       const ok = await save();
+
       if (!ok) {
         for (const item of localSnapshots) {
           setRowStatus(item.row.document_id, "error", "opslaan mislukt");
@@ -1150,12 +1031,14 @@ async function handleDownloadDocument(row) {
 
       for (const item of localSnapshots) {
         const match = findPersistedMatch(typeKey, item.row, freshRowsByType[typeKey] || [], usedIds);
+
         if (!match?.document_id) {
           throw new Error(`documentregel niet teruggevonden voor bestand ${item.file?.name || ""}`);
         }
 
         usedIds.add(String(match.document_id));
         if (!firstPersistedId) firstPersistedId = String(match.document_id);
+
         await uploadInstallationDocumentFile(code, String(match.document_id), item.file);
       }
 
@@ -1173,9 +1056,7 @@ async function handleDownloadDocument(row) {
       await onSaved?.();
       onSaveOk?.();
 
-      if (firstPersistedId) {
-        accentAndScrollRow(firstPersistedId, "smooth");
-      }
+      if (firstPersistedId) accentAndScrollRow(firstPersistedId, "smooth");
     } catch (e) {
       for (const item of queuedRows) {
         setRowStatus(item.document_id, "error", e?.message || String(e));
@@ -1287,6 +1168,7 @@ async function handleDownloadDocument(row) {
     if (!files.length) return;
 
     addFilesAsDrafts(typeKey, files);
+
     setSectionDropQueue((prev) => {
       const next = { ...prev };
       delete next[sectionKey];
@@ -1330,11 +1212,12 @@ async function handleDownloadDocument(row) {
     });
   }
 
-  useImperativeHandle(
-    ref,
-    () => ({ save, expandAll, collapseAll }),
-    [rowsByType, dirtyRows, grouped, documentTypes]
-  );
+  useImperativeHandle(ref, () => ({ save, expandAll, collapseAll }), [
+    rowsByType,
+    dirtyRows,
+    grouped,
+    documentTypes,
+  ]);
 
   function animateSectionIcon(sectionKey) {
     sectionToggleIconRefs.current[sectionKey]?.startAnimation?.();
@@ -1362,12 +1245,14 @@ async function handleDownloadDocument(row) {
   function renderRowStatus(rowId) {
     const s = rowStatusById[rowId];
     if (!s) return null;
+
     const tone = s.status === "error" ? "danger" : s.status === "queued" ? "warning" : "info";
     return <StatusChip tone={tone}>{s.message || (s.status === "error" ? "Fout" : "Bezig")}</StatusChip>;
   }
 
   function getCardTone(row) {
     const pendingFile = pendingFilesByRowId[row.document_id];
+
     if (accentRowId === row.document_id) return "accent";
     if (!row.document_is_active) return "archived";
     if (pendingFile) return "warning";
@@ -1375,56 +1260,9 @@ async function handleDownloadDocument(row) {
     return "normal";
   }
 
-  function getCardStyle(row, compact = false) {
-    const tone = getCardTone(row);
-
-    const base = {
-      border: "1px solid rgba(255,255,255,0.08)",
-      borderRadius: compact ? 14 : 16,
-      background: "rgba(255,255,255,0.02)",
-      padding: compact ? 12 : 14,
-      transition: "all 220ms ease",
-    };
-
-    if (tone === "accent") {
-      return {
-        ...base,
-        border: "1px solid rgba(16,185,129,0.34)",
-        background: "linear-gradient(180deg, rgba(16,185,129,0.14), rgba(255,255,255,0.03))",
-        boxShadow: "0 0 0 1px rgba(16,185,129,0.18), 0 0 28px rgba(16,185,129,0.12)",
-      };
-    }
-
-    if (tone === "warning") {
-      return {
-        ...base,
-        border: "1px solid rgba(245,158,11,0.26)",
-        background: "linear-gradient(180deg, rgba(245,158,11,0.10), rgba(255,255,255,0.03))",
-      };
-    }
-
-    if (tone === "metadata") {
-      return {
-        ...base,
-        border: "1px solid rgba(59,130,246,0.24)",
-        background: "linear-gradient(180deg, rgba(59,130,246,0.08), rgba(255,255,255,0.03))",
-      };
-    }
-
-    if (tone === "archived") {
-      return {
-        ...base,
-        opacity: 0.78,
-        border: "1px solid rgba(255,255,255,0.06)",
-        background: "rgba(255,255,255,0.015)",
-      };
-    }
-
-    return base;
-  }
-
   function renderFileSummary(row) {
     const queued = pendingFilesByRowId[row.document_id];
+
     if (queued) {
       return {
         title: queued.name,
@@ -1464,6 +1302,7 @@ async function handleDownloadDocument(row) {
     const editorKey = `editor:${row.document_id}`;
     const isNewTemp = String(row.document_id || "").startsWith("new:");
     const editorOpen = detailOpenMap[editorKey] ?? false;
+    const tone = getCardTone(row);
 
     return (
       <div
@@ -1471,31 +1310,22 @@ async function handleDownloadDocument(row) {
         ref={(el) => {
           rowRefs.current[String(row.document_id)] = el;
         }}
-        style={getCardStyle(row, compact)}
+        className={cx(
+          "doc-card",
+          compact && "doc-card--compact",
+          `doc-card--${tone}`
+        )}
       >
-        <div style={{ display: "grid", gap: 12 }}>
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "minmax(0,1fr) auto",
-              gap: 12,
-              alignItems: "start",
-            }}
-          >
+        <div className="doc-card__inner">
+          <div className="doc-card__summary-grid">
             <div
+              className="doc-card__summary"
               onClick={() =>
                 setDetailOpenMap((m) => ({
                   ...m,
                   [editorKey]: !editorOpen,
                 }))
               }
-              style={{
-                display: "flex",
-                alignItems: "flex-start",
-                gap: 12,
-                minWidth: 0,
-                cursor: "pointer",
-              }}
               title={editorOpen ? "details inklappen" : "details uitklappen"}
             >
               <FileOpenIconButton
@@ -1504,40 +1334,11 @@ async function handleDownloadDocument(row) {
                 onClick={() => handleOpenDocument(row)}
               />
 
-              <div style={{ minWidth: 0, display: "grid", gap: 4 }}>
-                <div
-                  style={{
-                    display: "flex",
-                    alignItems: "flex-start",
-                    justifyContent: "space-between",
-                    gap: 12,
-                    flexWrap: "wrap",
-                    minWidth: 0,
-                  }}
-                >
-                  <div
-                    style={{
-                      fontWeight: 800,
-                      fontSize: compact ? 14 : 15,
-                      whiteSpace: "nowrap",
-                      overflow: "hidden",
-                      textOverflow: "ellipsis",
-                      minWidth: 0,
-                      flex: "1 1 260px",
-                    }}
-                  >
-                    {summary.title}
-                  </div>
+              <div className="doc-card__main">
+                <div className="doc-card__title-row">
+                  <div className="doc-card__title">{summary.title}</div>
 
-                  <div
-                    style={{
-                      display: "flex",
-                      gap: 8,
-                      flexWrap: "wrap",
-                      justifyContent: "flex-end",
-                      flex: "0 1 auto",
-                    }}
-                  >
+                  <div className="doc-card__labels">
                     {row.has_file ? (
                       <StatusChip tone="success">Bestand gekoppeld</StatusChip>
                     ) : (
@@ -1555,29 +1356,13 @@ async function handleDownloadDocument(row) {
                   </div>
                 </div>
 
-                <div
-                  className="muted"
-                  style={{
-                    fontSize: 12,
-                    lineHeight: 1.35,
-                    whiteSpace: compact ? "normal" : "nowrap",
-                    overflow: "hidden",
-                    textOverflow: "ellipsis",
-                  }}
-                >
+                <div className={cx("muted", "doc-card__subtitle", compact && "doc-card__subtitle--wrap")}>
                   {summary.sub || " "}
                 </div>
               </div>
             </div>
 
-            <div
-              style={{
-                display: "flex",
-                gap: 8,
-                flexWrap: "wrap",
-                justifyContent: "flex-end",
-              }}
-            >
+            <div className="doc-card__actions">
               {canOpen && (
                 <AnimatedActionButton
                   title="downloaden"
@@ -1628,22 +1413,9 @@ async function handleDownloadDocument(row) {
           </div>
 
           {editorOpen && (
-            <div
-              style={{
-                display: "grid",
-                gap: 12,
-                paddingTop: 4,
-                borderTop: "1px solid rgba(255,255,255,0.06)",
-              }}
-            >
-              <div
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
-                  gap: 12,
-                }}
-              >
-                <div style={{ minWidth: 0 }}>
+            <div className="doc-card__editor">
+              <div className="doc-card__form-grid">
+                <div className="doc-field">
                   {fieldLabel("titel", Boolean(df.title))}
                   <input
                     className="cf-input"
@@ -1653,7 +1425,7 @@ async function handleDownloadDocument(row) {
                   />
                 </div>
 
-                <div style={{ minWidth: 0 }}>
+                <div className="doc-field">
                   {fieldLabel("nummer", Boolean(df.document_number))}
                   <input
                     className="cf-input"
@@ -1665,7 +1437,7 @@ async function handleDownloadDocument(row) {
                   />
                 </div>
 
-                <div style={{ minWidth: 0 }}>
+                <div className="doc-field">
                   {fieldLabel("datum", Boolean(df.document_date))}
                   <input
                     className="cf-input"
@@ -1677,7 +1449,7 @@ async function handleDownloadDocument(row) {
                   />
                 </div>
 
-                <div style={{ minWidth: 0 }}>
+                <div className="doc-field">
                   {fieldLabel("revisie/versie", Boolean(df.revision))}
                   <input
                     className="cf-input"
@@ -1687,21 +1459,20 @@ async function handleDownloadDocument(row) {
                   />
                 </div>
 
-                <div style={{ gridColumn: "1 / -1" }}>
+                <div className="doc-field doc-field--wide">
                   {fieldLabel("notitie", Boolean(df.note))}
                   <textarea
-                    className="cf-input"
+                    className="cf-input doc-textarea"
                     value={row.note}
                     onChange={(e) => setRow(typeKey, row.document_id, { note: e.target.value }, "note")}
                     placeholder="opmerking / context"
                     rows={2}
-                    style={{ resize: "vertical", minHeight: 68 }}
                   />
                 </div>
               </div>
 
               {!row.has_file && (
-                <div style={{ display: "grid", gap: 8 }}>
+                <div className="doc-action-stack">
                   <input
                     ref={(el) => {
                       uploadInputRefs.current[row.document_id] = el;
@@ -1754,6 +1525,7 @@ async function handleDownloadDocument(row) {
                       if (!isFileDragEvent(e)) return;
                       e.preventDefault();
                       setDragOverRowId(null);
+
                       const file = e.dataTransfer?.files?.[0];
                       if (!file) return;
 
@@ -1768,7 +1540,7 @@ async function handleDownloadDocument(row) {
                   />
 
                   {canUpload && (
-                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                    <div className="doc-inline-actions">
                       <AnimatedActionButton
                         title="opslaan en uploaden"
                         Icon={RefreshCWIcon}
@@ -1783,8 +1555,8 @@ async function handleDownloadDocument(row) {
               )}
 
               {row.has_file && (
-                <div style={{ display: "grid", gap: 8 }}>
-                  <div style={{ fontSize: 13, fontWeight: 700 }}>Bestandsacties</div>
+                <div className="doc-action-stack">
+                  <div className="doc-subtitle-strong">Bestandsacties</div>
 
                   {canReplace && (
                     <>
@@ -1829,8 +1601,10 @@ async function handleDownloadDocument(row) {
                           if (!isFileDragEvent(e)) return;
                           e.preventDefault();
                           setDragOverReplaceId(null);
+
                           const file = e.dataTransfer?.files?.[0];
                           if (!file) return;
+
                           await handleReplaceDocument(typeKey, row, file);
                         }}
                       />
@@ -1881,8 +1655,10 @@ async function handleDownloadDocument(row) {
                           if (!isFileDragEvent(e)) return;
                           e.preventDefault();
                           setDragOverAttachId(null);
+
                           const files = e.dataTransfer?.files;
                           if (!files?.length) return;
+
                           await handleAddAttachments(typeKey, row, files);
                         }}
                       />
@@ -1917,7 +1693,7 @@ async function handleDownloadDocument(row) {
 
   return (
     <div
-      style={{ display: "grid", gap: 12 }}
+      className="documents-tab"
       onDragEnter={(e) => {
         if (!isFileDragEvent(e)) return;
         e.preventDefault();
@@ -1934,20 +1710,11 @@ async function handleDownloadDocument(row) {
         e.stopPropagation();
       }}
     >
-      {error && <p style={{ color: "salmon", margin: 0 }}>{error}</p>}
+      {error ? <p className="ember-error-text doc-error">{error}</p> : null}
 
-      <div
-        className="card"
-        style={{
-          padding: 14,
-          display: "grid",
-          gap: 8,
-          border: "1px solid rgba(59,130,246,0.16)",
-          background: "linear-gradient(180deg, rgba(59,130,246,0.08), rgba(255,255,255,0.02))",
-        }}
-      >
-        <div style={{ fontWeight: 800, fontSize: 16 }}>Bestanden toevoegen</div>
-        <div className="muted" style={{ fontSize: 13, lineHeight: 1.35 }}>
+      <div className="card doc-help-card">
+        <div className="doc-help-card__title">Bestanden toevoegen</div>
+        <div className="muted doc-help-card__text">
           Sleep bestanden op een sectiebalk, op een documenttype, op een documentregel zonder bestand, of op de balken voor vervangen en bijlage. Nieuwe items worden automatisch in beeld gebracht.
         </div>
       </div>
@@ -1973,15 +1740,11 @@ async function handleDownloadDocument(row) {
         return (
           <div
             key={g.section_key}
-            style={{
-              border: sectionIsDragOver
-                ? "1px solid rgba(59,130,246,0.24)"
-                : "1px solid rgba(255,255,255,0.12)",
-              borderRadius: 14,
-              overflow: "hidden",
-              background: sectionIsDragOver ? "rgba(59,130,246,0.06)" : "transparent",
-              transition: "all 180ms ease",
-            }}
+            className={cx(
+              "doc-section-shell",
+              isOpen && "doc-section-shell--open",
+              sectionIsDragOver && "doc-section-shell--drag"
+            )}
             onDragOver={(e) => {
               if (!isFileDragEvent(e)) return;
               e.preventDefault();
@@ -2012,35 +1775,20 @@ async function handleDownloadDocument(row) {
           >
             <button
               type="button"
+              className="doc-section-toggle"
               onClick={() => setSectionOpenMap((m) => ({ ...m, [g.section_key]: !m[g.section_key] }))}
               onMouseEnter={() => animateSectionIcon(g.section_key)}
               onMouseLeave={() => stopSectionIcon(g.section_key)}
-              style={{
-                width: "100%",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "space-between",
-                gap: 12,
-                background: "transparent",
-                border: "none",
-                padding: 14,
-                cursor: "pointer",
-                textAlign: "left",
-              }}
               title={isOpen ? "inklappen" : "uitklappen"}
             >
-              <div style={{ display: "flex", alignItems: "baseline", gap: 12, minWidth: 0, flexWrap: "wrap" }}>
-                <div style={{ fontWeight: 700 }}>{g.section?.section_name || g.section_key}</div>
-                <div className="muted" style={{ whiteSpace: "nowrap", fontSize: 13 }}>
-                  {totals.active} actief
-                </div>
-                <div className="muted" style={{ whiteSpace: "nowrap", fontSize: 13 }}>
-                  {totals.archived} gearchiveerd
-                </div>
+              <span className="doc-section-toggle__main">
+                <span className="doc-section-toggle__title">{g.section?.section_name || g.section_key}</span>
+                <span className="muted doc-section-toggle__meta">{totals.active} actief</span>
+                <span className="muted doc-section-toggle__meta">{totals.archived} gearchiveerd</span>
                 {sectionIsDragOver ? <StatusChip tone="info">Laat los om toe te voegen</StatusChip> : null}
-              </div>
+              </span>
 
-              <div style={{ flex: "0 0 auto" }}>
+              <span className="doc-section-toggle__icon">
                 <ToggleIcon
                   ref={(el) => {
                     sectionToggleIconRefs.current[g.section_key] = el;
@@ -2048,28 +1796,19 @@ async function handleDownloadDocument(row) {
                   size={18}
                   className="nav-anim-icon"
                 />
-              </div>
+              </span>
             </button>
 
             {isOpen && (
-              <div style={{ padding: 14, paddingTop: 0, display: "grid", gap: 14 }}>
+              <div className="doc-section-body">
                 {sectionQueuedFiles.length > 0 && g.types.length > 1 && (
-                  <div
-                    className="card"
-                    style={{
-                      padding: 12,
-                      display: "grid",
-                      gap: 10,
-                      border: "1px solid rgba(245,158,11,0.22)",
-                      background: "linear-gradient(180deg, rgba(245,158,11,0.10), rgba(255,255,255,0.02))",
-                    }}
-                  >
-                    <div style={{ fontWeight: 800 }}>Kies documenttype voor {sectionQueuedFiles.length} bestand(en)</div>
-                    <div className="muted" style={{ fontSize: 13 }}>
+                  <div className="card doc-queue-card">
+                    <div className="doc-queue-card__title">Kies documenttype voor {sectionQueuedFiles.length} bestand(en)</div>
+                    <div className="muted doc-text-sm">
                       Je hebt bestanden op de sectiebalk gedropt. Kies hieronder naar welk documenttype ze moeten.
                     </div>
 
-                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                    <div className="doc-inline-actions">
                       {g.types.map((dt) => (
                         <button
                           key={dt.document_type_key}
@@ -2108,18 +1847,11 @@ async function handleDownloadDocument(row) {
                   return (
                     <div
                       key={typeKey}
-                      className="doc-type"
-                      style={{
-                        borderRadius: 16,
-                        padding: 14,
-                        border: isTypeDragOver
-                          ? "1px solid rgba(59,130,246,0.24)"
-                          : "1px solid rgba(255,255,255,0.08)",
-                        background: isTypeDragOver
-                          ? "linear-gradient(180deg, rgba(59,130,246,0.10), rgba(255,255,255,0.02))"
-                          : "rgba(255,255,255,0.02)",
-                        transition: "all 180ms ease",
-                      }}
+                      className={cx(
+                        "doc-type-card",
+                        isTypeOpen && "doc-type-card--open",
+                        isTypeDragOver && "doc-type-card--drag"
+                      )}
                       onDragOver={(e) => {
                         if (!isFileDragEvent(e)) return;
                         e.preventDefault();
@@ -2145,47 +1877,32 @@ async function handleDownloadDocument(row) {
                         e.preventDefault();
                         e.stopPropagation();
                         setDragOverTypeKey(null);
+
                         const files = e.dataTransfer?.files;
                         if (files?.length) addFilesAsDrafts(typeKey, files);
                       }}
                     >
                       <button
                         type="button"
+                        className={cx("doc-type-head", isTypeOpen && "doc-type-head--open")}
                         onClick={() => setTypeOpenMap((m) => ({ ...m, [typeKey]: !isTypeOpen }))}
-                        style={{
-                          width: "100%",
-                          display: "grid",
-                          gridTemplateColumns: "minmax(0,1fr) auto",
-                          gap: 12,
-                          alignItems: "center",
-                          marginBottom: isTypeOpen ? 12 : 0,
-                          background: "transparent",
-                          border: "none",
-                          padding: 0,
-                          textAlign: "left",
-                          cursor: "pointer",
-                          color: "inherit",
-                        }}
                         title={isTypeOpen ? "documenttype inklappen" : "documenttype uitklappen"}
                       >
-                        <div style={{ minWidth: 0, display: "grid", gap: 4 }}>
-                          <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-                            <div style={{ fontWeight: 800 }}>{dt.document_type_name}</div>
+                        <span className="doc-type-head__main">
+                          <span className="doc-type-head__title-row">
+                            <span className="doc-type-head__title">{dt.document_type_name}</span>
                             {queuedCount > 0 ? <StatusChip tone="warning">{queuedCount} in wachtrij</StatusChip> : null}
                             {isTypeDragOver ? <StatusChip tone="info">Laat los om toe te voegen</StatusChip> : null}
-                          </div>
+                          </span>
 
-                          <div className="muted" style={{ fontSize: 13 }}>
+                          <span className="muted doc-type-head__meta">
                             {active.length} actief ; {archived.length} gearchiveerd
-                          </div>
-                        </div>
+                          </span>
+                        </span>
 
-                        <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                        <span className="doc-type-head__actions">
                           {queuedCount > 0 && (
-                            <span
-                              onClick={(e) => e.stopPropagation()}
-                              style={{ display: "inline-flex" }}
-                            >
+                            <span onClick={(e) => e.stopPropagation()} className="doc-inline-block">
                               <AnimatedActionButton
                                 title="wachtrij opslaan en uploaden"
                                 Icon={RefreshCWIcon}
@@ -2197,10 +1914,7 @@ async function handleDownloadDocument(row) {
                             </span>
                           )}
 
-                          <span
-                            onClick={(e) => e.stopPropagation()}
-                            style={{ display: "inline-flex" }}
-                          >
+                          <span onClick={(e) => e.stopPropagation()} className="doc-inline-block">
                             <AnimatedActionButton
                               title="document toevoegen"
                               Icon={PlusIcon}
@@ -2212,12 +1926,12 @@ async function handleDownloadDocument(row) {
                           </span>
 
                           <TypeToggleIcon size={18} className="nav-anim-icon" />
-                        </div>
+                        </span>
                       </button>
 
                       {isTypeOpen && (
-                        <>
-                          <div style={{ marginBottom: 12 }}>
+                        <div className="doc-type-body">
+                          <div className="doc-type-dropzone">
                             <input
                               ref={(el) => {
                                 typeFileInputRefs.current[typeKey] = el;
@@ -2259,6 +1973,7 @@ async function handleDownloadDocument(row) {
                                 if (!isFileDragEvent(e)) return;
                                 e.preventDefault();
                                 setDragOverTypeKey(null);
+
                                 const files = e.dataTransfer?.files;
                                 if (files?.length) addFilesAsDrafts(typeKey, files);
                               }}
@@ -2266,7 +1981,7 @@ async function handleDownloadDocument(row) {
                           </div>
 
                           {active.length > 0 ? (
-                            <div className="doc-list" style={{ display: "grid", gap: 10 }}>
+                            <div className="doc-list">
                               {active.map(({ main, attachments, history }) => {
                                 const historyOpenKey = `history:${main.document_id}`;
                                 const attachmentsOpenKey = `attachments:${main.document_id}`;
@@ -2274,11 +1989,11 @@ async function handleDownloadDocument(row) {
                                 const attachmentsOpen = detailOpenMap[attachmentsOpenKey] === true;
 
                                 return (
-                                  <div key={main.document_id} style={{ display: "grid", gap: 10 }}>
+                                  <div key={main.document_id} className="doc-main-item">
                                     {renderDocumentCard(typeKey, main)}
 
                                     {(history.length > 0 || attachments.length > 0) && (
-                                      <div style={{ display: "grid", gap: 8, paddingLeft: 10 }}>
+                                      <div className="doc-related-list">
                                         {history.length > 0 && (
                                           <div>
                                             <button
@@ -2294,7 +2009,7 @@ async function handleDownloadDocument(row) {
                                             </button>
 
                                             {historyOpen && (
-                                              <div style={{ marginTop: 8, display: "grid", gap: 8 }}>
+                                              <div className="doc-nested-list">
                                                 {history.map((h) => renderDocumentCard(typeKey, h, { compact: true }))}
                                               </div>
                                             )}
@@ -2316,7 +2031,7 @@ async function handleDownloadDocument(row) {
                                             </button>
 
                                             {attachmentsOpen && (
-                                              <div style={{ marginTop: 8, display: "grid", gap: 8 }}>
+                                              <div className="doc-nested-list">
                                                 {attachments.map((a) => renderDocumentCard(typeKey, a, { compact: true }))}
                                               </div>
                                             )}
@@ -2329,22 +2044,13 @@ async function handleDownloadDocument(row) {
                               })}
                             </div>
                           ) : (
-                            <div
-                              className="muted"
-                              style={{
-                                fontSize: 13,
-                                padding: 12,
-                                borderRadius: 12,
-                                background: "rgba(255,255,255,0.02)",
-                                border: "1px dashed rgba(255,255,255,0.08)",
-                              }}
-                            >
+                            <div className="muted doc-empty-box">
                               nog geen actief document
                             </div>
                           )}
 
                           {archived.length > 0 && (
-                            <div style={{ marginTop: 8 }}>
+                            <div className="doc-archive-section">
                               <button
                                 type="button"
                                 className="doc-archive-toggle"
@@ -2359,7 +2065,7 @@ async function handleDownloadDocument(row) {
                               </button>
 
                               {!isCollapsed && (
-                                <div className="doc-list" style={{ marginTop: 8, display: "grid", gap: 10 }}>
+                                <div className="doc-list doc-list--archived">
                                   {archived.map(({ main, attachments, history }) => {
                                     const historyOpenKey = `history:${main.document_id}`;
                                     const attachmentsOpenKey = `attachments:${main.document_id}`;
@@ -2367,11 +2073,11 @@ async function handleDownloadDocument(row) {
                                     const attachmentsOpen = detailOpenMap[attachmentsOpenKey] === true;
 
                                     return (
-                                      <div key={main.document_id} style={{ display: "grid", gap: 10 }}>
+                                      <div key={main.document_id} className="doc-main-item">
                                         {renderDocumentCard(typeKey, main)}
 
                                         {(history.length > 0 || attachments.length > 0) && (
-                                          <div style={{ display: "grid", gap: 8, paddingLeft: 10 }}>
+                                          <div className="doc-related-list">
                                             {history.length > 0 && (
                                               <div>
                                                 <button
@@ -2387,7 +2093,7 @@ async function handleDownloadDocument(row) {
                                                 </button>
 
                                                 {historyOpen && (
-                                                  <div style={{ marginTop: 8, display: "grid", gap: 8 }}>
+                                                  <div className="doc-nested-list">
                                                     {history.map((h) => renderDocumentCard(typeKey, h, { compact: true }))}
                                                   </div>
                                                 )}
@@ -2409,7 +2115,7 @@ async function handleDownloadDocument(row) {
                                                 </button>
 
                                                 {attachmentsOpen && (
-                                                  <div style={{ marginTop: 8, display: "grid", gap: 8 }}>
+                                                  <div className="doc-nested-list">
                                                     {attachments.map((a) => renderDocumentCard(typeKey, a, { compact: true }))}
                                                   </div>
                                                 )}
@@ -2424,7 +2130,7 @@ async function handleDownloadDocument(row) {
                               )}
                             </div>
                           )}
-                        </>
+                        </div>
                       )}
                     </div>
                   );

@@ -50,7 +50,7 @@ function normalizeAppearancePreference(value: any) {
 function normalizeAvatarSourcePreference(value: any) {
   const v = String(value || "").trim().toLowerCase();
   if (v === "uploaded" || v === "microsoft" || v === "none") return v;
-  return "uploaded";
+  return "microsoft";
 }
 
 function normalizeSignatureSourcePreference(value: any) {
@@ -72,7 +72,7 @@ function mapProfileRow(row: any, user: any) {
     effective_display_name: preferredDisplayName || snapshotName || snapshotEmail || "Gebruiker",
     profile_note: row?.profile_note ?? null,
     appearance_preference: row?.appearance_preference ?? "system",
-    avatar_source_preference: row?.avatar_source_preference ?? "uploaded",
+    avatar_source_preference: row?.avatar_source_preference ?? "microsoft",
     signature_source_preference: row?.signature_source_preference ?? "uploaded",
     created_at: row?.created_at ?? null,
     created_by: row?.created_by ?? null,
@@ -138,6 +138,10 @@ function buildInitials(name: string | null, email: string | null) {
 function buildTeamsDeepLink(email: string | null) {
   const safe = String(email || "").trim();
   if (!safe) return null;
+
+  const looksLikeEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(safe);
+  if (!looksLikeEmail) return null;
+
   return `https://teams.microsoft.com/l/chat/0/0?users=${encodeURIComponent(safe)}`;
 }
 
@@ -184,13 +188,15 @@ async function loadProfileParts(user: any) {
   const avatar = mapAvatarRow(avatarRow);
   const signature = mapSignatureRow(signatureRow);
 
-  const avatarMode = profile.avatar_source_preference || "uploaded";
+  const avatarMode = profile.avatar_source_preference || "microsoft";
   const signatureMode = profile.signature_source_preference || "uploaded";
 
   const avatarUrl =
-    avatar?.has_file && avatarMode === "uploaded"
-      ? "/me/profile/avatar/file"
-      : null;
+    avatarMode === "microsoft"
+      ? "/me/profile/avatar/microsoft/file"
+      : avatar?.has_file && avatarMode === "uploaded"
+        ? "/me/profile/avatar/file"
+        : null;
 
   const signatureUrl =
     signature?.has_file && signatureMode === "uploaded"
@@ -208,8 +214,8 @@ async function loadProfileParts(user: any) {
       avatar_uploaded_available: !!avatar?.has_file,
       avatar_microsoft_available: true,
       avatar_has_any:
-        (!!avatar?.has_file && avatarMode === "uploaded") ||
-        avatarMode === "microsoft",
+        avatarMode === "microsoft" ||
+        (!!avatar?.has_file && avatarMode === "uploaded"),
 
       avatar_url: avatarUrl,
       avatar_preview_url: avatarUrl,
@@ -252,12 +258,16 @@ function mapDirectoryRow(row: any, currentUserObjectId: string | null) {
   const effectiveDisplayName =
     preferredDisplayName || displayNameSnapshot || emailSnapshot || "Gebruiker";
 
+  const avatarMode = row?.avatar_source_preference ?? "microsoft";
   const hasAvatarFile = !!row?.avatar_storage_key;
-  const avatarMode = row?.avatar_source_preference ?? "uploaded";
+  const userObjectId = String(row?.user_object_id || "");
+
   const avatarUrl =
-    hasAvatarFile && avatarMode === "uploaded"
-      ? `/me/profile/directory/${encodeURIComponent(String(row.user_object_id || ""))}/avatar/file`
-      : null;
+    avatarMode === "microsoft"
+      ? `/me/profile/directory/${encodeURIComponent(userObjectId)}/avatar/microsoft/file`
+      : hasAvatarFile && avatarMode === "uploaded"
+        ? `/me/profile/directory/${encodeURIComponent(userObjectId)}/avatar/file`
+        : null;
 
   return {
     user_object_id: row?.user_object_id ?? null,
@@ -269,6 +279,7 @@ function mapDirectoryRow(row: any, currentUserObjectId: string | null) {
     profile_note: row?.profile_note ?? null,
 
     avatar: {
+      mode: avatarMode,
       has_file: hasAvatarFile,
       file_name: row?.avatar_file_name ?? null,
       mime_type: row?.avatar_mime_type ?? null,
@@ -300,7 +311,13 @@ export async function getDirectory(user: any) {
   const currentUserObjectId = String(user?.objectId || "").trim() || null;
 
   return {
-    items: (rows || []).map((row: any) => mapDirectoryRow(row, currentUserObjectId)),
+    items: (rows || [])
+      .filter((row: any) => {
+        const email = String(row?.email_snapshot || "").trim().toLowerCase();
+        if (email === "jesse@local") return false;
+        return true;
+      })
+      .map((row: any) => mapDirectoryRow(row, currentUserObjectId)),
   };
 }
 
@@ -332,6 +349,9 @@ export async function uploadMyAvatar(file: Express.Multer.File, user: any) {
   if (!userObjectId) throw new Error("missing user object id");
 
   await ensureProfile(user);
+
+  const currentRowsBefore = await sqlQuery(getUserProfileSql, { userObjectId });
+  const currentBefore = currentRowsBefore?.[0] ?? null;
 
   const placeholderRows = await sqlQuery(createUserProfileAvatarPlaceholderSql, {
     userObjectId,
@@ -369,16 +389,13 @@ export async function uploadMyAvatar(file: Express.Multer.File, user: any) {
       actor: actorName(user),
     });
 
-    const currentRows = await sqlQuery(getUserProfileSql, { userObjectId });
-    const current = currentRows?.[0] ?? null;
-
     await sqlQuery(updateUserProfileSql, {
       userObjectId,
-      preferredDisplayName: current?.preferred_display_name ?? null,
-      profileNote: current?.profile_note ?? null,
-      appearancePreference: current?.appearance_preference ?? "system",
+      preferredDisplayName: currentBefore?.preferred_display_name ?? null,
+      profileNote: currentBefore?.profile_note ?? null,
+      appearancePreference: currentBefore?.appearance_preference ?? "system",
       avatarSourcePreference: "uploaded",
-      signatureSourcePreference: current?.signature_source_preference ?? "uploaded",
+      signatureSourcePreference: currentBefore?.signature_source_preference ?? "uploaded",
       actor: actorName(user),
     });
 
@@ -421,7 +438,7 @@ export async function deleteMyAvatar(user: any) {
     preferredDisplayName: currentProfile?.preferred_display_name ?? null,
     profileNote: currentProfile?.profile_note ?? null,
     appearancePreference: currentProfile?.appearance_preference ?? "system",
-    avatarSourcePreference: currentProfile?.avatar_source_preference ?? "uploaded",
+    avatarSourcePreference: "microsoft",
     signatureSourcePreference: currentProfile?.signature_source_preference ?? "uploaded",
     actor: actorName(user),
   });
@@ -436,6 +453,9 @@ export async function uploadMySignature(file: Express.Multer.File, user: any) {
   if (!userObjectId) throw new Error("missing user object id");
 
   await ensureProfile(user);
+
+  const currentRowsBefore = await sqlQuery(getUserProfileSql, { userObjectId });
+  const currentBefore = currentRowsBefore?.[0] ?? null;
 
   const placeholderRows = await sqlQuery(createUserProfileSignaturePlaceholderSql, {
     userObjectId,
@@ -475,15 +495,12 @@ export async function uploadMySignature(file: Express.Multer.File, user: any) {
       actor: actorName(user),
     });
 
-    const currentRows = await sqlQuery(getUserProfileSql, { userObjectId });
-    const current = currentRows?.[0] ?? null;
-
     await sqlQuery(updateUserProfileSql, {
       userObjectId,
-      preferredDisplayName: current?.preferred_display_name ?? null,
-      profileNote: current?.profile_note ?? null,
-      appearancePreference: current?.appearance_preference ?? "system",
-      avatarSourcePreference: current?.avatar_source_preference ?? "uploaded",
+      preferredDisplayName: currentBefore?.preferred_display_name ?? null,
+      profileNote: currentBefore?.profile_note ?? null,
+      appearancePreference: currentBefore?.appearance_preference ?? "system",
+      avatarSourcePreference: currentBefore?.avatar_source_preference ?? "microsoft",
       signatureSourcePreference: "uploaded",
       actor: actorName(user),
     });
@@ -527,7 +544,7 @@ export async function deleteMySignature(user: any) {
     preferredDisplayName: currentProfile?.preferred_display_name ?? null,
     profileNote: currentProfile?.profile_note ?? null,
     appearancePreference: currentProfile?.appearance_preference ?? "system",
-    avatarSourcePreference: currentProfile?.avatar_source_preference ?? "uploaded",
+    avatarSourcePreference: currentProfile?.avatar_source_preference ?? "microsoft",
     signatureSourcePreference: "none",
     actor: actorName(user),
   });

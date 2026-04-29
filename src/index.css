@@ -1,6 +1,27 @@
 /* /src/index.css  */
 
-:root { color-scheme: dark; }
-* { box-sizing: border-box; }
-html, body, #root { height: 100%; }
-body { margin: 0; }
+:root{
+  color-scheme: dark;
+}
+
+html[data-appearance="light"]{
+  color-scheme: light;
+}
+
+html[data-appearance="dark"]{
+  color-scheme: dark;
+}
+
+*{
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root{
+  min-height: 100%;
+}
+
+body{
+  margin: 0;
+}

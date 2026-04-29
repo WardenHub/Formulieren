@@ -13,6 +13,8 @@ import {
   getMyAvatarFile,
   getMySignatureFile,
   getDirectoryAvatarFile,
+  getMyMicrosoftAvatarFile,
+  getDirectoryMicrosoftAvatarFile,
 } from "../controllers/profileController.js";
 
 const router = Router();
@@ -37,5 +39,8 @@ router.post("/signature", upload.single("file"), uploadMySignature);
 
 router.get("/directory", getDirectory);
 router.get("/directory/:userObjectId/avatar/file", getDirectoryAvatarFile);
+
+router.get("/avatar/microsoft/file", getMyMicrosoftAvatarFile);
+router.get("/directory/:userObjectId/avatar/microsoft/file", getDirectoryMicrosoftAvatarFile);
 
 export default router;
