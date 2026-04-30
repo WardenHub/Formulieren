@@ -10,6 +10,7 @@ import {
   deleteMySignature,
 } from "../../api/emberApi.js";
 import { fetchProtectedObjectUrl } from "../../api/http.js";
+import { applyAppearancePreference } from "../../theme/appearance.js";
 
 import SaveButton from "@/components/SaveButton.jsx";
 import { UploadIcon } from "@/components/ui/upload";
@@ -38,9 +39,18 @@ function resolveAvatarImagePath(data) {
     data?.effective?.avatar_url ||
     data?.effective?.avatar_download_url ||
     data?.effective?.avatar_preview_url ||
+    data?.effective?.microsoft_avatar_url ||
+    data?.effective?.microsoft_photo_url ||
     data?.avatar?.download_url ||
     data?.avatar?.preview_url ||
     data?.avatar?.url ||
+    data?.microsoftAvatar?.download_url ||
+    data?.microsoftAvatar?.preview_url ||
+    data?.microsoftAvatar?.url ||
+    data?.microsoftPhoto?.download_url ||
+    data?.microsoftPhoto?.preview_url ||
+    data?.microsoftPhoto?.url ||
+    data?.profile?.avatar_url ||
     null
   );
 }
@@ -57,7 +67,13 @@ function resolveSignatureImagePath(data) {
   );
 }
 
+function applyProfileTheme(payload) {
+  applyAppearancePreference(payload?.profile?.appearance_preference || "system");
+}
+
 function dispatchProfileUpdated(payload) {
+  applyProfileTheme(payload);
+
   window.dispatchEvent(
     new CustomEvent("ember:profile-updated", {
       detail: payload || null,
@@ -107,12 +123,17 @@ export default function ProfilePage() {
     };
   }, [avatarPreviewUrl, signaturePreviewUrl, avatarObjectUrl, signatureObjectUrl]);
 
+  useEffect(() => {
+    applyAppearancePreference(draft.appearance_preference || "system");
+  }, [draft.appearance_preference]);
+
   async function loadProfile() {
     setLoading(true);
     setError(null);
 
     try {
       const res = await getMyProfile();
+
       setData(res || null);
       setDraft({
         preferred_display_name: res?.profile?.preferred_display_name || "",
@@ -153,6 +174,7 @@ export default function ProfilePage() {
 
       try {
         nextObjectUrl = await fetchProtectedObjectUrl(mediaPath);
+
         if (cancelled) {
           if (nextObjectUrl) URL.revokeObjectURL(nextObjectUrl);
           return;
@@ -164,6 +186,7 @@ export default function ProfilePage() {
         });
       } catch (err) {
         console.error("avatar media fetch failed", err);
+
         if (!cancelled) {
           setAvatarObjectUrl((prev) => {
             if (prev) URL.revokeObjectURL(prev);
@@ -199,6 +222,7 @@ export default function ProfilePage() {
 
       try {
         nextObjectUrl = await fetchProtectedObjectUrl(mediaPath);
+
         if (cancelled) {
           if (nextObjectUrl) URL.revokeObjectURL(nextObjectUrl);
           return;
@@ -210,6 +234,7 @@ export default function ProfilePage() {
         });
       } catch (err) {
         console.error("signature media fetch failed", err);
+
         if (!cancelled) {
           setSignatureObjectUrl((prev) => {
             if (prev) URL.revokeObjectURL(prev);
@@ -260,6 +285,7 @@ export default function ProfilePage() {
 
     try {
       const res = await putMyProfile(draft);
+
       setData(res || null);
       setDraft({
         preferred_display_name: res?.profile?.preferred_display_name || "",
@@ -297,6 +323,7 @@ export default function ProfilePage() {
 
     try {
       const res = await uploadMyAvatar(file);
+
       setData(res || null);
       setDraft((prev) => ({
         ...prev,
@@ -325,6 +352,7 @@ export default function ProfilePage() {
 
     try {
       const res = await deleteMyAvatar();
+
       setData(res || null);
       setDraft((prev) => ({
         ...prev,
@@ -367,6 +395,7 @@ export default function ProfilePage() {
 
     try {
       const res = await uploadMySignature(file);
+
       setData(res || null);
       setDraft((prev) => ({
         ...prev,
@@ -395,6 +424,7 @@ export default function ProfilePage() {
 
     try {
       const res = await deleteMySignature();
+
       setData(res || null);
       setDraft((prev) => ({
         ...prev,
@@ -428,6 +458,7 @@ export default function ProfilePage() {
 
     try {
       const res = await uploadMySignature(file);
+
       setData(res || null);
       setDraft((prev) => ({
         ...prev,
@@ -512,7 +543,7 @@ export default function ProfilePage() {
 
                   <div className="ember-label-row">
                     <span className={statusToneClass("active")}>
-                      Thema {profile.appearance_preference}
+                      Thema {draft.appearance_preference}
                     </span>
 
                     <span

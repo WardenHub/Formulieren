@@ -41,6 +41,41 @@ function sha256Hex(buffer: Buffer) {
   return crypto.createHash("sha256").update(buffer).digest("hex");
 }
 
+function looksLikeGuid(value: any) {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+    String(value || "").trim()
+  );
+}
+
+function looksLikeRealEmail(value: any) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(value || "").trim());
+}
+
+function canUseMicrosoftAvatar(profile: any) {
+  return (
+    looksLikeGuid(profile?.user_object_id) ||
+    looksLikeRealEmail(profile?.email_snapshot)
+  );
+}
+
+function resolveAvatarMode(profile: any, avatar: any) {
+  const requested = profile?.avatar_source_preference || "microsoft";
+  const microsoftAvailable = canUseMicrosoftAvatar(profile);
+
+  if (requested === "none") return "none";
+  if (requested === "uploaded") return avatar?.has_file ? "uploaded" : "none";
+
+  if (requested === "microsoft") {
+    if (microsoftAvailable) return "microsoft";
+    if (avatar?.has_file) return "uploaded";
+    return "none";
+  }
+
+  if (avatar?.has_file) return "uploaded";
+  if (microsoftAvailable) return "microsoft";
+  return "none";
+}
+
 function normalizeAppearancePreference(value: any) {
   const v = String(value || "").trim().toLowerCase();
   if (v === "dark" || v === "light" || v === "system") return v;
@@ -138,18 +173,14 @@ function buildInitials(name: string | null, email: string | null) {
 function buildTeamsDeepLink(email: string | null) {
   const safe = String(email || "").trim();
   if (!safe) return null;
-
-  const looksLikeEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(safe);
-  if (!looksLikeEmail) return null;
+  if (!looksLikeRealEmail(safe)) return null;
 
   return `https://teams.microsoft.com/l/chat/0/0?users=${encodeURIComponent(safe)}`;
 }
 
 async function ensureProfile(user: any) {
   const userObjectId = String(user?.objectId || "").trim();
-  if (!userObjectId) {
-    throw new Error("missing user object id");
-  }
+  if (!userObjectId) throw new Error("missing user object id");
 
   const rows = await sqlQuery(ensureUserProfileSql, {
     userObjectId,
@@ -163,9 +194,7 @@ async function ensureProfile(user: any) {
 
 async function loadProfileParts(user: any) {
   const userObjectId = String(user?.objectId || "").trim();
-  if (!userObjectId) {
-    throw new Error("missing user object id");
-  }
+  if (!userObjectId) throw new Error("missing user object id");
 
   await ensureProfile(user);
 
@@ -179,22 +208,19 @@ async function loadProfileParts(user: any) {
     }),
   ]);
 
-  const profileRow = profileRows?.[0] ?? null;
-  const avatarRow = avatarRows?.[0] ?? null;
-  const signatureRow = signatureRows?.[0] ?? null;
+  const profile = mapProfileRow(profileRows?.[0] ?? null, user);
+  const avatar = mapAvatarRow(avatarRows?.[0] ?? null);
+  const signature = mapSignatureRow(signatureRows?.[0] ?? null);
   const statsRow = statsRows?.[0] ?? {};
 
-  const profile = mapProfileRow(profileRow, user);
-  const avatar = mapAvatarRow(avatarRow);
-  const signature = mapSignatureRow(signatureRow);
-
-  const avatarMode = profile.avatar_source_preference || "microsoft";
+  const avatarMode = resolveAvatarMode(profile, avatar);
   const signatureMode = profile.signature_source_preference || "uploaded";
+  const microsoftAvatarAvailable = canUseMicrosoftAvatar(profile);
 
   const avatarUrl =
     avatarMode === "microsoft"
       ? "/me/profile/avatar/microsoft/file"
-      : avatar?.has_file && avatarMode === "uploaded"
+      : avatarMode === "uploaded" && avatar?.has_file
         ? "/me/profile/avatar/file"
         : null;
 
@@ -211,11 +237,12 @@ async function loadProfileParts(user: any) {
       initials: buildInitials(profile.effective_display_name, profile.email_snapshot),
 
       avatar_mode: avatarMode,
+      avatar_requested_mode: profile.avatar_source_preference || "microsoft",
       avatar_uploaded_available: !!avatar?.has_file,
-      avatar_microsoft_available: true,
+      avatar_microsoft_available: microsoftAvatarAvailable,
       avatar_has_any:
-        avatarMode === "microsoft" ||
-        (!!avatar?.has_file && avatarMode === "uploaded"),
+        (avatarMode === "microsoft" && microsoftAvatarAvailable) ||
+        (avatarMode === "uploaded" && !!avatar?.has_file),
 
       avatar_url: avatarUrl,
       avatar_preview_url: avatarUrl,
@@ -258,7 +285,17 @@ function mapDirectoryRow(row: any, currentUserObjectId: string | null) {
   const effectiveDisplayName =
     preferredDisplayName || displayNameSnapshot || emailSnapshot || "Gebruiker";
 
-  const avatarMode = row?.avatar_source_preference ?? "microsoft";
+  const profileForAvatar = {
+    user_object_id: row?.user_object_id ?? null,
+    email_snapshot: emailSnapshot,
+    avatar_source_preference: row?.avatar_source_preference ?? "microsoft",
+  };
+
+  const avatarForResolve = {
+    has_file: !!row?.avatar_storage_key,
+  };
+
+  const avatarMode = resolveAvatarMode(profileForAvatar, avatarForResolve);
   const hasAvatarFile = !!row?.avatar_storage_key;
   const userObjectId = String(row?.user_object_id || "");
 
@@ -280,7 +317,9 @@ function mapDirectoryRow(row: any, currentUserObjectId: string | null) {
 
     avatar: {
       mode: avatarMode,
+      requested_mode: row?.avatar_source_preference ?? "microsoft",
       has_file: hasAvatarFile,
+      microsoft_available: canUseMicrosoftAvatar(profileForAvatar),
       file_name: row?.avatar_file_name ?? null,
       mime_type: row?.avatar_mime_type ?? null,
       file_size_bytes:
@@ -314,8 +353,7 @@ export async function getDirectory(user: any) {
     items: (rows || [])
       .filter((row: any) => {
         const email = String(row?.email_snapshot || "").trim().toLowerCase();
-        if (email === "jesse@local") return false;
-        return true;
+        return email !== "jesse@local";
       })
       .map((row: any) => mapDirectoryRow(row, currentUserObjectId)),
   };
@@ -323,9 +361,7 @@ export async function getDirectory(user: any) {
 
 export async function updateMyProfile(payload: any, user: any) {
   const userObjectId = String(user?.objectId || "").trim();
-  if (!userObjectId) {
-    throw new Error("missing user object id");
-  }
+  if (!userObjectId) throw new Error("missing user object id");
 
   await ensureProfile(user);
 
@@ -359,12 +395,9 @@ export async function uploadMyAvatar(file: Express.Multer.File, user: any) {
   });
 
   const avatar = placeholderRows?.[0] ?? null;
-  if (!avatar?.avatar_id) {
-    throw new Error("avatar create failed");
-  }
+  if (!avatar?.avatar_id) throw new Error("avatar create failed");
 
   const checksum = sha256Hex(file.buffer);
-
   let uploaded: { storageProvider: string; storageKey: string; storageUrl: string | null } | null = null;
 
   try {
@@ -463,12 +496,9 @@ export async function uploadMySignature(file: Express.Multer.File, user: any) {
   });
 
   const signature = placeholderRows?.[0] ?? null;
-  if (!signature?.signature_id) {
-    throw new Error("signature create failed");
-  }
+  if (!signature?.signature_id) throw new Error("signature create failed");
 
   const checksum = sha256Hex(file.buffer);
-
   let uploaded: { storageProvider: string; storageKey: string; storageUrl: string | null } | null = null;
 
   try {

@@ -22,6 +22,24 @@ function initialsFromProfilePayload(profileData, meData) {
 }
 
 function resolveLayoutAvatarPath(profileData, meData) {
+  const avatarMode =
+    profileData?.profile?.avatar_source_preference ||
+    profileData?.effective?.avatar_mode ||
+    "microsoft";
+
+  if (avatarMode === "none") return null;
+
+  if (avatarMode === "microsoft") {
+    return (
+      profileData?.effective?.microsoft_avatar_url ||
+      profileData?.effective?.microsoft_photo_url ||
+      profileData?.effective?.avatar_url ||
+      profileData?.profile?.avatar_url ||
+      meData?.profile?.avatar_url ||
+      "/me/profile/avatar/microsoft/file"
+    );
+  }
+
   return (
     profileData?.effective?.avatar_url ||
     profileData?.effective?.avatar_download_url ||
@@ -35,14 +53,16 @@ function resolveLayoutAvatarPath(profileData, meData) {
   );
 }
 
-function resolveProfileUpdatedKey(profileData, meData) {
+function resolveProfileUpdatedKey(profileData, meData, profileRefreshToken) {
   return [
+    profileData?.profile?.avatar_source_preference || "",
     profileData?.effective?.avatar_url || "",
     profileData?.effective?.avatar_mode || "",
     profileData?.avatar?.avatar_id || "",
     profileData?.avatar?.updated_at || "",
     profileData?.avatar?.uploaded_at || "",
     meData?.profile?.avatar_url || "",
+    profileRefreshToken,
   ].join("|");
 }
 
@@ -61,8 +81,8 @@ export default function Layout() {
   const menuRef = useRef(null);
 
   const avatarRefreshKey = useMemo(
-    () => resolveProfileUpdatedKey(profileData, meData),
-    [profileData, meData]
+    () => resolveProfileUpdatedKey(profileData, meData, profileRefreshToken),
+    [profileData, meData, profileRefreshToken]
   );
 
   function go(to) {
@@ -228,7 +248,7 @@ export default function Layout() {
       cancelled = true;
       if (createdUrl) URL.revokeObjectURL(createdUrl);
     };
-  }, [avatarRefreshKey, profileRefreshToken]);
+  }, [avatarRefreshKey]);
 
   useEffect(() => {
     return () => {

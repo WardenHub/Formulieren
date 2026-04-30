@@ -1,367 +1,543 @@
-// /src/pages/Admin/AdminFormsTab.jsx
+// /src/pages/Admin/AdminFormsVersionsTab.jsx
 
 import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
-import Tabs from "../../components/Tabs.jsx";
-import AdminFormsVersionsTab from "./AdminFormsVersionsTab.jsx";
-import AdminFormsConfigTab from "./AdminFormsConfigTab.jsx";
-import { FileTextIcon } from "@/components/ui/file-text";
-import { CogIcon } from "@/components/ui/cog";
-import {
-  getAdminForms,
-  getAdminForm,
-  createAdminForm,
-  saveAdminFormsOrder,
-  saveAdminFormConfig,
-  createAdminFormVersion,
-  getInstallationTypes,
-} from "../../api/emberApi.js";
+import { ArrowUpIcon } from "@/components/ui/arrow-up";
+import { ArrowDownIcon } from "@/components/ui/arrow-down";
 
-function sortForms(items) {
-  return [...items].sort((a, b) => {
-    const sa = Number(a?.sort_order ?? 0);
-    const sb = Number(b?.sort_order ?? 0);
-    if (sa !== sb) return sa - sb;
-    return String(a?.name || "").localeCompare(String(b?.name || ""));
-  });
+function formatPublishedAt(value) {
+  if (!value) return "Niet gepubliceerd";
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return String(value);
+  return d.toLocaleString("nl-NL");
 }
 
-const EMPTY_HEADER_STATE = {
-  visible: false,
-  disabled: true,
-  saving: false,
-  saved: false,
-  pulse: false,
-};
+function statusLabel(status) {
+  if (status === "A") return "Actief";
+  if (status === "M") return "Alleen beheer";
+  if (status === "I") return "Niet actief";
+  return status || "Onbekend";
+}
 
-const AdminFormsTab = forwardRef(function AdminFormsTab(
-  { onHeaderSaveStateChange },
-  ref
-) {
-  const versionsRef = useRef(null);
-  const configRef = useRef(null);
+function statusTone(status) {
+  if (status === "A") return "success";
+  if (status === "M") return "warning";
+  if (status === "I") return "muted";
+  return "neutral";
+}
 
-  const [activeTab, setActiveTab] = useState("versions");
+function downloadJsonFile(filename, obj) {
+  const text = JSON.stringify(obj ?? null, null, 2) + "\n";
+  const blob = new Blob([text], { type: "application/json;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
 
-  const [forms, setForms] = useState([]);
-  const [selectedFormId, setSelectedFormId] = useState(null);
-  const [selectedForm, setSelectedForm] = useState(null);
-  const [installationTypes, setInstallationTypes] = useState([]);
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
 
-  const [loadingList, setLoadingList] = useState(true);
-  const [loadingDetail, setLoadingDetail] = useState(false);
-  const [error, setError] = useState(null);
-
-  const [versionsDirty, setVersionsDirty] = useState(false);
-  const [versionsSaving, setVersionsSaving] = useState(false);
-  const [versionsSaveOk, setVersionsSaveOk] = useState(false);
-
-  const [configDirty, setConfigDirty] = useState(false);
-  const [configSaving, setConfigSaving] = useState(false);
-  const [configSaveOk, setConfigSaveOk] = useState(false);
-
-  async function loadFormsList({ preferredFormId } = {}) {
-    setLoadingList(true);
-    setError(null);
-
-    try {
-      const res = await getAdminForms();
-      const items = sortForms(Array.isArray(res?.items) ? res.items : []);
-      setForms(items);
-
-      const nextSelectedId =
-        preferredFormId ||
-        (items.some((x) => x.form_id === selectedFormId) ? selectedFormId : null) ||
-        items[0]?.form_id ||
-        null;
-
-      setSelectedFormId(nextSelectedId);
-      return { items, nextSelectedId };
-    } catch (e) {
-      setError(e?.message || String(e));
-      setForms([]);
-      setSelectedFormId(null);
-      return { items: [], nextSelectedId: null };
-    } finally {
-      setLoadingList(false);
-    }
+function safeJsonParse(text) {
+  try {
+    return { ok: true, value: JSON.parse(String(text || "")) };
+  } catch (error) {
+    return { ok: false, error: String(error?.message || error) };
   }
+}
 
-  async function loadFormDetail(formId) {
-    const cleanId = String(formId || "").trim();
-    if (!cleanId) {
-      setSelectedForm(null);
-      return null;
-    }
+function formatJsonText(text) {
+  const parsed = safeJsonParse(text);
+  if (!parsed.ok) return { ok: false, error: parsed.error };
+  return { ok: true, value: JSON.stringify(parsed.value, null, 2) + "\n" };
+}
 
-    setLoadingDetail(true);
-    setError(null);
+function AdminPanel({ title, subtitle, actions, children }) {
+  return (
+    <div className="admin-panel">
+      <div className="admin-toolbar">
+        <div className="admin-toolbar-title">
+          <div className="admin-panel-title">{title}</div>
+          {subtitle ? <div className="admin-panel-subtitle">{subtitle}</div> : null}
+        </div>
 
-    try {
-      const res = await getAdminForm(cleanId);
-      const item = res?.item || null;
-      setSelectedForm(item);
-      return item;
-    } catch (e) {
-      setError(e?.message || String(e));
-      setSelectedForm(null);
-      return null;
-    } finally {
-      setLoadingDetail(false);
-    }
-  }
+        {actions ? <div className="admin-toolbar-actions">{actions}</div> : null}
+      </div>
 
-  async function reloadAll({ preferredFormId } = {}) {
-    const { nextSelectedId } = await loadFormsList({ preferredFormId });
-    if (nextSelectedId) {
-      await loadFormDetail(nextSelectedId);
-    } else {
-      setSelectedForm(null);
-    }
-  }
+      {children}
+    </div>
+  );
+}
 
-  useEffect(() => {
-    let cancelled = false;
-
-    (async () => {
-      try {
-        const [typesRes, formsRes] = await Promise.all([
-          getInstallationTypes(),
-          getAdminForms(),
-        ]);
-
-        if (cancelled) return;
-
-        const activeTypes = Array.isArray(typesRes?.types)
-          ? typesRes.types.filter((x) => x?.is_active)
-          : [];
-        setInstallationTypes(activeTypes);
-
-        const items = sortForms(Array.isArray(formsRes?.items) ? formsRes.items : []);
-        setForms(items);
-
-        const firstId = items[0]?.form_id ?? null;
-        setSelectedFormId(firstId);
-
-        if (firstId) {
-          setLoadingDetail(true);
-          try {
-            const detailRes = await getAdminForm(firstId);
-            if (!cancelled) setSelectedForm(detailRes?.item || null);
-          } finally {
-            if (!cancelled) setLoadingDetail(false);
-          }
-        } else {
-          setSelectedForm(null);
-        }
-      } catch (e) {
-        if (!cancelled) {
-          setError(e?.message || String(e));
-          setForms([]);
-          setSelectedFormId(null);
-          setSelectedForm(null);
-        }
-      } finally {
-        if (!cancelled) setLoadingList(false);
-      }
-    })();
-
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  useEffect(() => {
-    if (!selectedFormId) {
-      setSelectedForm(null);
-      return;
-    }
-
-    if (selectedForm?.form_id === selectedFormId) return;
-
-    loadFormDetail(selectedFormId);
-  }, [selectedFormId]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  function hasUnsavedChanges() {
-    if (activeTab === "versions") return versionsDirty && !versionsSaving;
-    if (activeTab === "config") return configDirty && !configSaving;
-    return false;
-  }
-
-  function canSaveActiveTab() {
-    if (activeTab === "versions") return versionsDirty && !versionsSaving;
-    if (activeTab === "config") return configDirty && !configSaving;
-    return false;
-  }
-
-  function saveActiveTab() {
-    if (activeTab === "versions") {
-      versionsRef.current?.save?.();
-      return;
-    }
-    if (activeTab === "config") {
-      configRef.current?.save?.();
-    }
-  }
-
-  useImperativeHandle(ref, () => ({
-    hasUnsavedChanges,
-    canSaveActiveTab,
-    saveActiveTab,
-  }));
-
-  function confirmLeaveTab(nextTabKey) {
-    if (nextTabKey === activeTab) return true;
-    if (!hasUnsavedChanges()) return true;
-
-    return window.confirm("Je hebt niet-opgeslagen wijzigingen. Weet je zeker dat je wilt doorgaan?");
-  }
-
-  function handleTabChange(nextTabKey) {
-    if (!confirmLeaveTab(nextTabKey)) return;
-    setActiveTab(nextTabKey);
-  }
-
-  useEffect(() => {
-    const nextState =
-      activeTab === "versions"
-        ? {
-            visible: true,
-            disabled: !versionsDirty,
-            saving: versionsSaving,
-            saved: versionsSaveOk,
-            pulse: versionsDirty,
-          }
-        : {
-            visible: true,
-            disabled: !configDirty,
-            saving: configSaving,
-            saved: configSaveOk,
-            pulse: configDirty,
-          };
-
-    onHeaderSaveStateChange?.(nextState);
-  }, [
-    activeTab,
-    versionsDirty,
-    versionsSaving,
-    versionsSaveOk,
-    configDirty,
-    configSaving,
-    configSaveOk,
-    onHeaderSaveStateChange,
-  ]);
-
-  useEffect(() => {
-    return () => {
-      onHeaderSaveStateChange?.(EMPTY_HEADER_STATE);
-    };
-  }, [onHeaderSaveStateChange]);
-
-  const tabs = useMemo(() => {
-    return [
-      {
-        key: "versions",
-        label: "Versies",
-        Icon: FileTextIcon,
-        content: (
-          <AdminFormsVersionsTab
-            ref={versionsRef}
-            forms={forms}
-            selectedFormId={selectedFormId}
-            selectedForm={selectedForm}
-            loading={loadingList || loadingDetail}
-            onSelectForm={setSelectedFormId}
-            onDirtyChange={setVersionsDirty}
-            onSavingChange={setVersionsSaving}
-            onSaveOk={() => {
-              setVersionsSaveOk(true);
-              window.setTimeout(() => setVersionsSaveOk(false), 2000);
-            }}
-            onPersistFormOrder={async (orderedItems) => {
-              const payload = orderedItems.map((item, index) => ({
-                form_id: item.form_id,
-                sort_order: Number(item?.sort_order ?? (index + 1) * 10),
-              }));
-
-              await saveAdminFormsOrder(payload);
-              await reloadAll({ preferredFormId: selectedFormId });
-            }}
-            onOpenFormDev={(form) => {
-              const bootstrap = {
-                source: "admin",
-                form_id: form?.form_id ?? null,
-                form_code: form?.code ?? null,
-                form_name: form?.name ?? null,
-                survey_json: form?.active_survey_json ?? null,
-                opened_at: new Date().toISOString(),
-              };
-
-              sessionStorage.setItem("admin.formdev.bootstrap", JSON.stringify(bootstrap));
-              window.open("/dev/formdev", "_blank", "noopener");
-            }}
-            onCreateForm={async (payload) => {
-              const res = await createAdminForm(payload);
-              const newId = res?.item?.form_id || null;
-              await reloadAll({ preferredFormId: newId });
-            }}
-            onCreateVersionFromJsonText={async (form, jsonText) => {
-              await createAdminFormVersion(form.form_id, {
-                survey_json: JSON.parse(String(jsonText || "{}")),
-              });
-              await reloadAll({ preferredFormId: form.form_id });
-            }}
-          />
-        ),
-      },
-      {
-        key: "config",
-        label: "Configuratie",
-        Icon: CogIcon,
-        content: (
-          <AdminFormsConfigTab
-            ref={configRef}
-            forms={forms}
-            selectedFormId={selectedFormId}
-            selectedForm={selectedForm}
-            installationTypes={installationTypes}
-            loading={loadingList || loadingDetail}
-            onSelectForm={setSelectedFormId}
-            onDirtyChange={setConfigDirty}
-            onSavingChange={setConfigSaving}
-            onSaveOk={() => {
-              setConfigSaveOk(true);
-              window.setTimeout(() => setConfigSaveOk(false), 2000);
-            }}
-            onSaveConfig={async (nextConfig) => {
-              await saveAdminFormConfig(nextConfig.form_id, nextConfig);
-              await reloadAll({ preferredFormId: nextConfig.form_id });
-            }}
-          />
-        ),
-      },
-    ];
-  }, [
+const AdminFormsVersionsTab = forwardRef(function AdminFormsVersionsTab(
+  {
     forms,
     selectedFormId,
     selectedForm,
-    installationTypes,
-    loadingList,
-    loadingDetail,
-    activeTab,
-  ]);
+    loading,
+    onSelectForm,
+    onDirtyChange,
+    onSavingChange,
+    onSaveOk,
+    onPersistFormOrder,
+    onOpenFormDev,
+    onCreateForm,
+    onCreateVersionFromJsonText,
+  },
+  ref
+) {
+  const upIconRefs = useRef({});
+  const downIconRefs = useRef({});
 
-  const activeContent = useMemo(() => {
-    return tabs.find((t) => t.key === activeTab)?.content ?? null;
-  }, [tabs, activeTab]);
+  const [orderDraft, setOrderDraft] = useState(Array.isArray(forms) ? forms : []);
+  const [saving, setSaving] = useState(false);
+
+  const [showCreateForm, setShowCreateForm] = useState(false);
+  const [newFormCode, setNewFormCode] = useState("");
+  const [newFormName, setNewFormName] = useState("");
+  const [newFormDescription, setNewFormDescription] = useState("");
+
+  const [showUpload, setShowUpload] = useState(false);
+  const [uploadText, setUploadText] = useState("");
+  const [uploadError, setUploadError] = useState(null);
+  const [uploadOk, setUploadOk] = useState(false);
+
+  useEffect(() => {
+    setOrderDraft(Array.isArray(forms) ? forms : []);
+  }, [forms]);
+
+  const isDirty = useMemo(() => {
+    const a = orderDraft.map((x) => ({
+      form_id: x.form_id,
+      sort_order: Number(x?.sort_order ?? 0),
+    }));
+
+    const b = (Array.isArray(forms) ? forms : []).map((x) => ({
+      form_id: x.form_id,
+      sort_order: Number(x?.sort_order ?? 0),
+    }));
+
+    return JSON.stringify(a) !== JSON.stringify(b);
+  }, [orderDraft, forms]);
+
+  useEffect(() => {
+    onDirtyChange?.(isDirty);
+  }, [isDirty, onDirtyChange]);
+
+  useEffect(() => {
+    onSavingChange?.(saving);
+  }, [saving, onSavingChange]);
+
+  function moveForm(formId, direction) {
+    setOrderDraft((prev) => {
+      const arr = [...prev];
+      const idx = arr.findIndex((x) => x.form_id === formId);
+      if (idx < 0) return prev;
+
+      const nextIdx = direction === "up" ? idx - 1 : idx + 1;
+      if (nextIdx < 0 || nextIdx >= arr.length) return prev;
+
+      const swap = arr[nextIdx];
+      arr[nextIdx] = arr[idx];
+      arr[idx] = swap;
+
+      return arr.map((item, i) => ({
+        ...item,
+        sort_order: (i + 1) * 10,
+      }));
+    });
+  }
+
+  async function save() {
+    if (!isDirty || saving) return;
+
+    setSaving(true);
+    try {
+      await onPersistFormOrder?.(orderDraft);
+      onSaveOk?.();
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  useImperativeHandle(ref, () => ({ save }));
+
+  function resetCreateForm() {
+    setShowCreateForm(false);
+    setNewFormCode("");
+    setNewFormName("");
+    setNewFormDescription("");
+  }
+
+  async function handleConfirmCreateForm() {
+    const code = String(newFormCode || "").trim();
+    const name = String(newFormName || "").trim();
+    const description = String(newFormDescription || "").trim();
+
+    if (!code || !name) {
+      window.alert("Vul minimaal code en naam in.");
+      return;
+    }
+
+    await onCreateForm?.({ code, name, description });
+    resetCreateForm();
+  }
+
+  function handleFormatUploadJson() {
+    const res = formatJsonText(uploadText);
+    if (!res.ok) {
+      setUploadError(`Format faalde; ${res.error}`);
+      setUploadOk(false);
+      return;
+    }
+
+    setUploadText(res.value);
+    setUploadError(null);
+    setUploadOk(false);
+  }
+
+  function handleValidateUploadJson() {
+    const parsed = safeJsonParse(uploadText);
+    if (!parsed.ok) {
+      setUploadError(`JSON ongeldig; ${parsed.error}`);
+      setUploadOk(false);
+      return;
+    }
+
+    setUploadError(null);
+    setUploadOk(true);
+  }
+
+  async function handleConfirmUpload() {
+    if (!selectedForm) return;
+
+    const parsed = safeJsonParse(uploadText);
+    if (!parsed.ok) {
+      setUploadError(`JSON ongeldig; ${parsed.error}`);
+      setUploadOk(false);
+      return;
+    }
+
+    try {
+      await onCreateVersionFromJsonText?.(selectedForm, uploadText);
+
+      setUploadText("");
+      setUploadError(null);
+      setUploadOk(false);
+      setShowUpload(false);
+    } catch (e) {
+      setUploadError(e?.message || String(e));
+      setUploadOk(false);
+    }
+  }
+
+  if (loading && (!forms || forms.length === 0)) {
+    return <div className="muted">laden; formulieren</div>;
+  }
 
   return (
-    <div style={{ display: "grid", gap: 12 }}>
-      <Tabs tabs={tabs} activeKey={activeTab} onChange={handleTabChange} />
+    <div className="admin-grid">
+      <AdminPanel
+        title="Formulieren"
+        subtitle="Sorteervolgorde wordt hier beheerd. Alt+S slaat op."
+        actions={
+          <>
+            <button
+              type="button"
+              className="btn btn-secondary"
+              onClick={() => {
+                setShowCreateForm((v) => !v);
+                setShowUpload(false);
+              }}
+            >
+              Nieuw formulier
+            </button>
 
-      {error && <div style={{ color: "salmon" }}>{error}</div>}
-      {activeContent}
+            <button
+              type="button"
+              className="btn btn-secondary"
+              disabled={!selectedForm}
+              onClick={() => selectedForm && onOpenFormDev?.(selectedForm)}
+            >
+              Open formdev
+            </button>
+
+            <button
+              type="button"
+              className="btn btn-secondary"
+              disabled={!selectedForm}
+              onClick={() => {
+                setShowUpload((v) => !v);
+                setShowCreateForm(false);
+              }}
+            >
+              Upload nieuwe formulierdefinitie
+            </button>
+          </>
+        }
+      >
+        {showCreateForm && (
+          <div className="admin-subcard">
+            <div className="admin-subcard-title">Nieuw formulier</div>
+
+            <div className="cf-grid">
+              <div className="cf-row">
+                <div className="cf-label">
+                  <div className="cf-label-text">Code</div>
+                </div>
+                <div className="cf-control">
+                  <input
+                    className="input"
+                    value={newFormCode}
+                    onChange={(e) => setNewFormCode(e.target.value)}
+                  />
+                </div>
+              </div>
+
+              <div className="cf-row">
+                <div className="cf-label">
+                  <div className="cf-label-text">Naam</div>
+                </div>
+                <div className="cf-control">
+                  <input
+                    className="input"
+                    value={newFormName}
+                    onChange={(e) => setNewFormName(e.target.value)}
+                  />
+                </div>
+              </div>
+
+              <div className="cf-row wide">
+                <div className="cf-label">
+                  <div className="cf-label-text">Omschrijving</div>
+                </div>
+                <div className="cf-control">
+                  <textarea
+                    rows={4}
+                    className="cf-textarea"
+                    value={newFormDescription}
+                    onChange={(e) => setNewFormDescription(e.target.value)}
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div className="ember-toolbar">
+              <button type="button" className="btn btn-primary" onClick={handleConfirmCreateForm}>
+                Aanmaken
+              </button>
+              <button type="button" className="btn btn-secondary" onClick={resetCreateForm}>
+                Annuleren
+              </button>
+            </div>
+          </div>
+        )}
+
+        {showUpload && (
+          <div className="admin-subcard">
+            <div className="admin-subcard-title">
+              Upload nieuwe formulierdefinitie {selectedForm ? `; ${selectedForm.name}` : ""}
+            </div>
+
+            <div className="admin-panel-subtitle">
+              Plak een geldige SurveyJS JSON-definitie. Gebruik eerst Format JSON en Controleer JSON voordat je de nieuwe versie toevoegt.
+            </div>
+
+            {uploadError ? <div className="ember-error-text">{uploadError}</div> : null}
+            {!uploadError && uploadOk ? (
+              <div className="ember-label ember-label--success">JSON is geldig</div>
+            ) : null}
+
+            <textarea
+              className="cf-textarea"
+              rows={14}
+              value={uploadText}
+              onChange={(e) => {
+                setUploadText(e.target.value);
+                setUploadError(null);
+                setUploadOk(false);
+              }}
+            />
+
+            <div className="ember-toolbar">
+              <button type="button" className="btn btn-secondary" onClick={handleFormatUploadJson}>
+                Format JSON
+              </button>
+
+              <button type="button" className="btn btn-secondary" onClick={handleValidateUploadJson}>
+                Controleer JSON
+              </button>
+
+              <button
+                type="button"
+                className="btn btn-primary"
+                disabled={!selectedForm}
+                onClick={handleConfirmUpload}
+              >
+                Toevoegen nieuwe versie
+              </button>
+
+              <button
+                type="button"
+                className="btn btn-secondary"
+                onClick={() => {
+                  setShowUpload(false);
+                  setUploadText("");
+                  setUploadError(null);
+                  setUploadOk(false);
+                }}
+              >
+                Annuleren
+              </button>
+            </div>
+          </div>
+        )}
+
+        <div className="admin-check-grid">
+          {orderDraft.map((form, index) => {
+            const isSelected = form.form_id === selectedFormId;
+
+            return (
+              <div
+                key={form.form_id}
+                role="button"
+                tabIndex={0}
+                onClick={() => onSelectForm?.(form.form_id)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    onSelectForm?.(form.form_id);
+                  }
+                }}
+                className={`admin-compact-row ${isSelected ? "ember-accent-active" : ""}`}
+                title="Selecteer formulier"
+              >
+                <div className="admin-compact-row-main">
+                  <div className="admin-compact-row-title-wrap">
+                    <div className="admin-compact-row-title">
+                      {index + 1}. {form.name}
+                    </div>
+                    <div className="admin-compact-row-sub">{form.code}</div>
+                  </div>
+
+                  <div className="admin-compact-row-meta">
+                    <span className={`ember-label ember-label--${statusTone(form.status)}`}>
+                      {statusLabel(form.status)}
+                    </span>
+                    <span className="ember-label ember-label--muted">
+                      laatste versie; {form.latest_version_label ?? "-"}
+                    </span>
+                    <span className="ember-label ember-label--muted">
+                      {form.version_count ?? 0} versie(s)
+                    </span>
+                  </div>
+                </div>
+
+                <div className="admin-compact-row-right">
+                  <button
+                    type="button"
+                    className="icon-btn"
+                    title="Omhoog"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      moveForm(form.form_id, "up");
+                    }}
+                    disabled={index === 0}
+                    onMouseEnter={() => upIconRefs.current[form.form_id]?.startAnimation?.()}
+                    onMouseLeave={() => upIconRefs.current[form.form_id]?.stopAnimation?.()}
+                  >
+                    <ArrowUpIcon
+                      ref={(el) => {
+                        upIconRefs.current[form.form_id] = el;
+                      }}
+                      size={18}
+                      className="nav-anim-icon"
+                    />
+                  </button>
+
+                  <button
+                    type="button"
+                    className="icon-btn"
+                    title="Omlaag"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      moveForm(form.form_id, "down");
+                    }}
+                    disabled={index === orderDraft.length - 1}
+                    onMouseEnter={() => downIconRefs.current[form.form_id]?.startAnimation?.()}
+                    onMouseLeave={() => downIconRefs.current[form.form_id]?.stopAnimation?.()}
+                  >
+                    <ArrowDownIcon
+                      ref={(el) => {
+                        downIconRefs.current[form.form_id] = el;
+                      }}
+                      size={18}
+                      className="nav-anim-icon"
+                    />
+                  </button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </AdminPanel>
+
+      <AdminPanel
+        title={`Versieoverzicht${selectedForm ? `; ${selectedForm.name}` : ""}`}
+        subtitle={selectedForm ? "Beschikbare formulierdefinities en publicaties." : "Selecteer eerst een formulier."}
+      >
+        {!selectedForm ? (
+          <div className="admin-empty-note">Geen formulier geselecteerd.</div>
+        ) : Array.isArray(selectedForm.versions) && selectedForm.versions.length > 0 ? (
+          <div className="admin-check-grid">
+            {selectedForm.versions.map((version) => (
+              <div key={version.form_version_id} className="admin-subcard">
+                <div className="admin-toolbar">
+                  <div className="admin-toolbar-title">
+                    <div className="admin-subcard-title">
+                      Versie {version.version_label} {version.is_latest ? "(actief)" : ""}
+                    </div>
+
+                    <div className="admin-panel-subtitle">
+                      Intern versienummer; {version.version}
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    className="btn btn-secondary"
+                    onClick={() =>
+                      downloadJsonFile(
+                        `${selectedForm.code}_v${version.version_label}.json`,
+                        version.survey_json
+                      )
+                    }
+                  >
+                    Download JSON
+                  </button>
+                </div>
+
+                <div className="ember-label-row">
+                  <span className={version.is_latest ? "ember-label ember-label--success" : "ember-label ember-label--muted"}>
+                    {version.is_latest ? "Actieve versie" : "Oudere versie"}
+                  </span>
+                  <span className="ember-label ember-label--muted">
+                    Publicatie; {formatPublishedAt(version.published_at)}
+                  </span>
+                  <span className="ember-label ember-label--muted">
+                    Door; {version.published_by || "-"}
+                  </span>
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="admin-empty-note">Nog geen versies gevonden.</div>
+        )}
+      </AdminPanel>
     </div>
   );
 });
 
-export default AdminFormsTab;
+export default AdminFormsVersionsTab;

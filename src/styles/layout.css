@@ -3829,3 +3829,67 @@ button.monitor-tag{
   font-size: 22px;
   line-height: 1.1;
 }
+
+.profile-signature-modal-backdrop{
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(0,0,0,.58);
+  backdrop-filter: blur(3px);
+}
+
+.profile-signature-modal{
+  width: min(860px, calc(100vw - 32px));
+  max-height: calc(100vh - 32px);
+  overflow: auto;
+  border-radius: 18px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: var(--shadow-panel);
+  padding: 18px;
+  display: grid;
+  gap: 16px;
+}
+
+.profile-signature-modal-head{
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.profile-signature-pad-shell{
+  width: 100%;
+  overflow: auto;
+  border-radius: 14px;
+  border: 1px solid rgba(15,23,42,.22);
+  background: var(--signature-pad-bg, #fff);
+  padding: 12px;
+}
+
+.profile-signature-pad-canvas{
+  display: block;
+  width: 100%;
+  max-width: 760px;
+  height: 260px;
+  border-radius: 10px;
+  background: var(--signature-pad-bg, #fff);
+  touch-action: none;
+}
+
+.profile-signature-modal-actions{
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.profile-signature-modal-actions-right{
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}

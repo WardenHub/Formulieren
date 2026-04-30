@@ -103,25 +103,24 @@ export default function AdminPage() {
       formsRef.current?.saveActiveTab?.();
       return;
     }
+
     if (activeTab === "installations") {
       installationsRef.current?.saveActiveTab?.();
     }
   }
 
   return (
-    <div>
+    <div className="admin-page">
       <div className="inst-sticky">
         <div className="inst-sticky-row">
           <div className="inst-sticky-left">
             <div className="inst-title">
               <h1>Beheer</h1>
-              <div className="muted" style={{ fontSize: 13 }}>
-                Configuratie van Ember
-              </div>
+              <div className="ember-page-subtitle">Configuratie van Ember</div>
             </div>
           </div>
 
-          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <div className="ember-toolbar">
             {showHeaderSave && (
               <SaveButton
                 disabled={headerSaveState.disabled}
@@ -137,7 +136,7 @@ export default function AdminPage() {
         <Tabs tabs={tabs} activeKey={activeTab} onChange={setActiveTab} />
       </div>
 
-      <div className="inst-body">{activeContent}</div>
+      <div className="inst-body admin-grid">{activeContent}</div>
     </div>
   );
 }

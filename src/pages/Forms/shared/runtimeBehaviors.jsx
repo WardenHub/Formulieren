@@ -1,3 +1,5 @@
+// src/pages/Forms/shared/runtimeBehaviors.jsx
+
 import {
   toNumberOrNull,
   formatMaybeNumber,
@@ -155,15 +157,10 @@ export function applyAvailabilityWarnings(model) {
     pve !== null &&
     geconstateerd < pve;
 
-  const input = document.querySelector(
-    '[data-name="a2_systeembeschikbaarheid_geconstateerd"] input, [data-name="a2_systeembeschikbaarheid_geconstateerd"] textarea'
-  );
+  const root = queryQuestionRoot("a2_systeembeschikbaarheid_geconstateerd");
+  if (!root) return;
 
-  if (!input) return;
-
-  input.style.color = shouldWarn ? "red" : "";
-  input.style.borderColor = shouldWarn ? "red" : "";
-  input.style.boxShadow = shouldWarn ? "0 0 0 1px red inset" : "";
+  root.classList.toggle("ember-availability-too-low", shouldWarn);
 }
 
 export function normalizeEnergyRows(model, prefillPayload, energyAutoStateRef) {

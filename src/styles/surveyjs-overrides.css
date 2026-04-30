@@ -1,26 +1,53 @@
 /* src/styles/surveyjs-overrides.css */
-/* Scope to SurveyJS root to avoid affecting the rest of Ember */
+
 
 .sd-root-modern {
-  --sjs-general-backcolor: rgba(12, 12, 12, 1);
-  --sjs-general-backcolor-dim: rgba(16, 16, 16, 1);
-  --sjs-general-backcolor-dim-light: rgba(255, 255, 255, 0.03);
+  --ember-sjs-bg: var(--card-bg, var(--surface, #ffffff));
+  --ember-sjs-bg-dim: var(--surface, #f7f8fb);
+  --ember-sjs-bg-soft: var(--row-bg, rgba(0, 0, 0, 0.025));
+  --ember-sjs-bg-hover: var(--row-bg-hover, rgba(0, 0, 0, 0.045));
 
-  --sjs-general-forecolor: rgba(255, 255, 255, 0.92);
-  --sjs-general-forecolor-dim: rgba(255, 255, 255, 0.62);
+  --ember-sjs-text: var(--text, rgba(15, 23, 42, 0.92));
+  --ember-sjs-text-strong: var(--text-strong, var(--text, rgba(15, 23, 42, 0.96)));
+  --ember-sjs-muted: var(--muted, rgba(71, 85, 105, 0.72));
 
-  --sjs-border-default: rgba(255, 255, 255, 0.10);
-  --sjs-border-light: rgba(255, 255, 255, 0.07);
+  --ember-sjs-border: var(--border, rgba(15, 23, 42, 0.12));
+  --ember-sjs-border-soft: var(--border-soft, var(--border, rgba(15, 23, 42, 0.09)));
 
-  --sjs-editor-background: rgba(255, 255, 255, 0.035);
-  --sjs-editor-border: rgba(255, 255, 255, 0.14);
-  --sjs-editor-forecolor: rgba(255, 255, 255, 0.92);
+  --ember-sjs-input-bg: var(--input-bg, rgba(255, 255, 255, 0.72));
+  --ember-sjs-input-border: var(--input-border, var(--border, rgba(15, 23, 42, 0.14)));
+  --ember-sjs-input-text: var(--input-text, var(--text, rgba(15, 23, 42, 0.92)));
 
-  --sjs-primary-backcolor: rgba(249, 115, 22, 0.60);
-  --sjs-primary-backcolor-light: rgba(249, 115, 22, 0.28);
-  --sjs-primary-forecolor: rgba(255, 255, 255, 0.96);
+  --ember-sjs-accent-bg: var(--accent-bg, rgba(249, 115, 22, 0.14));
+  --ember-sjs-accent-bg-strong: var(--accent-bg-strong, rgba(249, 115, 22, 0.24));
+  --ember-sjs-accent-border: var(--accent-border, rgba(249, 115, 22, 0.34));
+  --ember-sjs-accent-text: var(--accent-text, var(--text-strong, rgba(15, 23, 42, 0.96)));
 
-  --sjs-shadow-small: 0 10px 30px rgba(0, 0, 0, 0.35);
+  --ember-sjs-danger-bg: var(--danger-bg, rgba(239, 68, 68, 0.12));
+  --ember-sjs-danger-border: var(--danger-border, rgba(239, 68, 68, 0.42));
+  --ember-sjs-danger-text: var(--danger-text, rgb(185, 28, 28));
+
+  --ember-sjs-shadow: var(--shadow-soft, 0 10px 30px rgba(15, 23, 42, 0.12));
+
+  --sjs-general-backcolor: var(--ember-sjs-bg);
+  --sjs-general-backcolor-dim: var(--ember-sjs-bg-dim);
+  --sjs-general-backcolor-dim-light: var(--ember-sjs-bg-soft);
+
+  --sjs-general-forecolor: var(--ember-sjs-text);
+  --sjs-general-forecolor-dim: var(--ember-sjs-muted);
+
+  --sjs-border-default: var(--ember-sjs-border);
+  --sjs-border-light: var(--ember-sjs-border-soft);
+
+  --sjs-editor-background: var(--ember-sjs-input-bg);
+  --sjs-editor-border: var(--ember-sjs-input-border);
+  --sjs-editor-forecolor: var(--ember-sjs-input-text);
+
+  --sjs-primary-backcolor: var(--ember-sjs-accent-bg);
+  --sjs-primary-backcolor-light: var(--ember-sjs-accent-bg-strong);
+  --sjs-primary-forecolor: var(--ember-sjs-accent-text);
+
+  --sjs-shadow-small: var(--ember-sjs-shadow);
 }
 
 .sd-root-modern,
@@ -33,12 +60,12 @@
 .sd-root-modern .sd-element__title,
 .sd-root-modern .sd-title,
 .sd-root-modern .sd-container-modern__title {
-  color: var(--sjs-general-forecolor) !important;
+  color: var(--ember-sjs-text) !important;
 }
 
 .sd-root-modern .sd-question__description,
 .sd-root-modern .sd-description {
-  color: var(--sjs-general-forecolor-dim) !important;
+  color: var(--ember-sjs-muted) !important;
 }
 
 .sd-root-modern input,
@@ -47,16 +74,16 @@
 .sd-root-modern .sd-input,
 .sd-root-modern .sd-dropdown,
 .sd-root-modern .sd-text {
-  color: var(--sjs-editor-forecolor) !important;
-  background: var(--sjs-editor-background) !important;
-  border-color: var(--sjs-editor-border) !important;
+  color: var(--ember-sjs-input-text) !important;
+  background: var(--ember-sjs-input-bg) !important;
+  border-color: var(--ember-sjs-input-border) !important;
 }
 
 .sd-root-modern .sd-input:focus,
 .sd-root-modern .sd-dropdown:focus-within,
 .sd-root-modern .sd-text:focus-within {
   outline: none !important;
-  box-shadow: 0 0 0 2px rgba(249, 115, 22, 0.22) !important;
+  box-shadow: 0 0 0 2px var(--ember-sjs-accent-bg-strong) !important;
 }
 
 .sd-root-modern .sd-dropdown .sd-dropdown__value {
@@ -71,9 +98,9 @@
 .sd-root-modern .sd-list__container,
 .sd-root-modern .sv-popup__container,
 .sd-root-modern .sv-popup__body-content {
-  background: rgba(18, 18, 18, 0.98) !important;
-  color: rgba(255, 255, 255, 0.92) !important;
-  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+  background: var(--ember-sjs-bg) !important;
+  color: var(--ember-sjs-text) !important;
+  border: 1px solid var(--ember-sjs-border-soft) !important;
   overflow-x: hidden;
 }
 
@@ -88,7 +115,7 @@
 .sd-root-modern .sv-list__item-body,
 .sd-root-modern .sd-list__item-body {
   background: transparent !important;
-  color: rgba(255, 255, 255, 0.90) !important;
+  color: var(--ember-sjs-text) !important;
 }
 
 .sd-root-modern .sv-list__item:hover .sv-list__item-body,
@@ -97,14 +124,14 @@
 .sd-root-modern .sd-list__item:hover .sd-list__item-body,
 .sd-root-modern .sd-list__item:focus .sd-list__item-body,
 .sd-root-modern .sd-list__item--focused .sd-list__item-body {
-  background: rgba(249, 115, 22, 0.18) !important;
-  color: rgba(255, 255, 255, 0.96) !important;
+  background: var(--ember-sjs-accent-bg) !important;
+  color: var(--ember-sjs-text-strong) !important;
 }
 
 .sd-root-modern .sv-list__item--selected .sv-list__item-body,
 .sd-root-modern .sd-list__item--selected .sd-list__item-body {
-  background: rgba(249, 115, 22, 0.28) !important;
-  color: rgba(255, 255, 255, 0.96) !important;
+  background: var(--ember-sjs-accent-bg-strong) !important;
+  color: var(--ember-sjs-text-strong) !important;
 }
 
 .sv-popup--menu-phone .sv-list__item:hover .sv-list__item-body,
@@ -113,24 +140,24 @@
 .sv-popup--menu-tablet .sv-list__item:hover .sv-list__item-body,
 .sv-popup--menu-tablet .sv-list__item:focus .sv-list__item-body,
 .sv-popup--menu-tablet .sv-list__item--focused .sv-list__item-body {
-  background: rgba(249, 115, 22, 0.18) !important;
-  color: rgba(255, 255, 255, 0.96) !important;
+  background: var(--ember-sjs-accent-bg) !important;
+  color: var(--ember-sjs-text-strong) !important;
 }
 
 .sv-popup--menu-phone .sv-list__item--selected .sv-list__item-body,
 .sv-popup--menu-tablet .sv-list__item--selected .sv-list__item-body,
 .sv-popup--menu-phone .sv-list__item:hover.sv-list__item--selected .sv-list__item-body,
 .sv-popup--menu-tablet .sv-list__item:hover.sv-list__item--selected .sv-list__item-body {
-  background: rgba(249, 115, 22, 0.28) !important;
-  color: rgba(255, 255, 255, 0.96) !important;
+  background: var(--ember-sjs-accent-bg-strong) !important;
+  color: var(--ember-sjs-text-strong) !important;
 }
 
 .sv-popup--menu-phone > .sv-popup__container,
 .sv-popup--menu-tablet > .sv-popup__container,
 .sv-popup--menu-phone > .sv-popup__container > .sv-popup__body-content,
 .sv-popup--menu-tablet > .sv-popup__container > .sv-popup__body-content {
-  background: rgba(18, 18, 18, 0.98) !important;
-  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+  background: var(--ember-sjs-bg) !important;
+  border: 1px solid var(--ember-sjs-border-soft) !important;
 }
 
 /* Inline dropdown override for runtime;
@@ -157,7 +184,7 @@
   max-width: 100% !important;
   overflow: hidden !important;
   border-radius: 10px !important;
-  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.45) !important;
+  box-shadow: var(--ember-sjs-shadow) !important;
 }
 
 .sv-popup--menu-phone.ember-dropdown-popup-inline > .sv-popup__container > .sv-popup__body-content,
@@ -167,6 +194,7 @@
 }
 
 .sd-root-modern .sd-matrixdynamic__table {
+  width: 100%;
   border-collapse: separate;
   border-spacing: 0 10px;
 }
@@ -223,10 +251,6 @@
   line-height: 1.25;
 }
 
-.sd-root-modern .sd-matrixdynamic__table {
-  width: 100%;
-}
-
 .sd-root-modern .sd-matrixdynamic__row td:nth-child(2),
 .sd-root-modern .sd-matrixdynamic__row td:nth-child(2) * {
   white-space: normal !important;
@@ -256,7 +280,7 @@
 }
 
 .ember-warn-cap {
-  outline: 2px solid rgba(255, 80, 80, 0.9);
+  outline: 2px solid var(--ember-sjs-danger-border);
   outline-offset: 2px;
   border-radius: 8px;
 }
@@ -264,13 +288,13 @@
 .ember-warn-cap input,
 .ember-warn-cap .sd-input,
 .ember-warn-cap .sd-dropdown {
-  color: rgba(255, 120, 120, 1) !important;
+  color: var(--ember-sjs-danger-text) !important;
   font-weight: 700;
 }
 
 .sd-table__cell.ember-cap-too-low,
 .sd-matrix__cell.ember-cap-too-low {
-  outline: 2px solid rgba(255, 80, 80, 0.95);
+  outline: 2px solid var(--ember-sjs-danger-border);
   outline-offset: -2px;
   border-radius: 6px;
 }
@@ -279,8 +303,22 @@
 .sd-matrix__cell.ember-cap-too-low input,
 .sd-table__cell.ember-cap-too-low .sd-input,
 .sd-matrix__cell.ember-cap-too-low .sd-input {
-  color: rgba(255, 110, 110, 1) !important;
+  color: var(--ember-sjs-danger-text) !important;
   font-weight: 700;
+}
+
+.sd-root-modern .ember-availability-too-low input,
+.sd-root-modern .ember-availability-too-low textarea,
+.sd-root-modern .ember-availability-too-low .sd-input {
+  color: var(--ember-sjs-danger-text) !important;
+  border-color: var(--ember-sjs-danger-border) !important;
+  box-shadow: 0 0 0 1px var(--ember-sjs-danger-border) inset !important;
+  font-weight: 800;
+}
+
+.sd-root-modern .ember-availability-too-low .sd-input-wrapper,
+.sd-root-modern .ember-availability-too-low .sd-text__content {
+  border-radius: 8px;
 }
 
 .sd-root-modern .sd-html,
@@ -295,12 +333,12 @@
 .sd-root-modern .sd-html span,
 .sd-root-modern .sd-html li,
 .sd-root-modern .sd-html sup {
-  color: rgba(255, 255, 255, 0.78) !important;
+  color: var(--ember-sjs-muted) !important;
 }
 
 .sd-root-modern .sd-question__html a,
 .sd-root-modern .sd-html a {
-  color: rgba(255, 255, 255, 0.92) !important;
+  color: var(--ember-sjs-text-strong) !important;
   text-decoration: underline;
 }
 
@@ -318,7 +356,7 @@
 .sd-root-modern .sd-matrixdynamic__cell .sd-string-viewer,
 .sd-root-modern .sd-matrixdynamic__cell span,
 .sd-root-modern .sd-matrixdynamic__cell div {
-  color: rgba(255, 255, 255, 0.92) !important;
+  color: var(--ember-sjs-text) !important;
 }
 
 .sd-root-modern .sd-table__row,
@@ -328,22 +366,22 @@
 
 .sd-root-modern .sd-table__row:nth-child(even) td,
 .sd-root-modern .sd-matrixdynamic__row:nth-child(even) td {
-  background: rgba(255, 255, 255, 0.025) !important;
+  background: var(--ember-sjs-bg-soft) !important;
 }
 
 .sd-root-modern .sd-table__row:nth-child(odd) td,
 .sd-root-modern .sd-matrixdynamic__row:nth-child(odd) td {
-  background: rgba(255, 255, 255, 0.012) !important;
+  background: transparent !important;
 }
 
 .sd-root-modern .sd-table__row:hover td,
 .sd-root-modern .sd-matrixdynamic__row:hover td {
-  background: rgba(255, 255, 255, 0.04) !important;
+  background: var(--ember-sjs-bg-hover) !important;
 }
 
 .sd-root-modern .sd-table__cell .sd-string-viewer,
 .sd-root-modern .sd-matrixdynamic__cell .sd-string-viewer {
-  color: rgba(255, 255, 255, 0.92) !important;
+  color: var(--ember-sjs-text) !important;
   opacity: 1 !important;
 }
 
@@ -370,14 +408,14 @@
   right: 12px;
   top: 50%;
   transform: translateY(-50%);
-  color: rgba(255, 255, 255, 0.68);
+  color: var(--ember-sjs-muted);
   pointer-events: none;
   font-weight: 600;
   line-height: 1;
 }
 
 .ember-nav-target-flash {
-  outline: 2px solid rgba(250,128,114,0.9) !important;
+  outline: 2px solid var(--ember-sjs-danger-border) !important;
   outline-offset: 4px;
   border-radius: 8px;
   transition: outline 0.2s ease;
@@ -389,7 +427,7 @@
 
 .ember-form-page-nav-strip {
   scrollbar-width: thin;
-  scrollbar-color: rgba(255,255,255,0.18) transparent;
+  scrollbar-color: var(--ember-sjs-border) transparent;
 }
 
 .ember-form-page-nav-strip::-webkit-scrollbar {
@@ -401,35 +439,7 @@
 }
 
 .ember-form-page-nav-strip::-webkit-scrollbar-thumb {
-  background: rgba(255,255,255,0.16);
-  border-radius: 999px;
-}
-
-@media (max-width: 900px) {
-  .ember-form-page-nav-strip button {
-    min-width: 38px;
-  }
-}
-
-.sd-root-modern .sd-toc {
-  display: none !important;
-}
-
-.ember-form-page-nav-strip {
-  scrollbar-width: thin;
-  scrollbar-color: rgba(255,255,255,0.18) transparent;
-}
-
-.ember-form-page-nav-strip::-webkit-scrollbar {
-  height: 8px;
-}
-
-.ember-form-page-nav-strip::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-.ember-form-page-nav-strip::-webkit-scrollbar-thumb {
-  background: rgba(255,255,255,0.16);
+  background: var(--ember-sjs-border);
   border-radius: 999px;
 }
 
@@ -438,11 +448,11 @@
 }
 
 .ember-page-nav-compact {
-  background: rgba(8, 14, 24, 0.96) !important;
+  background: var(--ember-sjs-bg) !important;
 }
 
 .ember-page-nav-bookmarks {
-  background: rgba(8, 14, 24, 0.98) !important;
+  background: var(--ember-sjs-bg) !important;
 }
 
 @media (max-width: 900px) {
@@ -454,11 +464,9 @@
     --ember-form-nav-top: 52px;
   }
 }
+
 /* =========================================================
-   Ember dark-theme contrast fixes ; SurveyJS action icons
-   - matrixdynamic remove icon always visible
-   - progress text / page indicator readable
-   - action buttons should not be black-on-black
+   Ember contrast fixes ; SurveyJS action icons
    ========================================================= */
 
 .sd-root-modern .sd-action,
@@ -470,9 +478,9 @@
 .sd-root-modern .sd-matrixdynamic__remove-btn,
 .sd-root-modern .sd-matrixdynamic__remove,
 .sd-root-modern .sd-matrixdynamic__remove-button {
-  color: rgba(255, 255, 255, 0.72) !important;
-  fill: rgba(255, 255, 255, 0.72) !important;
-  stroke: rgba(255, 255, 255, 0.72) !important;
+  color: var(--ember-sjs-muted) !important;
+  fill: var(--ember-sjs-muted) !important;
+  stroke: var(--ember-sjs-muted) !important;
   opacity: 1 !important;
 }
 
@@ -484,13 +492,13 @@
 .sd-root-modern .sd-matrixdynamic__remove-btn:hover,
 .sd-root-modern .sd-matrixdynamic__remove:hover,
 .sd-root-modern .sd-matrixdynamic__remove-button:hover {
-  color: rgba(255, 255, 255, 0.96) !important;
-  fill: rgba(255, 255, 255, 0.96) !important;
-  stroke: rgba(255, 255, 255, 0.96) !important;
+  color: var(--ember-sjs-text-strong) !important;
+  fill: var(--ember-sjs-text-strong) !important;
+  stroke: var(--ember-sjs-text-strong) !important;
   opacity: 1 !important;
 }
 
-/* Remove-row button in matrixdynamic should never disappear on dark background */
+/* Remove-row button in matrixdynamic should never disappear */
 .sd-root-modern .sd-matrixdynamic__remove-btn,
 .sd-root-modern .sd-matrixdynamic__remove,
 .sd-root-modern .sd-matrixdynamic__remove-button,
@@ -516,7 +524,7 @@
 .sd-root-modern .sd-navigation__progress,
 .sd-root-modern .sd-body__navigation .sd-progress__text,
 .sd-root-modern .sd-body__navigation .sd-navigation__progress {
-  color: rgba(255, 255, 255, 0.72) !important;
+  color: var(--ember-sjs-muted) !important;
   opacity: 1 !important;
 }
 
@@ -524,13 +532,13 @@
 .sd-root-modern .sd-progress-buttons__list-element,
 .sd-root-modern .sd-progress-buttons__list-element span,
 .sd-root-modern .sd-progress-buttons__list-element button {
-  color: rgba(255, 255, 255, 0.72) !important;
+  color: var(--ember-sjs-muted) !important;
 }
 
 .sd-root-modern .sd-progress-buttons__list-element--current,
 .sd-root-modern .sd-progress-buttons__list-element--current span,
 .sd-root-modern .sd-progress-buttons__list-element--current button {
-  color: rgba(255, 255, 255, 0.96) !important;
+  color: var(--ember-sjs-text-strong) !important;
 }
 
 /* Time/date picker icons inside matrix rows */
@@ -538,9 +546,9 @@
 .sd-root-modern .sd-input__control-icon svg,
 .sd-root-modern .sd-input__suffix,
 .sd-root-modern .sd-input__suffix svg {
-  color: rgba(255, 255, 255, 0.72) !important;
-  fill: rgba(255, 255, 255, 0.72) !important;
-  stroke: rgba(255, 255, 255, 0.72) !important;
+  color: var(--ember-sjs-muted) !important;
+  fill: var(--ember-sjs-muted) !important;
+  stroke: var(--ember-sjs-muted) !important;
   opacity: 1 !important;
 }
 
@@ -571,8 +579,8 @@
   min-width: 34px !important;
   min-height: 34px !important;
   border-radius: 999px !important;
-  background: rgba(255, 255, 255, 0.04) !important;
-  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+  background: var(--ember-sjs-bg-soft) !important;
+  border: 1px solid var(--ember-sjs-border-soft) !important;
   box-shadow: none !important;
   display: inline-flex !important;
   align-items: center !important;
@@ -590,8 +598,8 @@
 .sd-root-modern .sd-matrixdynamic__remove .sd-btn-icon:hover,
 .sd-root-modern .sd-matrixdynamic__remove-btn .sd-btn-icon:hover,
 .sd-root-modern .sd-matrixdynamic__remove-button .sd-btn-icon:hover {
-  background: rgba(249, 115, 22, 0.12) !important;
-  border-color: rgba(249, 115, 22, 0.30) !important;
+  background: var(--ember-sjs-accent-bg) !important;
+  border-color: var(--ember-sjs-accent-border) !important;
   transform: translateY(-1px) !important;
 }
 
@@ -617,7 +625,7 @@
   padding-right: 8px !important;
 }
 
-/* voorkom zwarte hover-tile rechts */
+/* voorkom hover-tile rechts */
 .sd-root-modern .sd-matrixdynamic__row td:last-child {
   background: transparent !important;
 }
