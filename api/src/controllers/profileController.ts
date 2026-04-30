@@ -31,27 +31,49 @@ async function tryDownloadMicrosoftUserPhoto(identifier: string | null | undefin
   if (!clean) return null;
 
   if (!looksLikeGuid(clean) && !looksLikeRealEmail(clean)) {
+    console.log("[profile microsoft photo] skipped invalid identifier", clean);
     return null;
   }
 
   const token = await graphCredential.getToken("https://graph.microsoft.com/.default");
 
-  const res = await fetch(
-    `https://graph.microsoft.com/v1.0/users/${encodeURIComponent(clean)}/photo/$value`,
-    {
-      headers: {
-        Authorization: `Bearer ${token?.token}`,
-      },
-    }
-  );
+  if (!token?.token) {
+    console.error("[profile microsoft photo] no graph token");
+    return null;
+  }
 
-  if (res.status === 400 || res.status === 404) {
+  const url = `https://graph.microsoft.com/v1.0/users/${encodeURIComponent(clean)}/photo/$value`;
+
+  const res = await fetch(url, {
+    headers: {
+      Authorization: `Bearer ${token.token}`,
+    },
+  });
+
+  if (res.status === 404) {
+    console.log("[profile microsoft photo] graph 404 no photo or not visible", {
+      identifier: clean,
+      url,
+    });
+    return null;
+  }
+
+  if (res.status === 400) {
+    const text = await res.text().catch(() => "");
+    console.log("[profile microsoft photo] graph 400 invalid target", {
+      identifier: clean,
+      body: text,
+    });
     return null;
   }
 
   if (!res.ok) {
     const text = await res.text().catch(() => "");
-    console.error("[profile microsoft photo] graph failed", res.status, text);
+    console.error("[profile microsoft photo] graph failed", {
+      identifier: clean,
+      status: res.status,
+      body: text,
+    });
     return null;
   }
 
@@ -68,18 +90,42 @@ export async function getMyMicrosoftAvatarFile(req: any, res: Response) {
     const userObjectId = String(req.user?.objectId || "").trim();
     const email = String(req.user?.email || "").trim();
 
-    const photo =
-      (await tryDownloadMicrosoftUserPhoto(userObjectId)) ||
-      (await tryDownloadMicrosoftUserPhoto(email));
+    console.log("[profile microsoft photo] request", {
+      userObjectId,
+      email,
+    });
 
-    if (!photo) return res.status(404).end();
+    const photoByOid = await tryDownloadMicrosoftUserPhoto(userObjectId);
 
-    res.setHeader("Content-Type", photo.contentType);
-    res.setHeader("Content-Length", String(photo.buffer.length));
-    return res.send(photo.buffer);
+    if (photoByOid) {
+      res.setHeader("Cache-Control", "private, max-age=300");
+      res.setHeader("Content-Type", photoByOid.contentType);
+      res.setHeader("Content-Length", String(photoByOid.buffer.length));
+      return res.send(photoByOid.buffer);
+    }
+
+    const photoByEmail = await tryDownloadMicrosoftUserPhoto(email);
+
+    if (photoByEmail) {
+      res.setHeader("Cache-Control", "private, max-age=300");
+      res.setHeader("Content-Type", photoByEmail.contentType);
+      res.setHeader("Content-Length", String(photoByEmail.buffer.length));
+      return res.send(photoByEmail.buffer);
+    }
+
+    console.log("[profile microsoft photo] no microsoft photo resolved", {
+      userObjectId,
+      email,
+    });
+
+    return res.status(404).json({
+      error: "microsoft avatar not available",
+      userObjectId,
+      email,
+    });
   } catch (err) {
     console.error("[profile microsoft photo] failed", err);
-    return res.status(404).end();
+    return res.status(404).json({ error: "microsoft avatar not available" });
   }
 }
 
