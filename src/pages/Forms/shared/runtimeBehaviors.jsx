@@ -79,13 +79,18 @@ function positionDropdownPopupUnderAnchor(popupRoot, anchorEl) {
   if (left + width > viewportWidth - sidePadding) {
     left = Math.max(sidePadding, viewportWidth - sidePadding - width);
   }
+
   if (left < sidePadding) {
     left = sidePadding;
   }
 
   const maxHeight = Math.max(220, viewportHeight - top - sidePadding);
+
   if (maxHeight < 220) {
-    top = Math.max(sidePadding, Math.round(rect.top - Math.min(420, viewportHeight - sidePadding * 2)));
+    top = Math.max(
+      sidePadding,
+      Math.round(rect.top - Math.min(420, viewportHeight - sidePadding * 2))
+    );
   }
 
   popupRoot.classList.add("ember-dropdown-popup-inline");
@@ -110,6 +115,82 @@ function positionDropdownPopupUnderAnchor(popupRoot, anchorEl) {
   container.style.overflow = "hidden";
 
   return true;
+}
+
+function normalizeAnswerText(value) {
+  return String(value || "")
+    .trim()
+    .toLowerCase()
+    .replaceAll(".", "")
+    .replaceAll(" ", "")
+    .replaceAll("-", "")
+    .replaceAll("_", "");
+}
+
+function getAnswerItemText(item) {
+  if (!item) return "";
+
+  return (
+    item.querySelector(".sd-item__control-label")?.textContent ||
+    item.querySelector(".sd-radio__control-label")?.textContent ||
+    item.querySelector(".sd-checkbox__control-label")?.textContent ||
+    item.querySelector(".sd-item__text")?.textContent ||
+    item.textContent ||
+    ""
+  );
+}
+
+function applyAnswerItemClasses(root) {
+  if (!root) return;
+
+  const items = root.querySelectorAll(
+    ".sd-selectbase .sd-item, .sd-selectbase .sd-radio, .sd-selectbase .sd-checkbox"
+  );
+
+  items.forEach((item) => {
+    item.classList.remove("ember-answer-ja", "ember-answer-nee", "ember-answer-nvt");
+
+    const normalized = normalizeAnswerText(getAnswerItemText(item));
+
+    if (normalized === "ja") {
+      item.classList.add("ember-answer-ja");
+      return;
+    }
+
+    if (normalized === "nee") {
+      item.classList.add("ember-answer-nee");
+      return;
+    }
+
+    if (
+      normalized === "nvt" ||
+      normalized === "nvtn" ||
+      normalized === "nietvantoepassing"
+    ) {
+      item.classList.add("ember-answer-nvt");
+    }
+  });
+}
+
+function applyAllAnswerItemClasses(model) {
+  const root =
+    document.querySelector(".sd-root-modern") ||
+    document.querySelector(".sd-root") ||
+    document.body;
+
+  applyAnswerItemClasses(root);
+
+  const questions = model?.getAllQuestions?.() || [];
+  questions.forEach((question) => {
+    const name = String(question?.name || "").trim();
+    if (!name) return;
+    applyAnswerItemClasses(queryQuestionRoot(name));
+  });
+}
+
+function syncValidationVisualsOnlyWhenActivated(model, validationActivatedRef) {
+  if (!validationActivatedRef?.current) return;
+  syncAllMatrixQuestionVisualErrors(model);
 }
 
 export function applyCapWarnings(model) {
@@ -140,6 +221,7 @@ export function applyCapWarnings(model) {
     if (aanwezigeCell) {
       aanwezigeCell.classList.toggle("ember-cap-too-low", shouldWarn);
     }
+
     if (benodigdCell) {
       benodigdCell.classList.toggle("ember-cap-too-low", shouldWarn);
     }
@@ -199,6 +281,7 @@ export function normalizeEnergyRows(model, prefillPayload, energyAutoStateRef) {
           row.es_capaciteit_ah = defaultCap;
           changed = true;
         }
+
         nextState.autoCapaciteitAh = defaultCap;
       }
     }
@@ -219,6 +302,7 @@ export function normalizeEnergyRows(model, prefillPayload, energyAutoStateRef) {
         row.es_effectieve_ah = computedEffectiveAh;
         changed = true;
       }
+
       nextState.autoEffectieveAh = computedEffectiveAh;
     }
 
@@ -327,6 +411,7 @@ export function normalizeAvailabilityRows(model, availabilityAutoStateRef) {
   if (a2Rows.length > 0) {
     const nextA2Rows = a2Rows.map((row, idx) => {
       if (idx !== 0) return row;
+
       const rr = row && typeof row === "object" ? { ...row } : {};
       rr.eis = "NEN 2535:1996 & 2009 §4.4";
       return rr;
@@ -356,11 +441,22 @@ export function attachRuntimeBehaviors({
 
   let normalizeRaf = 0;
   let validationRaf = 0;
+  let answerClassRaf = 0;
 
   let activeDropdownAnchorEl = null;
   const detachDomListeners = [];
 
   let popupObserver = null;
+
+  function scheduleAnswerClassRefresh(root) {
+    if (answerClassRaf) cancelAnimationFrame(answerClassRaf);
+
+    answerClassRaf = requestAnimationFrame(() => {
+      answerClassRaf = 0;
+      applyAnswerItemClasses(root || document);
+      applyAllAnswerItemClasses(model);
+    });
+  }
 
   function refreshDerivedState(name) {
     const key = String(name || "");
@@ -403,9 +499,11 @@ export function attachRuntimeBehaviors({
 
     validationRaf = requestAnimationFrame(() => {
       validationRaf = 0;
+
       try {
         model.validate(true);
         syncAllMatrixQuestionVisualErrors(model);
+
         const summary = collectValidationSummary(model);
         onValidationSummaryChange?.(summary);
       } catch {
@@ -424,11 +522,14 @@ export function attachRuntimeBehaviors({
     if (!isDropdownQuestion(question) || !htmlElement) return;
 
     const root = htmlElement;
+
     const setAnchor = () => {
       activeDropdownAnchorEl = getDropdownAnchorElement(root);
+
       requestAnimationFrame(() => {
         tryRepositionActiveDropdownPopup();
       });
+
       window.setTimeout(() => {
         tryRepositionActiveDropdownPopup();
       }, 30);
@@ -456,8 +557,10 @@ export function attachRuntimeBehaviors({
       onAnswersSnapshotChange?.({ ...(model.data || {}) });
     }
 
+    scheduleAnswerClassRefresh(document);
+
     requestAnimationFrame(() => {
-      syncAllMatrixQuestionVisualErrors(model);
+      syncValidationVisualsOnlyWhenActivated(model, validationActivatedRef);
     });
 
     refreshDerivedState(options?.name);
@@ -465,15 +568,12 @@ export function attachRuntimeBehaviors({
   };
 
   const afterRenderQuestionHandler = (_, options) => {
-    if (options?.question?.getType?.() === "matrixdynamic") {
-      requestAnimationFrame(() => {
-        syncAllMatrixQuestionVisualErrors(model);
-      });
-    }
+    scheduleAnswerClassRefresh(options?.htmlElement);
 
     registerDropdownAnchor(options?.question, options?.htmlElement);
 
     const qname = String(options?.question?.name || "");
+
     if (qname === "es_regels") {
       requestAnimationFrame(() => applyCapWarnings(model));
     }
@@ -485,6 +585,12 @@ export function attachRuntimeBehaviors({
     ) {
       requestAnimationFrame(() => applyAvailabilityWarnings(model));
     }
+
+    if (options?.question?.getType?.() === "matrixdynamic") {
+      requestAnimationFrame(() => {
+        syncValidationVisualsOnlyWhenActivated(model, validationActivatedRef);
+      });
+    }
   };
 
   model.onValueChanged.add(valueChangedHandler);
@@ -492,6 +598,7 @@ export function attachRuntimeBehaviors({
 
   popupObserver = new MutationObserver(() => {
     tryRepositionActiveDropdownPopup();
+    scheduleAnswerClassRefresh(document);
   });
 
   popupObserver.observe(document.body, {
@@ -504,18 +611,21 @@ export function attachRuntimeBehaviors({
   requestAnimationFrame(() => {
     normalizeEnergyRows(model, prefillPayload, energyAutoStateRef);
     normalizeAvailabilityRows(model, availabilityAutoStateRef);
+    applyAllAnswerItemClasses(model);
 
     requestAnimationFrame(() => {
       applyCapWarnings(model);
       applyAvailabilityWarnings(model);
-      syncAllMatrixQuestionVisualErrors(model);
+      syncValidationVisualsOnlyWhenActivated(model, validationActivatedRef);
       tryRepositionActiveDropdownPopup();
+      applyAllAnswerItemClasses(model);
     });
   });
 
   return () => {
     if (normalizeRaf) cancelAnimationFrame(normalizeRaf);
     if (validationRaf) cancelAnimationFrame(validationRaf);
+    if (answerClassRaf) cancelAnimationFrame(answerClassRaf);
 
     if (popupObserver) {
       popupObserver.disconnect();

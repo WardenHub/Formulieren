@@ -396,51 +396,63 @@ function matrixTable(element: any, answers: any) {
     return n && n !== "doc_type";
   });
 
-  const body = [
-    cols.map((c: any) => ({
-      text: valueText(c.title || normalColumnName(c.name) || c.name),
-      style: "tableHeader",
-    })),
-    ...cleanRows.map((row: any) =>
-      cols.map((c: any) => {
-        const val = valueText(row?.[c.name]);
-        const isNo = String(row?.[c.name] || "").toLowerCase() === "nee";
+  const title = labelForElement(element);
+  const showTitle = title && !title.startsWith(name);
 
-        return {
-          text: val,
-          style: isNo ? "negativeCell" : "tableCell",
-        };
-      })
-    ),
-  ];
+  const tableNode = {
+    table: {
+      headerRows: 1,
+      keepWithHeaderRows: 1,
+      dontBreakRows: true,
+      widths: cols.map((c: any) => {
+        const n = String(c.name || "");
+        if (n.includes("item_code")) return 34;
+        if (n.includes("voldoet")) return 52;
+        if (n.includes("opmerking")) return "*";
+        if (n.includes("onderwerp")) return "*";
+        if (n.includes("omschrijving")) return "*";
+        return "auto";
+      }),
+      body: [
+        cols.map((c: any) => ({
+          text: valueText(c.title || normalColumnName(c.name) || c.name),
+          style: "tableHeader",
+        })),
+        ...cleanRows.map((row: any) =>
+          cols.map((c: any) => {
+            const val = valueText(row?.[c.name]);
+            const isNo = String(row?.[c.name] || "").toLowerCase() === "nee";
+
+            return {
+              text: val,
+              style: isNo ? "negativeCell" : "tableCell",
+            };
+          })
+        ),
+      ],
+    },
+    layout: "tableLayout",
+  };
 
   return [
     {
-      text: labelForElement(element).startsWith(name) ? "" : labelForElement(element),
-      style: "subSectionTitle",
-      margin: [0, 8, 0, 4],
-    },
-    {
-      table: {
-        headerRows: 1,
-        dontBreakRows: true,
-        widths: cols.map((c: any) => {
-          const n = String(c.name || "");
-          if (n.includes("item_code")) return 34;
-          if (n.includes("voldoet")) return 52;
-          if (n.includes("opmerking")) return "*";
-          if (n.includes("onderwerp")) return "*";
-          if (n.includes("omschrijving")) return "*";
-          return "auto";
-        }),
-        body,
-      },
-      layout: "tableLayout",
+      stack: [
+        ...(showTitle
+          ? [
+              {
+                text: title,
+                style: "subSectionTitle",
+                margin: [0, 8, 0, 4],
+              },
+            ]
+          : []),
+        tableNode,
+      ],
+      unbreakable: cleanRows.length <= 8,
       margin: [0, 0, 0, 8],
     },
   ];
 }
-
 function simpleQuestionRows(elements: any[], answers: any) {
   return elements
     .map((element) => [labelForElement(element), valueText(answerFor(answers, element?.name))])
@@ -585,15 +597,25 @@ function renderSurveyPages(surveyJson: any, answers: any) {
     if (shouldSkipReportPage(page)) continue;
 
     const pageName = String(page?.name || "").trim().toLowerCase();
+
     if (pageName === "aanvullende_opmerkingen") {
-      content.push(...renderAdditionalRemarksPage(page, answers));
+      const rendered = renderAdditionalRemarksPage(page, answers);
+      if (rendered.length) content.push(...rendered);
       continue;
     }
 
     const elements = Array.isArray(page?.elements) ? page.elements : [];
     const rendered = elements.flatMap((el: any) => renderElement(el, answers));
 
-    if (!rendered.length) continue;
+    const hasRealContent = rendered.some((node: any) => {
+      if (!node) return false;
+      if (typeof node.text === "string" && node.text.trim()) return true;
+      if (node.table) return true;
+      if (node.stack && Array.isArray(node.stack) && node.stack.length > 0) return true;
+      return false;
+    });
+
+    if (!hasRealContent) continue;
 
     content.push({
       text: valueText(page.title || page.name),
@@ -721,11 +743,18 @@ function renderSignatureBlock(block: any, answers: any, signatureDataUrl: string
                   ? fields.map((field: any) => ({
                       text: `${valueText(field.label)}: ${valueText(answerFor(answers, field.answer))}`,
                       style: "signatureField",
+                      border: [false, false, false, false],
                     }))
-                  : [{ text: "Naam:", style: "signatureField" }],
+                  : [
+                      {
+                        text: "Naam:",
+                        style: "signatureField",
+                        border: [false, false, false, false],
+                      },
+                    ],
               ],
             },
-            layout: "tableLayout",
+            layout: "noBorders",
           },
         ],
         [

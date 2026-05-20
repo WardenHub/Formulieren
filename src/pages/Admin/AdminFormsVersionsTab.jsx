@@ -18,11 +18,19 @@ function statusLabel(status) {
   return status || "Onbekend";
 }
 
+function statusTone(status) {
+  if (status === "A") return "success";
+  if (status === "M") return "warning";
+  if (status === "I") return "muted";
+  return "neutral";
+}
+
 function downloadJsonFile(filename, obj) {
   const text = JSON.stringify(obj ?? null, null, 2) + "\n";
   const blob = new Blob([text], { type: "application/json;charset=utf-8" });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
+
   a.href = url;
   a.download = filename;
   document.body.appendChild(a);
@@ -43,6 +51,23 @@ function formatJsonText(text) {
   const parsed = safeJsonParse(text);
   if (!parsed.ok) return { ok: false, error: parsed.error };
   return { ok: true, value: JSON.stringify(parsed.value, null, 2) + "\n" };
+}
+
+function AdminPanel({ title, subtitle, actions, children }) {
+  return (
+    <div className="admin-panel">
+      <div className="admin-toolbar">
+        <div className="admin-toolbar-title">
+          <div className="admin-panel-title">{title}</div>
+          {subtitle ? <div className="admin-panel-subtitle">{subtitle}</div> : null}
+        </div>
+
+        {actions ? <div className="admin-toolbar-actions">{actions}</div> : null}
+      </div>
+
+      {children}
+    </div>
+  );
 }
 
 const AdminFormsVersionsTab = forwardRef(function AdminFormsVersionsTab(
@@ -87,10 +112,12 @@ const AdminFormsVersionsTab = forwardRef(function AdminFormsVersionsTab(
       form_id: x.form_id,
       sort_order: Number(x?.sort_order ?? 0),
     }));
+
     const b = (Array.isArray(forms) ? forms : []).map((x) => ({
       form_id: x.form_id,
       sort_order: Number(x?.sort_order ?? 0),
     }));
+
     return JSON.stringify(a) !== JSON.stringify(b);
   }, [orderDraft, forms]);
 
@@ -153,12 +180,7 @@ const AdminFormsVersionsTab = forwardRef(function AdminFormsVersionsTab(
       return;
     }
 
-    await onCreateForm?.({
-      code,
-      name,
-      description,
-    });
-
+    await onCreateForm?.({ code, name, description });
     resetCreateForm();
   }
 
@@ -197,6 +219,23 @@ const AdminFormsVersionsTab = forwardRef(function AdminFormsVersionsTab(
       return;
     }
 
+    const formName = selectedForm.name || selectedForm.code || "dit formulier";
+    const nextVersionNumber =
+      Number(selectedForm.latest_version ?? selectedForm.version_count ?? 0) + 1;
+
+    const ok = window.confirm(
+      [
+        `Nieuwe versie toepassen voor "${formName}"?`,
+        "",
+        `Dit publiceert een nieuwe formulierdefinitie${Number.isFinite(nextVersionNumber) ? `, vermoedelijk versie ${nextVersionNumber}.0` : ""}.`,
+        "Bestaande formulierinstances blijven gekoppeld aan hun huidige versie.",
+        "",
+        "Weet je zeker dat je wilt doorgaan?",
+      ].join("\n")
+    );
+
+    if (!ok) return;
+
     try {
       await onCreateVersionFromJsonText?.(selectedForm, uploadText);
 
@@ -215,33 +254,12 @@ const AdminFormsVersionsTab = forwardRef(function AdminFormsVersionsTab(
   }
 
   return (
-    <div style={{ display: "grid", gap: 12 }}>
-      <div
-        style={{
-          padding: 12,
-          border: "1px solid rgba(255,255,255,0.12)",
-          borderRadius: 12,
-          display: "grid",
-          gap: 10,
-        }}
-      >
-        <div
-          style={{
-            display: "flex",
-            justifyContent: "space-between",
-            gap: 12,
-            alignItems: "center",
-            flexWrap: "wrap",
-          }}
-        >
-          <div>
-            <div style={{ fontWeight: 600 }}>Formulieren</div>
-            <div className="muted" style={{ fontSize: 13 }}>
-              Sorteervolgorde wordt hier beheerd. Alt+S slaat op.
-            </div>
-          </div>
-
-          <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+    <div className="admin-grid">
+      <AdminPanel
+        title="Formulieren"
+        subtitle="Sorteervolgorde wordt hier beheerd. Alt+S slaat op."
+        actions={
+          <>
             <button
               type="button"
               className="btn btn-secondary"
@@ -273,20 +291,12 @@ const AdminFormsVersionsTab = forwardRef(function AdminFormsVersionsTab(
             >
               Upload nieuwe formulierdefinitie
             </button>
-          </div>
-        </div>
-
+          </>
+        }
+      >
         {showCreateForm && (
-          <div
-            style={{
-              padding: 12,
-              border: "1px solid rgba(255,255,255,0.12)",
-              borderRadius: 12,
-              display: "grid",
-              gap: 10,
-            }}
-          >
-            <div style={{ fontWeight: 600 }}>Nieuw formulier</div>
+          <div className="admin-subcard">
+            <div className="admin-subcard-title">Nieuw formulier</div>
 
             <div className="cf-grid">
               <div className="cf-row">
@@ -330,8 +340,8 @@ const AdminFormsVersionsTab = forwardRef(function AdminFormsVersionsTab(
               </div>
             </div>
 
-            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-              <button type="button" className="btn" onClick={handleConfirmCreateForm}>
+            <div className="ember-toolbar">
+              <button type="button" className="btn btn-primary" onClick={handleConfirmCreateForm}>
                 Aanmaken
               </button>
               <button type="button" className="btn btn-secondary" onClick={resetCreateForm}>
@@ -342,25 +352,21 @@ const AdminFormsVersionsTab = forwardRef(function AdminFormsVersionsTab(
         )}
 
         {showUpload && (
-          <div
-            style={{
-              padding: 12,
-              border: "1px solid rgba(255,255,255,0.12)",
-              borderRadius: 12,
-              display: "grid",
-              gap: 10,
-            }}
-          >
-            <div style={{ fontWeight: 600 }}>
+          <div className="admin-subcard">
+            <div className="admin-subcard-title">
               Upload nieuwe formulierdefinitie {selectedForm ? `; ${selectedForm.name}` : ""}
             </div>
 
-            <div className="muted" style={{ fontSize: 13 }}>
-              Plak een geldige SurveyJS JSON-definitie. Gebruik eerst Format JSON en Controleer JSON voordat je de nieuwe versie toevoegt.
+            <div className="admin-panel-subtitle">
+              Plak een geldige SurveyJS JSON-definitie. Gebruik eerst Format JSON en Controleer JSON voordat je de nieuwe versie toepast.
             </div>
 
-            {uploadError && <div style={{ color: "salmon" }}>{uploadError}</div>}
-            {!uploadError && uploadOk && <div className="muted">JSON is geldig.</div>}
+            {uploadError ? <div className="ember-error-text">{uploadError}</div> : null}
+            {!uploadError && uploadOk ? (
+              <div className="ember-label-row">
+                <span className="ember-label ember-label--success">JSON is geldig</span>
+              </div>
+            ) : null}
 
             <textarea
               className="cf-textarea"
@@ -373,7 +379,7 @@ const AdminFormsVersionsTab = forwardRef(function AdminFormsVersionsTab(
               }}
             />
 
-            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <div className="ember-toolbar">
               <button type="button" className="btn btn-secondary" onClick={handleFormatUploadJson}>
                 Format JSON
               </button>
@@ -384,11 +390,11 @@ const AdminFormsVersionsTab = forwardRef(function AdminFormsVersionsTab(
 
               <button
                 type="button"
-                className="btn"
+                className="btn btn-primary"
                 disabled={!selectedForm}
                 onClick={handleConfirmUpload}
               >
-                Toevoegen nieuwe versie
+                Toepassen nieuwe versie
               </button>
 
               <button
@@ -407,7 +413,7 @@ const AdminFormsVersionsTab = forwardRef(function AdminFormsVersionsTab(
           </div>
         )}
 
-        <div style={{ display: "grid", gap: 10 }}>
+        <div className="admin-check-grid">
           {orderDraft.map((form, index) => {
             const isSelected = form.form_id === selectedFormId;
 
@@ -423,138 +429,99 @@ const AdminFormsVersionsTab = forwardRef(function AdminFormsVersionsTab(
                     onSelectForm?.(form.form_id);
                   }
                 }}
-                style={{
-                  padding: 12,
-                  border: isSelected
-                    ? "1px solid rgba(255,255,255,0.32)"
-                    : "1px solid rgba(255,255,255,0.12)",
-                  borderRadius: 12,
-                  background: isSelected ? "rgba(255,255,255,0.04)" : "transparent",
-                  display: "grid",
-                  gap: 8,
-                  cursor: "pointer",
-                  outline: "none",
-                }}
+                className={`admin-compact-row ${isSelected ? "ember-accent-active" : ""}`}
                 title="Selecteer formulier"
               >
-                <div
-                  style={{
-                    display: "flex",
-                    justifyContent: "space-between",
-                    gap: 12,
-                    alignItems: "flex-start",
-                    flexWrap: "wrap",
-                  }}
-                >
-                  <div style={{ minWidth: 0, display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-                    <div>
-                      <div style={{ fontWeight: 600 }}>
-                        {index + 1}. {form.name}
-                      </div>
-                      <div className="muted" style={{ fontSize: 13 }}>
-                        {form.code}
-                      </div>
+                <div className="admin-compact-row-main">
+                  <div className="admin-compact-row-title-wrap">
+                    <div className="admin-compact-row-title">
+                      {index + 1}. {form.name}
                     </div>
 
-                    <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-                      <button
-                        type="button"
-                        className="icon-btn"
-                        title="Omhoog"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          moveForm(form.form_id, "up");
-                        }}
-                        disabled={index === 0}
-                        onMouseEnter={() => upIconRefs.current[form.form_id]?.startAnimation?.()}
-                        onMouseLeave={() => upIconRefs.current[form.form_id]?.stopAnimation?.()}
-                      >
-                        <ArrowUpIcon
-                          ref={(el) => {
-                            upIconRefs.current[form.form_id] = el;
-                          }}
-                          size={18}
-                          className="nav-anim-icon"
-                        />
-                      </button>
+                    <div className="admin-compact-row-sub">{form.code}</div>
 
-                      <button
-                        type="button"
-                        className="icon-btn"
-                        title="Omlaag"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          moveForm(form.form_id, "down");
-                        }}
-                        disabled={index === orderDraft.length - 1}
-                        onMouseEnter={() => downIconRefs.current[form.form_id]?.startAnimation?.()}
-                        onMouseLeave={() => downIconRefs.current[form.form_id]?.stopAnimation?.()}
-                      >
-                        <ArrowDownIcon
-                          ref={(el) => {
-                            downIconRefs.current[form.form_id] = el;
-                          }}
-                          size={18}
-                          className="nav-anim-icon"
-                        />
-                      </button>
+                    <div className="ember-label-row" style={{ marginTop: 8 }}>
+                      <span className={`ember-label ember-label--${statusTone(form.status)}`}>
+                        {statusLabel(form.status)}
+                      </span>
+                      <span className="ember-label ember-label--muted">
+                        laatste versie; {form.latest_version_label ?? "-"}
+                      </span>
+                      <span className="ember-label ember-label--muted">
+                        {form.version_count ?? 0} versie(s)
+                      </span>
                     </div>
                   </div>
+                </div>
 
-                  <div
-                    className="muted"
-                    style={{ fontSize: 13, display: "flex", gap: 12, flexWrap: "wrap" }}
+                <div className="admin-compact-row-right">
+                  <button
+                    type="button"
+                    className="icon-btn"
+                    title="Omhoog"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      moveForm(form.form_id, "up");
+                    }}
+                    disabled={index === 0}
+                    onMouseEnter={() => upIconRefs.current[form.form_id]?.startAnimation?.()}
+                    onMouseLeave={() => upIconRefs.current[form.form_id]?.stopAnimation?.()}
                   >
-                    <span>status; {statusLabel(form.status)}</span>
-                    <span>laatste versie; {form.latest_version_label ?? "-"}</span>
-                    <span>aantal versies; {form.version_count ?? 0}</span>
-                  </div>
+                    <ArrowUpIcon
+                      ref={(el) => {
+                        upIconRefs.current[form.form_id] = el;
+                      }}
+                      size={18}
+                      className="nav-anim-icon"
+                    />
+                  </button>
+
+                  <button
+                    type="button"
+                    className="icon-btn"
+                    title="Omlaag"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      moveForm(form.form_id, "down");
+                    }}
+                    disabled={index === orderDraft.length - 1}
+                    onMouseEnter={() => downIconRefs.current[form.form_id]?.startAnimation?.()}
+                    onMouseLeave={() => downIconRefs.current[form.form_id]?.stopAnimation?.()}
+                  >
+                    <ArrowDownIcon
+                      ref={(el) => {
+                        downIconRefs.current[form.form_id] = el;
+                      }}
+                      size={18}
+                      className="nav-anim-icon"
+                    />
+                  </button>
                 </div>
               </div>
             );
           })}
         </div>
-      </div>
+      </AdminPanel>
 
-      <div
-        style={{
-          padding: 12,
-          border: "1px solid rgba(255,255,255,0.12)",
-          borderRadius: 12,
-          display: "grid",
-          gap: 10,
-        }}
+      <AdminPanel
+        title={`Versieoverzicht${selectedForm ? `; ${selectedForm.name}` : ""}`}
+        subtitle={selectedForm ? "Beschikbare formulierdefinities en publicaties." : "Selecteer eerst een formulier."}
       >
-        <div style={{ fontWeight: 600 }}>
-          Versieoverzicht {selectedForm ? `; ${selectedForm.name}` : ""}
-        </div>
-
         {!selectedForm ? (
-          <div className="muted">Geen formulier geselecteerd.</div>
+          <div className="admin-empty-note">Geen formulier geselecteerd.</div>
         ) : Array.isArray(selectedForm.versions) && selectedForm.versions.length > 0 ? (
-          <div style={{ display: "grid", gap: 10 }}>
+          <div className="admin-check-grid">
             {selectedForm.versions.map((version) => (
-              <div
-                key={version.form_version_id}
-                style={{
-                  padding: 12,
-                  border: "1px solid rgba(255,255,255,0.12)",
-                  borderRadius: 12,
-                  display: "grid",
-                  gap: 6,
-                }}
-              >
-                <div
-                  style={{
-                    display: "flex",
-                    justifyContent: "space-between",
-                    gap: 12,
-                    alignItems: "center",
-                    flexWrap: "wrap",
-                  }}
-                >
-                  <div style={{ fontWeight: 600 }}>
-                    Versie {version.version_label} {version.is_latest ? "(actief)" : ""}
+              <div key={version.form_version_id} className="admin-subcard">
+                <div className="admin-toolbar">
+                  <div className="admin-toolbar-title">
+                    <div className="admin-subcard-title">
+                      Versie {version.version_label} {version.is_latest ? "(actief)" : ""}
+                    </div>
+
+                    <div className="admin-panel-subtitle">
+                      Intern versienummer; {version.version}
+                    </div>
                   </div>
 
                   <button
@@ -571,24 +538,24 @@ const AdminFormsVersionsTab = forwardRef(function AdminFormsVersionsTab(
                   </button>
                 </div>
 
-                <div className="muted" style={{ fontSize: 13 }}>
-                  Intern versienummer; {version.version}
-                </div>
-
-                <div className="muted" style={{ fontSize: 13 }}>
-                  Publicatie; {formatPublishedAt(version.published_at)}
-                </div>
-
-                <div className="muted" style={{ fontSize: 13 }}>
-                  Gepubliceerd door; {version.published_by || "-"}
+                <div className="ember-label-row">
+                  <span className={version.is_latest ? "ember-label ember-label--success" : "ember-label ember-label--muted"}>
+                    {version.is_latest ? "Actieve versie" : "Oudere versie"}
+                  </span>
+                  <span className="ember-label ember-label--muted">
+                    Publicatie; {formatPublishedAt(version.published_at)}
+                  </span>
+                  <span className="ember-label ember-label--muted">
+                    Door; {version.published_by || "-"}
+                  </span>
                 </div>
               </div>
             ))}
           </div>
         ) : (
-          <div className="muted">Nog geen versies gevonden.</div>
+          <div className="admin-empty-note">Nog geen versies gevonden.</div>
         )}
-      </div>
+      </AdminPanel>
     </div>
   );
 });

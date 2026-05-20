@@ -1228,7 +1228,7 @@ order by
 
 // =========================================================
 // form instance documents - upsert metadata batch
-// - only concept
+// - evidence editable: CONCEPT, INGEDIEND, IN_BEHANDELING
 // - metadata only, no file upload here
 // =========================================================
 
@@ -1254,7 +1254,7 @@ if exists (
   from dbo.FormInstance
   where form_instance_id = @instanceId
     and atrium_installation_code = @code
-    and status <> N'CONCEPT'
+    and status not in (N'CONCEPT', N'INGEDIEND', N'IN_BEHANDELING')
 )
 begin
   throw 50000, 'form instance not editable', 1;
@@ -1415,7 +1415,7 @@ if not exists (
   from dbo.FormInstance fi
   where fi.form_instance_id = @instanceId
     and fi.atrium_installation_code = @code
-    and fi.status = N'CONCEPT'
+    and fi.status in (N'CONCEPT', N'INGEDIEND', N'IN_BEHANDELING')
 )
 begin
   throw 50000, 'form instance not editable', 1;
@@ -1501,7 +1501,7 @@ select top 1
 from dbo.FormInstance fi
 where fi.form_instance_id = @instanceId
   and fi.atrium_installation_code = @code
-  and fi.status = N'CONCEPT';
+  and fi.status in (N'CONCEPT', N'INGEDIEND', N'IN_BEHANDELING');
 
 if @installationId is null
 begin
@@ -1611,7 +1611,7 @@ select top 1
 from dbo.FormInstance fi
 where fi.form_instance_id = @instanceId
   and fi.atrium_installation_code = @code
-  and fi.status = N'CONCEPT';
+  and fi.status in (N'CONCEPT', N'INGEDIEND', N'IN_BEHANDELING');
 
 if @installationId is null
 begin
@@ -1717,7 +1717,7 @@ if not exists (
   where d.form_instance_document_id = @documentId
     and d.form_instance_id = @instanceId
     and d.atrium_installation_code = @code
-    and fi.status = N'CONCEPT'
+    and fi.status in (N'CONCEPT', N'INGEDIEND', N'IN_BEHANDELING')
 )
 begin
   throw 50000, 'form instance document not editable', 1;
@@ -1776,7 +1776,7 @@ if not exists (
   where d.form_instance_document_id = @documentId
     and d.form_instance_id = @instanceId
     and d.atrium_installation_code = @code
-    and fi.status = N'CONCEPT'
+    and fi.status in (N'CONCEPT', N'INGEDIEND', N'IN_BEHANDELING')
 )
 begin
   throw 50000, 'form instance document not editable', 1;

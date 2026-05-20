@@ -1,4 +1,5 @@
 // src/pages/Admin/AdminInstallationDocumentsTab.jsx
+
 import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
 import Tabs from "../../components/Tabs.jsx";
 import { FileStackIcon } from "@/components/ui/file-stack";
@@ -39,7 +40,9 @@ function buildDraft(catalog) {
           const sa = Number(a?.sort_order ?? 0);
           const sb = Number(b?.sort_order ?? 0);
           if (sa !== sb) return sa - sb;
-          return String(a?.document_type_name || "").localeCompare(String(b?.document_type_name || ""));
+          return String(a?.document_type_name || "").localeCompare(
+            String(b?.document_type_name || "")
+          );
         })
     : [];
 }
@@ -58,17 +61,41 @@ function reindex(items) {
   }));
 }
 
-function statusBadge(isActive) {
-  return isActive ? (
-    <span className="admin-status-badge admin-status-badge--active">
-      <span className="admin-status-dot admin-status-dot--active" />
-      Ja
-    </span>
-  ) : (
-    <span className="admin-status-badge admin-status-badge--inactive">
-      <span className="admin-status-dot admin-status-dot--inactive" />
-      Nee
-    </span>
+function activeLabel(isActive) {
+  return isActive ? "Actief" : "Niet actief";
+}
+
+function activeTone(isActive) {
+  return isActive ? "success" : "muted";
+}
+
+function AdminPanel({ title, subtitle, actions, children }) {
+  return (
+    <div className="admin-panel">
+      <div className="admin-toolbar">
+        <div className="admin-toolbar-title">
+          <div className="admin-panel-title">{title}</div>
+          {subtitle ? <div className="admin-panel-subtitle">{subtitle}</div> : null}
+        </div>
+
+        {actions ? <div className="admin-toolbar-actions">{actions}</div> : null}
+      </div>
+
+      {children}
+    </div>
+  );
+}
+
+function SectionHeader({ title, subtitle, actions }) {
+  return (
+    <div className="admin-toolbar">
+      <div className="admin-toolbar-title">
+        <div className="admin-subcard-title">{title}</div>
+        {subtitle ? <div className="admin-panel-subtitle">{subtitle}</div> : null}
+      </div>
+
+      {actions ? <div className="admin-toolbar-actions">{actions}</div> : null}
+    </div>
   );
 }
 
@@ -91,10 +118,12 @@ const AdminInstallationDocumentsTab = forwardRef(function AdminInstallationDocum
 
     setOpenDocTypeKeys((prev) => {
       const map = { ...prev };
+
       for (const row of next) {
         const key = row.document_type_key || `__row_${row.document_type_name || "new"}`;
         if (map[key] === undefined) map[key] = false;
       }
+
       return map;
     });
   }, [catalog]);
@@ -112,7 +141,9 @@ const AdminInstallationDocumentsTab = forwardRef(function AdminInstallationDocum
   }, [saving, onSavingChange]);
 
   const sections = Array.isArray(catalog?.sections) ? catalog.sections : [];
-  const installationTypes = Array.isArray(catalog?.installationTypes) ? catalog.installationTypes : [];
+  const installationTypes = Array.isArray(catalog?.installationTypes)
+    ? catalog.installationTypes
+    : [];
 
   function setRow(index, patch) {
     setDraft((prev) => prev.map((row, i) => (i === index ? { ...row, ...patch } : row)));
@@ -138,8 +169,11 @@ const AdminInstallationDocumentsTab = forwardRef(function AdminInstallationDocum
 
     if (row?.is_active && !nextActive) {
       const ok = window.confirm(
-        `Weet je zeker dat je documenttype "${row.document_type_name || row.document_type_key || "nieuw"}" inactief wilt maken?`
+        `Weet je zeker dat je documenttype "${
+          row.document_type_name || row.document_type_key || "nieuw"
+        }" inactief wilt maken?`
       );
+
       if (!ok) return;
     }
 
@@ -183,8 +217,11 @@ const AdminInstallationDocumentsTab = forwardRef(function AdminInstallationDocum
           return row;
         }
 
-        if (required.has(typeKey)) required.delete(typeKey);
-        else required.add(typeKey);
+        if (required.has(typeKey)) {
+          required.delete(typeKey);
+        } else {
+          required.add(typeKey);
+        }
 
         return {
           ...row,
@@ -213,6 +250,7 @@ const AdminInstallationDocumentsTab = forwardRef(function AdminInstallationDocum
     if (saving || !isDirty) return;
 
     setSaving(true);
+
     try {
       const payload = draft.map((row, index) => ({
         ...row,
@@ -235,16 +273,17 @@ const AdminInstallationDocumentsTab = forwardRef(function AdminInstallationDocum
         label: "Basis",
         Icon: FileStackIcon,
         content: (
-          <div className="admin-panel">
-            <div className="admin-toolbar">
-              <div className="admin-toolbar-title">
-                <div style={{ fontWeight: 700 }}>Documenttypes</div>
-                <div className="muted" style={{ fontSize: 13 }}>
-                  Rustige basisweergave van documenttypes met naam, sectie, sortering en status.
-                </div>
-              </div>
+          <AdminPanel
+            title="Documenttypes"
+            subtitle="Beheer naam, key, sectie, sortering en actieve status van documenttypes."
+            actions={
+              <>
+                {isDirty ? (
+                  <span className="ember-label ember-label--warning">Niet opgeslagen</span>
+                ) : (
+                  <span className="ember-label ember-label--success">Opgeslagen</span>
+                )}
 
-              <div className="admin-toolbar-actions">
                 <button
                   type="button"
                   className="btn btn-secondary"
@@ -255,119 +294,183 @@ const AdminInstallationDocumentsTab = forwardRef(function AdminInstallationDocum
                   <PlusIcon ref={addIconRef} size={16} className="nav-anim-icon" />
                   Documenttype toevoegen
                 </button>
-              </div>
-            </div>
+              </>
+            }
+          >
+            {draft.length === 0 ? (
+              <div className="admin-empty-note">Nog geen documenttypes gevonden.</div>
+            ) : (
+              <div className="admin-check-grid">
+                {draft.map((row, index) => (
+                  <div
+                    key={`${row.document_type_key || "new"}:${index}`}
+                    className={`admin-subcard ${
+                      !row.is_active ? "admin-table-row--inactive" : ""
+                    }`}
+                  >
+                    <div className="admin-toolbar">
+                      <div className="admin-toolbar-title">
+                        <div className="admin-subcard-title">
+                          {index + 1}. {row.document_type_name || "Nieuw documenttype"}
+                        </div>
 
-            <div style={{ overflowX: "auto" }}>
-              <table className="admin-table">
-                <thead>
-                  <tr>
-                    <th style={{ minWidth: 240 }}>Naam</th>
-                    <th style={{ minWidth: 180 }}>Sectie</th>
-                    <th style={{ width: 140 }}>Sortering</th>
-                    <th style={{ width: 130 }}>Actief</th>
-                    <th style={{ width: 130 }}>Status</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {draft.map((row, index) => (
-                    <tr
-                      key={`${row.document_type_key || "new"}:${index}`}
-                      className={!row.is_active ? "admin-table-row--inactive" : ""}
-                    >
-                      <td>
-                        <input
-                          className="input"
-                          value={row.document_type_name}
-                          onChange={(e) => setRow(index, { document_type_name: e.target.value })}
-                          placeholder="Onderhoudsrapport"
-                        />
-                      </td>
+                        <div className="ember-label-row admin-inline-labels">
+                          <span
+                            className={`ember-label ember-label--${activeTone(row.is_active)}`}
+                          >
+                            {activeLabel(row.is_active)}
+                          </span>
 
-                      <td>
-                        <select
-                          className="input"
-                          value={row.section_key ?? ""}
-                          onChange={(e) => setRow(index, { section_key: e.target.value || null })}
+                          <span className="ember-label ember-label--muted">
+                            key; {row.document_type_key || "-"}
+                          </span>
+
+                          <span className="ember-label ember-label--muted">
+                            sectie; {row.section_key || "geen"}
+                          </span>
+
+                          <span className="ember-label ember-label--muted">
+                            sortering; {row.sort_order || "-"}
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="admin-toolbar-actions">
+                        <button
+                          type="button"
+                          className="icon-btn"
+                          title="Omhoog"
+                          disabled={index === 0}
+                          onClick={() => moveRow(index, "up")}
+                          onMouseEnter={() => upIconRefs.current[index]?.startAnimation?.()}
+                          onMouseLeave={() => upIconRefs.current[index]?.stopAnimation?.()}
                         >
-                          <option value="">— geen —</option>
-                          {sections.map((s) => (
-                            <option key={s.section_key} value={s.section_key}>
-                              {s.section_name || s.section_key}
-                            </option>
-                          ))}
-                        </select>
-                      </td>
+                          <ArrowUpIcon
+                            ref={(el) => {
+                              upIconRefs.current[index] = el;
+                            }}
+                            size={18}
+                            className="nav-anim-icon"
+                          />
+                        </button>
 
-                      <td>
-                        <div className="admin-sorter">
-                          <button
-                            type="button"
-                            className="admin-mini-icon-btn"
-                            title="Omhoog"
-                            disabled={index === 0}
-                            onClick={() => moveRow(index, "up")}
-                            onMouseEnter={() => upIconRefs.current[index]?.startAnimation?.()}
-                            onMouseLeave={() => upIconRefs.current[index]?.stopAnimation?.()}
+                        <button
+                          type="button"
+                          className="icon-btn"
+                          title="Omlaag"
+                          disabled={index === draft.length - 1}
+                          onClick={() => moveRow(index, "down")}
+                          onMouseEnter={() => downIconRefs.current[index]?.startAnimation?.()}
+                          onMouseLeave={() => downIconRefs.current[index]?.stopAnimation?.()}
+                        >
+                          <ArrowDownIcon
+                            ref={(el) => {
+                              downIconRefs.current[index] = el;
+                            }}
+                            size={18}
+                            className="nav-anim-icon"
+                          />
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="cf-grid">
+                      <div className="cf-row">
+                        <div className="cf-label">
+                          <div className="cf-label-text">Naam</div>
+                        </div>
+
+                        <div className="cf-control">
+                          <input
+                            className="input"
+                            value={row.document_type_name}
+                            onChange={(e) =>
+                              setRow(index, { document_type_name: e.target.value })
+                            }
+                            placeholder="Onderhoudsrapport"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="cf-row">
+                        <div className="cf-label">
+                          <div className="cf-label-text">Key</div>
+                        </div>
+
+                        <div className="cf-control">
+                          <input
+                            className="input"
+                            value={row.document_type_key}
+                            onChange={(e) =>
+                              setRow(index, { document_type_key: e.target.value })
+                            }
+                            placeholder="onderhoudsrapport"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="cf-row">
+                        <div className="cf-label">
+                          <div className="cf-label-text">Sectie</div>
+                        </div>
+
+                        <div className="cf-control">
+                          <select
+                            className="input"
+                            value={row.section_key ?? ""}
+                            onChange={(e) =>
+                              setRow(index, { section_key: e.target.value || null })
+                            }
                           >
-                            <ArrowUpIcon
-                              ref={(el) => {
-                                upIconRefs.current[index] = el;
-                              }}
-                              size={16}
-                              className="nav-anim-icon"
-                            />
-                          </button>
+                            <option value="">geen</option>
+                            {sections.map((s) => (
+                              <option key={s.section_key} value={s.section_key}>
+                                {s.section_name || s.section_key}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                      </div>
 
-                          <button
-                            type="button"
-                            className="admin-mini-icon-btn"
-                            title="Omlaag"
-                            disabled={index === draft.length - 1}
-                            onClick={() => moveRow(index, "down")}
-                            onMouseEnter={() => downIconRefs.current[index]?.startAnimation?.()}
-                            onMouseLeave={() => downIconRefs.current[index]?.stopAnimation?.()}
-                          >
-                            <ArrowDownIcon
-                              ref={(el) => {
-                                downIconRefs.current[index] = el;
-                              }}
-                              size={16}
-                              className="nav-anim-icon"
-                            />
-                          </button>
+                      <div className="cf-row">
+                        <div className="cf-label">
+                          <div className="cf-label-text">Sortering</div>
+                        </div>
 
+                        <div className="cf-control">
                           <input
                             type="number"
-                            className="input admin-sorter-value"
+                            className="input"
                             value={row.sort_order ?? ""}
                             onChange={(e) => setRow(index, { sort_order: e.target.value })}
                           />
                         </div>
-                      </td>
+                      </div>
 
-                      <td>
-                        <select
-                          className="input"
-                          value={row.is_active ? "1" : "0"}
-                          onChange={(e) => handleActiveChange(index, e.target.value === "1")}
-                        >
-                          <option value="1">Ja</option>
-                          <option value="0">Nee</option>
-                        </select>
-                      </td>
+                      <div className="cf-row">
+                        <div className="cf-label">
+                          <div className="cf-label-text">Actief</div>
+                        </div>
 
-                      <td>{statusBadge(row.is_active)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-
-            {draft.length === 0 && (
-              <div className="admin-empty-note">Nog geen documenttypes gevonden.</div>
+                        <div className="cf-control">
+                          <select
+                            className="input"
+                            value={row.is_active ? "1" : "0"}
+                            onChange={(e) =>
+                              handleActiveChange(index, e.target.value === "1")
+                            }
+                          >
+                            <option value="1">Ja</option>
+                            <option value="0">Nee</option>
+                          </select>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
             )}
-          </div>
+          </AdminPanel>
         ),
       },
       {
@@ -375,132 +478,171 @@ const AdminInstallationDocumentsTab = forwardRef(function AdminInstallationDocum
         label: "Per installatiesoort",
         Icon: TornadoIcon,
         content: (
-          <div className="admin-panel">
-            <div className="admin-toolbar">
-              <div className="admin-toolbar-title">
-                <div style={{ fontWeight: 700 }}>Per installatiesoort</div>
-                <div className="muted" style={{ fontSize: 13 }}>
-                  Per documenttype stel je hier in voor welke installatiesoorten het zichtbaar is en waar het wenselijk is.
-                </div>
-              </div>
+          <AdminPanel
+            title="Per installatiesoort"
+            subtitle="Stel per documenttype in waar het zichtbaar is en voor welke installatiesoorten het verplicht is."
+            actions={
+              isDirty ? (
+                <span className="ember-label ember-label--warning">Niet opgeslagen</span>
+              ) : (
+                <span className="ember-label ember-label--success">Opgeslagen</span>
+              )
+            }
+          >
+            <div className="admin-subcard">
+              <SectionHeader
+                title="Uitleg"
+                subtitle="Geen gekozen toepasbaarheid betekent; het documenttype is beschikbaar voor alle installatiesoorten."
+                actions={<span className="ember-label ember-label--muted">Data driven</span>}
+              />
             </div>
 
-            <div className="admin-chip-row">
-              <span className="admin-chip admin-chip--info">
-                Info: geen geselecteerde toepasbaarheid betekent dat het documenttype voor alle installatiesoorten beschikbaar is.
-              </span>
-            </div>
+            {draft.length === 0 ? (
+              <div className="admin-empty-note">Nog geen documenttypes gevonden.</div>
+            ) : (
+              <div className="admin-check-grid">
+                {draft.map((row, index) => {
+                  const applicabilitySet = new Set(row.applicability_type_keys || []);
+                  const requiredSet = new Set(row.required_type_keys || []);
+                  const allTypesImplicit = applicabilitySet.size === 0;
+                  const docTypeOpenKey = row.document_type_key || `__row_${index}`;
+                  const isOpen = openDocTypeKeys[docTypeOpenKey] === true;
 
-            <div className="admin-grid">
-              {draft.map((row, index) => {
-                const applicabilitySet = new Set(row.applicability_type_keys || []);
-                const requiredSet = new Set(row.required_type_keys || []);
-                const allTypesImplicit = applicabilitySet.size === 0;
-                const docTypeOpenKey = row.document_type_key || `__row_${index}`;
-                const isOpen = openDocTypeKeys[docTypeOpenKey] === true;
-
-                return (
-                  <div
-                    key={`${row.document_type_key || "new"}:${index}`}
-                    className="admin-subcard"
-                    style={!row.is_active ? { opacity: 0.76 } : undefined}
-                  >
-                    <button
-                      type="button"
-                      className="admin-section-head"
-                      onClick={() =>
-                        setOpenDocTypeKeys((prev) => ({
-                          ...prev,
-                          [docTypeOpenKey]: !isOpen,
-                        }))
-                      }
+                  return (
+                    <div
+                      key={`${row.document_type_key || "new"}:${index}`}
+                      className={`admin-subcard ${
+                        !row.is_active ? "admin-table-row--inactive" : ""
+                      }`}
                     >
-                      <div className="admin-section-head-main">
-                        <div className="admin-section-title">
-                          {row.document_type_name || row.document_type_key || "Nieuw documenttype"}
-                        </div>
-                        <div className="admin-section-sub">
-                          {row.section_key || "geen sectie"} ·{" "}
-                          {allTypesImplicit
-                            ? "alle installatiesoorten"
-                            : `${applicabilitySet.size} van toepassing`}{" "}
-                          · {requiredSet.size} wenselijk
-                        </div>
-                      </div>
+                      <button
+                        type="button"
+                        className="admin-section-head"
+                        onClick={() =>
+                          setOpenDocTypeKeys((prev) => ({
+                            ...prev,
+                            [docTypeOpenKey]: !isOpen,
+                          }))
+                        }
+                      >
+                        <div className="admin-section-head-main">
+                          <div className="admin-section-title">
+                            {row.document_type_name ||
+                              row.document_type_key ||
+                              "Nieuw documenttype"}
+                          </div>
 
-                      <div className="admin-chip-row">
-                        {statusBadge(row.is_active)}
-                        {allTypesImplicit ? (
-                          <span className="admin-chip admin-chip--info">Alle types</span>
-                        ) : (
-                          <span className="admin-chip">
-                            {applicabilitySet.size} van toepassing
+                          <div className="admin-section-sub">
+                            {row.section_key || "geen sectie"};{" "}
+                            {allTypesImplicit
+                              ? "alle installatiesoorten"
+                              : `${applicabilitySet.size} gekozen`}{" "}
+                            ; {requiredSet.size} verplicht
+                          </div>
+                        </div>
+
+                        <div className="ember-label-row">
+                          <span
+                            className={`ember-label ember-label--${activeTone(row.is_active)}`}
+                          >
+                            {activeLabel(row.is_active)}
                           </span>
-                        )}
-                        <span className="admin-chip admin-chip--warning">
-                          {requiredSet.size} wenselijk
-                        </span>
-                        {isOpen ? <ChevronDownIcon size={18} /> : <ChevronRightIcon size={18} />}
-                      </div>
-                    </button>
 
-                    {isOpen && (
-                      <div className="admin-section-body">
-                        <div className="admin-check-grid">
-                          {installationTypes.map((type) => {
-                            const applicable = applicabilitySet.has(type.installation_type_key);
-                            const required = requiredSet.has(type.installation_type_key);
+                          {allTypesImplicit ? (
+                            <span className="ember-label ember-label--success">
+                              Alle types
+                            </span>
+                          ) : (
+                            <span className="ember-label ember-label--muted">
+                              {applicabilitySet.size} gekozen
+                            </span>
+                          )}
 
-                            return (
-                              <div key={type.installation_type_key} className="admin-check-row">
-                                <div className="admin-check-row-main">
-                                  <div className="admin-check-row-title">{type.display_name}</div>
-                                  <div className="admin-check-row-sub">{type.installation_type_key}</div>
-                                </div>
+                          <span
+                            className={
+                              requiredSet.size > 0
+                                ? "ember-label ember-label--warning"
+                                : "ember-label ember-label--muted"
+                            }
+                          >
+                            {requiredSet.size} verplicht
+                          </span>
 
-                                <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                                  <input
-                                    type="checkbox"
-                                    checked={applicable}
-                                    onChange={() => toggleApplicability(index, type.installation_type_key)}
-                                  />
-                                  <span>van toepassing</span>
-                                </label>
-
-                                <label
-                                  style={{
-                                    display: "flex",
-                                    alignItems: "center",
-                                    gap: 8,
-                                    opacity: applicable || allTypesImplicit ? 1 : 0.55,
-                                  }}
-                                >
-                                  <input
-                                    type="checkbox"
-                                    checked={required}
-                                    disabled={!applicable && !allTypesImplicit}
-                                    onChange={() => toggleRequired(index, type.installation_type_key)}
-                                  />
-                                  <span>wenselijk</span>
-                                </label>
-                              </div>
-                            );
-                          })}
+                          {isOpen ? <ChevronDownIcon size={18} /> : <ChevronRightIcon size={18} />}
                         </div>
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          </div>
+                      </button>
+
+                      {isOpen && (
+                        <div className="admin-section-body">
+                          <div className="admin-check-grid">
+                            {installationTypes.map((type) => {
+                              const applicable = applicabilitySet.has(type.installation_type_key);
+                              const required = requiredSet.has(type.installation_type_key);
+                              const canRequire = applicable || allTypesImplicit;
+
+                              return (
+                                <div
+                                  key={type.installation_type_key}
+                                  className={`admin-compact-row ${
+                                    applicable || allTypesImplicit ? "ember-accent-active" : ""
+                                  }`}
+                                >
+                                  <div className="admin-compact-row-main">
+                                    <div className="admin-compact-row-title-wrap">
+                                      <div className="admin-compact-row-title">
+                                        {type.display_name}
+                                      </div>
+                                      <div className="admin-compact-row-sub">
+                                        {type.installation_type_key}
+                                      </div>
+                                    </div>
+                                  </div>
+
+                                  <div className="admin-compact-row-right">
+                                    <label className="admin-checkbox-label">
+                                      <input
+                                        type="checkbox"
+                                        checked={applicable}
+                                        onChange={() =>
+                                          toggleApplicability(
+                                            index,
+                                            type.installation_type_key
+                                          )
+                                        }
+                                      />
+                                      <span>van toepassing</span>
+                                    </label>
+
+                                    <label className="admin-checkbox-label">
+                                      <input
+                                        type="checkbox"
+                                        checked={required}
+                                        disabled={!canRequire}
+                                        onChange={() =>
+                                          toggleRequired(index, type.installation_type_key)
+                                        }
+                                      />
+                                      <span>verplicht</span>
+                                    </label>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </AdminPanel>
         ),
       },
     ];
-  }, [draft, sections, installationTypes, openDocTypeKeys]);
+  }, [draft, sections, installationTypes, openDocTypeKeys, isDirty]);
 
-  const activeInnerContent =
-    innerTabs.find((t) => t.key === activeInnerTab)?.content ?? null;
+  const activeInnerContent = innerTabs.find((t) => t.key === activeInnerTab)?.content ?? null;
 
   if (loading && draft.length === 0) {
     return <div className="muted">laden; documenttypes</div>;

@@ -23,12 +23,28 @@ function normalizeDraft(catalog) {
     : [];
 }
 
-function statusBadge(isActive) {
+function statusLabel(isActive) {
+  return isActive ? "Actief" : "Niet actief";
+}
+
+function statusTone(isActive) {
+  return isActive ? "success" : "muted";
+}
+
+function AdminPanel({ title, subtitle, actions, children }) {
   return (
-    <span className={isActive ? "admin-status-badge admin-status-badge--active" : "admin-status-badge admin-status-badge--inactive"}>
-      <span className={isActive ? "admin-status-dot admin-status-dot--active" : "admin-status-dot admin-status-dot--inactive"} />
-      {isActive ? "Ja" : "Nee"}
-    </span>
+    <div className="admin-panel">
+      <div className="admin-toolbar">
+        <div className="admin-toolbar-title">
+          <div className="admin-panel-title">{title}</div>
+          {subtitle ? <div className="admin-panel-subtitle">{subtitle}</div> : null}
+        </div>
+
+        {actions ? <div className="admin-toolbar-actions">{actions}</div> : null}
+      </div>
+
+      {children}
+    </div>
   );
 }
 
@@ -108,14 +124,19 @@ const AdminInstallationTypesTab = forwardRef(function AdminInstallationTypesTab(
 
   async function save() {
     if (saving || !isDirty) return;
+
     setSaving(true);
+
     try {
       await onSave?.(
         draft.map((row, index) => ({
           ...row,
-          sort_order: Number.isFinite(Number(row.sort_order)) ? Number(row.sort_order) : (index + 1) * 10,
+          sort_order: Number.isFinite(Number(row.sort_order))
+            ? Number(row.sort_order)
+            : (index + 1) * 10,
         }))
       );
+
       onSaveOk?.();
     } finally {
       setSaving(false);
@@ -129,131 +150,164 @@ const AdminInstallationTypesTab = forwardRef(function AdminInstallationTypesTab(
   }
 
   return (
-    <div className="admin-panel">
-      <div className="admin-toolbar">
-        <div className="admin-toolbar-title">
-          <div style={{ fontWeight: 700 }}>Installatiesoorten</div>
-          <div className="muted" style={{ fontSize: 13 }}>
-            Hier configureer je de verschillende soorten installaties die in het systeem worden gebruikt. Je kunt hier nieuwe soorten toevoegen, bestaande soorten bewerken of verwijderen, en de volgorde van de soorten aanpassen. De volgorde bepaalt hoe de installatiesoorten worden weergegeven in dropdowns en lijsten binnen Ember.
-          </div>
-        </div>
+    <div className="admin-grid">
+      <AdminPanel
+        title="Installatiesoorten"
+        subtitle="Beheer de installatiecategorieën die in Ember beschikbaar zijn. De volgorde wordt gebruikt in dropdowns en overzichten."
+        actions={
+          <>
+            {isDirty ? (
+              <span className="ember-label ember-label--warning">Niet opgeslagen</span>
+            ) : (
+              <span className="ember-label ember-label--success">Opgeslagen</span>
+            )}
 
-        <div className="admin-toolbar-actions">
-          <button
-            type="button"
-            className="btn btn-secondary"
-            onClick={addRow}
-            onMouseEnter={() => addIconRef.current?.startAnimation?.()}
-            onMouseLeave={() => addIconRef.current?.stopAnimation?.()}
-          >
-            <PlusIcon ref={addIconRef} size={16} className="nav-anim-icon" />
-            Toevoegen
-          </button>
-        </div>
-      </div>
+            <button
+              type="button"
+              className="btn btn-secondary"
+              onClick={addRow}
+              onMouseEnter={() => addIconRef.current?.startAnimation?.()}
+              onMouseLeave={() => addIconRef.current?.stopAnimation?.()}
+            >
+              <PlusIcon ref={addIconRef} size={16} className="nav-anim-icon" />
+              Toevoegen
+            </button>
+          </>
+        }
+      >
+        <div className="admin-check-grid">
+          {draft.map((row, index) => (
+            <div
+              key={`${row.installation_type_key || "new"}:${index}`}
+              className={`admin-subcard ${!row.is_active ? "admin-table-row--inactive" : ""}`}
+            >
+              <div className="admin-toolbar">
+                <div className="admin-toolbar-title">
+                  <div className="admin-subcard-title">
+                    {index + 1}. {row.display_name || "Nieuwe installatiesoort"}
+                  </div>
 
-      <div style={{ overflowX: "auto" }}>
-        <table className="admin-table">
-          <thead>
-            <tr>
-              <th style={{ width: 70 }}>#</th>
-              <th style={{ minWidth: 220 }}>Naam</th>
-              <th style={{ minWidth: 180 }}>Key</th>
-              <th style={{ minWidth: 150 }}>Sortering</th>
-              <th style={{ minWidth: 120 }}>Actief</th>
-              <th style={{ minWidth: 130 }}>Status</th>
-            </tr>
-          </thead>
-          <tbody>
-            {draft.map((row, index) => (
-              <tr
-                key={`${row.installation_type_key || "new"}:${index}`}
-                className={!row.is_active ? "admin-table-row--inactive" : ""}
-              >
-                <td>{index + 1}</td>
+                  <div className="ember-label-row admin-inline-labels">
+                    <span className={`ember-label ember-label--${statusTone(row.is_active)}`}>
+                      {statusLabel(row.is_active)}
+                    </span>
 
-                <td>
-                  <input
-                    className="input"
-                    value={row.display_name}
-                    onChange={(e) => setRow(index, { display_name: e.target.value })}
-                    placeholder="Brandmeldinstallatie"
-                  />
-                </td>
+                    <span className="ember-label ember-label--muted">
+                      key; {row.installation_type_key || "-"}
+                    </span>
 
-                <td>
-                  <input
-                    className="input"
-                    value={row.installation_type_key}
-                    onChange={(e) => setRow(index, { installation_type_key: e.target.value })}
-                    placeholder="bmi"
-                  />
-                </td>
+                    <span className="ember-label ember-label--muted">
+                      sortering; {row.sort_order || "-"}
+                    </span>
+                  </div>
+                </div>
 
-                <td>
-                  <div className="admin-sorter">
-                    <button
-                      type="button"
-                      className="admin-mini-icon-btn"
-                      onClick={() => moveRow(index, "up")}
-                      disabled={index === 0}
-                      onMouseEnter={() => upIconRefs.current[index]?.startAnimation?.()}
-                      onMouseLeave={() => upIconRefs.current[index]?.stopAnimation?.()}
-                      title="Omhoog"
-                    >
-                      <ArrowUpIcon
-                        ref={(el) => {
-                          upIconRefs.current[index] = el;
-                        }}
-                        size={16}
-                        className="nav-anim-icon"
-                      />
-                    </button>
+                <div className="admin-toolbar-actions">
+                  <button
+                    type="button"
+                    className="icon-btn"
+                    onClick={() => moveRow(index, "up")}
+                    disabled={index === 0}
+                    onMouseEnter={() => upIconRefs.current[index]?.startAnimation?.()}
+                    onMouseLeave={() => upIconRefs.current[index]?.stopAnimation?.()}
+                    title="Omhoog"
+                  >
+                    <ArrowUpIcon
+                      ref={(el) => {
+                        upIconRefs.current[index] = el;
+                      }}
+                      size={18}
+                      className="nav-anim-icon"
+                    />
+                  </button>
 
-                    <button
-                      type="button"
-                      className="admin-mini-icon-btn"
-                      onClick={() => moveRow(index, "down")}
-                      disabled={index === draft.length - 1}
-                      onMouseEnter={() => downIconRefs.current[index]?.startAnimation?.()}
-                      onMouseLeave={() => downIconRefs.current[index]?.stopAnimation?.()}
-                      title="Omlaag"
-                    >
-                      <ArrowDownIcon
-                        ref={(el) => {
-                          downIconRefs.current[index] = el;
-                        }}
-                        size={16}
-                        className="nav-anim-icon"
-                      />
-                    </button>
+                  <button
+                    type="button"
+                    className="icon-btn"
+                    onClick={() => moveRow(index, "down")}
+                    disabled={index === draft.length - 1}
+                    onMouseEnter={() => downIconRefs.current[index]?.startAnimation?.()}
+                    onMouseLeave={() => downIconRefs.current[index]?.stopAnimation?.()}
+                    title="Omlaag"
+                  >
+                    <ArrowDownIcon
+                      ref={(el) => {
+                        downIconRefs.current[index] = el;
+                      }}
+                      size={18}
+                      className="nav-anim-icon"
+                    />
+                  </button>
+                </div>
+              </div>
 
+              <div className="cf-grid">
+                <div className="cf-row">
+                  <div className="cf-label">
+                    <div className="cf-label-text">Naam</div>
+                  </div>
+
+                  <div className="cf-control">
+                    <input
+                      className="input"
+                      value={row.display_name}
+                      onChange={(e) => setRow(index, { display_name: e.target.value })}
+                      placeholder="Brandmeldinstallatie"
+                    />
+                  </div>
+                </div>
+
+                <div className="cf-row">
+                  <div className="cf-label">
+                    <div className="cf-label-text">Key</div>
+                  </div>
+
+                  <div className="cf-control">
+                    <input
+                      className="input"
+                      value={row.installation_type_key}
+                      onChange={(e) => setRow(index, { installation_type_key: e.target.value })}
+                      placeholder="BMI"
+                    />
+                  </div>
+                </div>
+
+                <div className="cf-row">
+                  <div className="cf-label">
+                    <div className="cf-label-text">Sortering</div>
+                  </div>
+
+                  <div className="cf-control">
                     <input
                       type="number"
-                      className="input admin-sorter-value"
+                      className="input"
                       value={row.sort_order ?? ""}
                       onChange={(e) => setRow(index, { sort_order: e.target.value })}
                     />
                   </div>
-                </td>
+                </div>
 
-                <td>
-                  <select
-                    className="input"
-                    value={row.is_active ? "1" : "0"}
-                    onChange={(e) => toggleActive(index, e.target.value === "1")}
-                  >
-                    <option value="1">Ja</option>
-                    <option value="0">Nee</option>
-                  </select>
-                </td>
+                <div className="cf-row">
+                  <div className="cf-label">
+                    <div className="cf-label-text">Actief</div>
+                  </div>
 
-                <td>{statusBadge(row.is_active)}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+                  <div className="cf-control">
+                    <select
+                      className="input"
+                      value={row.is_active ? "1" : "0"}
+                      onChange={(e) => toggleActive(index, e.target.value === "1")}
+                    >
+                      <option value="1">Ja</option>
+                      <option value="0">Nee</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </AdminPanel>
     </div>
   );
 });

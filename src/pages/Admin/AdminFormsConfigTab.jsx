@@ -38,6 +38,55 @@ function statusLabel(status) {
   return status || "Onbekend";
 }
 
+function statusTone(status) {
+  if (status === "A") return "success";
+  if (status === "M") return "warning";
+  if (status === "I") return "muted";
+  return "neutral";
+}
+
+function severityLabel(value) {
+  if (value === "blocking") return "Blokkerend";
+  if (value === "warning") return "Waarschuwing";
+  return value || "-";
+}
+
+function severityTone(value) {
+  if (value === "blocking") return "danger";
+  if (value === "warning") return "warning";
+  return "muted";
+}
+
+function AdminPanel({ title, subtitle, actions, children }) {
+  return (
+    <div className="admin-panel">
+      <div className="admin-toolbar">
+        <div className="admin-toolbar-title">
+          <div className="admin-panel-title">{title}</div>
+          {subtitle ? <div className="admin-panel-subtitle">{subtitle}</div> : null}
+        </div>
+
+        {actions ? <div className="admin-toolbar-actions">{actions}</div> : null}
+      </div>
+
+      {children}
+    </div>
+  );
+}
+
+function SectionHeader({ title, subtitle, children }) {
+  return (
+    <div className="admin-toolbar">
+      <div className="admin-toolbar-title">
+        <div className="admin-subcard-title">{title}</div>
+        {subtitle ? <div className="admin-panel-subtitle">{subtitle}</div> : null}
+      </div>
+
+      {children ? <div className="admin-toolbar-actions">{children}</div> : null}
+    </div>
+  );
+}
+
 const AdminFormsConfigTab = forwardRef(function AdminFormsConfigTab(
   {
     forms,
@@ -98,8 +147,12 @@ const AdminFormsConfigTab = forwardRef(function AdminFormsConfigTab(
   function toggleType(typeKey) {
     setDraft((prev) => {
       const set = new Set(prev.applicability_type_keys || []);
-      if (set.has(typeKey)) set.delete(typeKey);
-      else set.add(typeKey);
+
+      if (set.has(typeKey)) {
+        set.delete(typeKey);
+      } else {
+        set.add(typeKey);
+      }
 
       return {
         ...prev,
@@ -137,24 +190,12 @@ const AdminFormsConfigTab = forwardRef(function AdminFormsConfigTab(
   }
 
   return (
-    <div style={{ display: "grid", gap: 12 }}>
-      <div
-        style={{
-          padding: 12,
-          border: "1px solid rgba(255,255,255,0.12)",
-          borderRadius: 12,
-          display: "grid",
-          gap: 10,
-        }}
+    <div className="admin-grid">
+      <AdminPanel
+        title="Formulieren"
+        subtitle="Selecteer een formulier om de configuratie te beheren. Alt+S slaat wijzigingen in deze tab op."
       >
-        <div>
-          <div style={{ fontWeight: 600 }}>Formulieren</div>
-          <div className="muted" style={{ fontSize: 13 }}>
-            Alt+S slaat wijzigingen in deze tab op.
-          </div>
-        </div>
-
-        <div style={{ display: "grid", gap: 10 }}>
+        <div className="admin-check-grid">
           {(Array.isArray(forms) ? forms : []).map((form) => {
             const isSelected = form.form_id === selectedFormId;
 
@@ -170,72 +211,74 @@ const AdminFormsConfigTab = forwardRef(function AdminFormsConfigTab(
                     onSelectForm?.(form.form_id);
                   }
                 }}
-                style={{
-                  padding: 12,
-                  border: isSelected
-                    ? "1px solid rgba(255,255,255,0.32)"
-                    : "1px solid rgba(255,255,255,0.12)",
-                  borderRadius: 12,
-                  background: isSelected ? "rgba(255,255,255,0.04)" : "transparent",
-                  display: "flex",
-                  justifyContent: "space-between",
-                  gap: 12,
-                  alignItems: "center",
-                  flexWrap: "wrap",
-                  cursor: "pointer",
-                  outline: "none",
-                }}
+                className={`admin-compact-row ${isSelected ? "ember-accent-active" : ""}`}
                 title="Selecteer formulier"
               >
-                <div style={{ minWidth: 0 }}>
-                  <div style={{ fontWeight: 600 }}>{form.name}</div>
-                  <div className="muted" style={{ fontSize: 13 }}>
-                    {form.code}
-                  </div>
-                </div>
+                <div className="admin-compact-row-main">
+                  <div className="admin-compact-row-title-wrap">
+                    <div className="admin-compact-row-title">{form.name}</div>
+                    <div className="admin-compact-row-sub">{form.code}</div>
 
-                <div className="muted" style={{ fontSize: 13 }}>
-                  {statusLabel(form.status)}
+                    <div className="ember-label-row admin-inline-labels">
+                      <span className={`ember-label ember-label--${statusTone(form.status)}`}>
+                        {statusLabel(form.status)}
+                      </span>
+
+                      <span className="ember-label ember-label--muted">
+                        laatste versie; {form.latest_version_label ?? "-"}
+                      </span>
+
+                      <span className="ember-label ember-label--muted">
+                        {form.version_count ?? 0} versie(s)
+                      </span>
+                    </div>
+                  </div>
                 </div>
               </div>
             );
           })}
         </div>
-      </div>
+      </AdminPanel>
 
-      <div
-        style={{
-          padding: 12,
-          border: "1px solid rgba(255,255,255,0.12)",
-          borderRadius: 12,
-          display: "grid",
-          gap: 12,
-        }}
+      <AdminPanel
+        title={`Configuratie${selectedForm ? `; ${selectedForm.name}` : ""}`}
+        subtitle={
+          selectedForm
+            ? "Beheer formuliermetadata, beschikbaarheid en preflight-controles."
+            : "Selecteer eerst een formulier."
+        }
+        actions={
+          draft ? (
+            <div className="ember-label-row">
+              <span className={`ember-label ember-label--${statusTone(draft.status)}`}>
+                {statusLabel(draft.status)}
+              </span>
+
+              {isDirty ? (
+                <span className="ember-label ember-label--warning">Niet opgeslagen</span>
+              ) : (
+                <span className="ember-label ember-label--success">Opgeslagen</span>
+              )}
+            </div>
+          ) : null
+        }
       >
-        <div style={{ fontWeight: 600 }}>
-          Configuratie {selectedForm ? `; ${selectedForm.name}` : ""}
-        </div>
-
         {!draft ? (
-          <div className="muted">Geen formulier geselecteerd.</div>
+          <div className="admin-empty-note">Geen formulier geselecteerd.</div>
         ) : (
-          <div style={{ display: "grid", gap: 12 }}>
-            <div
-              style={{
-                padding: 12,
-                border: "1px solid rgba(255,255,255,0.12)",
-                borderRadius: 12,
-                display: "grid",
-                gap: 10,
-              }}
-            >
-              <div style={{ fontWeight: 600 }}>Algemeen</div>
+          <div className="admin-check-grid">
+            <div className="admin-subcard">
+              <SectionHeader
+                title="Algemeen"
+                subtitle="Basisgegevens van de formulierdefinitie. De code blijft stabiel voor runtime-koppelingen."
+              />
 
               <div className="cf-grid">
                 <div className="cf-row">
                   <div className="cf-label">
                     <div className="cf-label-text">Code</div>
                   </div>
+
                   <div className="cf-control">
                     <input className="input" value={draft.code} readOnly />
                   </div>
@@ -245,6 +288,7 @@ const AdminFormsConfigTab = forwardRef(function AdminFormsConfigTab(
                   <div className="cf-label">
                     <div className="cf-label-text">Naam</div>
                   </div>
+
                   <div className="cf-control">
                     <input
                       className="input"
@@ -258,6 +302,7 @@ const AdminFormsConfigTab = forwardRef(function AdminFormsConfigTab(
                   <div className="cf-label">
                     <div className="cf-label-text">Omschrijving</div>
                   </div>
+
                   <div className="cf-control">
                     <textarea
                       rows={4}
@@ -272,6 +317,7 @@ const AdminFormsConfigTab = forwardRef(function AdminFormsConfigTab(
                   <div className="cf-label">
                     <div className="cf-label-text">Status</div>
                   </div>
+
                   <div className="cf-control">
                     <select
                       className="input"
@@ -287,69 +333,89 @@ const AdminFormsConfigTab = forwardRef(function AdminFormsConfigTab(
               </div>
             </div>
 
-            <div
-              style={{
-                padding: 12,
-                border: "1px solid rgba(255,255,255,0.12)",
-                borderRadius: 12,
-                display: "grid",
-                gap: 10,
-              }}
-            >
-              <div style={{ fontWeight: 600 }}>Toepasbaarheid</div>
+            <div className="admin-subcard">
+              <SectionHeader
+                title="Toepasbaarheid"
+                subtitle="Geen geselecteerde installatietypes betekent; beschikbaar voor alle types."
+              >
+                <span className="ember-label ember-label--muted">
+                  {draft.applicability_type_keys.length || "alle"} geselecteerd
+                </span>
+              </SectionHeader>
 
-              <div className="muted" style={{ fontSize: 13 }}>
-                Geen geselecteerde installatietypes betekent; beschikbaar voor alle types.
-              </div>
-
-              <div style={{ display: "grid", gap: 8 }}>
+              <div className="admin-check-grid">
                 {(Array.isArray(installationTypes) ? installationTypes : []).map((type) => {
                   const checked = selectedTypeKeysSet.has(type.installation_type_key);
 
                   return (
                     <label
                       key={type.installation_type_key}
-                      style={{
-                        display: "flex",
-                        alignItems: "center",
-                        gap: 10,
-                        padding: 10,
-                        border: "1px solid rgba(255,255,255,0.12)",
-                        borderRadius: 10,
-                        cursor: "pointer",
-                      }}
+                      className={`admin-compact-row ${checked ? "ember-accent-active" : ""}`}
                     >
-                      <input
-                        type="checkbox"
-                        checked={checked}
-                        onChange={() => toggleType(type.installation_type_key)}
-                      />
-                      <span>{type.display_name}</span>
-                      <span className="muted" style={{ marginLeft: "auto", fontSize: 13 }}>
-                        {type.installation_type_key}
-                      </span>
+                      <div className="admin-compact-row-main">
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={() => toggleType(type.installation_type_key)}
+                        />
+
+                        <div className="admin-compact-row-title-wrap">
+                          <div className="admin-compact-row-title">{type.display_name}</div>
+                          <div className="admin-compact-row-sub">{type.installation_type_key}</div>
+                        </div>
+                      </div>
+
+                      <div className="admin-compact-row-right">
+                        <span
+                          className={
+                            checked
+                              ? "ember-label ember-label--success"
+                              : "ember-label ember-label--muted"
+                          }
+                        >
+                          {checked ? "Beschikbaar" : "Niet gekozen"}
+                        </span>
+                      </div>
                     </label>
                   );
                 })}
               </div>
             </div>
 
-            <div
-              style={{
-                padding: 12,
-                border: "1px solid rgba(255,255,255,0.12)",
-                borderRadius: 12,
-                display: "grid",
-                gap: 10,
-              }}
-            >
-              <div style={{ fontWeight: 600 }}>Preflight</div>
+            <div className="admin-subcard">
+              <SectionHeader
+                title="Preflight"
+                subtitle="Controles die bepalen of een gebruiker een formulier veilig kan starten."
+              >
+                <div className="ember-label-row">
+                  <span
+                    className={
+                      draft.preflight.is_active
+                        ? "ember-label ember-label--success"
+                        : "ember-label ember-label--muted"
+                    }
+                  >
+                    {draft.preflight.is_active ? "Actief" : "Uit"}
+                  </span>
+
+                  <span
+                    className={
+                      draft.preflight.requires_type
+                        ? "ember-label ember-label--warning"
+                        : "ember-label ember-label--muted"
+                    }
+                  >
+                    {draft.preflight.requires_type ? "Type vereist" : "Type optioneel"}
+                  </span>
+                </div>
+              </SectionHeader>
 
               <div className="cf-grid">
                 <div className="cf-row">
                   <div className="cf-label">
                     <div className="cf-label-text">Preflight actief</div>
                   </div>
+
                   <div className="cf-control">
                     <select
                       className="input"
@@ -366,6 +432,7 @@ const AdminFormsConfigTab = forwardRef(function AdminFormsConfigTab(
                   <div className="cf-label">
                     <div className="cf-label-text">Installatietype vereist</div>
                   </div>
+
                   <div className="cf-control">
                     <select
                       className="input"
@@ -382,6 +449,7 @@ const AdminFormsConfigTab = forwardRef(function AdminFormsConfigTab(
                   <div className="cf-label">
                     <div className="cf-label-text">Min. prestatie-eisen rijen</div>
                   </div>
+
                   <div className="cf-control">
                     <input
                       type="number"
@@ -396,15 +464,26 @@ const AdminFormsConfigTab = forwardRef(function AdminFormsConfigTab(
                   <div className="cf-label">
                     <div className="cf-label-text">Prestatie-eisen severity</div>
                   </div>
+
                   <div className="cf-control">
                     <select
                       className="input"
                       value={draft.preflight.perf_severity}
                       onChange={(e) => setPreflightField("perf_severity", e.target.value)}
                     >
-                      <option value="blocking">blocking</option>
-                      <option value="warning">warning</option>
+                      <option value="blocking">Blokkerend</option>
+                      <option value="warning">Waarschuwing</option>
                     </select>
+
+                    <div className="ember-label-row admin-inline-labels">
+                      <span
+                        className={`ember-label ember-label--${severityTone(
+                          draft.preflight.perf_severity
+                        )}`}
+                      >
+                        {severityLabel(draft.preflight.perf_severity)}
+                      </span>
+                    </div>
                   </div>
                 </div>
 
@@ -412,6 +491,7 @@ const AdminFormsConfigTab = forwardRef(function AdminFormsConfigTab(
                   <div className="cf-label">
                     <div className="cf-label-text">Min. energievoorziening rijen</div>
                   </div>
+
                   <div className="cf-control">
                     <input
                       type="number"
@@ -426,15 +506,26 @@ const AdminFormsConfigTab = forwardRef(function AdminFormsConfigTab(
                   <div className="cf-label">
                     <div className="cf-label-text">Energie severity</div>
                   </div>
+
                   <div className="cf-control">
                     <select
                       className="input"
                       value={draft.preflight.energy_severity}
                       onChange={(e) => setPreflightField("energy_severity", e.target.value)}
                     >
-                      <option value="blocking">blocking</option>
-                      <option value="warning">warning</option>
+                      <option value="blocking">Blokkerend</option>
+                      <option value="warning">Waarschuwing</option>
                     </select>
+
+                    <div className="ember-label-row admin-inline-labels">
+                      <span
+                        className={`ember-label ember-label--${severityTone(
+                          draft.preflight.energy_severity
+                        )}`}
+                      >
+                        {severityLabel(draft.preflight.energy_severity)}
+                      </span>
+                    </div>
                   </div>
                 </div>
 
@@ -442,6 +533,7 @@ const AdminFormsConfigTab = forwardRef(function AdminFormsConfigTab(
                   <div className="cf-label">
                     <div className="cf-label-text">Min. gevulde eigenschappen</div>
                   </div>
+
                   <div className="cf-control">
                     <input
                       type="number"
@@ -456,22 +548,33 @@ const AdminFormsConfigTab = forwardRef(function AdminFormsConfigTab(
                   <div className="cf-label">
                     <div className="cf-label-text">Eigenschappen severity</div>
                   </div>
+
                   <div className="cf-control">
                     <select
                       className="input"
                       value={draft.preflight.custom_severity}
                       onChange={(e) => setPreflightField("custom_severity", e.target.value)}
                     >
-                      <option value="blocking">blocking</option>
-                      <option value="warning">warning</option>
+                      <option value="blocking">Blokkerend</option>
+                      <option value="warning">Waarschuwing</option>
                     </select>
+
+                    <div className="ember-label-row admin-inline-labels">
+                      <span
+                        className={`ember-label ember-label--${severityTone(
+                          draft.preflight.custom_severity
+                        )}`}
+                      >
+                        {severityLabel(draft.preflight.custom_severity)}
+                      </span>
+                    </div>
                   </div>
                 </div>
               </div>
             </div>
           </div>
         )}
-      </div>
+      </AdminPanel>
     </div>
   );
 });

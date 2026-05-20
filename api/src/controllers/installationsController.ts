@@ -966,6 +966,9 @@ export async function putFormInstanceDocumentFollowUps(req: any, res: any) {
     if (msg.includes("form instance document not found")) {
       return res.status(404).json({ error: "form instance document not found" });
     }
+    if (msg.includes("form instance document not editable")) {
+      return res.status(409).json({ error: "form instance document not editable" });
+    }
 
     console.error(err);
     return res.status(500).json({ error: "putFormInstanceDocumentFollowUps failed" });

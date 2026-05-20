@@ -353,7 +353,7 @@ export async function getDirectory(user: any) {
     items: (rows || [])
       .filter((row: any) => {
         const email = String(row?.email_snapshot || "").trim().toLowerCase();
-        return email !== "jesse@local";
+        return email !== "jesse@local" && email !== "adminwb@wardenburg.nl";
       })
       .map((row: any) => mapDirectoryRow(row, currentUserObjectId)),
   };

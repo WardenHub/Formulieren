@@ -22,6 +22,7 @@ import {
   getFormInstanceDocumentDownloadUrl,
   downloadFormInstanceDocumentFile,
   putFormInstanceDocumentLabels,
+  putFormInstanceDocumentFollowUps,
   deleteFormInstanceDocument,
 } from "@/api/emberApi.js";
 
@@ -99,6 +100,53 @@ function buildLabelPayload(selected) {
   const arr = normalizeSelectedLabels(selected);
   return arr.map((labelKey, index) => ({
     label_key: labelKey,
+    is_primary: index === 0,
+  }));
+}
+
+function normalizeFollowUpOptions(items) {
+  return (Array.isArray(items) ? items : [])
+    .map((item) => ({
+      follow_up_action_id: String(item?.follow_up_action_id || "").trim(),
+      workflow_title: String(item?.workflow_title || item?.title || "Actiepunt").trim(),
+      workflow_description: item?.workflow_description || null,
+      category: item?.category || null,
+      status: item?.status || null,
+      source_item_code: item?.source_item_code || null,
+      source_row_index: item?.source_row_index ?? null,
+    }))
+    .filter((item) => item.follow_up_action_id);
+}
+
+function makeFollowUpLabel(item) {
+  const parts = [item?.workflow_title || "Actiepunt"];
+
+  if (item?.source_item_code || item?.source_row_index != null) {
+    parts.push(`vraag ${item.source_item_code || item.source_row_index}`);
+  }
+
+  return parts.filter(Boolean).join(" ; ");
+}
+
+function getDocFollowUpIds(doc) {
+  return Array.from(
+    new Set(
+      (Array.isArray(doc?.follow_ups) ? doc.follow_ups : [])
+        .map((x) => String(x?.follow_up_action_id || "").trim())
+        .filter(Boolean)
+    )
+  );
+}
+
+function buildFollowUpPayload(selected) {
+  return Array.from(
+    new Set(
+      (Array.isArray(selected) ? selected : [])
+        .map((x) => String(x || "").trim())
+        .filter(Boolean)
+    )
+  ).map((followUpActionId, index) => ({
+    follow_up_action_id: followUpActionId,
     is_primary: index === 0,
   }));
 }
@@ -337,6 +385,7 @@ function DocumentCard({
   title,
   subtitle,
   labels,
+  followUpLinks,
   note,
   actions,
   editArea,
@@ -371,6 +420,8 @@ function DocumentCard({
           ))}
         </div>
       ) : null}
+
+      {followUpLinks}
 
       {note ? (
         <div className="muted" style={{ fontSize: 12 }}>
@@ -444,9 +495,11 @@ export default function FormContextPanel({
   canEdit,
   embedded = false,
   documentsTabHref = null,
+  defaultInstallationOpen = false,
+  defaultFormDocsOpen = false,
 }) {
-  const [installationOpen, setInstallationOpen] = useState(true);
-  const [formDocsOpen, setFormDocsOpen] = useState(true);
+  const [installationOpen, setInstallationOpen] = useState(defaultInstallationOpen);
+  const [formDocsOpen, setFormDocsOpen] = useState(defaultFormDocsOpen);
 
   const [installationTypeOpenMap, setInstallationTypeOpenMap] = useState({});
   const [installationDocs, setInstallationDocs] = useState([]);
@@ -483,6 +536,11 @@ export default function FormContextPanel({
     }
     return map;
   }, []);
+
+  const followUpOptions = useMemo(() => normalizeFollowUpOptions(followUps), [followUps]);
+  const shouldShowFollowUpLinks = showFollowUpLinks || followUpOptions.length > 0;
+  const canEditAnyDocumentControls =
+    Boolean(canEdit) || Boolean(canEditFollowUpLinks && shouldShowFollowUpLinks);
 
   useEffect(() => {
     setHasCameraSupport(
@@ -696,7 +754,51 @@ export default function FormContextPanel({
     }
   }
 
+  async function updateDocFollowUpsRealtime(doc, nextSelected) {
+    if (!canEditFollowUpLinks) return;
+
+    const payload = buildFollowUpPayload(nextSelected);
+    const selectedSet = new Set(payload.map((x) => x.follow_up_action_id));
+
+    setBusyDocId(doc.form_instance_document_id);
+    setError(null);
+
+    const previousDocs = formDocs;
+
+    try {
+      setFormDocs((prev) =>
+        prev.map((item) => {
+          if (item.form_instance_document_id !== doc.form_instance_document_id) return item;
+
+          return {
+            ...item,
+            follow_ups: followUpOptions
+              .filter((option) => selectedSet.has(option.follow_up_action_id))
+              .map((option, index) => ({
+                ...option,
+                is_primary: index === 0,
+              })),
+          };
+        })
+      );
+
+      await putFormInstanceDocumentFollowUps(
+        code,
+        instanceId,
+        doc.form_instance_document_id,
+        payload
+      );
+    } catch (e) {
+      setFormDocs(previousDocs);
+      setError(String(e?.message || e || "Actiepunten koppelen mislukt."));
+    } finally {
+      setBusyDocId(null);
+    }
+  }
+
   async function saveDocMetadata(doc, patch) {
+    if (!canEdit) return;
+
     const current = formDocs.find(
       (x) => x.form_instance_document_id === doc.form_instance_document_id
     );
@@ -795,7 +897,7 @@ export default function FormContextPanel({
   }
 
   async function handleDeleteFormDocument(doc) {
-    if (!canEdit) {
+    if (!canDeleteDocuments) {
       setError("Bijlagen verwijderen kan alleen in status Concept.");
       return;
     }
@@ -1439,7 +1541,7 @@ export default function FormContextPanel({
                 </div>
               ) : (
                 <div className="muted" style={{ fontSize: 13 }}>
-                  Bijlagen toevoegen of wijzigen kan alleen in status Concept.
+                  Bijlagen toevoegen of wijzigen kan alleen zolang de formulierafhandeling nog niet definitief of ingetrokken is.
                 </div>
               )}
 
@@ -1471,6 +1573,10 @@ export default function FormContextPanel({
                     const isEditing = editingDocId === doc.form_instance_document_id;
                     const docBusy = busyDocId === doc.form_instance_document_id;
                     const selectedForDoc = getDocSelectedLabelKeys(doc);
+                    const selectedFollowUpsForDoc = getDocFollowUpIds(doc);
+                    const linkedFollowUpsForDoc = followUpOptions.filter((option) =>
+                      selectedFollowUpsForDoc.includes(option.follow_up_action_id)
+                    );
 
                     return (
                       <DocumentCard
@@ -1479,6 +1585,21 @@ export default function FormContextPanel({
                         subtitle={subtitleParts.join(" ; ")}
                         note={doc.note || null}
                         labels={labels}
+                        followUpLinks={
+                          shouldShowFollowUpLinks && linkedFollowUpsForDoc.length > 0 ? (
+                            <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                              {linkedFollowUpsForDoc.map((item) => (
+                                <span
+                                  key={item.follow_up_action_id}
+                                  className="ember-label ember-label--info"
+                                  title={makeFollowUpLabel(item)}
+                                >
+                                  {makeFollowUpLabel(item)}
+                                </span>
+                              ))}
+                            </div>
+                          ) : null
+                        }
                         actions={
                           <FileActions
                             onOpen={() => handleOpenFormDocument(doc)}
@@ -1492,8 +1613,8 @@ export default function FormContextPanel({
                             }
                             disableOpen={!doc.file_name || docBusy}
                             disableDownload={!doc.file_name || docBusy}
-                            disableEdit={docBusy || !canEdit}
-                            canEditLabels={canEdit}
+                            disableEdit={docBusy || !canEditAnyDocumentControls}
+                            canEditLabels={canEditAnyDocumentControls}
                             isEditing={isEditing}
                           />
                         }
@@ -1509,7 +1630,7 @@ export default function FormContextPanel({
                               }}
                             >
                               <div className="muted" style={{ fontSize: 12 }}>
-                                Labels worden direct opgeslagen bij wijzigen. Titel en notitie worden opgeslagen zodra je uit het veld klikt.
+                                Labels en actiepuntkoppelingen worden direct opgeslagen bij wijzigen. Titel en notitie worden opgeslagen zodra je uit het veld klikt.
                               </div>
 
                               <div style={{ display: "grid", gap: 6 }}>
@@ -1519,7 +1640,7 @@ export default function FormContextPanel({
                                 <input
                                   className="input"
                                   value={doc.title || ""}
-                                  disabled={docBusy}
+                                  disabled={docBusy || !canEdit}
                                   onChange={(e) => {
                                     const value = e.target.value;
                                     setFormDocs((prev) =>
@@ -1550,7 +1671,7 @@ export default function FormContextPanel({
                                 <textarea
                                   className="input"
                                   value={doc.note || ""}
-                                  disabled={docBusy}
+                                  disabled={docBusy || !canEdit}
                                   onChange={(e) => {
                                     const value = e.target.value;
                                     setFormDocs((prev) =>
@@ -1585,7 +1706,7 @@ export default function FormContextPanel({
                                       key={item.key}
                                       type="button"
                                       className="btn btn-secondary"
-                                      disabled={docBusy}
+                                      disabled={docBusy || !canEdit}
                                       onClick={() => {
                                         const set = new Set(selectedForDoc);
                                         if (set.has(item.key)) set.delete(item.key);
@@ -1604,18 +1725,84 @@ export default function FormContextPanel({
                                 })}
                               </div>
 
-                              <div>
-                                <button
-                                  type="button"
-                                  className="btn btn-secondary"
-                                  disabled={docBusy || !canEdit}
-                                  onClick={() => handleDeleteFormDocument(doc)}
-                                  style={{ display: "inline-flex", alignItems: "center", gap: 8 }}
-                                >
-                                  <DeleteIcon size={16} />
-                                  Weggooien
-                                </button>
-                              </div>
+                              {shouldShowFollowUpLinks ? (
+                                <div style={{ display: "grid", gap: 8 }}>
+                                  <div className="muted" style={{ fontSize: 12 }}>
+                                    Gekoppelde actiepunten
+                                  </div>
+
+                                  {followUpOptions.length === 0 ? (
+                                    <div className="muted" style={{ fontSize: 12 }}>
+                                      Opvolgacties ontstaan pas na succesvol indienen wanneer er negatieve oordelen zijn.
+                                    </div>
+                                  ) : (
+                                    <div style={{ display: "grid", gap: 6 }}>
+                                      {followUpOptions.map((item) => {
+                                        const active = selectedFollowUpsForDoc.includes(item.follow_up_action_id);
+
+                                        return (
+                                          <label
+                                            key={item.follow_up_action_id}
+                                            className="card"
+                                            style={{
+                                              padding: "8px 10px",
+                                              display: "flex",
+                                              gap: 8,
+                                              alignItems: "flex-start",
+                                              background: active
+                                                ? "rgba(59,130,246,0.14)"
+                                                : "rgba(255,255,255,0.03)",
+                                              border: active
+                                                ? "1px solid rgba(59,130,246,0.34)"
+                                                : "1px solid rgba(255,255,255,0.08)",
+                                              cursor: canEditFollowUpLinks && !docBusy ? "pointer" : "default",
+                                            }}
+                                          >
+                                            <input
+                                              type="checkbox"
+                                              checked={active}
+                                              disabled={!canEditFollowUpLinks || docBusy}
+                                              onChange={() => {
+                                                const set = new Set(selectedFollowUpsForDoc);
+                                                if (set.has(item.follow_up_action_id)) {
+                                                  set.delete(item.follow_up_action_id);
+                                                } else {
+                                                  set.add(item.follow_up_action_id);
+                                                }
+                                                updateDocFollowUpsRealtime(doc, Array.from(set));
+                                              }}
+                                              style={{ marginTop: 2 }}
+                                            />
+                                            <span style={{ display: "grid", gap: 2, minWidth: 0 }}>
+                                              <span style={{ fontWeight: 800 }}>{makeFollowUpLabel(item)}</span>
+                                              {item.workflow_description ? (
+                                                <span className="muted" style={{ fontSize: 12 }}>
+                                                  {item.workflow_description}
+                                                </span>
+                                              ) : null}
+                                            </span>
+                                          </label>
+                                        );
+                                      })}
+                                    </div>
+                                  )}
+                                </div>
+                              ) : null}
+
+                              {canDeleteDocuments ? (
+                                <div>
+                                  <button
+                                    type="button"
+                                    className="btn btn-secondary"
+                                    disabled={docBusy || !canDeleteDocuments}
+                                    onClick={() => handleDeleteFormDocument(doc)}
+                                    style={{ display: "inline-flex", alignItems: "center", gap: 8 }}
+                                  >
+                                    <DeleteIcon size={16} />
+                                    Weggooien
+                                  </button>
+                                </div>
+                              ) : null}
                             </div>
                           ) : null
                         }

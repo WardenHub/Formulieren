@@ -24,7 +24,6 @@ import { ChevronsUpDownIcon } from "@/components/ui/chevrons-up-down";
 import { AttachFileIcon } from "@/components/ui/attach-file";
 import { pushRecentHomeItem } from "../../lib/recentHomeItems.js";
 
-
 import {
   getFormInstance,
   putFormInstanceMetadata,
@@ -195,6 +194,47 @@ function defaultDebugCards() {
     lastApplied: false,
     submitSummary: false,
     validation: false,
+  };
+}
+
+function themedChip(extra = {}) {
+  return {
+    padding: "2px 8px",
+    borderRadius: 999,
+    background: "var(--tag-bg, color-mix(in srgb, var(--text) 8%, transparent))",
+    border: "1px solid var(--border)",
+    color: "var(--text)",
+    fontWeight: 700,
+    ...extra,
+  };
+}
+
+function themedSoftBox(extra = {}) {
+  return {
+    padding: "8px 12px",
+    borderRadius: 12,
+    background: "var(--surface-2, color-mix(in srgb, var(--text) 6%, transparent))",
+    border: "1px solid var(--border)",
+    color: "var(--text)",
+    fontSize: 13,
+    ...extra,
+  };
+}
+
+function themedPanel(extra = {}) {
+  return {
+    background: "var(--card-bg, var(--surface))",
+    border: "1px solid var(--border)",
+    color: "var(--text)",
+    boxShadow: "var(--shadow-soft, var(--shadow))",
+    ...extra,
+  };
+}
+
+function themedErrorStyle(extra = {}) {
+  return {
+    color: "var(--danger, salmon)",
+    ...extra,
   };
 }
 
@@ -427,6 +467,8 @@ export default function FormRunnerBase({ mode }) {
 
   const canEditAnswers = actions.save;
   const canEditMetadata = actions.save;
+  const canEditEvidence = ["CONCEPT", "INGEDIEND", "IN_BEHANDELING"].includes(status);
+  const canDeleteEvidence = status === "CONCEPT";
 
   const hasMetadataChanges = useMemo(() => {
     return !areInstanceMetadataEqual(instanceMetadata, savedInstanceMetadata);
@@ -1290,10 +1332,18 @@ export default function FormRunnerBase({ mode }) {
 
   const model = !isDebug ? surveyModelRef.current : null;
 
-  if (loading) return <div className="muted">Laden…</div>;
+  if (loading) return <div className="muted">Laden...</div>;
 
   return (
-    <div style={{ display: "grid", gap: 12, position: "relative" }}>
+    <div
+      className="form-runner-page ember-page-stack"
+      style={{
+        display: "grid",
+        gap: 12,
+        position: "relative",
+        color: "var(--text)",
+      }}
+    >
       {showSubmitCelebration && !isDebug && (
         <div
           style={{
@@ -1304,7 +1354,7 @@ export default function FormRunnerBase({ mode }) {
             justifyContent: "center",
             pointerEvents: "none",
             zIndex: 60,
-            background: "rgba(0, 0, 0, 0.10)",
+            background: "color-mix(in srgb, var(--bg) 14%, transparent)",
             backdropFilter: "blur(1px)",
           }}
         >
@@ -1318,8 +1368,9 @@ export default function FormRunnerBase({ mode }) {
               gap: 10,
               justifyItems: "center",
               textAlign: "center",
-              border: "1px solid rgba(255,255,255,0.16)",
-              boxShadow: "0 20px 60px rgba(0,0,0,0.28)",
+              ...themedPanel({
+                boxShadow: "0 20px 60px color-mix(in srgb, var(--shadow-color, #000) 28%, transparent)",
+              }),
             }}
           >
             <div
@@ -1330,8 +1381,8 @@ export default function FormRunnerBase({ mode }) {
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
-                background: "rgba(255,255,255,0.08)",
-                boxShadow: "0 0 0 8px rgba(255,255,255,0.04)",
+                background: "color-mix(in srgb, var(--text) 8%, transparent)",
+                boxShadow: "0 0 0 8px color-mix(in srgb, var(--text) 4%, transparent)",
               }}
             >
               <PartyPopperIcon ref={partyPopperRef} size={36} />
@@ -1366,8 +1417,9 @@ export default function FormRunnerBase({ mode }) {
               display: "flex",
               alignItems: "center",
               gap: 12,
-              border: "1px solid rgba(255,255,255,0.14)",
-              boxShadow: "0 18px 50px rgba(0,0,0,0.22)",
+              ...themedPanel({
+                boxShadow: "0 18px 50px color-mix(in srgb, var(--shadow-color, #000) 22%, transparent)",
+              }),
             }}
           >
             <CheckCheckIcon ref={validateCelebrationIconRef} size={20} />
@@ -1456,13 +1508,7 @@ export default function FormRunnerBase({ mode }) {
                   </span>
                 ) : currentParentInstanceId ? (
                   <span
-                    style={{
-                      fontSize: 12,
-                      padding: "2px 8px",
-                      borderRadius: 999,
-                      background: "rgba(255,255,255,0.06)",
-                      fontWeight: 700,
-                    }}
+                    style={themedChip({ fontSize: 12 })}
                     title="Deze instantie is gekoppeld aan een bovenliggende formulierinstantie."
                   >
                     vervolg op #{currentParentInstanceId}
@@ -1473,27 +1519,13 @@ export default function FormRunnerBase({ mode }) {
                 {hasUnsavedChanges ? <span>wijzigingen niet opgeslagen</span> : null}
 
                 {!canEditAnswers && !isDebug ? (
-                  <span
-                    style={{
-                      padding: "2px 8px",
-                      borderRadius: 999,
-                      background: "rgba(255,255,255,0.06)",
-                      fontWeight: 700,
-                    }}
-                  >
+                  <span style={themedChip({ fontSize: 12 })}>
                     Klaar
                   </span>
                 ) : null}
 
                 {prefillRefreshOk ? (
-                  <span
-                    style={{
-                      padding: "2px 8px",
-                      borderRadius: 999,
-                      background: "rgba(255,255,255,0.06)",
-                      fontWeight: 700,
-                    }}
-                  >
+                  <span style={themedChip({ fontSize: 12 })}>
                     Voorinvulling vernieuwd
                   </span>
                 ) : null}
@@ -1681,7 +1713,7 @@ export default function FormRunnerBase({ mode }) {
               display: "grid",
               gap: 10,
               paddingTop: 2,
-              borderTop: "1px solid rgba(255,255,255,0.08)",
+              borderTop: "1px solid var(--border)",
             }}
           >
             <div
@@ -1729,12 +1761,7 @@ export default function FormRunnerBase({ mode }) {
                   {currentParentInstanceId ? (
                     <span
                       className="muted"
-                      style={{
-                        fontSize: 12,
-                        padding: "2px 8px",
-                        borderRadius: 999,
-                        background: "rgba(255,255,255,0.06)",
-                      }}
+                      style={themedChip({ fontSize: 12 })}
                       title="Deze instantie is gekoppeld aan een bovenliggende formulierinstantie."
                     >
                       vervolg op #{currentParentInstanceId}
@@ -1766,7 +1793,7 @@ export default function FormRunnerBase({ mode }) {
         )}
       </div>
 
-      {error && <div style={{ color: "salmon" }}>{error}</div>}
+      {error && <div style={themedErrorStyle()}>{error}</div>}
 
       {!isDebug && submitSummary && status === "INGEDIEND" && (
         <div
@@ -1775,7 +1802,7 @@ export default function FormRunnerBase({ mode }) {
             padding: 14,
             display: "grid",
             gap: 10,
-            border: "1px solid rgba(255,255,255,0.12)",
+            border: "1px solid var(--border)",
           }}
         >
           <div style={{ display: "flex", alignItems: "center", gap: 10, justifyContent: "space-between" }}>
@@ -1790,82 +1817,33 @@ export default function FormRunnerBase({ mode }) {
           </div>
 
           <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-            <div
-              style={{
-                padding: "8px 12px",
-                borderRadius: 12,
-                background: "rgba(255,255,255,0.05)",
-                fontSize: 13,
-              }}
-            >
+            <div style={themedSoftBox()}>
               Workflowitems: <strong>{submitSummary.workflowCount}</strong>
             </div>
 
-            <div
-              style={{
-                padding: "8px 12px",
-                borderRadius: 12,
-                background: "rgba(255,255,255,0.05)",
-                fontSize: 13,
-              }}
-            >
+            <div style={themedSoftBox()}>
               Rapportopmerkingen: <strong>{submitSummary.reportOnlyCount}</strong>
             </div>
 
-            <div
-              style={{
-                padding: "8px 12px",
-                borderRadius: 12,
-                background: "rgba(255,255,255,0.05)",
-                fontSize: 13,
-              }}
-            >
+            <div style={themedSoftBox()}>
               Totaal preview: <strong>{submitSummary.totalCount}</strong>
             </div>
           </div>
 
           <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-            <div
-              style={{
-                padding: "8px 12px",
-                borderRadius: 12,
-                background: "rgba(255,255,255,0.05)",
-                fontSize: 13,
-              }}
-            >
+            <div style={themedSoftBox()}>
               Ingevoegd: <strong>{submitSummary.syncCounts.inserted}</strong>
             </div>
 
-            <div
-              style={{
-                padding: "8px 12px",
-                borderRadius: 12,
-                background: "rgba(255,255,255,0.05)",
-                fontSize: 13,
-              }}
-            >
+            <div style={themedSoftBox()}>
               Bijgewerkt: <strong>{submitSummary.syncCounts.updated}</strong>
             </div>
 
-            <div
-              style={{
-                padding: "8px 12px",
-                borderRadius: 12,
-                background: "rgba(255,255,255,0.05)",
-                fontSize: 13,
-              }}
-            >
+            <div style={themedSoftBox()}>
               Ongewijzigd: <strong>{submitSummary.syncCounts.unchanged}</strong>
             </div>
 
-            <div
-              style={{
-                padding: "8px 12px",
-                borderRadius: 12,
-                background: "rgba(255,255,255,0.05)",
-                fontSize: 13,
-              }}
-            >
+            <div style={themedSoftBox()}>
               Vervallen: <strong>{submitSummary.syncCounts.vervallen}</strong>
             </div>
           </div>
@@ -1878,25 +1856,18 @@ export default function FormRunnerBase({ mode }) {
                 {submitSummary.items.slice(0, 8).map((item) => (
                   <div
                     key={item.id}
-                    style={{
+                    style={themedSoftBox({
                       padding: "10px 12px",
-                      borderRadius: 12,
-                      background: "rgba(255,255,255,0.04)",
                       display: "grid",
                       gap: 4,
-                    }}
+                    })}
                   >
                     <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
                       <strong>{item.title || "Zonder titel"}</strong>
                       {item.kind ? (
                         <span
                           className="muted"
-                          style={{
-                            fontSize: 12,
-                            padding: "2px 8px",
-                            borderRadius: 999,
-                            background: "rgba(255,255,255,0.05)",
-                          }}
+                          style={themedChip({ fontSize: 12 })}
                         >
                           {formatFollowUpKindLabel(item.kind)}
                         </span>
@@ -1929,8 +1900,8 @@ export default function FormRunnerBase({ mode }) {
             padding: 14,
             display: "grid",
             gap: 6,
-            border: "1px solid rgba(255,255,255,0.12)",
-            background: "rgba(255,255,255,0.03)",
+            border: "1px solid var(--border)",
+            background: "var(--surface-2, color-mix(in srgb, var(--text) 4%, transparent))",
           }}
         >
           <div style={{ fontWeight: 900, fontSize: 17 }}>
@@ -1970,7 +1941,7 @@ export default function FormRunnerBase({ mode }) {
             padding: 12,
             display: "grid",
             gap: 8,
-            border: "1px solid rgba(250, 128, 114, 0.35)",
+            border: "1px solid color-mix(in srgb, var(--danger, salmon) 45%, var(--border))",
           }}
         >
           <div
@@ -2038,7 +2009,10 @@ export default function FormRunnerBase({ mode }) {
       )}
 
       {!isDebug && (
-        <div className="card" style={{ padding: 12, display: "grid", gap: 10 }}>
+        <div
+          className="card form-runner-survey-card"
+          style={{ padding: 12, display: "grid", gap: 10 }}
+        >
           <div style={{ fontWeight: 900, fontSize: 18 }}>{surveyTitle || "Formulier"}</div>
 
           {!surveyParsed.ok ? (
@@ -2050,7 +2024,13 @@ export default function FormRunnerBase({ mode }) {
               Formulierruntime wordt opgebouwd...
             </div>
           ) : (
-            <div style={{ opacity: canEditAnswers ? 1 : 0.82 }}>
+            <div
+              className="form-runner-survey-shell"
+              style={{
+                opacity: canEditAnswers ? 1 : 0.82,
+                color: "var(--text)",
+              }}
+            >
               <Survey key={surveyRenderKey} model={model} />
             </div>
           )}
@@ -2076,9 +2056,10 @@ export default function FormRunnerBase({ mode }) {
                 width: 48,
                 height: 48,
                 borderRadius: 999,
-                background: "rgba(20,20,20,0.92)",
-                border: "1px solid rgba(255,255,255,0.14)",
-                boxShadow: "0 14px 34px rgba(0,0,0,0.28)",
+                background: "var(--card-bg, var(--surface))",
+                border: "1px solid var(--border)",
+                color: "var(--text)",
+                boxShadow: "var(--shadow)",
                 display: "inline-flex",
                 alignItems: "center",
                 justifyContent: "center",
@@ -2099,7 +2080,7 @@ export default function FormRunnerBase({ mode }) {
                   inset: 0,
                   zIndex: 70,
                   border: "none",
-                  background: "rgba(0,0,0,0.32)",
+                  background: "color-mix(in srgb, var(--bg) 42%, transparent)",
                   padding: 0,
                   margin: 0,
                   cursor: "pointer",
@@ -2118,9 +2099,10 @@ export default function FormRunnerBase({ mode }) {
                   display: "grid",
                   gridTemplateRows: "auto 1fr",
                   gap: 12,
-                  background: "rgba(8,8,8,0.70)",
+                  background: "color-mix(in srgb, var(--bg) 88%, transparent)",
+                  color: "var(--text)",
                   backdropFilter: "blur(10px)",
-                  boxShadow: "-16px 0 40px rgba(0,0,0,0.30)",
+                  boxShadow: "-16px 0 40px color-mix(in srgb, var(--shadow-color, #000) 30%, transparent)",
                 }}
               >
                 <div
@@ -2163,8 +2145,10 @@ export default function FormRunnerBase({ mode }) {
                   <FormContextPanel
                     code={code}
                     instanceId={instanceId}
-                    canEdit={canEditAnswers}
+                    canEdit={canEditEvidence}
                     embedded={true}
+                    defaultInstallationOpen={false}
+                    defaultFormDocsOpen={false}
                     documentsTabHref={`/installaties/${encodeURIComponent(code)}?tab=documents`}
                   />
                 </div>

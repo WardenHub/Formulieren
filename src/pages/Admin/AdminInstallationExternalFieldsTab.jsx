@@ -8,21 +8,26 @@ import { ArrowUpIcon } from "@/components/ui/arrow-up";
 import { ArrowDownIcon } from "@/components/ui/arrow-down";
 
 function buildDraft(catalog) {
-  const typeLinks = Array.isArray(catalog?.externalFieldTypeLinks) ? catalog.externalFieldTypeLinks : [];
+  const typeLinks = Array.isArray(catalog?.externalFieldTypeLinks)
+    ? catalog.externalFieldTypeLinks
+    : [];
+
   const applicabilityByField = new Map();
 
   for (const link of typeLinks) {
     const fieldKey = String(link?.field_key || "").trim();
     const typeKey = String(link?.installation_type_key || "").trim();
+
     if (!fieldKey || !typeKey) continue;
 
     if (!applicabilityByField.has(fieldKey)) {
       applicabilityByField.set(fieldKey, []);
     }
+
     applicabilityByField.get(fieldKey).push(typeKey);
   }
 
-  const externalFields = Array.isArray(catalog?.externalFields)
+  return Array.isArray(catalog?.externalFields)
     ? catalog.externalFields
         .map((x, index) => ({
           field_key: x.field_key ?? "",
@@ -34,23 +39,27 @@ function buildDraft(catalog) {
           fabric_table: x.fabric_table ?? "",
           fabric_column: x.fabric_column ?? "",
           notes: x.notes ?? "",
-          applicability_type_keys: [...new Set(applicabilityByField.get(x.field_key) || [])],
+          applicability_type_keys: [
+            ...new Set(applicabilityByField.get(x.field_key) || []),
+          ],
         }))
         .sort((a, b) => {
           const sa = Number(a?.sort_order ?? 0);
           const sb = Number(b?.sort_order ?? 0);
+
           if (sa !== sb) return sa - sb;
+
           return String(a?.label || "").localeCompare(String(b?.label || ""));
         })
     : [];
-
-  return externalFields;
 }
 
 function normalizeNumber(value, fallback = null) {
   if (value === "" || value == null) return fallback;
+
   const n = Number(value);
   if (!Number.isFinite(n)) return fallback;
+
   return Math.trunc(n);
 }
 
@@ -62,20 +71,59 @@ function reindex(items) {
 }
 
 function uniqueStrings(values) {
-  return [...new Set((Array.isArray(values) ? values : []).map((x) => String(x || "").trim()).filter(Boolean))];
+  return [
+    ...new Set(
+      (Array.isArray(values) ? values : [])
+        .map((x) => String(x || "").trim())
+        .filter(Boolean)
+    ),
+  ];
 }
 
-function statusBadge(isActive) {
-  return isActive ? (
-    <span className="admin-status-badge admin-status-badge--active">
-      <span className="admin-status-dot admin-status-dot--active" />
-      Ja
-    </span>
-  ) : (
-    <span className="admin-status-badge admin-status-badge--inactive">
-      <span className="admin-status-dot admin-status-dot--inactive" />
-      Nee
-    </span>
+function activeLabel(isActive) {
+  return isActive ? "Actief" : "Niet actief";
+}
+
+function activeTone(isActive) {
+  return isActive ? "success" : "muted";
+}
+
+function sourceLabel(sourceType) {
+  if (sourceType === "fabric") return "Fabric";
+  return sourceType || "-";
+}
+
+function compactCountLabel(count, single, plural) {
+  return `${count} ${count === 1 ? single : plural}`;
+}
+
+function AdminPanel({ title, subtitle, actions, children }) {
+  return (
+    <div className="admin-panel">
+      <div className="admin-toolbar">
+        <div className="admin-toolbar-title">
+          <div className="admin-panel-title">{title}</div>
+          {subtitle ? <div className="admin-panel-subtitle">{subtitle}</div> : null}
+        </div>
+
+        {actions ? <div className="admin-toolbar-actions">{actions}</div> : null}
+      </div>
+
+      {children}
+    </div>
+  );
+}
+
+function SectionHeader({ title, subtitle, actions }) {
+  return (
+    <div className="admin-toolbar">
+      <div className="admin-toolbar-title">
+        <div className="admin-subcard-title">{title}</div>
+        {subtitle ? <div className="admin-panel-subtitle">{subtitle}</div> : null}
+      </div>
+
+      {actions ? <div className="admin-toolbar-actions">{actions}</div> : null}
+    </div>
   );
 }
 
@@ -97,21 +145,25 @@ const AdminInstallationExternalFieldsTab = forwardRef(function AdminInstallation
     setDraft(next);
 
     setOpenSectionKeys((prev) => {
-      const nextMap = { ...prev };
+      const map = { ...prev };
+
       for (const row of next) {
         const key = row.section_key || "__unassigned__";
-        if (nextMap[key] === undefined) nextMap[key] = false;
+        if (map[key] === undefined) map[key] = false;
       }
-      return nextMap;
+
+      return map;
     });
 
     setOpenFieldKeys((prev) => {
-      const nextMap = { ...prev };
-      for (const row of next) {
-        const key = row.field_key || `__field_${row.label || "new"}`;
-        if (nextMap[key] === undefined) nextMap[key] = false;
-      }
-      return nextMap;
+      const map = { ...prev };
+
+      next.forEach((row, index) => {
+        const key = row.field_key || `__field_${index}`;
+        if (map[key] === undefined) map[key] = false;
+      });
+
+      return map;
     });
   }, [catalog]);
 
@@ -128,7 +180,9 @@ const AdminInstallationExternalFieldsTab = forwardRef(function AdminInstallation
   }, [saving, onSavingChange]);
 
   const sections = Array.isArray(catalog?.sections) ? catalog.sections : [];
-  const installationTypes = Array.isArray(catalog?.installationTypes) ? catalog.installationTypes : [];
+  const installationTypes = Array.isArray(catalog?.installationTypes)
+    ? catalog.installationTypes
+    : [];
 
   const activeInstallationTypes = useMemo(() => {
     return installationTypes
@@ -136,7 +190,9 @@ const AdminInstallationExternalFieldsTab = forwardRef(function AdminInstallation
       .sort((a, b) => {
         const sa = Number(a?.sort_order ?? 999999);
         const sb = Number(b?.sort_order ?? 999999);
+
         if (sa !== sb) return sa - sb;
+
         return String(a?.display_name || "").localeCompare(String(b?.display_name || ""));
       });
   }, [installationTypes]);
@@ -144,16 +200,18 @@ const AdminInstallationExternalFieldsTab = forwardRef(function AdminInstallation
   const groupedSections = useMemo(() => {
     const sectionMap = new Map();
 
-    for (const s of sections) {
-      const key = s.section_key || "__unassigned__";
+    for (const section of sections) {
+      const key = section.section_key || "__unassigned__";
+
       sectionMap.set(key, {
-        section: s,
+        section,
         fields: [],
       });
     }
 
     for (const field of draft) {
       const key = field.section_key || "__unassigned__";
+
       if (!sectionMap.has(key)) {
         sectionMap.set(key, {
           section: {
@@ -165,14 +223,19 @@ const AdminInstallationExternalFieldsTab = forwardRef(function AdminInstallation
           fields: [],
         });
       }
+
       sectionMap.get(key).fields.push(field);
     }
 
     return Array.from(sectionMap.values()).sort((a, b) => {
       const sa = Number(a?.section?.sort_order ?? 999999);
       const sb = Number(b?.section?.sort_order ?? 999999);
+
       if (sa !== sb) return sa - sb;
-      return String(a?.section?.section_name || "").localeCompare(String(b?.section?.section_name || ""));
+
+      return String(a?.section?.section_name || "").localeCompare(
+        String(b?.section?.section_name || "")
+      );
     });
   }, [sections, draft]);
 
@@ -185,33 +248,16 @@ const AdminInstallationExternalFieldsTab = forwardRef(function AdminInstallation
     if (!row) return;
 
     const current = new Set(uniqueStrings(row.applicability_type_keys));
-    if (current.has(typeKey)) current.delete(typeKey);
-    else current.add(typeKey);
+
+    if (current.has(typeKey)) {
+      current.delete(typeKey);
+    } else {
+      current.add(typeKey);
+    }
 
     setRow(index, {
       applicability_type_keys: [...current],
     });
-  }
-
-  function confirmTechnicalChange(row, fieldLabel, oldValue, nextValue) {
-    if (String(oldValue ?? "") === String(nextValue ?? "")) return true;
-
-    return window.confirm(
-      `Weet je zeker dat je ${fieldLabel} wilt aanpassen voor "${row.label || row.field_key || "nieuw veld"}"?\n\n` +
-      `Huidig: ${oldValue ?? "(leeg)"}\n` +
-      `Nieuw: ${nextValue ?? "(leeg)"}`
-    );
-  }
-
-  function handleTechnicalFieldChange(index, fieldName, nextValue, fieldLabel) {
-    const row = draft[index];
-    if (!row) return;
-
-    const currentValue = row[fieldName];
-    const ok = confirmTechnicalChange(row, fieldLabel, currentValue, nextValue);
-    if (!ok) return;
-
-    setRow(index, { [fieldName]: nextValue });
   }
 
   function handleActiveChange(index, nextValue) {
@@ -220,8 +266,11 @@ const AdminInstallationExternalFieldsTab = forwardRef(function AdminInstallation
 
     if (row?.is_active && !nextActive) {
       const ok = window.confirm(
-        `Weet je zeker dat je Atriumveld "${row.label || row.field_key || "nieuw veld"}" inactief wilt maken?`
+        `Weet je zeker dat je Atriumveld "${
+          row.label || row.field_key || "nieuw veld"
+        }" inactief wilt maken?`
       );
+
       if (!ok) return;
     }
 
@@ -232,6 +281,7 @@ const AdminInstallationExternalFieldsTab = forwardRef(function AdminInstallation
     setDraft((prev) => {
       const arr = [...prev];
       const nextIndex = direction === "up" ? index - 1 : index + 1;
+
       if (nextIndex < 0 || nextIndex >= arr.length) return prev;
 
       const swap = arr[nextIndex];
@@ -242,13 +292,16 @@ const AdminInstallationExternalFieldsTab = forwardRef(function AdminInstallation
     });
   }
 
-  function addRow() {
+  function addRow(sectionKey = "") {
+    const nextIndex = draft.length;
+    const nextFieldOpenKey = `__field_${nextIndex}`;
+
     setDraft((prev) => [
       ...prev,
       {
         field_key: "",
         label: "",
-        section_key: "",
+        section_key: sectionKey ?? "",
         sort_order: (prev.length + 1) * 10,
         is_active: true,
         source_type: "fabric",
@@ -258,12 +311,25 @@ const AdminInstallationExternalFieldsTab = forwardRef(function AdminInstallation
         applicability_type_keys: [],
       },
     ]);
+
+    if (sectionKey) {
+      setOpenSectionKeys((prev) => ({
+        ...prev,
+        [sectionKey]: true,
+      }));
+    }
+
+    setOpenFieldKeys((prev) => ({
+      ...prev,
+      [nextFieldOpenKey]: true,
+    }));
   }
 
   async function save() {
     if (saving || !isDirty) return;
 
     setSaving(true);
+
     try {
       const payload = draft.map((row, index) => ({
         ...row,
@@ -281,51 +347,59 @@ const AdminInstallationExternalFieldsTab = forwardRef(function AdminInstallation
   useImperativeHandle(ref, () => ({ save }));
 
   if (loading && draft.length === 0) {
-    return <div className="muted">laden; atriumvelden</div>;
+    return <div className="muted">laden; Atriumvelden</div>;
   }
 
   return (
     <div className="admin-grid">
-      <div className="admin-panel">
-        <div className="admin-toolbar">
-          <div className="admin-toolbar-title">
-            <div className="admin-panel-title">Atriumvelden</div>
-            <div className="admin-panel-subtitle">
-              Beheer van velden die uit Atrium/Fabric worden opgehaald. Je beheert hier label, sectie,
-              sortering, toelichting en per installatiesoort de zichtbaarheid.
-            </div>
-          </div>
+      <AdminPanel
+        title="Atriumvelden"
+        subtitle="Beheer presentatie, sectie, sortering, toelichting en zichtbaarheid van velden uit Atrium/Fabric."
+        actions={
+          <>
+            {isDirty ? (
+              <span className="ember-label ember-label--warning">Niet opgeslagen</span>
+            ) : (
+              <span className="ember-label ember-label--success">Opgeslagen</span>
+            )}
 
-          <div className="admin-toolbar-actions">
             <button
               type="button"
               className="btn btn-secondary"
-              onClick={addRow}
+              onClick={() => addRow("")}
               onMouseEnter={() => addIconRef.current?.startAnimation?.()}
               onMouseLeave={() => addIconRef.current?.stopAnimation?.()}
             >
               <PlusIcon ref={addIconRef} size={16} className="nav-anim-icon" />
               Atriumveld toevoegen
             </button>
-          </div>
+          </>
+        }
+      >
+        <div className="admin-subcard">
+          <SectionHeader
+            title="Beheerregels"
+            subtitle="Technische bronvelden zoals field key, source type, Fabric tabel en Fabric kolom bepalen de koppeling met de brondata."
+            actions={
+              <div className="ember-label-row">
+                <span className="ember-label ember-label--warning">
+                  Bronvelden zorgvuldig wijzigen
+                </span>
+                <span className="ember-label ember-label--muted">
+                  Geen types gekozen = alle types
+                </span>
+              </div>
+            }
+          />
         </div>
 
-        <div className="admin-chip-row">
-          <span className="admin-chip admin-chip--warning">
-            Bij twijfel technische bronvelden niet aanpassen zonder overleg.
-          </span>
-          <span className="admin-chip admin-chip--info">
-            Geen geselecteerde installatiesoorten = zichtbaar voor alle types
-          </span>
-        </div>
-
-        <div className="admin-grid">
+        <div className="admin-check-grid">
           {groupedSections.map(({ section, fields }) => {
             const sectionKey = section.section_key || "__unassigned__";
             const isOpen = openSectionKeys[sectionKey] === true;
 
             return (
-              <div key={sectionKey} className="admin-section">
+              <div key={sectionKey} className="admin-subcard">
                 <button
                   type="button"
                   className="admin-section-head"
@@ -340,12 +414,29 @@ const AdminInstallationExternalFieldsTab = forwardRef(function AdminInstallation
                     <div className="admin-section-title">
                       {section.section_name || "Zonder sectie"}
                     </div>
+
                     <div className="admin-section-sub">
-                      {section.section_description || "Geen omschrijving"} · {fields.length} velden
+                      {section.section_description || "Geen omschrijving"};{" "}
+                      {compactCountLabel(fields.length, "veld", "velden")}
                     </div>
                   </div>
 
-                  <div className="admin-row-actions">
+                  <div className="ember-label-row">
+                    <span className="ember-label ember-label--muted">
+                      {fields.length} velden
+                    </span>
+
+                    <span
+                      className="btn btn-secondary"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        addRow(section.section_key || "");
+                      }}
+                    >
+                      <PlusIcon size={16} className="nav-anim-icon" />
+                      Toevoegen
+                    </span>
+
                     {isOpen ? <ChevronDownIcon size={18} /> : <ChevronRightIcon size={18} />}
                   </div>
                 </button>
@@ -355,305 +446,389 @@ const AdminInstallationExternalFieldsTab = forwardRef(function AdminInstallation
                     {fields.length === 0 ? (
                       <div className="admin-empty-note">Nog geen Atriumvelden in deze sectie.</div>
                     ) : (
-                      fields.map((row) => {
-                        const fieldIndex = draft.findIndex((x) => x === row);
-                        if (fieldIndex < 0) return null;
+                      <div className="admin-check-grid">
+                        {fields.map((row) => {
+                          const fieldIndex = draft.findIndex((x) => x === row);
+                          if (fieldIndex < 0) return null;
 
-                        const fieldOpenKey = row.field_key || `__field_${fieldIndex}`;
-                        const isFieldOpen = openFieldKeys[fieldOpenKey] === true;
-                        const selectedTypeCount = Array.isArray(row.applicability_type_keys)
-                          ? row.applicability_type_keys.length
-                          : 0;
+                          const fieldOpenKey = row.field_key || `__field_${fieldIndex}`;
+                          const isFieldOpen = openFieldKeys[fieldOpenKey] === true;
+                          const selectedTypeCount = Array.isArray(row.applicability_type_keys)
+                            ? row.applicability_type_keys.length
+                            : 0;
 
-                        return (
-                          <div key={`${row.field_key || "new"}:${fieldIndex}`} className="admin-subcard">
-                            <button
-                              type="button"
-                              className="admin-section-head admin-section-head--compact"
-                              onClick={() =>
-                                setOpenFieldKeys((prev) => ({
-                                  ...prev,
-                                  [fieldOpenKey]: !isFieldOpen,
-                                }))
-                              }
+                          return (
+                            <div
+                              key={`${row.field_key || "new"}:${fieldIndex}`}
+                              className={`admin-subcard ${
+                                !row.is_active ? "admin-table-row--inactive" : ""
+                              }`}
                             >
-                              <div className="admin-row-summary-grid">
-                                <div className="admin-row-summary-cell">
-                                  <div className="admin-row-summary-label">Label</div>
-                                  <div className="admin-row-summary-value">
-                                    {row.label || "Nieuw Atriumveld"}
-                                  </div>
-                                </div>
+                              <button
+                                type="button"
+                                className="admin-compact-row"
+                                onClick={() =>
+                                  setOpenFieldKeys((prev) => ({
+                                    ...prev,
+                                    [fieldOpenKey]: !isFieldOpen,
+                                  }))
+                                }
+                              >
+                                <div className="admin-compact-row-main">
+                                  <div className="admin-compact-row-title-wrap">
+                                    <div className="admin-compact-row-title">
+                                      {row.label || row.field_key || "Nieuw Atriumveld"}
+                                    </div>
 
-                                <div className="admin-row-summary-cell">
-                                  <div className="admin-row-summary-label">Field key</div>
-                                  <div className="admin-row-summary-value admin-row-summary-value--muted">
-                                    {row.field_key || "-"}
-                                  </div>
-                                </div>
+                                    <div className="admin-compact-row-sub">
+                                      {row.field_key || "-"}
+                                    </div>
 
-                                <div className="admin-row-summary-cell">
-                                  <div className="admin-row-summary-label">Toepassing</div>
-                                  <div className="admin-row-summary-value admin-row-summary-value--muted">
-                                    {selectedTypeCount > 0
-                                      ? `${selectedTypeCount} installatiesoorten`
-                                      : "Alle installatiesoorten"}
-                                  </div>
-                                </div>
+                                    <div className="ember-label-row admin-inline-labels">
+                                      <span
+                                        className={`ember-label ember-label--${activeTone(
+                                          row.is_active
+                                        )}`}
+                                      >
+                                        {activeLabel(row.is_active)}
+                                      </span>
 
-                                <div className="admin-row-summary-cell">
-                                  <div className="admin-row-summary-label">Status</div>
-                                  <div className="admin-row-summary-value">
-                                    {statusBadge(row.is_active)}
-                                  </div>
-                                </div>
-                              </div>
+                                      <span className="ember-label ember-label--muted">
+                                        bron; {sourceLabel(row.source_type)}
+                                      </span>
 
-                              <div className="admin-row-actions">
-                                {isFieldOpen ? <ChevronDownIcon size={18} /> : <ChevronRightIcon size={18} />}
-                              </div>
-                            </button>
+                                      <span className="ember-label ember-label--muted">
+                                        tabel; {row.fabric_table || "-"}
+                                      </span>
 
-                            {isFieldOpen && (
-                              <div className="admin-section-body admin-section-body--inner">
-                                <div className="admin-toolbar">
-                                  <div className="admin-toolbar-title">
-                                    <div className="admin-subcard-title">Instellingen</div>
-                                    <div className="muted admin-inline-help">
-                                      Presentatie, zichtbaarheid en broninstellingen voor dit Atriumveld.
+                                      <span className="ember-label ember-label--muted">
+                                        kolom; {row.fabric_column || "-"}
+                                      </span>
+
+                                      <span className="ember-label ember-label--muted">
+                                        {selectedTypeCount > 0
+                                          ? `${selectedTypeCount} types`
+                                          : "alle types"}
+                                      </span>
                                     </div>
                                   </div>
+                                </div>
 
-                                  <div className="admin-row-actions">
-                                    {statusBadge(row.is_active)}
+                                <div className="admin-compact-row-right">
+                                  {isFieldOpen ? (
+                                    <ChevronDownIcon size={18} />
+                                  ) : (
+                                    <ChevronRightIcon size={18} />
+                                  )}
+                                </div>
+                              </button>
 
-                                    <div className="admin-sorter">
-                                      <button
-                                        type="button"
-                                        className="admin-mini-icon-btn"
-                                        title="Omhoog"
-                                        disabled={fieldIndex === 0}
-                                        onClick={() => moveRow(fieldIndex, "up")}
-                                        onMouseEnter={() => upIconRefs.current[fieldIndex]?.startAnimation?.()}
-                                        onMouseLeave={() => upIconRefs.current[fieldIndex]?.stopAnimation?.()}
-                                      >
-                                        <ArrowUpIcon
-                                          ref={(el) => {
-                                            upIconRefs.current[fieldIndex] = el;
-                                          }}
-                                          size={16}
-                                          className="nav-anim-icon"
+                              {isFieldOpen && (
+                                <div className="admin-subcard-body">
+                                  <SectionHeader
+                                    title="Instellingen"
+                                    subtitle="Pas label, zichtbaarheid en broninstellingen voor dit Atriumveld aan."
+                                    actions={
+                                      <div className="ember-label-row">
+                                        <span
+                                          className={`ember-label ember-label--${activeTone(
+                                            row.is_active
+                                          )}`}
+                                        >
+                                          {activeLabel(row.is_active)}
+                                        </span>
+
+                                        <button
+                                          type="button"
+                                          className="icon-btn"
+                                          title="Omhoog"
+                                          disabled={fieldIndex === 0}
+                                          onClick={() => moveRow(fieldIndex, "up")}
+                                          onMouseEnter={() =>
+                                            upIconRefs.current[fieldIndex]?.startAnimation?.()
+                                          }
+                                          onMouseLeave={() =>
+                                            upIconRefs.current[fieldIndex]?.stopAnimation?.()
+                                          }
+                                        >
+                                          <ArrowUpIcon
+                                            ref={(el) => {
+                                              upIconRefs.current[fieldIndex] = el;
+                                            }}
+                                            size={18}
+                                            className="nav-anim-icon"
+                                          />
+                                        </button>
+
+                                        <button
+                                          type="button"
+                                          className="icon-btn"
+                                          title="Omlaag"
+                                          disabled={fieldIndex === draft.length - 1}
+                                          onClick={() => moveRow(fieldIndex, "down")}
+                                          onMouseEnter={() =>
+                                            downIconRefs.current[fieldIndex]?.startAnimation?.()
+                                          }
+                                          onMouseLeave={() =>
+                                            downIconRefs.current[fieldIndex]?.stopAnimation?.()
+                                          }
+                                        >
+                                          <ArrowDownIcon
+                                            ref={(el) => {
+                                              downIconRefs.current[fieldIndex] = el;
+                                            }}
+                                            size={18}
+                                            className="nav-anim-icon"
+                                          />
+                                        </button>
+                                      </div>
+                                    }
+                                  />
+
+                                  <div className="cf-grid">
+                                    <div className="cf-row">
+                                      <div className="cf-label">
+                                        <div className="cf-label-text">Label</div>
+                                      </div>
+
+                                      <div className="cf-control">
+                                        <input
+                                          className="input"
+                                          value={row.label}
+                                          onChange={(e) =>
+                                            setRow(fieldIndex, { label: e.target.value })
+                                          }
                                         />
-                                      </button>
+                                      </div>
+                                    </div>
 
-                                      <button
-                                        type="button"
-                                        className="admin-mini-icon-btn"
-                                        title="Omlaag"
-                                        disabled={fieldIndex === draft.length - 1}
-                                        onClick={() => moveRow(fieldIndex, "down")}
-                                        onMouseEnter={() => downIconRefs.current[fieldIndex]?.startAnimation?.()}
-                                        onMouseLeave={() => downIconRefs.current[fieldIndex]?.stopAnimation?.()}
-                                      >
-                                        <ArrowDownIcon
-                                          ref={(el) => {
-                                            downIconRefs.current[fieldIndex] = el;
-                                          }}
-                                          size={16}
-                                          className="nav-anim-icon"
+                                    <div className="cf-row">
+                                      <div className="cf-label">
+                                        <div className="cf-label-text">Field key</div>
+                                      </div>
+
+                                      <div className="cf-control">
+                                        <input
+                                          className="input"
+                                          value={row.field_key}
+                                          onChange={(e) =>
+                                            setRow(fieldIndex, { field_key: e.target.value })
+                                          }
                                         />
-                                      </button>
+                                      </div>
+                                    </div>
 
-                                      <input
-                                        type="number"
-                                        className="input admin-sorter-value"
-                                        value={row.sort_order ?? ""}
-                                        onChange={(e) => setRow(fieldIndex, { sort_order: e.target.value })}
-                                      />
+                                    <div className="cf-row">
+                                      <div className="cf-label">
+                                        <div className="cf-label-text">Sectie</div>
+                                      </div>
+
+                                      <div className="cf-control">
+                                        <select
+                                          className="input"
+                                          value={row.section_key ?? ""}
+                                          onChange={(e) =>
+                                            setRow(fieldIndex, {
+                                              section_key: e.target.value || "",
+                                            })
+                                          }
+                                        >
+                                          <option value="">geen</option>
+                                          {sections.map((s) => (
+                                            <option key={s.section_key} value={s.section_key}>
+                                              {s.section_name || s.section_key}
+                                            </option>
+                                          ))}
+                                        </select>
+                                      </div>
+                                    </div>
+
+                                    <div className="cf-row">
+                                      <div className="cf-label">
+                                        <div className="cf-label-text">Sortering</div>
+                                      </div>
+
+                                      <div className="cf-control">
+                                        <input
+                                          type="number"
+                                          className="input"
+                                          value={row.sort_order ?? ""}
+                                          onChange={(e) =>
+                                            setRow(fieldIndex, { sort_order: e.target.value })
+                                          }
+                                        />
+                                      </div>
+                                    </div>
+
+                                    <div className="cf-row">
+                                      <div className="cf-label">
+                                        <div className="cf-label-text">Actief</div>
+                                      </div>
+
+                                      <div className="cf-control">
+                                        <select
+                                          className="input"
+                                          value={row.is_active ? "1" : "0"}
+                                          onChange={(e) =>
+                                            handleActiveChange(
+                                              fieldIndex,
+                                              e.target.value === "1"
+                                            )
+                                          }
+                                        >
+                                          <option value="1">Ja</option>
+                                          <option value="0">Nee</option>
+                                        </select>
+                                      </div>
+                                    </div>
+
+                                    <div className="cf-row">
+                                      <div className="cf-label">
+                                        <div className="cf-label-text">Source type</div>
+                                      </div>
+
+                                      <div className="cf-control">
+                                        <input
+                                          className="input"
+                                          value={row.source_type}
+                                          onChange={(e) =>
+                                            setRow(fieldIndex, {
+                                              source_type: e.target.value,
+                                            })
+                                          }
+                                        />
+                                      </div>
+                                    </div>
+
+                                    <div className="cf-row">
+                                      <div className="cf-label">
+                                        <div className="cf-label-text">Fabric tabel</div>
+                                      </div>
+
+                                      <div className="cf-control">
+                                        <input
+                                          className="input"
+                                          value={row.fabric_table}
+                                          onChange={(e) =>
+                                            setRow(fieldIndex, {
+                                              fabric_table: e.target.value,
+                                            })
+                                          }
+                                        />
+                                      </div>
+                                    </div>
+
+                                    <div className="cf-row wide">
+                                      <div className="cf-label">
+                                        <div className="cf-label-text">Fabric kolom</div>
+                                      </div>
+
+                                      <div className="cf-control">
+                                        <input
+                                          className="input"
+                                          value={row.fabric_column}
+                                          onChange={(e) =>
+                                            setRow(fieldIndex, {
+                                              fabric_column: e.target.value,
+                                            })
+                                          }
+                                        />
+                                      </div>
+                                    </div>
+
+                                    <div className="cf-row wide">
+                                      <div className="cf-label">
+                                        <div className="cf-label-text">Opmerking / toelichting</div>
+                                      </div>
+
+                                      <div className="cf-control">
+                                        <textarea
+                                          className="cf-textarea"
+                                          rows={3}
+                                          value={row.notes ?? ""}
+                                          onChange={(e) =>
+                                            setRow(fieldIndex, { notes: e.target.value })
+                                          }
+                                        />
+                                      </div>
                                     </div>
                                   </div>
-                                </div>
 
-                                <div className="cf-grid">
-                                  <div className="cf-row">
-                                    <div className="cf-label">
-                                      <div className="cf-label-text">Label</div>
-                                    </div>
-                                    <div className="cf-control">
-                                      <input
-                                        className="input"
-                                        value={row.label}
-                                        onChange={(e) => setRow(fieldIndex, { label: e.target.value })}
-                                      />
-                                    </div>
-                                  </div>
+                                  <div className="admin-subcard">
+                                    <SectionHeader
+                                      title="Toepasbaarheid"
+                                      subtitle="Geen geselecteerde installatiesoorten betekent; zichtbaar voor alle types."
+                                      actions={
+                                        <span className="ember-label ember-label--muted">
+                                          {selectedTypeCount || "alle"} geselecteerd
+                                        </span>
+                                      }
+                                    />
 
-                                  <div className="cf-row">
-                                    <div className="cf-label">
-                                      <div className="cf-label-text">Field key</div>
-                                    </div>
-                                    <div className="cf-control">
-                                      <input
-                                        className="input"
-                                        value={row.field_key}
-                                        onChange={(e) =>
-                                          handleTechnicalFieldChange(fieldIndex, "field_key", e.target.value, "field key")
-                                        }
-                                      />
-                                    </div>
-                                  </div>
-
-                                  <div className="cf-row">
-                                    <div className="cf-label">
-                                      <div className="cf-label-text">Sectie</div>
-                                    </div>
-                                    <div className="cf-control">
-                                      <select
-                                        className="input"
-                                        value={row.section_key ?? ""}
-                                        onChange={(e) => setRow(fieldIndex, { section_key: e.target.value || null })}
-                                      >
-                                        <option value="">— geen —</option>
-                                        {sections.map((s) => (
-                                          <option key={s.section_key} value={s.section_key}>
-                                            {s.section_name || s.section_key}
-                                          </option>
-                                        ))}
-                                      </select>
-                                    </div>
-                                  </div>
-
-                                  <div className="cf-row">
-                                    <div className="cf-label">
-                                      <div className="cf-label-text">Actief</div>
-                                    </div>
-                                    <div className="cf-control">
-                                      <select
-                                        className="input"
-                                        value={row.is_active ? "1" : "0"}
-                                        onChange={(e) => handleActiveChange(fieldIndex, e.target.value === "1")}
-                                      >
-                                        <option value="1">Ja</option>
-                                        <option value="0">Nee</option>
-                                      </select>
-                                    </div>
-                                  </div>
-
-                                  <div className="cf-row wide">
-                                    <div className="cf-label">
-                                      <div className="cf-label-text">Toepasbare installatiesoorten</div>
-                                    </div>
-                                    <div className="cf-control">
+                                    {activeInstallationTypes.length === 0 ? (
+                                      <div className="admin-empty-note">
+                                        Geen actieve installatiesoorten gevonden.
+                                      </div>
+                                    ) : (
                                       <div className="admin-check-grid">
-                                        {activeInstallationTypes.length === 0 ? (
-                                          <div className="admin-empty-note">
-                                            Geen actieve installatiesoorten gevonden.
-                                          </div>
-                                        ) : (
-                                          activeInstallationTypes.map((type) => {
-                                            const typeKey = type.installation_type_key;
-                                            const checked = Array.isArray(row.applicability_type_keys)
-                                              ? row.applicability_type_keys.includes(typeKey)
-                                              : false;
+                                        {activeInstallationTypes.map((type) => {
+                                          const typeKey = type.installation_type_key;
+                                          const checked = Array.isArray(
+                                            row.applicability_type_keys
+                                          )
+                                            ? row.applicability_type_keys.includes(typeKey)
+                                            : false;
 
-                                            return (
-                                              <label key={typeKey} className="admin-check-row admin-check-row--toggle">
-                                                <div className="admin-check-row-main">
-                                                  <div className="admin-check-row-title">
+                                          return (
+                                            <label
+                                              key={typeKey}
+                                              className={`admin-compact-row ${
+                                                checked ? "ember-accent-active" : ""
+                                              }`}
+                                            >
+                                              <div className="admin-compact-row-main">
+                                                <input
+                                                  type="checkbox"
+                                                  checked={checked}
+                                                  onChange={() =>
+                                                    toggleApplicabilityType(fieldIndex, typeKey)
+                                                  }
+                                                />
+
+                                                <div className="admin-compact-row-title-wrap">
+                                                  <div className="admin-compact-row-title">
                                                     {type.display_name || typeKey}
                                                   </div>
-                                                  <div className="admin-check-row-sub">
+
+                                                  <div className="admin-compact-row-sub">
                                                     {typeKey}
                                                   </div>
                                                 </div>
+                                              </div>
 
-                                                <span className="admin-chip admin-chip--muted-soft">
-                                                  {checked ? "Geselecteerd" : "Niet geselecteerd"}
+                                              <div className="admin-compact-row-right">
+                                                <span
+                                                  className={
+                                                    checked
+                                                      ? "ember-label ember-label--success"
+                                                      : "ember-label ember-label--muted"
+                                                  }
+                                                >
+                                                  {checked ? "Beschikbaar" : "Niet gekozen"}
                                                 </span>
-
-                                                <div className="admin-check-toggle">
-                                                  <input
-                                                    type="checkbox"
-                                                    checked={checked}
-                                                    onChange={() => toggleApplicabilityType(fieldIndex, typeKey)}
-                                                  />
-                                                </div>
-                                              </label>
-                                            );
-                                          })
-                                        )}
+                                              </div>
+                                            </label>
+                                          );
+                                        })}
                                       </div>
-
-                                      <div className="admin-info-inline" style={{ marginTop: 8 }}>
-                                        Laat alles leeg om dit veld voor alle installatiesoorten zichtbaar te maken.
-                                      </div>
-                                    </div>
-                                  </div>
-
-                                  <div className="cf-row">
-                                    <div className="cf-label">
-                                      <div className="cf-label-text">Source type</div>
-                                    </div>
-                                    <div className="cf-control">
-                                      <input
-                                        className="input"
-                                        value={row.source_type}
-                                        onChange={(e) =>
-                                          handleTechnicalFieldChange(fieldIndex, "source_type", e.target.value, "source type")
-                                        }
-                                      />
-                                    </div>
-                                  </div>
-
-                                  <div className="cf-row">
-                                    <div className="cf-label">
-                                      <div className="cf-label-text">Fabric tabel</div>
-                                    </div>
-                                    <div className="cf-control">
-                                      <input
-                                        className="input"
-                                        value={row.fabric_table}
-                                        onChange={(e) =>
-                                          handleTechnicalFieldChange(fieldIndex, "fabric_table", e.target.value, "Fabric tabel")
-                                        }
-                                      />
-                                    </div>
-                                  </div>
-
-                                  <div className="cf-row wide">
-                                    <div className="cf-label">
-                                      <div className="cf-label-text">Fabric kolom</div>
-                                    </div>
-                                    <div className="cf-control">
-                                      <input
-                                        className="input"
-                                        value={row.fabric_column}
-                                        onChange={(e) =>
-                                          handleTechnicalFieldChange(fieldIndex, "fabric_column", e.target.value, "Fabric kolom")
-                                        }
-                                      />
-                                    </div>
-                                  </div>
-
-                                  <div className="cf-row wide">
-                                    <div className="cf-label">
-                                      <div className="cf-label-text">Opmerking / toelichting</div>
-                                    </div>
-                                    <div className="cf-control">
-                                      <textarea
-                                        className="cf-textarea"
-                                        rows={3}
-                                        value={row.notes ?? ""}
-                                        onChange={(e) => setRow(fieldIndex, { notes: e.target.value })}
-                                      />
-                                    </div>
+                                    )}
                                   </div>
                                 </div>
-                              </div>
-                            )}
-                          </div>
-                        );
-                      })
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
                     )}
                   </div>
                 )}
@@ -661,7 +836,7 @@ const AdminInstallationExternalFieldsTab = forwardRef(function AdminInstallation
             );
           })}
         </div>
-      </div>
+      </AdminPanel>
     </div>
   );
 });

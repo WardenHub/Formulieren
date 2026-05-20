@@ -3893,3 +3893,15 @@ button.monitor-tag{
   gap: 8px;
   flex-wrap: wrap;
 }
+
+.admin-inline-labels {
+  margin-top: 8px;
+}
+
+.admin-checkbox-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  white-space: nowrap;
+}
+
