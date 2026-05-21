@@ -22,6 +22,9 @@ import { PlusIcon } from "@/components/ui/plus";
 import { ChevronsDownUpIcon } from "@/components/ui/chevrons-down-up";
 import { ChevronsUpDownIcon } from "@/components/ui/chevrons-up-down";
 import { AttachFileIcon } from "@/components/ui/attach-file";
+import { AirVentIcon } from "@/components/ui/air-vent";
+import { MenuIcon } from "@/components/ui/menu";
+import { MicIcon } from "@/components/ui/mic";
 import { pushRecentHomeItem } from "../../lib/recentHomeItems.js";
 
 import {
@@ -36,6 +39,7 @@ import {
 
 import FormPageNavigator from "./shared/FormPageNavigator.jsx";
 import FormContextPanel from "./shared/FormContextPanel";
+import FormAssistantPanel from "./shared/FormAssistantPanel.jsx";
 
 import {
   normalizeInstanceResponse,
@@ -360,11 +364,17 @@ export default function FormRunnerBase({ mode }) {
   const [validationListOpen, setValidationListOpen] = useState(true);
   const [instanceMetaOpen, setInstanceMetaOpen] = useState(false);
   const [contextPanelOpen, setContextPanelOpen] = useState(false);
+  const [assistantPanelOpen, setAssistantPanelOpen] = useState(false);
+  const [actionsMenuOpen, setActionsMenuOpen] = useState(false);
 
   const [debugCards, setDebugCards] = useState(defaultDebugCards);
 
   const backIconRef = useRef(null);
   const contextToggleIconRef = useRef(null);
+  const assistantToggleIconRef = useRef(null);
+  const actionsMenuRef = useRef(null);
+  const actionsMenuIconRef = useRef(null);
+  const debugJsonIconRef = useRef(null);
 
   const validateIconRef = useRef(null);
   const validateOkIconRef = useRef(null);
@@ -399,6 +409,8 @@ export default function FormRunnerBase({ mode }) {
   const prefillRefreshOkTimerRef = useRef(null);
   const postSubmitReloadTimerRef = useRef(null);
   const validationCollapseAnimTimerRef = useRef(null);
+  const autosaveTimerRef = useRef(null);
+  const autosaveRunningRef = useRef(false);
 
   const lastLoadedKeyRef = useRef("");
 
@@ -569,7 +581,7 @@ export default function FormRunnerBase({ mode }) {
     if (isDebug) return undefined;
 
     const originalOverflow = document.body.style.overflow;
-    if (contextPanelOpen) {
+    if (contextPanelOpen || assistantPanelOpen) {
       document.body.style.overflow = "hidden";
     } else {
       document.body.style.overflow = originalOverflow || "";
@@ -578,20 +590,43 @@ export default function FormRunnerBase({ mode }) {
     return () => {
       document.body.style.overflow = originalOverflow || "";
     };
-  }, [contextPanelOpen, isDebug]);
+  }, [contextPanelOpen, assistantPanelOpen, isDebug]);
 
   useEffect(() => {
-    if (!contextPanelOpen || isDebug) return undefined;
+    if ((!contextPanelOpen && !assistantPanelOpen) || isDebug) return undefined;
 
     function onKeyDown(e) {
       if (e.key === "Escape") {
         setContextPanelOpen(false);
+        setAssistantPanelOpen(false);
       }
     }
 
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [contextPanelOpen, isDebug]);
+  }, [contextPanelOpen, assistantPanelOpen, isDebug]);
+
+  useEffect(() => {
+    if (!actionsMenuOpen) return undefined;
+
+    function onPointerDown(e) {
+      if (actionsMenuRef.current?.contains(e.target)) return;
+      setActionsMenuOpen(false);
+    }
+
+    function onKeyDown(e) {
+      if (e.key === "Escape") {
+        setActionsMenuOpen(false);
+      }
+    }
+
+    window.addEventListener("pointerdown", onPointerDown);
+    window.addEventListener("keydown", onKeyDown);
+    return () => {
+      window.removeEventListener("pointerdown", onPointerDown);
+      window.removeEventListener("keydown", onKeyDown);
+    };
+  }, [actionsMenuOpen]);
 
   function animateDebugToggle(key) {
     debugToggleIconRef.current[key]?.startAnimation?.();
@@ -1018,6 +1053,7 @@ export default function FormRunnerBase({ mode }) {
       if (prefillRefreshOkTimerRef.current) clearTimeout(prefillRefreshOkTimerRef.current);
       if (postSubmitReloadTimerRef.current) clearTimeout(postSubmitReloadTimerRef.current);
       if (validationCollapseAnimTimerRef.current) clearTimeout(validationCollapseAnimTimerRef.current);
+      if (autosaveTimerRef.current) clearInterval(autosaveTimerRef.current);
     };
   }, []);
 
@@ -1057,6 +1093,48 @@ export default function FormRunnerBase({ mode }) {
     return () => window.removeEventListener("keydown", onKeyDown);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [showSave, busy, hasUnsavedChanges, hasValidationItems]);
+
+  useEffect(() => {
+    if (isDebug || !canEditAnswers) return undefined;
+
+    const timer = window.setInterval(async () => {
+      if (autosaveRunningRef.current) return;
+      if (busy || loading || !hasUnsavedChanges) return;
+
+      const cur = getCurrentAnswersObject();
+      if (!cur.ok) {
+        setError(cur.error);
+        return;
+      }
+
+      autosaveRunningRef.current = true;
+
+      try {
+        await persistPendingChanges(cur.value, { reloadAfter: false, animateSave: true });
+      } catch (e) {
+        const msg = String(e?.message || e || "").toLowerCase();
+
+        if (msg.includes("draft_rev") || msg.includes("expected_draft_rev")) {
+          setError("Automatisch opslaan conflict. Ik heb de nieuwste versie opgehaald. Controleer je wijzigingen en probeer opnieuw.");
+          await reload({ forceEditor: true });
+        } else {
+          setError(translateApiError(e, status));
+        }
+      } finally {
+        autosaveRunningRef.current = false;
+      }
+    }, 60000);
+
+    autosaveTimerRef.current = timer;
+
+    return () => {
+      window.clearInterval(timer);
+      if (autosaveTimerRef.current === timer) {
+        autosaveTimerRef.current = null;
+      }
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isDebug, canEditAnswers, busy, loading, hasUnsavedChanges, status, instance, instanceMetadata, savedInstanceMetadata, dirty]);
 
   async function handleRefreshPrefill() {
     if (isDebug) return;
@@ -1104,6 +1182,18 @@ export default function FormRunnerBase({ mode }) {
       setError(String(e?.message || e || "Voorinvullen vernieuwen mislukt."));
     } finally {
       setBusy(false);
+    }
+  }
+
+  function handleAssistantApplied(result) {
+    if (!result?.changed) return;
+
+    setDirty(true);
+    setSurveyRenderKey((prev) => prev + 1);
+
+    if (validationActivatedRef.current) {
+      const validation = runLocalValidation();
+      applyValidationResult(validation, { showSuccess: false });
     }
   }
 
@@ -1534,39 +1624,119 @@ export default function FormRunnerBase({ mode }) {
           </div>
 
           <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
-            {!isDebug && canEditAnswers && (
-              <button
-                type="button"
-                className="btn btn-secondary"
-                disabled={busy || !surveyModelRef.current}
-                onClick={handleRefreshPrefill}
-                onMouseEnter={() => prefillRefreshIconRef.current?.startAnimation?.()}
-                onMouseLeave={() => {
-                  if (!prefillRefreshOk) prefillRefreshIconRef.current?.stopAnimation?.();
-                }}
-                style={{ display: "inline-flex", alignItems: "center", gap: 8 }}
-                title="Haal de laatste installatiedata op en vul deze in op het formulier."
-              >
-                <RotateCCWIcon ref={prefillRefreshIconRef} size={18} />
-                Voorinvulling vernieuwen
-              </button>
-            )}
-
             {!isDebug && (
-              <button
-                type="button"
-                className="btn btn-secondary"
-                disabled={busy}
-                onClick={() =>
-                  navigate(
-                    `/installaties/${encodeURIComponent(code)}/formulieren/${encodeURIComponent(
-                      instanceId
-                    )}/debug`
-                  )
-                }
-              >
-                Debug JSON
-              </button>
+              <div ref={actionsMenuRef} style={{ position: "relative" }}>
+                <button
+                  type="button"
+                  className="icon-btn"
+                  disabled={busy}
+                  onClick={() => setActionsMenuOpen((prev) => !prev)}
+                  onMouseEnter={() => actionsMenuIconRef.current?.startAnimation?.()}
+                  onMouseLeave={() => actionsMenuIconRef.current?.stopAnimation?.()}
+                  title="Meer acties"
+                  aria-haspopup="menu"
+                  aria-expanded={actionsMenuOpen}
+                >
+                  <MenuIcon ref={actionsMenuIconRef} size={18} className="nav-anim-icon" />
+                </button>
+
+                {actionsMenuOpen && (
+                  <div
+                    className="card"
+                    role="menu"
+                    style={{
+                      position: "absolute",
+                      top: "calc(100% + 8px)",
+                      right: 0,
+                      zIndex: 80,
+                      minWidth: 260,
+                      padding: 8,
+                      display: "grid",
+                      gap: 6,
+                      boxShadow: "var(--shadow-panel, var(--shadow))",
+                    }}
+                  >
+                    {canEditAnswers && (
+                      <button
+                        type="button"
+                        className="menu-item"
+                        role="menuitem"
+                        disabled={busy || !surveyModelRef.current}
+                        onClick={() => {
+                          setActionsMenuOpen(false);
+                          handleRefreshPrefill();
+                        }}
+                        onMouseEnter={() => prefillRefreshIconRef.current?.startAnimation?.()}
+                        onMouseLeave={() => {
+                          if (!prefillRefreshOk) prefillRefreshIconRef.current?.stopAnimation?.();
+                        }}
+                        title="Haal de laatste installatiedata op en vul deze in op het formulier."
+                      >
+                        <RotateCCWIcon ref={prefillRefreshIconRef} size={18} />
+                        <span>Voorinvulling vernieuwen</span>
+                      </button>
+                    )}
+
+                    <button
+                      type="button"
+                      className="menu-item"
+                      role="menuitem"
+                      disabled={busy}
+                      onMouseEnter={() => debugJsonIconRef.current?.startAnimation?.()}
+                      onMouseLeave={() => debugJsonIconRef.current?.stopAnimation?.()}
+                      onClick={() => {
+                        setActionsMenuOpen(false);
+                        navigate(
+                          `/installaties/${encodeURIComponent(code)}/formulieren/${encodeURIComponent(
+                            instanceId
+                          )}/debug`
+                        );
+                      }}
+                    >
+                      <AirVentIcon ref={debugJsonIconRef} size={18} className="nav-anim-icon" />
+                      <span>Debug JSON</span>
+                    </button>
+
+                    {showReopen && (
+                      <button
+                        type="button"
+                        className="menu-item"
+                        role="menuitem"
+                        disabled={busy}
+                        onClick={() => {
+                          setActionsMenuOpen(false);
+                          reopenToConcept();
+                        }}
+                        onMouseEnter={() => reopenIconRef.current?.startAnimation?.()}
+                        onMouseLeave={() => reopenIconRef.current?.stopAnimation?.()}
+                        title="Terug naar concept"
+                      >
+                        <HistoryIcon ref={reopenIconRef} size={18} />
+                        <span>Terug naar concept</span>
+                      </button>
+                    )}
+
+                    {showWithdraw && (
+                      <button
+                        type="button"
+                        className="menu-item danger"
+                        role="menuitem"
+                        disabled={busy}
+                        onClick={() => {
+                          setActionsMenuOpen(false);
+                          withdraw();
+                        }}
+                        onMouseEnter={() => withdrawIconRef.current?.startAnimation?.()}
+                        onMouseLeave={() => withdrawIconRef.current?.stopAnimation?.()}
+                        title="Intrekken"
+                      >
+                        <FolderXIcon ref={withdrawIconRef} size={18} />
+                        <span>Intrekken</span>
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
             )}
 
             {isDebug && (
@@ -1595,38 +1765,6 @@ export default function FormRunnerBase({ mode }) {
                   Terug naar formulier
                 </button>
               </>
-            )}
-
-            {showReopen && (
-              <button
-                type="button"
-                className="btn btn-secondary"
-                disabled={busy}
-                onClick={reopenToConcept}
-                onMouseEnter={() => reopenIconRef.current?.startAnimation?.()}
-                onMouseLeave={() => reopenIconRef.current?.stopAnimation?.()}
-                style={{ display: "inline-flex", alignItems: "center", gap: 8 }}
-                title="Terug naar concept"
-              >
-                <HistoryIcon ref={reopenIconRef} size={18} />
-                Concept
-              </button>
-            )}
-
-            {showWithdraw && (
-              <button
-                type="button"
-                className="btn btn-secondary"
-                disabled={busy}
-                onClick={withdraw}
-                onMouseEnter={() => withdrawIconRef.current?.startAnimation?.()}
-                onMouseLeave={() => withdrawIconRef.current?.stopAnimation?.()}
-                style={{ display: "inline-flex", alignItems: "center", gap: 8 }}
-                title="Intrekken"
-              >
-                <FolderXIcon ref={withdrawIconRef} size={18} />
-                Intrekken
-              </button>
             )}
 
             {showValidate && (
@@ -2039,34 +2177,79 @@ export default function FormRunnerBase({ mode }) {
 
       {!isDebug && (
         <>
-          {!contextPanelOpen && (
-            <button
-              type="button"
-              className="icon-btn"
-              title="Context en bijlagen openen"
-              onClick={() => setContextPanelOpen(true)}
-              onMouseEnter={() => contextToggleIconRef.current?.startAnimation?.()}
-              onMouseLeave={() => contextToggleIconRef.current?.stopAnimation?.()}
-              style={{
-                position: "fixed",
-                right: 18,
-                top: "50%",
-                transform: "translateY(-50%)",
-                zIndex: 62,
-                width: 48,
-                height: 48,
-                borderRadius: 999,
-                background: "var(--card-bg, var(--surface))",
-                border: "1px solid var(--border)",
-                color: "var(--text)",
-                boxShadow: "var(--shadow)",
-                display: "inline-flex",
-                alignItems: "center",
-                justifyContent: "center",
-              }}
-            >
-              <AttachFileIcon ref={contextToggleIconRef} size={20} />
-            </button>
+          {!contextPanelOpen && !assistantPanelOpen && (
+            <div className="form-runner-floating-actions">
+              <button
+                type="button"
+                className="icon-btn form-runner-floating-btn form-runner-floating-btn--assistant"
+                title="Ember assistent openen"
+                onClick={() => setAssistantPanelOpen(true)}
+                onMouseEnter={() => assistantToggleIconRef.current?.startAnimation?.()}
+                onMouseLeave={() => assistantToggleIconRef.current?.stopAnimation?.()}
+              >
+                <MicIcon ref={assistantToggleIconRef} size={20} />
+              </button>
+
+              <button
+                type="button"
+                className="icon-btn form-runner-floating-btn"
+                title="Context en bijlagen openen"
+                onClick={() => setContextPanelOpen(true)}
+                onMouseEnter={() => contextToggleIconRef.current?.startAnimation?.()}
+                onMouseLeave={() => contextToggleIconRef.current?.stopAnimation?.()}
+              >
+                <AttachFileIcon ref={contextToggleIconRef} size={20} />
+              </button>
+            </div>
+          )}
+
+          {assistantPanelOpen && (
+            <>
+              <button
+                type="button"
+                aria-label="Sluit Ember assistent"
+                onClick={() => setAssistantPanelOpen(false)}
+                className="form-runner-side-overlay"
+              />
+
+              <div className="form-runner-side-panel">
+                <div className="card form-runner-side-panel-head">
+                  <div className="form-runner-side-panel-title-row">
+                    <MicIcon size={18} />
+                    <div className="form-runner-side-panel-title-text">
+                      <div className="form-runner-side-panel-title">Ember assistent</div>
+                      <div className="muted form-runner-side-panel-subtitle">
+                        Spreek formulieropdrachten in
+                      </div>
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    className="icon-btn"
+                    title="Sluiten"
+                    onClick={() => setAssistantPanelOpen(false)}
+                  >
+                    <ChevronUpIcon size={18} style={{ transform: "rotate(90deg)" }} />
+                  </button>
+                </div>
+
+                <div className="form-runner-side-panel-body">
+                  <div className="card" style={{ padding: 12 }}>
+                    <FormAssistantPanel
+                      code={code}
+                      instanceId={instanceId}
+                      surveyModel={surveyModelRef.current}
+                      canEdit={canEditAnswers}
+                      draftRev={getDraftRev(instance)}
+                      activePageName={surveyModelRef.current?.currentPage?.name || null}
+                      onApplied={handleAssistantApplied}
+                      onClose={() => setAssistantPanelOpen(false)}
+                    />
+                  </div>
+                </div>
+              </div>
+            </>
           )}
 
           {contextPanelOpen && (
@@ -2075,51 +2258,16 @@ export default function FormRunnerBase({ mode }) {
                 type="button"
                 aria-label="Sluit context en bijlagen"
                 onClick={() => setContextPanelOpen(false)}
-                style={{
-                  position: "fixed",
-                  inset: 0,
-                  zIndex: 70,
-                  border: "none",
-                  background: "color-mix(in srgb, var(--bg) 42%, transparent)",
-                  padding: 0,
-                  margin: 0,
-                  cursor: "pointer",
-                }}
+                className="form-runner-side-overlay"
               />
 
-              <div
-                style={{
-                  position: "fixed",
-                  top: 0,
-                  right: 0,
-                  bottom: 0,
-                  width: "min(560px, 100vw)",
-                  zIndex: 71,
-                  padding: 14,
-                  display: "grid",
-                  gridTemplateRows: "auto 1fr",
-                  gap: 12,
-                  background: "color-mix(in srgb, var(--bg) 88%, transparent)",
-                  color: "var(--text)",
-                  backdropFilter: "blur(10px)",
-                  boxShadow: "-16px 0 40px color-mix(in srgb, var(--shadow-color, #000) 30%, transparent)",
-                }}
-              >
-                <div
-                  className="card"
-                  style={{
-                    padding: 10,
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "space-between",
-                    gap: 10,
-                  }}
-                >
-                  <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
+              <div className="form-runner-side-panel">
+                <div className="card form-runner-side-panel-head">
+                  <div className="form-runner-side-panel-title-row">
                     <AttachFileIcon size={18} />
-                    <div style={{ minWidth: 0 }}>
-                      <div style={{ fontWeight: 900, fontSize: 15 }}>Context en bijlagen</div>
-                      <div className="muted" style={{ fontSize: 12 }}>
+                    <div className="form-runner-side-panel-title-text">
+                      <div className="form-runner-side-panel-title">Context en bijlagen</div>
+                      <div className="muted form-runner-side-panel-subtitle">
                         Installatiebestanden en formulierbijlagen
                       </div>
                     </div>
@@ -2135,17 +2283,12 @@ export default function FormRunnerBase({ mode }) {
                   </button>
                 </div>
 
-                <div
-                  style={{
-                    minHeight: 0,
-                    overflow: "auto",
-                    paddingRight: 2,
-                  }}
-                >
+                <div className="form-runner-side-panel-body">
                   <FormContextPanel
                     code={code}
                     instanceId={instanceId}
                     canEdit={canEditEvidence}
+                    canDeleteDocuments={canDeleteEvidence}
                     embedded={true}
                     defaultInstallationOpen={false}
                     defaultFormDocsOpen={false}

@@ -11,6 +11,7 @@ import { SearchIcon } from "@/components/ui/search";
 import { BrainIcon } from "@/components/ui/brain";
 import { MonitorCheckIcon } from "@/components/ui/monitor-check";
 import { IdCardIcon } from "@/components/ui/id-card";
+import { MenuIcon } from "@/components/ui/menu";
 
 function initialsFromProfilePayload(profileData, meData) {
   return (
@@ -79,6 +80,7 @@ export default function Layout() {
   const [profileRefreshToken, setProfileRefreshToken] = useState(0);
 
   const menuRef = useRef(null);
+  const topbarMenuIconRef = useRef(null);
 
   const avatarRefreshKey = useMemo(
     () => resolveProfileUpdatedKey(profileData, meData, profileRefreshToken),
@@ -279,9 +281,12 @@ export default function Layout() {
           type="button"
           className="icon-btn topbar-menu-btn"
           aria-label="menu"
+          aria-expanded={navOpen}
           onClick={() => setNavOpen((v) => !v)}
+          onMouseEnter={() => topbarMenuIconRef.current?.startAnimation?.()}
+          onMouseLeave={() => topbarMenuIconRef.current?.stopAnimation?.()}
         >
-          <span className="topbar-menu-glyph">☰</span>
+          <MenuIcon ref={topbarMenuIconRef} size={20} className="nav-anim-icon" />
         </button>
 
         <div className="brand" onClick={() => go("/")} role="button" tabIndex={0}>

@@ -22,7 +22,6 @@ import {
   getFormInstanceDocumentDownloadUrl,
   downloadFormInstanceDocumentFile,
   putFormInstanceDocumentLabels,
-  putFormInstanceDocumentFollowUps,
   deleteFormInstanceDocument,
 } from "@/api/emberApi.js";
 
@@ -75,6 +74,46 @@ function formatDateTime(value) {
   return d.toLocaleString("nl-NL");
 }
 
+function getFileExtension(name) {
+  const raw = String(name || "").trim();
+  const idx = raw.lastIndexOf(".");
+  if (idx <= 0 || idx === raw.length - 1) return "";
+  return raw.slice(idx + 1).toLowerCase();
+}
+
+function sanitizeFileName(value, fallback = "bijlage") {
+  const raw = String(value || "").trim() || fallback;
+  return raw.replace(/[\\/:*?"<>|]/g, "-").replace(/\s+/g, " ").trim() || fallback;
+}
+
+function isImageFileName(name) {
+  return ["jpg", "jpeg", "png", "gif", "webp", "bmp", "avif"].includes(getFileExtension(name));
+}
+
+function isPreviewableFormDoc(doc) {
+  if (!doc?.file_name && !doc?.title) return false;
+
+  const mime =
+    doc?.mime_type ||
+    doc?.content_type ||
+    doc?.file_mime_type ||
+    doc?.file_content_type ||
+    "";
+
+  if (isImageMime(mime)) return true;
+  return isImageFileName(doc?.file_name || doc?.title || "");
+}
+
+function renameFileForUpload(file, nextName) {
+  const safeName = sanitizeFileName(nextName, file?.name || "bijlage");
+  if (!file || safeName === file.name) return file;
+
+  return new File([file], safeName, {
+    type: file.type || "application/octet-stream",
+    lastModified: file.lastModified || Date.now(),
+  });
+}
+
 function isImageMime(mime) {
   const m = String(mime || "").toLowerCase();
   return m.startsWith("image/");
@@ -100,53 +139,6 @@ function buildLabelPayload(selected) {
   const arr = normalizeSelectedLabels(selected);
   return arr.map((labelKey, index) => ({
     label_key: labelKey,
-    is_primary: index === 0,
-  }));
-}
-
-function normalizeFollowUpOptions(items) {
-  return (Array.isArray(items) ? items : [])
-    .map((item) => ({
-      follow_up_action_id: String(item?.follow_up_action_id || "").trim(),
-      workflow_title: String(item?.workflow_title || item?.title || "Actiepunt").trim(),
-      workflow_description: item?.workflow_description || null,
-      category: item?.category || null,
-      status: item?.status || null,
-      source_item_code: item?.source_item_code || null,
-      source_row_index: item?.source_row_index ?? null,
-    }))
-    .filter((item) => item.follow_up_action_id);
-}
-
-function makeFollowUpLabel(item) {
-  const parts = [item?.workflow_title || "Actiepunt"];
-
-  if (item?.source_item_code || item?.source_row_index != null) {
-    parts.push(`vraag ${item.source_item_code || item.source_row_index}`);
-  }
-
-  return parts.filter(Boolean).join(" ; ");
-}
-
-function getDocFollowUpIds(doc) {
-  return Array.from(
-    new Set(
-      (Array.isArray(doc?.follow_ups) ? doc.follow_ups : [])
-        .map((x) => String(x?.follow_up_action_id || "").trim())
-        .filter(Boolean)
-    )
-  );
-}
-
-function buildFollowUpPayload(selected) {
-  return Array.from(
-    new Set(
-      (Array.isArray(selected) ? selected : [])
-        .map((x) => String(x || "").trim())
-        .filter(Boolean)
-    )
-  ).map((followUpActionId, index) => ({
-    follow_up_action_id: followUpActionId,
     is_primary: index === 0,
   }));
 }
@@ -385,11 +377,53 @@ function DocumentCard({
   title,
   subtitle,
   labels,
-  followUpLinks,
   note,
   actions,
   editArea,
+  previewUrl = null,
+  previewAlt = "Preview",
+  collapsible = false,
+  defaultOpen = true,
+  statusLabel = null,
 }) {
+  const [open, setOpen] = useState(defaultOpen);
+
+  const body = (
+    <>
+      {previewUrl ? (
+        <div
+          style={{
+            overflow: "hidden",
+            borderRadius: 12,
+            background: "rgba(255,255,255,0.04)",
+            border: "1px solid rgba(255,255,255,0.08)",
+          }}
+        >
+          <img
+            src={previewUrl}
+            alt={previewAlt}
+            style={{
+              width: "100%",
+              maxHeight: 260,
+              objectFit: "cover",
+              display: "block",
+            }}
+            loading="lazy"
+          />
+        </div>
+      ) : null}
+
+      {note ? (
+        <div className="muted" style={{ fontSize: 12 }}>
+          {note}
+        </div>
+      ) : null}
+
+      {actions}
+      {editArea}
+    </>
+  );
+
   return (
     <div
       className="card"
@@ -400,42 +434,110 @@ function DocumentCard({
         background: "rgba(255,255,255,0.03)",
       }}
     >
-      <div style={{ display: "grid", gap: 4 }}>
-        <div style={{ fontWeight: 800 }}>{title || "Zonder titel"}</div>
-        {subtitle ? (
-          <div className="muted" style={{ fontSize: 12 }}>
-            {subtitle}
+      <button
+        type="button"
+        onClick={() => {
+          if (collapsible) setOpen((prev) => !prev);
+        }}
+        disabled={!collapsible}
+        style={{
+          appearance: "none",
+          border: "none",
+          background: "transparent",
+          color: "inherit",
+          padding: 0,
+          margin: 0,
+          width: "100%",
+          textAlign: "left",
+          cursor: collapsible ? "pointer" : "default",
+          display: "grid",
+          gap: 6,
+        }}
+      >
+        <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 10 }}>
+          <div style={{ minWidth: 0, display: "flex", alignItems: "flex-start", gap: 10 }}>
+            {previewUrl ? (
+              <div
+                style={{
+                  width: 56,
+                  height: 42,
+                  borderRadius: 10,
+                  overflow: "hidden",
+                  border: "1px solid rgba(255,255,255,0.10)",
+                  background: "rgba(255,255,255,0.04)",
+                  flex: "0 0 auto",
+                }}
+              >
+                <img
+                  src={previewUrl}
+                  alt={previewAlt}
+                  style={{
+                    width: "100%",
+                    height: "100%",
+                    objectFit: "cover",
+                    display: "block",
+                  }}
+                  loading="lazy"
+                />
+              </div>
+            ) : null}
+
+            <div style={{ minWidth: 0, display: "grid", gap: 4 }}>
+              <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                <div style={{ fontWeight: 800, wordBreak: "break-word" }}>{title || "Zonder titel"}</div>
+                {statusLabel ? (
+                  <span
+                    style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      padding: "2px 8px",
+                      borderRadius: 999,
+                      fontSize: 12,
+                      fontWeight: 800,
+                      background: "var(--success-bg-soft, rgba(34,197,94,0.10))",
+                      border: "1px solid var(--success-border, rgba(34,197,94,0.30))",
+                      color: "var(--success-text, rgba(220,252,231,.98))",
+                    }}
+                  >
+                    {statusLabel}
+                  </span>
+                ) : null}
+              </div>
+
+              {subtitle ? (
+                <div className="muted" style={{ fontSize: 12 }}>
+                  {subtitle}
+                </div>
+              ) : null}
+            </div>
+          </div>
+
+          {collapsible ? (
+            <div style={{ flex: "0 0 auto", display: "inline-flex", alignItems: "center" }}>
+              {open ? <ChevronUpIcon size={18} /> : <PlusIcon size={18} />}
+            </div>
+          ) : null}
+        </div>
+
+        {labels?.length ? (
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+            {labels.map((item, idx) => (
+              <LabelBadge
+                key={`${item.label_key || item.key || idx}`}
+                labelKey={String(item.label_key || item.key || "")}
+                fallback={item.display_name || item.label || item.label_key || item.key}
+              />
+            ))}
           </div>
         ) : null}
-      </div>
+      </button>
 
-      {labels?.length ? (
-        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-          {labels.map((item, idx) => (
-            <LabelBadge
-              key={`${item.label_key || item.key || idx}`}
-              labelKey={String(item.label_key || item.key || "")}
-              fallback={item.display_name || item.label || item.label_key || item.key}
-            />
-          ))}
-        </div>
-      ) : null}
-
-      {followUpLinks}
-
-      {note ? (
-        <div className="muted" style={{ fontSize: 12 }}>
-          {note}
-        </div>
-      ) : null}
-
-      {actions}
-      {editArea}
+      {!collapsible || open ? body : null}
     </div>
   );
 }
 
-function SelectedUploadCard({ item, onRemove }) {
+function SelectedUploadCard({ item, onRemove, onFileNameChange, selectedLabels = [], labelLookup }) {
   return (
     <div
       className="card"
@@ -457,7 +559,7 @@ function SelectedUploadCard({ item, onRemove }) {
         >
           <img
             src={item.previewUrl}
-            alt={item.file.name}
+            alt={item.fileName || item.file.name}
             style={{
               width: "100%",
               maxHeight: 240,
@@ -468,22 +570,55 @@ function SelectedUploadCard({ item, onRemove }) {
         </div>
       ) : null}
 
-      <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 10 }}>
-        <div style={{ minWidth: 0 }}>
-          <div style={{ fontWeight: 800, wordBreak: "break-word" }}>{item.file.name}</div>
-          <div className="muted" style={{ fontSize: 12 }}>
-            {formatBytes(item.file.size)}
+      <div style={{ display: "grid", gap: 8 }}>
+        <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 10 }}>
+          <div style={{ minWidth: 0 }}>
+            <div style={{ fontWeight: 800, wordBreak: "break-word" }}>{item.file.name}</div>
+            <div className="muted" style={{ fontSize: 12 }}>
+              {formatBytes(item.file.size)}
+            </div>
+
+            {selectedLabels.length > 0 ? (
+              <div
+                style={{
+                  display: "flex",
+                  gap: 6,
+                  flexWrap: "wrap",
+                  marginTop: 6,
+                }}
+              >
+                {selectedLabels.map((labelKey) => (
+                  <LabelBadge
+                    key={labelKey}
+                    labelKey={labelKey}
+                    fallback={labelLookup?.get?.(labelKey) || labelKey}
+                  />
+                ))}
+              </div>
+            ) : null}
           </div>
+
+          <button
+            type="button"
+            className="btn btn-secondary"
+            onClick={onRemove}
+            style={{ display: "inline-flex", alignItems: "center", gap: 8, flex: "0 0 auto" }}
+          >
+            Verwijderen
+          </button>
         </div>
 
-        <button
-          type="button"
-          className="btn btn-secondary"
-          onClick={onRemove}
-          style={{ display: "inline-flex", alignItems: "center", gap: 8, flex: "0 0 auto" }}
-        >
-          Verwijderen
-        </button>
+        <div style={{ display: "grid", gap: 6 }}>
+          <div className="muted" style={{ fontSize: 12 }}>
+            Bestandsnaam
+          </div>
+          <input
+            className="input"
+            value={item.fileName || item.file.name}
+            onChange={(e) => onFileNameChange?.(e.target.value)}
+            placeholder="Bestandsnaam"
+          />
+        </div>
       </div>
     </div>
   );
@@ -493,17 +628,21 @@ export default function FormContextPanel({
   code,
   instanceId,
   canEdit,
+  canDeleteDocuments = canEdit,
   embedded = false,
   documentsTabHref = null,
   defaultInstallationOpen = false,
   defaultFormDocsOpen = false,
+  defaultAddPanelOpen = false,
 }) {
   const [installationOpen, setInstallationOpen] = useState(defaultInstallationOpen);
   const [formDocsOpen, setFormDocsOpen] = useState(defaultFormDocsOpen);
+  const [addPanelOpen, setAddPanelOpen] = useState(defaultAddPanelOpen);
 
   const [installationTypeOpenMap, setInstallationTypeOpenMap] = useState({});
   const [installationDocs, setInstallationDocs] = useState([]);
   const [formDocs, setFormDocs] = useState([]);
+  const [formPreviewUrlMap, setFormPreviewUrlMap] = useState({});
 
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
@@ -512,6 +651,7 @@ export default function FormContextPanel({
   const [uploadError, setUploadError] = useState(null);
 
   const [selectedUploads, setSelectedUploads] = useState([]);
+  const selectedUploadsRef = useRef([]);
   const [note, setNote] = useState("");
   const [selectedLabels, setSelectedLabels] = useState([]);
   const [imageVariant, setImageVariant] = useState("ORIGINAL");
@@ -537,11 +677,6 @@ export default function FormContextPanel({
     return map;
   }, []);
 
-  const followUpOptions = useMemo(() => normalizeFollowUpOptions(followUps), [followUps]);
-  const shouldShowFollowUpLinks = showFollowUpLinks || followUpOptions.length > 0;
-  const canEditAnyDocumentControls =
-    Boolean(canEdit) || Boolean(canEditFollowUpLinks && shouldShowFollowUpLinks);
-
   useEffect(() => {
     setHasCameraSupport(
       typeof navigator !== "undefined" &&
@@ -564,12 +699,16 @@ export default function FormContextPanel({
   }, [webcamStream]);
 
   useEffect(() => {
+    selectedUploadsRef.current = selectedUploads;
+  }, [selectedUploads]);
+
+  useEffect(() => {
     return () => {
-      for (const item of selectedUploads) {
+      for (const item of selectedUploadsRef.current) {
         if (item.previewUrl) URL.revokeObjectURL(item.previewUrl);
       }
     };
-  }, [selectedUploads]);
+  }, []);
 
   async function loadAll() {
     setLoading(true);
@@ -624,13 +763,76 @@ export default function FormContextPanel({
     });
   }, [formDocs]);
 
+  useEffect(() => {
+    const presentIds = new Set(
+      formDocItems
+        .map((doc) => String(doc?.form_instance_document_id || ""))
+        .filter(Boolean)
+    );
+
+    setFormPreviewUrlMap((prev) => {
+      const next = {};
+      for (const [key, value] of Object.entries(prev || {})) {
+        if (presentIds.has(key)) next[key] = value;
+      }
+      return next;
+    });
+  }, [formDocItems]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadPreviewUrls() {
+      const candidates = formDocItems.filter((doc) => {
+        const id = String(doc?.form_instance_document_id || "");
+        if (!id) return false;
+        if (formPreviewUrlMap[id]) return false;
+        return isPreviewableFormDoc(doc);
+      });
+
+      if (candidates.length === 0) return;
+
+      const updates = {};
+
+      await Promise.all(
+        candidates.slice(0, 20).map(async (doc) => {
+          const id = String(doc.form_instance_document_id);
+          try {
+            const res = await getFormInstanceDocumentDownloadUrl(
+              code,
+              instanceId,
+              doc.form_instance_document_id
+            );
+            if (res?.url) updates[id] = res.url;
+          } catch {
+            // Preview is optional; openen/downloaden blijft via de normale acties werken.
+          }
+        })
+      );
+
+      if (!cancelled && Object.keys(updates).length > 0) {
+        setFormPreviewUrlMap((prev) => ({ ...prev, ...updates }));
+      }
+    }
+
+    loadPreviewUrls();
+
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [code, instanceId, formDocItems]);
+
   const summaryText = useMemo(() => {
     return `${installationDocItems.length} installatiebestand(en) ; ${formDocItems.length} formulierbijlage(n)`;
   }, [installationDocItems.length, formDocItems.length]);
 
   const hasSelectedLabels = selectedLabels.length > 0;
   const hasUploads = selectedUploads.length > 0;
-  const canSubmitUpload = hasUploads && hasSelectedLabels && !uploading;
+  const hasValidUploadNames = selectedUploads.every((item) =>
+    Boolean(sanitizeFileName(item.fileName, "").trim())
+  );
+  const canSubmitUpload = hasUploads && hasSelectedLabels && hasValidUploadNames && !uploading;
 
   const uploadStatus = useMemo(() => {
     if (!hasUploads) {
@@ -647,6 +849,13 @@ export default function FormContextPanel({
       };
     }
 
+    if (!hasValidUploadNames) {
+      return {
+        text: "Vul voor elk bestand een bestandsnaam in",
+        color: "salmon",
+      };
+    }
+
     return {
       text:
         selectedUploads.length === 1
@@ -654,7 +863,7 @@ export default function FormContextPanel({
           : `${selectedUploads.length} bestanden klaar om toe te voegen`,
       color: "var(--muted-foreground, rgba(255,255,255,0.8))",
     };
-  }, [hasUploads, hasSelectedLabels, selectedUploads.length]);
+  }, [hasUploads, hasSelectedLabels, hasValidUploadNames, selectedUploads.length]);
 
   const addButtonLabel = useMemo(() => {
     if (uploading) return "Bezig...";
@@ -698,6 +907,7 @@ export default function FormContextPanel({
         next.push({
           id: `${key}__${Math.random().toString(36).slice(2)}`,
           file,
+          fileName: file.name,
           previewUrl: buildPreviewUrl(file),
         });
       }
@@ -712,6 +922,15 @@ export default function FormContextPanel({
       if (target?.previewUrl) URL.revokeObjectURL(target.previewUrl);
       return prev.filter((item) => item.id !== id);
     });
+  }
+
+  function updateSelectedUploadFileName(id, value) {
+    setSelectedUploads((prev) =>
+      prev.map((item) =>
+        item.id === id ? { ...item, fileName: value } : item
+      )
+    );
+    setUploadError(null);
   }
 
   async function updateDocLabelsRealtime(doc, nextSelected) {
@@ -754,51 +973,7 @@ export default function FormContextPanel({
     }
   }
 
-  async function updateDocFollowUpsRealtime(doc, nextSelected) {
-    if (!canEditFollowUpLinks) return;
-
-    const payload = buildFollowUpPayload(nextSelected);
-    const selectedSet = new Set(payload.map((x) => x.follow_up_action_id));
-
-    setBusyDocId(doc.form_instance_document_id);
-    setError(null);
-
-    const previousDocs = formDocs;
-
-    try {
-      setFormDocs((prev) =>
-        prev.map((item) => {
-          if (item.form_instance_document_id !== doc.form_instance_document_id) return item;
-
-          return {
-            ...item,
-            follow_ups: followUpOptions
-              .filter((option) => selectedSet.has(option.follow_up_action_id))
-              .map((option, index) => ({
-                ...option,
-                is_primary: index === 0,
-              })),
-          };
-        })
-      );
-
-      await putFormInstanceDocumentFollowUps(
-        code,
-        instanceId,
-        doc.form_instance_document_id,
-        payload
-      );
-    } catch (e) {
-      setFormDocs(previousDocs);
-      setError(String(e?.message || e || "Actiepunten koppelen mislukt."));
-    } finally {
-      setBusyDocId(null);
-    }
-  }
-
   async function saveDocMetadata(doc, patch) {
-    if (!canEdit) return;
-
     const current = formDocs.find(
       (x) => x.form_instance_document_id === doc.form_instance_document_id
     );
@@ -1016,7 +1191,7 @@ export default function FormContextPanel({
     setUploadError(null);
 
     if (!canEdit) {
-      setUploadError("Bijlagen toevoegen kan alleen in status Concept.");
+      setUploadError("Bijlagen toevoegen of wijzigen kan niet in de huidige status.");
       return;
     }
 
@@ -1036,12 +1211,14 @@ export default function FormContextPanel({
     try {
       for (const uploadItem of selectedUploads) {
         const file = uploadItem.file;
+        const uploadFile = renameFileForUpload(file, uploadItem.fileName);
+        const uploadTitle = sanitizeFileName(uploadItem.fileName, file.name);
 
         const createRes = await putFormInstanceDocuments(code, instanceId, [
           {
-            title: null,
+            title: uploadTitle || null,
             note: note || null,
-            image_variant: isImageMime(file.type) ? imageVariant : null,
+            image_variant: isImageMime(uploadFile.type) ? imageVariant : null,
             relation_type: null,
             is_active: true,
           },
@@ -1062,7 +1239,7 @@ export default function FormContextPanel({
           throw new Error("Documentregel kon niet worden aangemaakt.");
         }
 
-        await uploadFormInstanceDocumentFile(code, instanceId, documentId, file);
+        await uploadFormInstanceDocumentFile(code, instanceId, documentId, uploadFile);
         await putFormInstanceDocumentLabels(code, instanceId, documentId, labelsPayload);
       }
 
@@ -1075,6 +1252,7 @@ export default function FormContextPanel({
       setSelectedLabels([]);
       setImageVariant("ORIGINAL");
       setFormDocsOpen(true);
+      setAddPanelOpen(false);
       setUploadError(null);
 
       if (fileInputRef.current) fileInputRef.current.value = "";
@@ -1249,299 +1427,328 @@ export default function FormContextPanel({
                     background: "rgba(255,255,255,0.03)",
                   }}
                 >
-                  <div style={{ fontWeight: 700 }}>Nieuwe bijlage toevoegen</div>
-
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    multiple
-                    onChange={(e) => addFilesToSelection(e.target.files)}
-                    style={{ display: "none" }}
+                  <SectionToggle
+                    title="Nieuwe bijlage toevoegen"
+                    subtitle={
+                      selectedUploads.length > 0
+                        ? `${selectedUploads.length} bestand(en) klaarzetten`
+                        : "Bestand of foto klaarzetten, naam controleren en labels kiezen"
+                    }
+                    count={selectedUploads.length}
+                    open={addPanelOpen}
+                    onToggle={() => setAddPanelOpen((prev) => !prev)}
                   />
 
-                  <input
-                    ref={mobileCameraInputRef}
-                    type="file"
-                    accept="image/*"
-                    capture="environment"
-                    onChange={(e) => addFilesToSelection(e.target.files)}
-                    style={{ display: "none" }}
-                  />
+                  {addPanelOpen ? (
+                    <>
+                      <input
+                        ref={fileInputRef}
+                        type="file"
+                        multiple
+                        onChange={(e) => addFilesToSelection(e.target.files)}
+                        style={{ display: "none" }}
+                      />
 
-                  <div
-                    role="button"
-                    tabIndex={0}
-                    onClick={() => fileInputRef.current?.click()}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter" || e.key === " ") {
-                        e.preventDefault();
-                        fileInputRef.current?.click();
-                      }
-                    }}
-                    onDragOver={(e) => {
-                      e.preventDefault();
-                      setDragActive(true);
-                    }}
-                    onDragEnter={(e) => {
-                      e.preventDefault();
-                      setDragActive(true);
-                    }}
-                    onDragLeave={(e) => {
-                      e.preventDefault();
-                      const next = e.relatedTarget;
-                      if (!e.currentTarget.contains(next)) {
-                        setDragActive(false);
-                      }
-                    }}
-                    onDrop={(e) => {
-                      e.preventDefault();
-                      setDragActive(false);
-                      addFilesToSelection(e.dataTransfer.files);
-                    }}
-                    style={{
-                      padding: 14,
-                      borderRadius: 12,
-                      border: dragActive
-                        ? "1px solid rgba(255,255,255,0.22)"
-                        : "1px dashed rgba(255,255,255,0.12)",
-                      background: dragActive
-                        ? "rgba(255,255,255,0.06)"
-                        : "rgba(255,255,255,0.03)",
-                      cursor: "pointer",
-                      display: "grid",
-                      gap: 8,
-                    }}
-                  >
-                    <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-                      <button
-                        type="button"
-                        className="btn btn-secondary"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          fileInputRef.current?.click();
-                        }}
-                        style={{ display: "inline-flex", alignItems: "center", gap: 8 }}
-                      >
-                        Bestanden kiezen
-                      </button>
-
-                      <span className="muted" style={{ fontSize: 13 }}>
-                        Sleep bestanden hierheen, of kies meerdere bestanden tegelijk.
-                      </span>
-                    </div>
-                  </div>
-
-                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                    <button
-                      type="button"
-                      className="btn btn-secondary"
-                      onClick={openCameraOrFallback}
-                      style={{ display: "inline-flex", alignItems: "center", gap: 8 }}
-                    >
-                      <UploadIcon size={16} />
-                      Neem foto
-                    </button>
-                  </div>
-
-                  {cameraError ? (
-                    <div style={{ color: "salmon", fontSize: 13 }}>{cameraError}</div>
-                  ) : null}
-
-                  {cameraMode === "desktop-webcam" ? (
-                    <div
-                      className="card"
-                      style={{
-                        padding: 12,
-                        display: "grid",
-                        gap: 10,
-                        background: "rgba(255,255,255,0.03)",
-                      }}
-                    >
-                      <div style={{ fontWeight: 700 }}>Webcam</div>
+                      <input
+                        ref={mobileCameraInputRef}
+                        type="file"
+                        accept="image/*"
+                        capture="environment"
+                        onChange={(e) => addFilesToSelection(e.target.files)}
+                        style={{ display: "none" }}
+                      />
 
                       <div
+                        role="button"
+                        tabIndex={0}
+                        onClick={() => fileInputRef.current?.click()}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter" || e.key === " ") {
+                            e.preventDefault();
+                            fileInputRef.current?.click();
+                          }
+                        }}
+                        onDragOver={(e) => {
+                          e.preventDefault();
+                          setDragActive(true);
+                        }}
+                        onDragEnter={(e) => {
+                          e.preventDefault();
+                          setDragActive(true);
+                        }}
+                        onDragLeave={(e) => {
+                          e.preventDefault();
+                          const next = e.relatedTarget;
+                          if (!e.currentTarget.contains(next)) {
+                            setDragActive(false);
+                          }
+                        }}
+                        onDrop={(e) => {
+                          e.preventDefault();
+                          setDragActive(false);
+                          addFilesToSelection(e.dataTransfer.files);
+                        }}
                         style={{
-                          overflow: "hidden",
+                          padding: 14,
                           borderRadius: 12,
-                          background: "#000",
-                          border: "1px solid rgba(255,255,255,0.08)",
+                          border: dragActive
+                            ? "1px solid rgba(255,255,255,0.22)"
+                            : "1px dashed rgba(255,255,255,0.12)",
+                          background: dragActive
+                            ? "rgba(255,255,255,0.06)"
+                            : "rgba(255,255,255,0.03)",
+                          cursor: "pointer",
+                          display: "grid",
+                          gap: 8,
                         }}
                       >
-                        <video
-                          ref={webcamVideoRef}
-                          autoPlay
-                          playsInline
-                          muted
-                          style={{
-                            width: "100%",
-                            maxHeight: 320,
-                            display: "block",
-                            objectFit: "cover",
-                          }}
-                        />
+                        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                          <button
+                            type="button"
+                            className="btn btn-secondary"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              fileInputRef.current?.click();
+                            }}
+                            style={{ display: "inline-flex", alignItems: "center", gap: 8 }}
+                          >
+                            Bestanden kiezen
+                          </button>
+
+                          <span className="muted" style={{ fontSize: 13 }}>
+                            Sleep bestanden hierheen, of kies meerdere bestanden tegelijk.
+                          </span>
+                        </div>
                       </div>
 
                       <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                         <button
                           type="button"
-                          className="btn"
-                          onClick={captureDesktopWebcamPhoto}
+                          className="btn btn-secondary"
+                          onClick={openCameraOrFallback}
                           style={{ display: "inline-flex", alignItems: "center", gap: 8 }}
                         >
                           <UploadIcon size={16} />
-                          Foto maken
+                          Neem foto
                         </button>
+                      </div>
 
-                        <button
-                          type="button"
-                          className="btn btn-secondary"
-                          onClick={closeDesktopWebcam}
+                      {cameraError ? (
+                        <div style={{ color: "salmon", fontSize: 13 }}>{cameraError}</div>
+                      ) : null}
+
+                      {cameraMode === "desktop-webcam" ? (
+                        <div
+                          className="card"
+                          style={{
+                            padding: 12,
+                            display: "grid",
+                            gap: 10,
+                            background: "rgba(255,255,255,0.03)",
+                          }}
                         >
-                          Annuleren
-                        </button>
-                      </div>
-                    </div>
-                  ) : null}
+                          <div style={{ fontWeight: 700 }}>Webcam</div>
 
-                  {selectedUploads.length > 0 ? (
-                    <div style={{ display: "grid", gap: 8 }}>
-                      <div className="muted" style={{ fontSize: 13 }}>
-                        Geselecteerde bestanden
-                      </div>
-
-                      <div style={{ display: "grid", gap: 8 }}>
-                        {selectedUploads.map((item) => (
-                          <SelectedUploadCard
-                            key={item.id}
-                            item={item}
-                            onRemove={() => removeSelectedUpload(item.id)}
-                          />
-                        ))}
-                      </div>
-                    </div>
-                  ) : null}
-
-                  <textarea
-                    className="input"
-                    value={note}
-                    onChange={(e) => setNote(e.target.value)}
-                    placeholder="Optionele notitie"
-                    style={{ minHeight: 42, resize: "vertical" }}
-                  />
-
-                  {selectedUploads.some((x) => isImageMime(x.file.type)) ? (
-                    <div style={{ display: "grid", gap: 6 }}>
-                      <div className="muted" style={{ fontSize: 12 }}>
-                        Resolutievariant voor foto’s
-                      </div>
-                      <select
-                        className="input"
-                        value={imageVariant}
-                        onChange={(e) => setImageVariant(e.target.value)}
-                      >
-                        <option value="ORIGINAL">Origineel</option>
-                        <option value="LARGE">Hoog</option>
-                        <option value="MEDIUM">Middel</option>
-                        <option value="SMALL">Laag</option>
-                      </select>
-                    </div>
-                  ) : null}
-
-                  <div style={{ display: "grid", gap: 6 }}>
-                    <div className="muted" style={{ fontSize: 12 }}>
-                      Labels ; minimaal 1 verplicht
-                    </div>
-
-                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                      {LABEL_OPTIONS.map((item) => {
-                        const active = selectedLabels.includes(item.key);
-                        const baseStyle = LABEL_STYLES[item.key] || LABEL_STYLES.OVERIG;
-
-                        return (
-                          <button
-                            key={item.key}
-                            type="button"
-                            className="btn btn-secondary"
-                            onClick={() => toggleSelectedLabel(item.key)}
+                          <div
                             style={{
-                              ...baseStyle,
-                              opacity: active ? 1 : 0.65,
-                              fontWeight: active ? 800 : 600,
+                              overflow: "hidden",
+                              borderRadius: 12,
+                              background: "#000",
+                              border: "1px solid rgba(255,255,255,0.08)",
                             }}
                           >
-                            {item.label}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
+                            <video
+                              ref={webcamVideoRef}
+                              autoPlay
+                              playsInline
+                              muted
+                              style={{
+                                width: "100%",
+                                maxHeight: 320,
+                                display: "block",
+                                objectFit: "cover",
+                              }}
+                            />
+                          </div>
 
-                  <div
-                    style={{
-                      marginTop: 4,
-                      paddingTop: 10,
-                      borderTop: "1px solid rgba(255,255,255,0.08)",
-                      display: "grid",
-                      gap: 8,
-                    }}
-                  >
-                    {(uploadError || uploadStatus.text) ? (
+                          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                            <button
+                              type="button"
+                              className="btn"
+                              onClick={captureDesktopWebcamPhoto}
+                              style={{ display: "inline-flex", alignItems: "center", gap: 8 }}
+                            >
+                              <UploadIcon size={16} />
+                              Foto maken
+                            </button>
+
+                            <button
+                              type="button"
+                              className="btn btn-secondary"
+                              onClick={closeDesktopWebcam}
+                            >
+                              Annuleren
+                            </button>
+                          </div>
+                        </div>
+                      ) : null}
+
+                      {selectedUploads.length > 0 ? (
+                        <div style={{ display: "grid", gap: 8 }}>
+                          <div className="muted" style={{ fontSize: 13 }}>
+                            Geselecteerde bestanden
+                          </div>
+
+                          <div style={{ display: "grid", gap: 8 }}>
+                            {selectedUploads.map((item) => (
+                              <SelectedUploadCard
+                                key={item.id}
+                                item={item}
+                                selectedLabels={selectedLabels}
+                                labelLookup={labelLookup}
+                                onRemove={() => removeSelectedUpload(item.id)}
+                                onFileNameChange={(value) =>
+                                  updateSelectedUploadFileName(item.id, value)
+                                }
+                              />
+                            ))}
+                          </div>
+                        </div>
+                      ) : null}
+
+                      <textarea
+                        className="input"
+                        value={note}
+                        onChange={(e) => setNote(e.target.value)}
+                        placeholder="Optionele notitie"
+                        style={{ minHeight: 42, resize: "vertical" }}
+                      />
+
+                      {selectedUploads.some((x) => isImageMime(x.file.type)) ? (
+                        <div style={{ display: "grid", gap: 6 }}>
+                          <div className="muted" style={{ fontSize: 12 }}>
+                            Resolutievariant voor foto’s
+                          </div>
+                          <select
+                            className="input"
+                            value={imageVariant}
+                            onChange={(e) => setImageVariant(e.target.value)}
+                          >
+                            <option value="ORIGINAL">Origineel</option>
+                            <option value="LARGE">Hoog</option>
+                            <option value="MEDIUM">Middel</option>
+                            <option value="SMALL">Laag</option>
+                          </select>
+                        </div>
+                      ) : null}
+
+                      <div style={{ display: "grid", gap: 6 }}>
+                        <div className="muted" style={{ fontSize: 12 }}>
+                          Labels ; minimaal 1 verplicht
+                        </div>
+
+                        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                          {LABEL_OPTIONS.map((item) => {
+                            const active = selectedLabels.includes(item.key);
+                            const baseStyle = LABEL_STYLES[item.key] || LABEL_STYLES.OVERIG;
+
+                            return (
+                              <button
+                                key={item.key}
+                                type="button"
+                                className="btn btn-secondary"
+                                onClick={() => toggleSelectedLabel(item.key)}
+                                style={{
+                                  ...baseStyle,
+                                  opacity: active ? 1 : 0.65,
+                                  fontWeight: active ? 800 : 600,
+                                }}
+                              >
+                                {item.label}
+                              </button>
+                            );
+                          })}
+                        </div>
+
+                      </div>
+
                       <div
                         style={{
-                          fontSize: 13,
-                          color: uploadError ? "salmon" : uploadStatus.color,
-                          fontWeight: uploadError ? 700 : 500,
-                        }}
-                      >
-                        {uploadError || uploadStatus.text}
-                      </div>
-                    ) : null}
-
-                    <div
-                      style={{
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "space-between",
-                        gap: 10,
-                        flexWrap: "wrap",
-                      }}
-                    >
-                      <button
-                        type="button"
-                        className="btn"
-                        disabled={!canSubmitUpload}
-                        onClick={handleCreateAndUpload}
-                        style={{
-                          display: "inline-flex",
-                          alignItems: "center",
+                          marginTop: 4,
+                          paddingTop: 10,
+                          borderTop: "1px solid rgba(255,255,255,0.08)",
+                          display: "grid",
                           gap: 8,
-                          boxShadow: canSubmitUpload
-                            ? "0 0 0 1px rgba(255,255,255,0.08), 0 12px 24px rgba(0,0,0,0.18)"
-                            : "none",
                         }}
-                        title={
-                          !hasUploads
-                            ? "Kies eerst een bestand"
-                            : !hasSelectedLabels
-                              ? "Kies minimaal 1 label"
-                              : "Voeg de geselecteerde bijlage(n) toe"
-                        }
                       >
-                        <UploadIcon size={16} />
-                        {addButtonLabel}
-                      </button>
+                        {(uploadError || uploadStatus.text) ? (
+                          <div
+                            style={{
+                              fontSize: 13,
+                              color: uploadError ? "salmon" : uploadStatus.color,
+                              fontWeight: uploadError ? 700 : 500,
+                            }}
+                          >
+                            {uploadError || uploadStatus.text}
+                          </div>
+                        ) : null}
 
-                      <div className="muted" style={{ fontSize: 12, textAlign: "right" }}>
-                        {selectedUploads.length > 0
-                          ? `${selectedUploads.length} bestand(en) geselecteerd`
-                          : "Kies bestand(en), labels en voeg daarna toe"}
+                        <div
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "space-between",
+                            gap: 10,
+                            flexWrap: "wrap",
+                          }}
+                        >
+                          <button
+                            type="button"
+                            className="btn"
+                            disabled={!canSubmitUpload}
+                            onClick={handleCreateAndUpload}
+                            style={{
+                              display: "inline-flex",
+                              alignItems: "center",
+                              gap: 8,
+                              animation: canSubmitUpload ? "breathe 1.6s ease-in-out infinite" : "none",
+                              borderColor: canSubmitUpload
+                                ? "var(--success-border, rgba(34,197,94,0.34))"
+                                : undefined,
+                              background: canSubmitUpload
+                                ? "var(--success-bg-soft, rgba(34,197,94,0.10))"
+                                : undefined,
+                              boxShadow: canSubmitUpload
+                                ? "0 0 0 1px rgba(255,255,255,0.08), 0 12px 24px rgba(0,0,0,0.18)"
+                                : "none",
+                            }}
+                            title={
+                              !hasUploads
+                                ? "Kies eerst een bestand"
+                                : !hasSelectedLabels
+                                  ? "Kies minimaal 1 label"
+                                  : !hasValidUploadNames
+                                    ? "Vul voor elk bestand een bestandsnaam in"
+                                    : "Voeg de geselecteerde bijlage(n) toe"
+                            }
+                          >
+                            <UploadIcon size={16} />
+                            {addButtonLabel}
+                          </button>
+
+                          <div className="muted" style={{ fontSize: 12, textAlign: "right" }}>
+                            {selectedUploads.length > 0
+                              ? `${selectedUploads.length} bestand(en) geselecteerd`
+                              : "Kies bestand(en), labels en voeg daarna toe"}
+                          </div>
+                        </div>
                       </div>
-                    </div>
-                  </div>
+                    </>
+                  ) : null}
                 </div>
               ) : (
                 <div className="muted" style={{ fontSize: 13 }}>
-                  Bijlagen toevoegen of wijzigen kan alleen zolang de formulierafhandeling nog niet definitief of ingetrokken is.
+                  Bijlagen toevoegen of wijzigen kan niet in de huidige status.
                 </div>
               )}
 
@@ -1573,10 +1780,6 @@ export default function FormContextPanel({
                     const isEditing = editingDocId === doc.form_instance_document_id;
                     const docBusy = busyDocId === doc.form_instance_document_id;
                     const selectedForDoc = getDocSelectedLabelKeys(doc);
-                    const selectedFollowUpsForDoc = getDocFollowUpIds(doc);
-                    const linkedFollowUpsForDoc = followUpOptions.filter((option) =>
-                      selectedFollowUpsForDoc.includes(option.follow_up_action_id)
-                    );
 
                     return (
                       <DocumentCard
@@ -1585,21 +1788,11 @@ export default function FormContextPanel({
                         subtitle={subtitleParts.join(" ; ")}
                         note={doc.note || null}
                         labels={labels}
-                        followUpLinks={
-                          shouldShowFollowUpLinks && linkedFollowUpsForDoc.length > 0 ? (
-                            <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-                              {linkedFollowUpsForDoc.map((item) => (
-                                <span
-                                  key={item.follow_up_action_id}
-                                  className="ember-label ember-label--info"
-                                  title={makeFollowUpLabel(item)}
-                                >
-                                  {makeFollowUpLabel(item)}
-                                </span>
-                              ))}
-                            </div>
-                          ) : null
-                        }
+                        previewUrl={formPreviewUrlMap[String(doc.form_instance_document_id)] || null}
+                        previewAlt={doc.title || doc.file_name || "Bijlage"}
+                        collapsible={true}
+                        defaultOpen={false}
+                        statusLabel="Toegevoegd"
                         actions={
                           <FileActions
                             onOpen={() => handleOpenFormDocument(doc)}
@@ -1613,8 +1806,8 @@ export default function FormContextPanel({
                             }
                             disableOpen={!doc.file_name || docBusy}
                             disableDownload={!doc.file_name || docBusy}
-                            disableEdit={docBusy || !canEditAnyDocumentControls}
-                            canEditLabels={canEditAnyDocumentControls}
+                            disableEdit={docBusy || !canEdit}
+                            canEditLabels={canEdit}
                             isEditing={isEditing}
                           />
                         }
@@ -1630,17 +1823,17 @@ export default function FormContextPanel({
                               }}
                             >
                               <div className="muted" style={{ fontSize: 12 }}>
-                                Labels en actiepuntkoppelingen worden direct opgeslagen bij wijzigen. Titel en notitie worden opgeslagen zodra je uit het veld klikt.
+                                Labels worden direct opgeslagen bij wijzigen. Titel en notitie worden opgeslagen zodra je uit het veld klikt.
                               </div>
 
                               <div style={{ display: "grid", gap: 6 }}>
                                 <div className="muted" style={{ fontSize: 12 }}>
-                                  Titel
+                                  Bestandsnaam / weergavenaam
                                 </div>
                                 <input
                                   className="input"
                                   value={doc.title || ""}
-                                  disabled={docBusy || !canEdit}
+                                  disabled={docBusy}
                                   onChange={(e) => {
                                     const value = e.target.value;
                                     setFormDocs((prev) =>
@@ -1660,8 +1853,11 @@ export default function FormContextPanel({
                                         )?.title || null,
                                     })
                                   }
-                                  placeholder="Optionele titel"
+                                  placeholder="Bestandsnaam of korte omschrijving"
                                 />
+                                <div className="muted" style={{ fontSize: 11 }}>
+                                  Dit wijzigt de getoonde naam. Het originele uploadbestand blijft bewaard.
+                                </div>
                               </div>
 
                               <div style={{ display: "grid", gap: 6 }}>
@@ -1671,7 +1867,7 @@ export default function FormContextPanel({
                                 <textarea
                                   className="input"
                                   value={doc.note || ""}
-                                  disabled={docBusy || !canEdit}
+                                  disabled={docBusy}
                                   onChange={(e) => {
                                     const value = e.target.value;
                                     setFormDocs((prev) =>
@@ -1706,7 +1902,7 @@ export default function FormContextPanel({
                                       key={item.key}
                                       type="button"
                                       className="btn btn-secondary"
-                                      disabled={docBusy || !canEdit}
+                                      disabled={docBusy}
                                       onClick={() => {
                                         const set = new Set(selectedForDoc);
                                         if (set.has(item.key)) set.delete(item.key);
@@ -1725,84 +1921,18 @@ export default function FormContextPanel({
                                 })}
                               </div>
 
-                              {shouldShowFollowUpLinks ? (
-                                <div style={{ display: "grid", gap: 8 }}>
-                                  <div className="muted" style={{ fontSize: 12 }}>
-                                    Gekoppelde actiepunten
-                                  </div>
-
-                                  {followUpOptions.length === 0 ? (
-                                    <div className="muted" style={{ fontSize: 12 }}>
-                                      Opvolgacties ontstaan pas na succesvol indienen wanneer er negatieve oordelen zijn.
-                                    </div>
-                                  ) : (
-                                    <div style={{ display: "grid", gap: 6 }}>
-                                      {followUpOptions.map((item) => {
-                                        const active = selectedFollowUpsForDoc.includes(item.follow_up_action_id);
-
-                                        return (
-                                          <label
-                                            key={item.follow_up_action_id}
-                                            className="card"
-                                            style={{
-                                              padding: "8px 10px",
-                                              display: "flex",
-                                              gap: 8,
-                                              alignItems: "flex-start",
-                                              background: active
-                                                ? "rgba(59,130,246,0.14)"
-                                                : "rgba(255,255,255,0.03)",
-                                              border: active
-                                                ? "1px solid rgba(59,130,246,0.34)"
-                                                : "1px solid rgba(255,255,255,0.08)",
-                                              cursor: canEditFollowUpLinks && !docBusy ? "pointer" : "default",
-                                            }}
-                                          >
-                                            <input
-                                              type="checkbox"
-                                              checked={active}
-                                              disabled={!canEditFollowUpLinks || docBusy}
-                                              onChange={() => {
-                                                const set = new Set(selectedFollowUpsForDoc);
-                                                if (set.has(item.follow_up_action_id)) {
-                                                  set.delete(item.follow_up_action_id);
-                                                } else {
-                                                  set.add(item.follow_up_action_id);
-                                                }
-                                                updateDocFollowUpsRealtime(doc, Array.from(set));
-                                              }}
-                                              style={{ marginTop: 2 }}
-                                            />
-                                            <span style={{ display: "grid", gap: 2, minWidth: 0 }}>
-                                              <span style={{ fontWeight: 800 }}>{makeFollowUpLabel(item)}</span>
-                                              {item.workflow_description ? (
-                                                <span className="muted" style={{ fontSize: 12 }}>
-                                                  {item.workflow_description}
-                                                </span>
-                                              ) : null}
-                                            </span>
-                                          </label>
-                                        );
-                                      })}
-                                    </div>
-                                  )}
-                                </div>
-                              ) : null}
-
-                              {canDeleteDocuments ? (
-                                <div>
-                                  <button
-                                    type="button"
-                                    className="btn btn-secondary"
-                                    disabled={docBusy || !canDeleteDocuments}
-                                    onClick={() => handleDeleteFormDocument(doc)}
-                                    style={{ display: "inline-flex", alignItems: "center", gap: 8 }}
-                                  >
-                                    <DeleteIcon size={16} />
-                                    Weggooien
-                                  </button>
-                                </div>
-                              ) : null}
+                              <div>
+                                <button
+                                  type="button"
+                                  className="btn btn-secondary"
+                                  disabled={docBusy || !canDeleteDocuments}
+                                  onClick={() => handleDeleteFormDocument(doc)}
+                                  style={{ display: "inline-flex", alignItems: "center", gap: 8 }}
+                                >
+                                  <DeleteIcon size={16} />
+                                  Weggooien
+                                </button>
+                              </div>
                             </div>
                           ) : null
                         }

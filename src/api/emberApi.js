@@ -203,6 +203,57 @@ export function putFormAnswers(code, formInstanceId, payload) {
   );
 }
 
+// form assistant
+export function transcribeFormAssistantAudio(code, formInstanceId, file, payload = {}) {
+  const fd = new FormData();
+  fd.append("audio", file);
+
+  for (const [key, value] of Object.entries(payload || {})) {
+    if (value === undefined || value === null) continue;
+
+    if (typeof value === "object") {
+      fd.append(key, JSON.stringify(value));
+    } else {
+      fd.append(key, String(value));
+    }
+  }
+
+  return httpUpload(
+    `/installations/${encodeURIComponent(code)}/forms/instances/${encodeURIComponent(formInstanceId)}/assistant/transcribe`,
+    fd
+  );
+}
+
+export function interpretFormAssistantText(code, formInstanceId, payload = {}) {
+  return apiPost(
+    `/installations/${encodeURIComponent(code)}/forms/instances/${encodeURIComponent(formInstanceId)}/assistant/interpret`,
+    payload ?? {}
+  );
+}
+
+export function applyFormAssistantPatches(code, formInstanceId, payload = {}) {
+  return apiPost(
+    `/installations/${encodeURIComponent(code)}/forms/instances/${encodeURIComponent(formInstanceId)}/assistant/patches/apply`,
+    payload ?? {}
+  );
+}
+
+export function rejectFormAssistantPatches(code, formInstanceId, payload = {}) {
+  return apiPost(
+    `/installations/${encodeURIComponent(code)}/forms/instances/${encodeURIComponent(formInstanceId)}/assistant/patches/reject`,
+    payload ?? {}
+  );
+}
+
+export function getFormAssistantAudit(code, formInstanceId, take = 100) {
+  const qs = new URLSearchParams();
+  qs.set("take", String(take || 100));
+
+  return apiGet(
+    `/installations/${encodeURIComponent(code)}/forms/instances/${encodeURIComponent(formInstanceId)}/assistant/audit?${qs.toString()}`
+  );
+}
+
 export function startChildFormInstance(code, parentInstanceId, formCode) {
   return apiPost(
     `/installations/${encodeURIComponent(code)}/forms/instances/${encodeURIComponent(parentInstanceId)}/children/${encodeURIComponent(formCode)}/start`,
@@ -449,6 +500,23 @@ export function saveAdminInstallationExternalFields(items) {
   return apiPut("/admin/installations/external-fields", { items: items ?? [] });
 }
 
+// admin ai
+export function getAdminAssistantAudit(params = {}) {
+  const qs = new URLSearchParams();
+
+  if (params.q && String(params.q).trim()) {
+    qs.set("q", String(params.q).trim());
+  }
+
+  if (params.take != null) {
+    qs.set("take", String(params.take));
+  }
+
+  const suffix = qs.toString() ? `?${qs.toString()}` : "";
+  return apiGet(`/admin/ai/audit${suffix}`);
+}
+
+// profile
 export function getMyProfile() {
   return apiGet("/me/profile");
 }

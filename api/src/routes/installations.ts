@@ -50,6 +50,14 @@ import {
   deleteFormInstanceDocument,
 } from "../controllers/installationsController.js";
 
+import {
+  transcribeAssistantAudio,
+  interpretAssistantText,
+  applyAssistantPatches,
+  rejectAssistantPatches,
+  getAssistantAudit,
+} from "../controllers/formsAssistantController.js";
+
 import { requireRole } from "../middleware/roleMiddleware.js";
 
 const router = Router();
@@ -58,6 +66,13 @@ const upload = multer({
   storage: multer.memoryStorage(),
   limits: {
     fileSize: Number(process.env.DOCUMENT_UPLOAD_MAX_BYTES || 25 * 1024 * 1024),
+  },
+});
+
+const assistantAudioUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: {
+    fileSize: Number(process.env.ASSISTANT_AUDIO_UPLOAD_MAX_BYTES || 10 * 1024 * 1024),
   },
 });
 
@@ -139,6 +154,37 @@ router.post("/:code/forms/instances/:instanceId/submit-preview", requireRole("ad
 router.post("/:code/forms/instances/:instanceId/submit", requireRole("admin", "gebruiker"), submitFormInstance);
 router.post("/:code/forms/instances/:instanceId/withdraw", requireRole("admin", "gebruiker"), withdrawFormInstance);
 router.post("/:code/forms/instances/:instanceId/reopen", requireRole("admin", "gebruiker"), reopenFormInstance);
+
+router.post(
+  "/:code/forms/instances/:instanceId/assistant/transcribe",
+  requireRole("admin", "gebruiker"),
+  assistantAudioUpload.single("audio"),
+  transcribeAssistantAudio
+);
+
+router.post(
+  "/:code/forms/instances/:instanceId/assistant/interpret",
+  requireRole("admin", "gebruiker"),
+  interpretAssistantText
+);
+
+router.post(
+  "/:code/forms/instances/:instanceId/assistant/patches/apply",
+  requireRole("admin", "gebruiker"),
+  applyAssistantPatches
+);
+
+router.post(
+  "/:code/forms/instances/:instanceId/assistant/patches/reject",
+  requireRole("admin", "gebruiker"),
+  rejectAssistantPatches
+);
+
+router.get(
+  "/:code/forms/instances/:instanceId/assistant/audit",
+  requireRole("admin", "gebruiker", "documentbeheerder"),
+  getAssistantAudit
+);
 
 router.get(
   "/:code/forms/instances/:instanceId/documents",

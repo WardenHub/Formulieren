@@ -11,7 +11,9 @@ import adminFormsRouter from "./routes/adminForms.js";
 import adminInstallationsRouter from "./routes/adminInstallations.js";
 import homeRouter from "./routes/home.js";
 import profileRouter from "./routes/profile.js";
+import adminAssistantRouter from "./routes/adminAssistant.js";
 import * as profileService from "./services/profileService.js";
+
 
 const app = express();
 const RAW_ORIGINS = (process.env.CORS_ORIGINS || "")
@@ -89,7 +91,9 @@ app.use("/installations", installationsRouter);
 app.use("/installation-types", installationTypesRouter);
 app.use("/admin/forms", adminFormsRouter);
 app.use("/admin/installations", adminInstallationsRouter);
+app.use("/admin/ai", adminAssistantRouter);
 app.use("/forms-monitor", formsMonitorRouter);
+
 
 app.get("/me", async (req: any, res) => {
   try {

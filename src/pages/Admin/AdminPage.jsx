@@ -4,6 +4,8 @@ import Tabs from "../../components/Tabs.jsx";
 import SaveButton from "../../components/SaveButton.jsx";
 import AdminFormsTab from "./AdminFormsTab.jsx";
 import AdminInstallationsTab from "./AdminInstallationsTab.jsx";
+import AdminAITab from "./AdminAITab.jsx";
+import { MicIcon } from "@/components/ui/mic";
 import { BrainIcon } from "@/components/ui/brain";
 import { CogIcon } from "@/components/ui/cog";
 
@@ -86,6 +88,12 @@ export default function AdminPage() {
             onHeaderSaveStateChange={setHeaderSaveState}
           />
         ),
+      },
+      {
+        key: "ai",
+        label: "AI",
+        Icon: MicIcon,
+        content: <AdminAITab />,
       },
     ];
   }, []);
