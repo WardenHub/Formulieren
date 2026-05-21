@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "set NODE_ENV=development&& node ./node_modules/tsx/dist/cli.mjs watch src/server.ts",
-    "build": "tsc",
+    "build": "node ./node_modules/typescript/bin/tsc",
     "start": "node dist/server.js"
   },
   "dependencies": {
