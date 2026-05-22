@@ -3906,7 +3906,7 @@ button.monitor-tag{
 }
 
 /* =========================================================
-   20. Form assistant and runtime side panels
+   Form assistant and runtime side panels
    ========================================================= */
 
 .form-assistant-panel {
@@ -3977,11 +3977,27 @@ button.monitor-tag{
 }
 
 .form-assistant-step {
+  appearance: none;
+  width: 100%;
+  min-height: 30px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
   display: flex;
   align-items: center;
   gap: 8px;
-  color: var(--muted);
-  font-size: 12px;
+  border-radius: var(--radius-md);
+  padding: 4px 6px;
+}
+
+.form-assistant-step:hover,
+.form-assistant-step.is-selected {
+  background: var(--row-bg-hover);
+  border-color: var(--border-soft);
+  color: var(--text);
 }
 
 .form-assistant-step-dot {
@@ -3989,7 +4005,7 @@ button.monitor-tag{
   height: 9px;
   border-radius: var(--radius-pill);
   border: 1px solid var(--border);
-  background: var(--muted-bg);
+  background: var(--row-bg);
   flex: 0 0 auto;
 }
 
@@ -4005,7 +4021,7 @@ button.monitor-tag{
 }
 
 .form-assistant-step-label {
-  font-weight: 700;
+  font-weight: 750;
 }
 
 .form-assistant-step-meta {
@@ -4034,8 +4050,8 @@ button.monitor-tag{
 .form-assistant-error {
   color: var(--danger-text);
   font-size: 13px;
+  font-weight: 700;
   line-height: 1.4;
-  font-weight: 650;
 }
 
 .form-assistant-success {
@@ -4058,14 +4074,48 @@ button.monitor-tag{
   font-size: 12px;
 }
 
-.form-assistant-transcript {
+.form-assistant-inline-button {
+  appearance: none;
+  width: fit-content;
+  border: 0;
+  background: transparent;
+  padding: 0;
+  cursor: pointer;
+  text-align: left;
+}
+
+.form-assistant-inline-button:hover {
+  color: var(--text);
+}
+
+.form-assistant-transcript,
+.form-assistant-transcript-input {
   background: var(--surface-2);
   border: 1px solid var(--border-soft);
   border-radius: var(--radius-md);
   padding: 10px 12px;
-  white-space: pre-wrap;
+  color: var(--text);
   line-height: 1.4;
   font-size: 13px;
+}
+
+.form-assistant-transcript-button {
+  appearance: none;
+  width: 100%;
+  text-align: left;
+  cursor: text;
+  white-space: pre-wrap;
+}
+
+.form-assistant-transcript-button:hover {
+  border-color: var(--border);
+  background: var(--row-bg-hover);
+}
+
+.form-assistant-transcript-input {
+  width: 100%;
+  resize: vertical;
+  min-height: 82px;
 }
 
 .form-assistant-proposals {
@@ -4091,7 +4141,7 @@ button.monitor-tag{
   border: 1px solid var(--neutral-border);
   color: var(--neutral-text);
   font-size: 12px;
-  font-weight: 750;
+  font-weight: 700;
 }
 
 .form-assistant-proposal-list {
@@ -4108,16 +4158,10 @@ button.monitor-tag{
   gap: 4px;
 }
 
-.form-assistant-proposal:hover {
-  border-color: var(--border);
-  background: var(--row-bg-hover);
-}
-
 .form-assistant-proposal-title {
   font-weight: 800;
   font-size: 13px;
   line-height: 1.3;
-  color: var(--text-strong);
 }
 
 .form-assistant-proposal-meta,
@@ -4130,11 +4174,21 @@ button.monitor-tag{
 .form-runner-floating-actions {
   position: fixed;
   right: 18px;
-  top: 50%;
-  transform: translateY(-50%);
   z-index: 62;
   display: grid;
   gap: 10px;
+}
+
+.form-runner-floating-actions--middle {
+  top: 50%;
+  bottom: auto;
+  transform: translateY(-50%);
+}
+
+.form-runner-floating-actions--bottom {
+  top: auto;
+  bottom: 28px;
+  transform: none;
 }
 
 .form-runner-floating-btn {
@@ -4150,27 +4204,12 @@ button.monitor-tag{
   justify-content: center;
 }
 
-.form-runner-floating-btn:hover {
-  background: var(--control-bg-hover);
-  border-color: var(--border-strong);
-}
-
-.form-runner-floating-btn--assistant {
-  border-color: var(--accent-border);
-  background: var(--accent-bg);
-  color: var(--accent-text);
-}
-
-.form-runner-floating-btn--assistant:hover {
-  background: var(--accent-bg-strong);
-}
-
 .form-runner-side-overlay {
   position: fixed;
   inset: 0;
   z-index: 70;
   border: none;
-  background: var(--overlay-bg);
+  background: var(--backdrop-bg);
   padding: 0;
   margin: 0;
   cursor: pointer;
@@ -4201,6 +4240,18 @@ button.monitor-tag{
   gap: 10px;
 }
 
+.form-runner-side-panel-head--clickable {
+  width: 100%;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.form-runner-side-panel-head--clickable:hover {
+  background: var(--row-bg-hover);
+  border-color: var(--border);
+}
+
 .form-runner-side-panel-title-row {
   display: flex;
   align-items: center;
@@ -4215,11 +4266,17 @@ button.monitor-tag{
 .form-runner-side-panel-title {
   font-weight: 900;
   font-size: 15px;
+  line-height: 1.2;
   color: var(--text-strong);
 }
 
 .form-runner-side-panel-subtitle {
   font-size: 12px;
+  line-height: 1.3;
+}
+
+.form-runner-side-panel-close {
+  flex: 0 0 auto;
 }
 
 .form-runner-side-panel-body {
@@ -4228,28 +4285,49 @@ button.monitor-tag{
   padding-right: 2px;
 }
 
-@media (max-width: 640px) {
-  .form-runner-floating-actions {
-    right: 12px;
-  }
-
-  .form-runner-side-panel {
-    padding: 10px;
-  }
-
-  .form-assistant-actions {
-    align-items: stretch;
-  }
-
-  .form-assistant-actions .btn,
-  .form-assistant-actions .btn-secondary,
-  .form-assistant-actions .btn-primary,
-  .form-assistant-actions .btn-danger {
-    width: 100%;
-  }
-
-  .form-assistant-main-btn {
-    min-width: 0;
-  }
+.form-assistant-help-wrap {
+  position: relative;
+  flex: 0 0 auto;
 }
 
+.form-assistant-help-btn {
+  border-radius: var(--radius-lg);
+}
+
+.form-assistant-help-popover {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 95;
+  width: min(430px, calc(100vw - 48px));
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: var(--shadow-panel);
+  padding: 14px;
+  display: grid;
+  gap: 10px;
+}
+
+.form-assistant-help-title {
+  font-weight: 850;
+  color: var(--text-strong);
+}
+
+.form-assistant-help-list {
+  margin: 0;
+  padding-left: 20px;
+  display: grid;
+  gap: 5px;
+  color: var(--text);
+  line-height: 1.35;
+}
+
+.form-assistant-help-note {
+  padding-top: 8px;
+  border-top: 1px solid var(--border-soft);
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.4;
+}

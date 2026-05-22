@@ -22,9 +22,9 @@ import { PlusIcon } from "@/components/ui/plus";
 import { ChevronsDownUpIcon } from "@/components/ui/chevrons-down-up";
 import { ChevronsUpDownIcon } from "@/components/ui/chevrons-up-down";
 import { AttachFileIcon } from "@/components/ui/attach-file";
+import { MicIcon } from "@/components/ui/mic";
 import { AirVentIcon } from "@/components/ui/air-vent";
 import { MenuIcon } from "@/components/ui/menu";
-import { MicIcon } from "@/components/ui/mic";
 import { pushRecentHomeItem } from "../../lib/recentHomeItems.js";
 
 import {
@@ -372,6 +372,7 @@ export default function FormRunnerBase({ mode }) {
   const backIconRef = useRef(null);
   const contextToggleIconRef = useRef(null);
   const assistantToggleIconRef = useRef(null);
+  const assistantHeaderIconRef = useRef(null);
   const actionsMenuRef = useRef(null);
   const actionsMenuIconRef = useRef(null);
   const debugJsonIconRef = useRef(null);
@@ -2178,29 +2179,33 @@ export default function FormRunnerBase({ mode }) {
       {!isDebug && (
         <>
           {!contextPanelOpen && !assistantPanelOpen && (
-            <div className="form-runner-floating-actions">
-              <button
-                type="button"
-                className="icon-btn form-runner-floating-btn form-runner-floating-btn--assistant"
-                title="Ember assistent openen"
-                onClick={() => setAssistantPanelOpen(true)}
-                onMouseEnter={() => assistantToggleIconRef.current?.startAnimation?.()}
-                onMouseLeave={() => assistantToggleIconRef.current?.stopAnimation?.()}
-              >
-                <MicIcon ref={assistantToggleIconRef} size={20} />
-              </button>
+            <>
+              <div className="form-runner-floating-actions form-runner-floating-actions--middle">
+                <button
+                  type="button"
+                  className="icon-btn form-runner-floating-btn"
+                  title="Context en bijlagen openen"
+                  onClick={() => setContextPanelOpen(true)}
+                  onMouseEnter={() => contextToggleIconRef.current?.startAnimation?.()}
+                  onMouseLeave={() => contextToggleIconRef.current?.stopAnimation?.()}
+                >
+                  <AttachFileIcon ref={contextToggleIconRef} size={20} />
+                </button>
+              </div>
 
-              <button
-                type="button"
-                className="icon-btn form-runner-floating-btn"
-                title="Context en bijlagen openen"
-                onClick={() => setContextPanelOpen(true)}
-                onMouseEnter={() => contextToggleIconRef.current?.startAnimation?.()}
-                onMouseLeave={() => contextToggleIconRef.current?.stopAnimation?.()}
-              >
-                <AttachFileIcon ref={contextToggleIconRef} size={20} />
-              </button>
-            </div>
+              <div className="form-runner-floating-actions form-runner-floating-actions--bottom">
+                <button
+                  type="button"
+                  className="icon-btn form-runner-floating-btn"
+                  title="Ember assistent openen"
+                  onClick={() => setAssistantPanelOpen(true)}
+                  onMouseEnter={() => assistantToggleIconRef.current?.startAnimation?.()}
+                  onMouseLeave={() => assistantToggleIconRef.current?.stopAnimation?.()}
+                >
+                  <MicIcon ref={assistantToggleIconRef} size={20} />
+                </button>
+              </div>
+            </>
           )}
 
           {assistantPanelOpen && (
@@ -2213,9 +2218,16 @@ export default function FormRunnerBase({ mode }) {
               />
 
               <div className="form-runner-side-panel">
-                <div className="card form-runner-side-panel-head">
+                <button
+                  type="button"
+                  className="card form-runner-side-panel-head form-runner-side-panel-head--clickable"
+                  title="Assistent inklappen"
+                  onClick={() => setAssistantPanelOpen(false)}
+                  onMouseEnter={() => assistantHeaderIconRef.current?.startAnimation?.()}
+                  onMouseLeave={() => assistantHeaderIconRef.current?.stopAnimation?.()}
+                >
                   <div className="form-runner-side-panel-title-row">
-                    <MicIcon size={18} />
+                    <MicIcon ref={assistantHeaderIconRef} size={18} />
                     <div className="form-runner-side-panel-title-text">
                       <div className="form-runner-side-panel-title">Ember assistent</div>
                       <div className="muted form-runner-side-panel-subtitle">
@@ -2224,15 +2236,10 @@ export default function FormRunnerBase({ mode }) {
                     </div>
                   </div>
 
-                  <button
-                    type="button"
-                    className="icon-btn"
-                    title="Sluiten"
-                    onClick={() => setAssistantPanelOpen(false)}
-                  >
+                  <span className="icon-btn form-runner-side-panel-close" aria-hidden="true">
                     <ChevronUpIcon size={18} style={{ transform: "rotate(90deg)" }} />
-                  </button>
-                </div>
+                  </span>
+                </button>
 
                 <div className="form-runner-side-panel-body">
                   <div className="card" style={{ padding: 12 }}>
@@ -2262,7 +2269,12 @@ export default function FormRunnerBase({ mode }) {
               />
 
               <div className="form-runner-side-panel">
-                <div className="card form-runner-side-panel-head">
+                <button
+                  type="button"
+                  className="card form-runner-side-panel-head form-runner-side-panel-head--clickable"
+                  title="Context en bijlagen inklappen"
+                  onClick={() => setContextPanelOpen(false)}
+                >
                   <div className="form-runner-side-panel-title-row">
                     <AttachFileIcon size={18} />
                     <div className="form-runner-side-panel-title-text">
@@ -2273,15 +2285,10 @@ export default function FormRunnerBase({ mode }) {
                     </div>
                   </div>
 
-                  <button
-                    type="button"
-                    className="icon-btn"
-                    title="Sluiten"
-                    onClick={() => setContextPanelOpen(false)}
-                  >
+                  <span className="icon-btn form-runner-side-panel-close" aria-hidden="true">
                     <ChevronUpIcon size={18} style={{ transform: "rotate(90deg)" }} />
-                  </button>
-                </div>
+                  </span>
+                </button>
 
                 <div className="form-runner-side-panel-body">
                   <FormContextPanel

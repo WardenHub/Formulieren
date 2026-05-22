@@ -3,7 +3,7 @@
 import { useRef, useState } from "react";
 
 const DEFAULT_TARGET_SAMPLE_RATE = 16000;
-const DEFAULT_MAX_DURATION_MS = 30000;
+const DEFAULT_MAX_DURATION_MS = 60000;
 
 function flattenFloat32Chunks(chunks, totalLength) {
   const result = new Float32Array(totalLength);

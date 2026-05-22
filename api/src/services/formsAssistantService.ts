@@ -43,8 +43,90 @@ function parseJsonMaybe(value: any, fallback: any = null) {
 }
 
 function toJson(value: any) {
-  if (value == null) return null;
-  return JSON.stringify(value);
+  if (value === undefined || value === null) return null;
+
+  return JSON.stringify({
+    value,
+  });
+}
+
+function toJsonObject(value: any) {
+  if (value === undefined || value === null) return null;
+
+  if (typeof value === "object" && !Array.isArray(value)) {
+    return JSON.stringify(value);
+  }
+
+  return JSON.stringify({
+    value,
+  });
+}
+
+
+function collectSpeechPhrases(clientContext: any, body: any): string[] {
+  const candidates = [
+    clientContext?.speech_phrases,
+    clientContext?.speechPhrases,
+    body?.speech_phrases,
+    body?.speechPhrases,
+    parseJsonMaybe(body?.speech_phrases_json, null),
+  ];
+
+  const out: string[] = [];
+  const seen = new Set<string>();
+  const max = Number(process.env.AZURE_SPEECH_MAX_PHRASES || 500);
+
+  function visit(value: any) {
+    if (value == null) return;
+
+    if (typeof value === "string") {
+      const txt = value.trim();
+      if (!txt) return;
+
+      if ((txt.startsWith("[") && txt.endsWith("]")) || (txt.startsWith("{") && txt.endsWith("}"))) {
+        const parsed = parseJsonMaybe(txt, null);
+        if (parsed !== txt && parsed != null) {
+          visit(parsed);
+          return;
+        }
+      }
+
+      for (const part of txt.split(/[\n,;]+/g)) {
+        const phrase = part.trim().replace(/\s+/g, " ");
+        if (!phrase || phrase.length > 90) continue;
+
+        const key = phrase.toLowerCase();
+        if (seen.has(key)) continue;
+
+        seen.add(key);
+        out.push(phrase);
+        if (out.length >= max) return;
+      }
+
+      return;
+    }
+
+    if (Array.isArray(value)) {
+      for (const item of value) {
+        visit(item);
+        if (out.length >= max) return;
+      }
+      return;
+    }
+
+    if (typeof value === "object") {
+      if (value.value || value.text || value.label || value.title) {
+        visit(value.value ?? value.text ?? value.label ?? value.title);
+      }
+    }
+  }
+
+  for (const candidate of candidates) {
+    visit(candidate);
+    if (out.length >= max) break;
+  }
+
+  return out;
 }
 
 async function getContextOrThrow(code: string, instanceId: number) {
@@ -136,7 +218,7 @@ async function insertPatches(args: {
 
       oldValueJson: toJson(raw.old_value),
       newValueJson: toJson(raw.new_value),
-      patchJson: toJson(raw),
+      patchJson: toJsonObject(raw),
 
       confidence: raw.confidence == null ? null : Number(raw.confidence),
       sourceText: raw.source_text || null,
@@ -171,6 +253,7 @@ export async function transcribeAssistantAudio(
   }
 
   const clientContext = parseJsonMaybe(body?.client_context_json, body?.client_context ?? null);
+  const speechPhrases = collectSpeechPhrases(clientContext, body);
 
   const { ctx, session } = await getOrCreateSession({
     code: cleanCode,
@@ -188,6 +271,7 @@ export async function transcribeAssistantAudio(
     buffer: file.buffer,
     mimeType: file.mimetype,
     fileName: file.originalname,
+    speechPhrases,
   });
 
   const turnRows = await sqlQuery(createAssistantTurnSql, {
@@ -209,7 +293,10 @@ export async function transcribeAssistantAudio(
     localCommandName: null,
     localCommandConfidence: null,
 
-    requestContextJson: toJson(clientContext),
+    requestContextJson: toJson({
+      ...(clientContext && typeof clientContext === "object" ? clientContext : {}),
+      speech_phrase_count: speechPhrases.length,
+    }),
     aiRequestJson: null,
     aiResponseJson: toJson(speech.raw_response),
     aiUsageJson: null,
@@ -305,6 +392,8 @@ export async function interpretAssistantText(
   const local = buildAssistantCommandPatches({
     transcript,
     fieldMap,
+    activePageName: payload?.active_page_name || payload?.client_context?.active_page_name || null,
+    clientContext,
   });
 
   const turnRows = await sqlQuery(createAssistantTurnSql, {

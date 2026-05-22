@@ -4,6 +4,13 @@ import { normalizeTranscriptText } from "./formsAssistantSpeechService.js";
 
 type FieldMapItem = Record<string, any>;
 
+type BuildArgs = {
+  transcript: string;
+  fieldMap: FieldMapItem[];
+  activePageName?: string | null;
+  clientContext?: any;
+};
+
 function cleanText(value: any) {
   return String(value || "")
     .trim()
@@ -14,7 +21,10 @@ function norm(value: any) {
   return cleanText(value)
     .toLowerCase()
     .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "");
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[.,;:!?()[\]{}]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 function normalizeItemCode(value: any) {
@@ -33,10 +43,6 @@ function normalizeAnswerValue(value: any) {
 
 function isAnswerValue(value: any) {
   return ["Ja", "Nee", "NVT"].includes(normalizeAnswerValue(value));
-}
-
-function isMatrixCell(field: FieldMapItem) {
-  return norm(field?.kind) === "matrix_cell" || Boolean(field?.matrixName || field?.matrix_name);
 }
 
 function getMatrixName(field: FieldMapItem) {
@@ -60,6 +66,20 @@ function getPageNumber(field: FieldMapItem) {
   return Number.isInteger(n) ? n : null;
 }
 
+function getFieldPageName(field: FieldMapItem) {
+  return cleanText(field?.pageName || field?.page_name || "") || null;
+}
+
+function getActivePageName(args: BuildArgs) {
+  return cleanText(args.activePageName || args.clientContext?.active_page_name || args.clientContext?.activePageName || "") || null;
+}
+
+function isOnActivePage(field: FieldMapItem, activePageName: string | null) {
+  if (!activePageName) return false;
+  if (field?.isActivePage === true) return true;
+  return getFieldPageName(field) === activePageName;
+}
+
 function fieldHaystack(field: FieldMapItem) {
   return [
     field?.name,
@@ -81,7 +101,12 @@ function fieldHaystack(field: FieldMapItem) {
     field?.onderwerp,
   ]
     .map((x) => norm(x))
+    .filter(Boolean)
     .join(" ");
+}
+
+function isMatrixCell(field: FieldMapItem) {
+  return norm(field?.kind) === "matrix cell" || norm(field?.kind) === "matrix_cell" || Boolean(field?.matrixName || field?.matrix_name);
 }
 
 function isAnswerField(field: FieldMapItem) {
@@ -117,9 +142,7 @@ function canAcceptAnswer(field: FieldMapItem, value: any) {
   const wanted = normalizeAnswerValue(value);
   const choices = Array.isArray(field?.choices) ? field.choices : [];
 
-  if (!choices.length) {
-    return isAnswerField(field);
-  }
+  if (!choices.length) return isAnswerField(field);
 
   return choices.some((choice: any) => {
     const v = normalizeAnswerValue(choice?.value ?? choice);
@@ -164,7 +187,7 @@ function makePatch(args: {
     patch_sequence: args.sequence,
     target_kind:
       args.targetKind ||
-      (isMatrixCell(field) ? "MATRIX_CELL" : norm(field?.kind) === "matrix_append" ? "MATRIX_ROW" : "QUESTION"),
+      (isMatrixCell(field) ? "MATRIX_CELL" : norm(field?.kind) === "matrix append" || norm(field?.kind) === "matrix_append" ? "MATRIX_ROW" : "QUESTION"),
     target_path: makeTargetPath(field),
     target_label: field?.targetLabel || field?.target_label || field?.title || makeTargetPath(field),
     question_name: questionName,
@@ -185,6 +208,10 @@ function makePatch(args: {
   };
 }
 
+function visibleAnswerFields(fieldMap: FieldMapItem[]) {
+  return fieldMap.filter((field) => field?.visible !== false && !field?.readOnly && isAnswerField(field));
+}
+
 function findByItemCode(fieldMap: FieldMapItem[], itemCode: string, predicate: (f: FieldMapItem) => boolean) {
   const wanted = normalizeItemCode(itemCode);
 
@@ -194,23 +221,62 @@ function findByItemCode(fieldMap: FieldMapItem[], itemCode: string, predicate: (
   });
 }
 
-function findGroupAnswerFields(fieldMap: FieldMapItem[], groupText: string) {
+function buildGroupAliases(groupText: string) {
   const groupNorm = norm(groupText);
+  const aliases = new Set<string>();
 
-  return fieldMap.filter((field) => {
-    if (field?.visible === false) return false;
-    if (!isAnswerField(field)) return false;
-    if (!fieldHaystack(field).includes(groupNorm)) return false;
-    return true;
+  if (groupNorm) aliases.add(groupNorm);
+
+  if (groupNorm.endsWith("s")) {
+    aliases.add(groupNorm.slice(0, -1));
+  } else if (groupNorm) {
+    aliases.add(`${groupNorm}s`);
+  }
+
+  if (groupNorm === "melder" || groupNorm === "melders") {
+    aliases.add("melders");
+    aliases.add("melder");
+    aliases.add("brandmelders");
+    aliases.add("brandmelder");
+    aliases.add("automatische brandmelders");
+    aliases.add("automatische brandmelder");
+    aliases.add("handbrandmelders");
+    aliases.add("handbrandmelder");
+    aliases.add("nevenindicatoren");
+    aliases.add("nevenindicator");
+  }
+
+  return Array.from(aliases).filter(Boolean);
+}
+
+function findGroupAnswerFields(
+  fieldMap: FieldMapItem[],
+  groupText: string,
+  activePageName?: string | null
+) {
+  const groupNorm = norm(groupText);
+  const aliases = buildGroupAliases(groupText);
+
+  if (!aliases.length) return [];
+
+  const candidates = visibleAnswerFields(fieldMap);
+
+  if (["alles", "alle", "vragen", "alle vragen"].includes(groupNorm)) {
+    const onActivePage = candidates.filter((field) => isOnActivePage(field, activePageName || null));
+    return onActivePage.length ? onActivePage : candidates;
+  }
+
+  const matches = candidates.filter((field) => {
+    const haystack = fieldHaystack(field);
+    return aliases.some((alias) => haystack.includes(alias));
   });
+
+  const activeMatches = matches.filter((field) => isOnActivePage(field, activePageName || null));
+  return activeMatches.length ? activeMatches : matches;
 }
 
 function findPageAnswerFields(fieldMap: FieldMapItem[], pageNumber: number) {
-  return fieldMap.filter((field) => {
-    if (field?.visible === false) return false;
-    if (!isAnswerField(field)) return false;
-    return getPageNumber(field) === pageNumber;
-  });
+  return visibleAnswerFields(fieldMap).filter((field) => getPageNumber(field) === pageNumber);
 }
 
 function findAdditionalRemarksTarget(fieldMap: FieldMapItem[]) {
@@ -219,9 +285,8 @@ function findAdditionalRemarksTarget(fieldMap: FieldMapItem[]) {
     const matrixName = norm(getMatrixName(field));
     const kind = norm(field?.kind);
     return (
-      kind === "matrix_append" &&
-      (matrixName.includes("aanvullende_opmerkingen") || h.includes("aanvullende opmerkingen"))
-    );
+      kind === "matrix append" || kind === "matrix_append"
+    ) && (matrixName.includes("aanvullende_opmerkingen") || h.includes("aanvullende opmerkingen"));
   });
 }
 
@@ -248,7 +313,7 @@ function parseRemarkForItem(text: string) {
 
 function parseAnswerForItem(text: string) {
   const patterns = [
-    /\b(?:zet|maak)\s+(?:vraag\s+)?([a-z]?\d+(?:\.\d+)?)\s+(?:op|naar)\s+(ja|nee|n\.?v\.?t\.?|niet van toepassing)\b/i,
+    /\b(?:zet|maak)\s+(?:vraag\s+)?([a-z]?\d+(?:\.\d+)?)\s+(?:op|naar)?\s*(ja|nee|n\.?v\.?t\.?|niet van toepassing)\b/i,
     /\bvraag\s+([a-z]?\d+(?:\.\d+)?)\s+(?:is|wordt)?\s*(ja|nee|n\.?v\.?t\.?|niet van toepassing)\b/i,
   ];
 
@@ -284,20 +349,89 @@ function parsePageBulkAnswer(text: string) {
   return null;
 }
 
-function parseGroupBulkAnswer(text: string) {
+function parseCurrentPageBulkAnswer(text: string) {
   const patterns = [
-    /\b(?:zet|maak)\s+alle\s+(.+?)\s+vragen\s+(?:op|naar)\s+(ja|nee|n\.?v\.?t\.?|niet van toepassing)\b/i,
-    /\b(?:zet|maak)\s+alle\s+(.+?)\s+(?:op|naar)\s+(ja|nee|n\.?v\.?t\.?|niet van toepassing)\b/i,
+    /\b(?:zet|maak)\s+(?:alle\s+)?vragen\s+(?:op\s+)?(?:deze|huidige)\s+(?:pagina|bladzijde)\s+(?:op|naar)\s+(ja|nee|n\.?v\.?t\.?|niet van toepassing)\b/i,
+    /\b(?:zet|maak)\s+(?:alles|alle\s+vragen)\s+(?:hier|op\s+deze\s+pagina|op\s+huidige\s+pagina)?\s*(?:op|naar)\s+(ja|nee|n\.?v\.?t\.?|niet van toepassing)\b/i,
   ];
 
   for (const pattern of patterns) {
     const m = text.match(pattern);
-    if (m?.[1] && m?.[2]) {
+    if (m?.[1]) {
       return {
-        groupText: cleanText(m[1]),
-        value: normalizeAnswerValue(m[2]),
+        value: normalizeAnswerValue(m[1]),
       };
     }
+  }
+
+  return null;
+}
+
+function parseGroupBulkAnswer(text: string) {
+  const answerPattern = "(ja|nee|n\\.?v\\.?t\\.?|niet van toepassing)";
+
+  const patterns = [
+    // Zet alle melder vragen op ja
+    new RegExp(
+      `\\b(?:zet|maak|vul)\\s+alle\\s+(.+?)\\s+vragen\\s+(?:op|naar)\\s+${answerPattern}\\b`,
+      "i"
+    ),
+
+    // Zet alle melders op ja
+    new RegExp(
+      `\\b(?:zet|maak|vul)\\s+alle\\s+(.+?)\\s+(?:op|naar)\\s+${answerPattern}\\b`,
+      "i"
+    ),
+
+    // Zet melders allemaal op ja
+    new RegExp(
+      `\\b(?:zet|maak|vul)\\s+(.+?)\\s+allemaal\\s+(?:op|naar)\\s+${answerPattern}\\b`,
+      "i"
+    ),
+
+    // Zet melders op ja
+    new RegExp(
+      `\\b(?:zet|maak|vul)\\s+(.+?)\\s+(?:op|naar)\\s+${answerPattern}\\b`,
+      "i"
+    ),
+
+    // Melders op ja
+    new RegExp(
+      `\\b(.+?)\\s+(?:op|naar)\\s+${answerPattern}\\b`,
+      "i"
+    ),
+  ];
+
+  const blockedGroupWords = new Set([
+    "vraag",
+    "vragen",
+    "alles",
+    "alle",
+    "deze pagina",
+    "pagina",
+    "bladzijde",
+    "opmerking",
+    "aanvullende opmerking",
+  ]);
+
+  for (const pattern of patterns) {
+    const m = text.match(pattern);
+    if (!m?.[1] || !m?.[2]) continue;
+
+    const groupText = cleanText(m[1])
+      .replace(/\bvragen\b/gi, "")
+      .replace(/\bvraag\b/gi, "")
+      .trim();
+
+    const groupNorm = norm(groupText);
+
+    if (!groupNorm) continue;
+    if (blockedGroupWords.has(groupNorm)) continue;
+
+    return {
+      groupText,
+      value: normalizeAnswerValue(m[2]),
+    };
   }
 
   return null;
@@ -321,12 +455,31 @@ function parseAdditionalRemark(text: string) {
   return null;
 }
 
-export function buildAssistantCommandPatches(args: {
+function buildAnswerPatches(args: {
+  fields: FieldMapItem[];
+  value: any;
   transcript: string;
-  fieldMap: FieldMapItem[];
+  reason: string;
+  confidence?: number;
 }) {
+  return args.fields
+    .filter((field) => canAcceptAnswer(field, args.value))
+    .map((field, index) =>
+      makePatch({
+        field,
+        sequence: index,
+        newValue: args.value,
+        transcript: args.transcript,
+        reason: args.reason,
+        confidence: args.confidence ?? 0.94,
+      })
+    );
+}
+
+export function buildAssistantCommandPatches(args: BuildArgs) {
   const transcript = normalizeTranscriptText(args.transcript || "");
   const fieldMap = Array.isArray(args.fieldMap) ? args.fieldMap : [];
+  const activePageName = getActivePageName(args);
 
   if (!transcript) {
     return {
@@ -384,10 +537,9 @@ export function buildAssistantCommandPatches(args: {
 
     const patches = targets.slice(0, 1).map((field, index) => {
       const existing = cleanText(field?.value || "");
-      const nextValue =
-        remarkForItem.append && existing
-          ? `${existing}\n${remarkForItem.remark}`
-          : remarkForItem.remark;
+      const nextValue = remarkForItem.append && existing
+        ? `${existing}\n${remarkForItem.remark}`
+        : remarkForItem.remark;
 
       return makePatch({
         field,
@@ -438,22 +590,43 @@ export function buildAssistantCommandPatches(args: {
     };
   }
 
+  const currentPageBulk = parseCurrentPageBulkAnswer(transcript);
+  if (currentPageBulk) {
+    const activePageFields = visibleAnswerFields(fieldMap).filter((field) => isOnActivePage(field, activePageName));
+    const fallbackFields = activePageFields.length ? activePageFields : visibleAnswerFields(fieldMap);
+
+    const patches = buildAnswerPatches({
+      fields: fallbackFields,
+      value: currentPageBulk.value,
+      transcript,
+      reason: activePageFields.length
+        ? `Lokaal commando: alle vragen op huidige pagina naar ${currentPageBulk.value}.`
+        : `Lokaal commando: alles naar ${currentPageBulk.value}. Geen actieve pagina ontvangen, daarom alle zichtbare antwoordvelden.`,
+      confidence: activePageFields.length ? 0.95 : 0.82,
+    });
+
+    return {
+      handled: true,
+      commandName: activePageFields.length ? "bulk_set_current_page_answers" : "bulk_set_all_answers",
+      confidence: patches.length ? (activePageFields.length ? 0.95 : 0.82) : 0.35,
+      assistantMessage: patches.length
+        ? `Ik heb ${patches.length} antwoordveld(en) gevonden.`
+        : "Ik herkende het commando, maar vond geen passende antwoordvelden.",
+      patches,
+    };
+  }
+
   const pageBulk = parsePageBulkAnswer(transcript);
   if (pageBulk) {
-    const targets = findPageAnswerFields(fieldMap, pageBulk.pageNumber).filter((field) =>
-      canAcceptAnswer(field, pageBulk.value)
-    );
+    const targets = findPageAnswerFields(fieldMap, pageBulk.pageNumber);
 
-    const patches = targets.map((field, index) =>
-      makePatch({
-        field,
-        sequence: index,
-        newValue: pageBulk.value,
-        transcript,
-        reason: `Lokaal commando: alle vragen op bladzijde ${pageBulk.pageNumber} naar ${pageBulk.value}.`,
-        confidence: 0.94,
-      })
-    );
+    const patches = buildAnswerPatches({
+      fields: targets,
+      value: pageBulk.value,
+      transcript,
+      reason: `Lokaal commando: alle vragen op bladzijde ${pageBulk.pageNumber} naar ${pageBulk.value}.`,
+      confidence: 0.94,
+    });
 
     return {
       handled: true,
@@ -468,20 +641,15 @@ export function buildAssistantCommandPatches(args: {
 
   const groupBulk = parseGroupBulkAnswer(transcript);
   if (groupBulk) {
-    const targets = findGroupAnswerFields(fieldMap, groupBulk.groupText).filter((field) =>
-      canAcceptAnswer(field, groupBulk.value)
-    );
+    const targets = findGroupAnswerFields(fieldMap, groupBulk.groupText, activePageName);
 
-    const patches = targets.map((field, index) =>
-      makePatch({
-        field,
-        sequence: index,
-        newValue: groupBulk.value,
-        transcript,
-        reason: `Lokaal commando: alle '${groupBulk.groupText}' vragen naar ${groupBulk.value}.`,
-        confidence: 0.94,
-      })
-    );
+    const patches = buildAnswerPatches({
+      fields: targets,
+      value: groupBulk.value,
+      transcript,
+      reason: `Lokaal commando: alle '${groupBulk.groupText}' vragen naar ${groupBulk.value}.`,
+      confidence: 0.94,
+    });
 
     return {
       handled: true,

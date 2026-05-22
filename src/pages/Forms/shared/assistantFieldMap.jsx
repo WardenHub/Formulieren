@@ -375,16 +375,32 @@ function parseJsonMaybe(value, fallback = null) {
   }
 }
 
+function unwrapJsonValue(value) {
+  const parsed = parseJsonMaybe(value, value);
+
+  if (
+    parsed &&
+    typeof parsed === "object" &&
+    !Array.isArray(parsed) &&
+    Object.prototype.hasOwnProperty.call(parsed, "value") &&
+    Object.keys(parsed).length === 1
+  ) {
+    return parsed.value;
+  }
+
+  return parsed;
+}
+
 function getPatchNewValue(patch) {
   if (patch?.new_value !== undefined) return patch.new_value;
   if (patch?.newValue !== undefined) return patch.newValue;
-  return parseJsonMaybe(patch?.new_value_json, null);
+  return unwrapJsonValue(patch?.new_value_json);
 }
 
 function getPatchOldValue(patch) {
   if (patch?.old_value !== undefined) return patch.old_value;
   if (patch?.oldValue !== undefined) return patch.oldValue;
-  return parseJsonMaybe(patch?.old_value_json, null);
+  return unwrapJsonValue(patch?.old_value_json);
 }
 
 function parseMatrixTargetPath(path) {
