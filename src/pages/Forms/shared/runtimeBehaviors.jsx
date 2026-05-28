@@ -45,10 +45,25 @@ function getDropdownAnchorElement(questionRoot) {
 }
 
 function getPopupRootElement() {
+  const candidates = Array.from(
+    document.querySelectorAll(
+      ".sv-popup--menu-phone, .sv-popup--menu-tablet, .sv-popup, .sd-dropdown__popup"
+    )
+  );
+
   return (
-    document.querySelector(".sv-popup--menu-phone") ||
-    document.querySelector(".sv-popup--menu-tablet") ||
-    null
+    candidates.find((el) => {
+      if (!(el instanceof HTMLElement)) return false;
+      const rect = el.getBoundingClientRect();
+      const style = window.getComputedStyle(el);
+
+      return (
+        style.display !== "none" &&
+        style.visibility !== "hidden" &&
+        rect.width > 0 &&
+        rect.height > 0
+      );
+    }) || null
   );
 }
 
@@ -69,9 +84,9 @@ function positionDropdownPopupUnderAnchor(popupRoot, anchorEl) {
 
   const gap = 6;
   const sidePadding = 16;
-  const minWidth = Math.max(280, Math.round(rect.width));
+  const preferredWidth = Math.max(360, Math.round(rect.width), Math.round(viewportWidth * 0.22));
   const maxWidth = Math.min(760, viewportWidth - sidePadding * 2);
-  const width = Math.max(280, Math.min(minWidth, maxWidth));
+  const width = Math.max(320, Math.min(preferredWidth, maxWidth));
 
   let left = Math.round(rect.left);
   let top = Math.round(rect.bottom + gap);
@@ -113,6 +128,7 @@ function positionDropdownPopupUnderAnchor(popupRoot, anchorEl) {
   container.style.maxWidth = "100%";
   container.style.maxHeight = `${Math.min(420, maxHeight)}px`;
   container.style.overflow = "hidden";
+  container.style.minWidth = `${width}px`;
 
   return true;
 }
@@ -185,6 +201,218 @@ function applyAllAnswerItemClasses(model) {
     const name = String(question?.name || "").trim();
     if (!name) return;
     applyAnswerItemClasses(queryQuestionRoot(name));
+  });
+}
+
+
+function normalizeMatrixColumnName(value) {
+  return String(value || "")
+    .trim()
+    .toLowerCase()
+    .replaceAll(" ", "_")
+    .replaceAll("-", "_");
+}
+
+function getMatrixColumns(question) {
+  const cols = question?.visibleColumns || question?.columns || question?.columnsValue || [];
+  if (!Array.isArray(cols)) return [];
+
+  return cols
+    .map((col, index) => ({
+      index,
+      name: normalizeMatrixColumnName(col?.name || col?.valueName || col?.title || ""),
+      cellType: String(col?.cellType || col?.getType?.() || "").trim().toLowerCase(),
+      readOnly: col?.readOnly === true,
+      hasReadOnlyIf: Boolean(col?.readOnlyIf),
+    }))
+    .filter((col) => col.name);
+}
+
+function isReadOnlyControl(control) {
+  if (!control) return false;
+
+  return (
+    control.readOnly === true ||
+    control.disabled === true ||
+    control.hasAttribute("readonly") ||
+    control.hasAttribute("disabled") ||
+    control.getAttribute("aria-readonly") === "true" ||
+    control.getAttribute("aria-disabled") === "true" ||
+    control.classList?.contains("sd-input--readonly") ||
+    control.classList?.contains("sd-input--disabled") ||
+    Boolean(control.closest?.(".sd-question--readonly, .sd-question--disabled, .sd-row--readonly"))
+  );
+}
+
+function getControlDisplayValue(control) {
+  if (!control) return "";
+
+  if (control.tagName === "SELECT") {
+    const selected = control.options?.[control.selectedIndex];
+    return String(selected?.text || control.value || "").trim();
+  }
+
+  const value = String(control.value || control.getAttribute("value") || "").trim();
+  if (value) return value;
+
+  return String(control.textContent || "").trim();
+}
+
+function getMatrixQuestionRows(question) {
+  const fromValue = Array.isArray(question?.value) ? question.value : null;
+  if (fromValue) return fromValue;
+
+  const surveyValue = question?.survey?.getValue?.(question?.name);
+  if (Array.isArray(surveyValue)) return surveyValue;
+
+  if (Array.isArray(question?.defaultValue)) return question.defaultValue;
+  return [];
+}
+
+function getMatrixQuestionDefaultRows(question) {
+  if (Array.isArray(question?.defaultValue)) return question.defaultValue;
+  if (Array.isArray(question?.jsonObj?.defaultValue)) return question.jsonObj.defaultValue;
+  return [];
+}
+
+function isEmptyMatrixWithoutAdd(question, rows) {
+  const allowAddRows = question?.allowAddRows === true || question?.jsonObj?.allowAddRows === true;
+  return !allowAddRows && Array.isArray(rows) && rows.length === 0;
+}
+
+function ensureMatrixDisplayText(cell, text, className = "ember-matrix-readonly-text") {
+  if (!cell) return;
+
+  const normalized = String(text || "").trim();
+  if (!normalized) return;
+
+  const control =
+    cell.querySelector("input") ||
+    cell.querySelector("textarea") ||
+    cell.querySelector(".sd-input");
+
+  if (control) {
+    control.classList.add("ember-matrix-hidden-readonly-control");
+  }
+
+  let display = cell.querySelector(`:scope > .${className}`);
+  if (!display) {
+    display = document.createElement("div");
+    display.className = className;
+    cell.appendChild(display);
+  }
+
+  display.textContent = normalized;
+  display.title = normalized;
+}
+
+function ensureReadonlyTopicText(cell) {
+  if (!cell) return;
+
+  const control =
+    cell.querySelector("input") ||
+    cell.querySelector("textarea") ||
+    cell.querySelector(".sd-input");
+
+  if (!control || !isReadOnlyControl(control)) return;
+
+  const text = getControlDisplayValue(control);
+  ensureMatrixDisplayText(cell, text);
+}
+
+function ensureFixedTopicText(cell, rowData, defaultRowData, col) {
+  if (!cell || col?.name !== "onderwerp") return;
+
+  const defaultText = String(defaultRowData?.[col.name] || "").trim();
+  const valueText = String(rowData?.[col.name] || "").trim();
+
+  if (defaultText) {
+    ensureMatrixDisplayText(cell, valueText || defaultText);
+    return;
+  }
+
+  ensureReadonlyTopicText(cell);
+}
+
+function classifyMatrixCell(cell, col, rowData, defaultRowData) {
+  if (!cell || !col?.name) return;
+
+  cell.dataset.emberMatrixCol = col.name;
+  cell.classList.add("ember-matrix-col", `ember-matrix-col--${col.name}`);
+
+  if (col.cellType) {
+    cell.dataset.emberMatrixType = col.cellType;
+    cell.classList.add(`ember-matrix-type--${col.cellType}`);
+  }
+
+  if (col.name === "onderwerp") {
+    ensureFixedTopicText(cell, rowData, defaultRowData, col);
+  }
+}
+
+function applyMatrixColumnAttributes(question, htmlElement) {
+  if (!question || !htmlElement) return;
+
+  const type = String(question?.getType?.() || question?.jsonObj?.type || "").trim();
+  if (type !== "matrixdynamic") return;
+
+  const columns = getMatrixColumns(question);
+  if (!columns.length) return;
+
+  const root = htmlElement;
+  const names = new Set(columns.map((col) => col.name));
+  const rowsValue = getMatrixQuestionRows(question);
+  const defaultRows = getMatrixQuestionDefaultRows(question);
+
+  root.classList.add("ember-matrix-runtime");
+
+  if (isEmptyMatrixWithoutAdd(question, rowsValue)) {
+    root.classList.add("ember-matrix-runtime--empty-readonly");
+  } else {
+    root.classList.remove("ember-matrix-runtime--empty-readonly");
+  }
+
+  if (names.has("item_code") || names.has("nr")) root.classList.add("ember-matrix-runtime--has-nr");
+  if (names.has("onderwerp")) root.classList.add("ember-matrix-runtime--has-topic");
+  if (names.has("voldoet")) root.classList.add("ember-matrix-runtime--has-voldoet");
+  if (names.has("opmerking")) root.classList.add("ember-matrix-runtime--has-opmerking");
+
+  if ((names.has("item_code") || names.has("nr")) && names.has("onderwerp") && names.has("voldoet")) {
+    root.classList.add("ember-matrix-runtime--assessment");
+  }
+
+  if (columns.length >= 7 && rowsValue.length > 0) root.classList.add("ember-matrix-runtime--wide");
+  if (columns.some((col) => col.cellType === "dropdown")) root.classList.add("ember-matrix-runtime--has-dropdown");
+
+  let bodyRowIndex = 0;
+  const tableRows = root.querySelectorAll("tr");
+  tableRows.forEach((row) => {
+    const cells = Array.from(row.querySelectorAll(":scope > th, :scope > td"));
+    if (!cells.length) return;
+
+    const isHeaderRow = cells.some((cell) => cell.tagName === "TH") || row.closest("thead");
+    const rowData = isHeaderRow ? null : rowsValue[bodyRowIndex] || null;
+    const defaultRowData = isHeaderRow ? null : defaultRows[bodyRowIndex] || null;
+
+    columns.forEach((col, index) => classifyMatrixCell(cells[index], col, rowData, defaultRowData));
+
+    if (!isHeaderRow) bodyRowIndex += 1;
+  });
+}
+
+function applyAllMatrixLayoutClasses(model) {
+  const questions = model?.getAllQuestions?.() || [];
+
+  questions.forEach((question) => {
+    if (String(question?.getType?.() || question?.jsonObj?.type || "").trim() !== "matrixdynamic") return;
+
+    const name = String(question?.name || "").trim();
+    if (!name) return;
+
+    const root = queryQuestionRoot(name);
+    if (!root) return;
+
+    applyMatrixColumnAttributes(question, root);
   });
 }
 
@@ -552,6 +780,47 @@ export function attachRuntimeBehaviors({
     });
   }
 
+
+  function registerDropdownDelegation() {
+    const root =
+      document.querySelector(".sd-root-modern") ||
+      document.querySelector(".sd-root") ||
+      document.body;
+
+    const setAnchorFromTarget = (target) => {
+      const el = target instanceof HTMLElement ? target : null;
+      const dropdown = el?.closest?.(".sd-dropdown, .sv-dropdown_select-wrapper");
+      if (!dropdown) return;
+
+      activeDropdownAnchorEl = getDropdownAnchorElement(dropdown);
+
+      requestAnimationFrame(() => {
+        tryRepositionActiveDropdownPopup();
+      });
+
+      window.setTimeout(() => {
+        tryRepositionActiveDropdownPopup();
+      }, 30);
+
+      window.setTimeout(() => {
+        tryRepositionActiveDropdownPopup();
+      }, 90);
+    };
+
+    const onPointerDown = (event) => setAnchorFromTarget(event.target);
+    const onFocusIn = (event) => setAnchorFromTarget(event.target);
+
+    root.addEventListener("pointerdown", onPointerDown, true);
+    root.addEventListener("focusin", onFocusIn, true);
+
+    detachDomListeners.push(() => {
+      root.removeEventListener("pointerdown", onPointerDown, true);
+      root.removeEventListener("focusin", onFocusIn, true);
+    });
+  }
+
+  registerDropdownDelegation();
+
   const valueChangedHandler = (_, options) => {
     if (!suppressDirtyRef?.current) {
       onAnswersSnapshotChange?.({ ...(model.data || {}) });
@@ -588,6 +857,7 @@ export function attachRuntimeBehaviors({
 
     if (options?.question?.getType?.() === "matrixdynamic") {
       requestAnimationFrame(() => {
+        applyMatrixColumnAttributes(options?.question, options?.htmlElement);
         syncValidationVisualsOnlyWhenActivated(model, validationActivatedRef);
       });
     }
@@ -612,6 +882,7 @@ export function attachRuntimeBehaviors({
     normalizeEnergyRows(model, prefillPayload, energyAutoStateRef);
     normalizeAvailabilityRows(model, availabilityAutoStateRef);
     applyAllAnswerItemClasses(model);
+    applyAllMatrixLayoutClasses(model);
 
     requestAnimationFrame(() => {
       applyCapWarnings(model);
@@ -619,6 +890,7 @@ export function attachRuntimeBehaviors({
       syncValidationVisualsOnlyWhenActivated(model, validationActivatedRef);
       tryRepositionActiveDropdownPopup();
       applyAllAnswerItemClasses(model);
+      applyAllMatrixLayoutClasses(model);
     });
   });
 

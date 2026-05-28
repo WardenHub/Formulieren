@@ -291,6 +291,17 @@ html[data-appearance="dark"] .sd-root-modern {
 }
 
 /* Inline dropdown override for runtime */
+.sv-popup.ember-dropdown-popup-inline,
+.sd-dropdown__popup.ember-dropdown-popup-inline,
+.sv-popup--menu-phone.ember-dropdown-popup-inline,
+.sv-popup--menu-tablet.ember-dropdown-popup-inline,
+.sv-popup.sv-dropdown-popup,
+.sd-dropdown__popup {
+  min-width: min(360px, calc(100vw - 32px)) !important;
+}
+
+.sv-popup.ember-dropdown-popup-inline,
+.sd-dropdown__popup.ember-dropdown-popup-inline,
 .sv-popup--menu-phone.ember-dropdown-popup-inline,
 .sv-popup--menu-tablet.ember-dropdown-popup-inline {
   position: fixed !important;
@@ -308,24 +319,54 @@ html[data-appearance="dark"] .sd-root-modern {
   contain: layout style paint !important;
 }
 
+.sv-popup.ember-dropdown-popup-inline > .sv-popup__container,
+.sd-dropdown__popup.ember-dropdown-popup-inline > .sv-popup__container,
 .sv-popup--menu-phone.ember-dropdown-popup-inline > .sv-popup__container,
-.sv-popup--menu-tablet.ember-dropdown-popup-inline > .sv-popup__container {
+.sv-popup--menu-tablet.ember-dropdown-popup-inline > .sv-popup__container,
+.sv-popup.sv-dropdown-popup > .sv-popup__container,
+.sd-dropdown__popup > .sv-popup__container {
+  min-width: min(360px, calc(100vw - 32px)) !important;
   width: 100% !important;
-  max-width: 100% !important;
+  max-width: min(760px, calc(100vw - 32px)) !important;
   overflow: hidden !important;
   border-radius: 10px !important;
   box-shadow: var(--ember-sjs-shadow) !important;
 }
 
+.sv-popup.ember-dropdown-popup-inline > .sv-popup__container > .sv-popup__body-content,
+.sd-dropdown__popup.ember-dropdown-popup-inline > .sv-popup__container > .sv-popup__body-content,
 .sv-popup--menu-phone.ember-dropdown-popup-inline > .sv-popup__container > .sv-popup__body-content,
 .sv-popup--menu-tablet.ember-dropdown-popup-inline > .sv-popup__container > .sv-popup__body-content {
   max-height: inherit !important;
   overflow: auto !important;
 }
 
+.sv-popup.ember-dropdown-popup-inline .sv-list__item-body,
+.sd-dropdown__popup.ember-dropdown-popup-inline .sv-list__item-body,
+.sv-popup.ember-dropdown-popup-inline .sd-list__item-body,
+.sd-dropdown__popup.ember-dropdown-popup-inline .sd-list__item-body,
+.sv-popup.ember-dropdown-popup-inline .sd-item__control-label,
+.sd-dropdown__popup.ember-dropdown-popup-inline .sd-item__control-label,
+.sv-popup.sv-dropdown-popup .sv-list__item-body,
+.sv-popup.sv-dropdown-popup .sd-list__item-body {
+  white-space: normal !important;
+  overflow-wrap: anywhere !important;
+  word-break: normal !important;
+  line-height: 1.25 !important;
+}
+
+.sv-popup.ember-dropdown-popup-inline .sv-list,
+.sd-dropdown__popup.ember-dropdown-popup-inline .sv-list,
+.sv-popup.ember-dropdown-popup-inline .sd-list,
+.sd-dropdown__popup.ember-dropdown-popup-inline .sd-list,
+.sv-popup.sv-dropdown-popup .sv-list,
+.sv-popup.sv-dropdown-popup .sd-list {
+  min-width: min(320px, calc(100vw - 40px)) !important;
+}
+
 /* =========================================================
    Matrix readability
-   Laat SurveyJS breedtes bepalen
+   Dynamische Ember matrix layout zonder inhoud af te knijpen
    ========================================================= */
 
 .sd-root-modern .sd-table__cell,
@@ -342,22 +383,202 @@ html[data-appearance="dark"] .sd-root-modern {
   opacity: 1 !important;
 }
 
-.sd-root-modern .sd-matrixdynamic__row td {
-  vertical-align: middle;
+.sd-root-modern .sd-matrixdynamic,
+.sd-root-modern .sd-question--matrixdynamic {
+  max-width: 100%;
+  min-width: 0;
 }
 
-.sd-root-modern .sd-matrixdynamic__row td:nth-child(2),
-.sd-root-modern .sd-matrixdynamic__row td:nth-child(2) * {
+.sd-root-modern .sd-matrixdynamic__table-wrapper,
+.sd-root-modern .sd-table-wrapper {
+  max-width: 100%;
+  overflow-x: auto;
+  overflow-y: visible;
+  scrollbar-width: thin;
+  scrollbar-color: var(--ember-sjs-border-strong) transparent;
+}
+
+.sd-root-modern .sd-matrixdynamic__table-wrapper::-webkit-scrollbar,
+.sd-root-modern .sd-table-wrapper::-webkit-scrollbar {
+  height: 9px;
+}
+
+.sd-root-modern .sd-matrixdynamic__table-wrapper::-webkit-scrollbar-track,
+.sd-root-modern .sd-table-wrapper::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.sd-root-modern .sd-matrixdynamic__table-wrapper::-webkit-scrollbar-thumb,
+.sd-root-modern .sd-table-wrapper::-webkit-scrollbar-thumb {
+  background: var(--ember-sjs-border-strong);
+  border-radius: 999px;
+}
+
+
+.sd-root-modern .ember-matrix-runtime--empty-readonly .sd-matrixdynamic__table-wrapper,
+.sd-root-modern .ember-matrix-runtime--empty-readonly .sd-table-wrapper,
+.sd-root-modern .ember-matrix-runtime--empty-readonly table,
+.sd-root-modern .ember-matrix-runtime--empty-readonly .sd-table {
+  display: none !important;
+}
+
+
+.sd-root-modern .ember-matrix-runtime table,
+.sd-root-modern .ember-matrix-runtime .sd-matrixdynamic__table,
+.sd-root-modern .ember-matrix-runtime .sd-table {
+  table-layout: auto !important;
+  width: 100% !important;
+  border-collapse: separate;
+}
+
+.sd-root-modern .ember-matrix-runtime--assessment table,
+.sd-root-modern .ember-matrix-runtime--assessment .sd-matrixdynamic__table,
+.sd-root-modern .ember-matrix-runtime--assessment .sd-table {
+  min-width: 900px;
+}
+
+.sd-root-modern .ember-matrix-runtime--wide table,
+.sd-root-modern .ember-matrix-runtime--wide .sd-matrixdynamic__table,
+.sd-root-modern .ember-matrix-runtime--wide .sd-table {
+  min-width: 1080px;
+}
+
+.sd-root-modern .ember-matrix-runtime th,
+.sd-root-modern .ember-matrix-runtime td,
+.sd-root-modern .ember-matrix-runtime .sd-matrixdynamic__cell,
+.sd-root-modern .ember-matrix-runtime .sd-table__cell {
+  min-width: 0;
+  max-width: none;
+  vertical-align: top !important;
+  overflow: visible !important;
+  white-space: normal !important;
+  line-height: 1.3 !important;
+}
+
+.sd-root-modern .ember-matrix-runtime th,
+.sd-root-modern .ember-matrix-runtime .sd-table__cell--header,
+.sd-root-modern .ember-matrix-runtime .sd-table__headers th,
+.sd-root-modern .ember-matrix-runtime .sd-table__headers td,
+.sd-root-modern .ember-matrix-runtime .sd-matrixdynamic__table thead th,
+.sd-root-modern .ember-matrix-runtime .sd-matrixdynamic__table thead td {
+  height: auto !important;
+  min-height: 44px !important;
+  padding-top: 14px !important;
+  padding-bottom: 14px !important;
+  line-height: 1.25 !important;
   white-space: normal !important;
   overflow: visible !important;
   text-overflow: clip !important;
-  word-break: break-word !important;
-  overflow-wrap: anywhere !important;
 }
 
-.sd-root-modern .sd-matrixdynamic__row textarea {
+.sd-root-modern .ember-matrix-runtime [data-ember-matrix-col],
+.sd-root-modern .ember-matrix-runtime [data-ember-matrix-col] * {
+  min-width: 0;
+}
+
+.sd-root-modern .ember-matrix-runtime [data-ember-matrix-col="item_code"],
+.sd-root-modern .ember-matrix-runtime [data-ember-matrix-col="nr"] {
+  width: 76px !important;
+  min-width: 76px !important;
+  max-width: 90px !important;
+}
+
+.sd-root-modern .ember-matrix-runtime [data-ember-matrix-col="onderwerp"] {
+  min-width: 320px !important;
+  width: auto !important;
+}
+
+.sd-root-modern .ember-matrix-runtime--assessment [data-ember-matrix-col="onderwerp"] {
+  min-width: 360px !important;
+}
+
+.sd-root-modern .ember-matrix-runtime [data-ember-matrix-col="opmerking"] {
+  min-width: 300px !important;
+}
+
+.sd-root-modern .ember-matrix-runtime [data-ember-matrix-type="dropdown"] {
+  min-width: 220px !important;
+}
+
+.sd-root-modern .ember-matrix-runtime [data-ember-matrix-type="comment"] {
+  min-width: 280px !important;
+}
+
+.sd-root-modern .ember-matrix-runtime [data-ember-matrix-col="voldoet"] {
+  min-width: 230px !important;
+  width: auto !important;
+  overflow: visible !important;
+}
+
+.sd-root-modern .ember-matrix-runtime [data-ember-matrix-col="onderwerp"],
+.sd-root-modern .ember-matrix-runtime [data-ember-matrix-col="onderwerp"] *,
+.sd-root-modern .ember-matrix-runtime .ember-matrix-readonly-text {
+  white-space: normal !important;
+  overflow: visible !important;
+  text-overflow: clip !important;
+  word-break: normal !important;
+  overflow-wrap: anywhere !important;
+  line-height: 1.35 !important;
+}
+
+.sd-root-modern .ember-matrix-readonly-text {
+  width: 100%;
+  min-height: 38px;
+  display: flex;
+  align-items: center;
+  padding: 9px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--ember-sjs-border-soft);
+  background: var(--ember-sjs-input-disabled-bg);
+  color: var(--ember-sjs-input-disabled-text);
+  font-weight: 500;
+}
+
+.sd-root-modern .ember-matrix-hidden-readonly-control {
+  display: none !important;
+}
+
+.sd-root-modern .ember-matrix-runtime input,
+.sd-root-modern .ember-matrix-runtime textarea,
+.sd-root-modern .ember-matrix-runtime .sd-input,
+.sd-root-modern .ember-matrix-runtime .sd-dropdown {
+  width: 100% !important;
+  max-width: 100% !important;
+}
+
+.sd-root-modern .ember-matrix-runtime textarea {
   min-height: 62px;
   resize: vertical;
+}
+
+.sd-root-modern .ember-matrix-runtime .sd-dropdown,
+.sd-root-modern .ember-matrix-runtime .sd-dropdown__value,
+.sd-root-modern .ember-matrix-runtime .sd-dropdown__filter-string-input {
+  min-width: 0 !important;
+}
+
+.sd-root-modern .ember-matrix-runtime [data-ember-matrix-type="dropdown"] .sd-dropdown,
+.sd-root-modern .ember-matrix-runtime [data-ember-matrix-type="dropdown"] .sd-input {
+  min-width: 180px !important;
+}
+
+.sd-root-modern .ember-matrix-runtime .sd-selectbase {
+  flex-wrap: wrap !important;
+  overflow: visible !important;
+  min-width: 0 !important;
+  max-width: 100% !important;
+  row-gap: 8px !important;
+}
+
+.sd-root-modern .ember-matrix-runtime .sd-selectbase .sd-item,
+.sd-root-modern .ember-matrix-runtime .sd-selectbase .sd-radio,
+.sd-root-modern .ember-matrix-runtime .sd-selectbase .sd-checkbox {
+  flex: 0 0 auto !important;
+}
+
+.sd-root-modern .ember-matrix-runtime [data-ember-matrix-col="voldoet"] .sd-selectbase {
+  min-width: 0 !important;
+  width: auto !important;
 }
 
 .wrap-topic .sd-table__cell,
@@ -379,24 +600,105 @@ html[data-appearance="dark"] .sd-root-modern {
   margin-right: auto;
 }
 
+/* SurveyJS kaartweergave op small screens: cellen mogen nooit smal blijven door kolompercentages. */
+@media (max-width: 760px) {
+  .sd-root-modern .ember-matrix-runtime table,
+  .sd-root-modern .ember-matrix-runtime .sd-matrixdynamic__table,
+  .sd-root-modern .ember-matrix-runtime .sd-table,
+  .sd-root-modern .ember-matrix-runtime tbody,
+  .sd-root-modern .ember-matrix-runtime thead,
+  .sd-root-modern .ember-matrix-runtime tr,
+  .sd-root-modern .ember-matrix-runtime th,
+  .sd-root-modern .ember-matrix-runtime td {
+    max-width: 100% !important;
+  }
+
+  .sd-root-modern .ember-matrix-runtime tr {
+    width: 100% !important;
+  }
+
+  .sd-root-modern .ember-matrix-runtime td,
+  .sd-root-modern .ember-matrix-runtime .sd-matrixdynamic__cell,
+  .sd-root-modern .ember-matrix-runtime .sd-table__cell,
+  .sd-root-modern .ember-matrix-runtime [data-ember-matrix-col],
+  .sd-root-modern .ember-matrix-runtime [data-ember-matrix-col="item_code"],
+  .sd-root-modern .ember-matrix-runtime [data-ember-matrix-col="nr"],
+  .sd-root-modern .ember-matrix-runtime [data-ember-matrix-col="onderwerp"],
+  .sd-root-modern .ember-matrix-runtime [data-ember-matrix-col="voldoet"],
+  .sd-root-modern .ember-matrix-runtime [data-ember-matrix-col="opmerking"],
+  .sd-root-modern .ember-matrix-runtime [data-ember-matrix-type="dropdown"],
+  .sd-root-modern .ember-matrix-runtime [data-ember-matrix-type="comment"] {
+    width: 100% !important;
+    min-width: 0 !important;
+    max-width: 100% !important;
+  }
+
+  .sd-root-modern .ember-matrix-runtime input,
+  .sd-root-modern .ember-matrix-runtime textarea,
+  .sd-root-modern .ember-matrix-runtime .sd-input,
+  .sd-root-modern .ember-matrix-runtime .sd-dropdown {
+    width: 100% !important;
+    min-width: 0 !important;
+  }
+
+  .sd-root-modern .ember-matrix-runtime .sd-selectbase {
+    width: 100% !important;
+    justify-content: flex-start !important;
+  }
+}
+
 /* =========================================================
    Answer pills
-   Styling via runtime classes in runtimeBehaviors.jsx
+   Alleen radiogroups/checkboxes stylen; SurveyJS gebruikt sd-selectbase ook voor dropdowns.
    ========================================================= */
 
-.sd-root-modern .sd-selectbase {
+.sd-root-modern fieldset.sd-selectbase,
+.sd-root-modern .sd-selectbase[role="radiogroup"],
+.sd-root-modern .sd-selectbase[role="group"] {
   display: flex !important;
   align-items: center !important;
   justify-content: flex-start !important;
-  flex-wrap: nowrap !important;
+  flex-wrap: wrap !important;
   gap: 8px !important;
   margin: 0 !important;
   padding: 0 !important;
+  min-width: 0 !important;
+  max-width: 100% !important;
+  overflow: visible !important;
 }
 
-.sd-root-modern .sd-selectbase .sd-item,
-.sd-root-modern .sd-selectbase .sd-radio,
-.sd-root-modern .sd-selectbase .sd-checkbox {
+.sd-root-modern fieldset.sd-selectbase .sd-selectbase--multi-column,
+.sd-root-modern .sd-selectbase[role="radiogroup"] .sd-selectbase--multi-column,
+.sd-root-modern .sd-selectbase[role="group"] .sd-selectbase--multi-column {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: flex-start !important;
+  flex-wrap: wrap !important;
+  gap: 8px !important;
+  min-width: 0 !important;
+  max-width: 100% !important;
+  overflow: visible !important;
+}
+
+.sd-root-modern fieldset.sd-selectbase .sd-selectbase__column,
+.sd-root-modern .sd-selectbase[role="radiogroup"] .sd-selectbase__column,
+.sd-root-modern .sd-selectbase[role="group"] .sd-selectbase__column {
+  width: auto !important;
+  min-width: 0 !important;
+  max-width: none !important;
+  flex: 0 0 auto !important;
+  overflow: visible !important;
+}
+
+.sd-root-modern fieldset.sd-selectbase .sd-item,
+.sd-root-modern fieldset.sd-selectbase .sd-radio,
+.sd-root-modern fieldset.sd-selectbase .sd-checkbox,
+.sd-root-modern .sd-selectbase[role="radiogroup"] .sd-item,
+.sd-root-modern .sd-selectbase[role="radiogroup"] .sd-radio,
+.sd-root-modern .sd-selectbase[role="radiogroup"] .sd-checkbox,
+.sd-root-modern .sd-selectbase[role="group"] .sd-item,
+.sd-root-modern .sd-selectbase[role="group"] .sd-radio,
+.sd-root-modern .sd-selectbase[role="group"] .sd-checkbox {
   position: relative !important;
   display: inline-flex !important;
   align-items: center !important;
@@ -406,12 +708,18 @@ html[data-appearance="dark"] .sd-root-modern {
   padding: 0 !important;
   flex: 0 0 auto !important;
   white-space: nowrap !important;
+  overflow: visible !important;
 }
 
-/* Visueel verbergen, maar SurveyJS interactie intact laten */
-.sd-root-modern .sd-selectbase .sd-item__decorator,
-.sd-root-modern .sd-selectbase .sd-radio__decorator,
-.sd-root-modern .sd-selectbase .sd-checkbox__decorator {
+.sd-root-modern fieldset.sd-selectbase .sd-item__decorator,
+.sd-root-modern fieldset.sd-selectbase .sd-radio__decorator,
+.sd-root-modern fieldset.sd-selectbase .sd-checkbox__decorator,
+.sd-root-modern .sd-selectbase[role="radiogroup"] .sd-item__decorator,
+.sd-root-modern .sd-selectbase[role="radiogroup"] .sd-radio__decorator,
+.sd-root-modern .sd-selectbase[role="radiogroup"] .sd-checkbox__decorator,
+.sd-root-modern .sd-selectbase[role="group"] .sd-item__decorator,
+.sd-root-modern .sd-selectbase[role="group"] .sd-radio__decorator,
+.sd-root-modern .sd-selectbase[role="group"] .sd-checkbox__decorator {
   position: absolute !important;
   left: 8px !important;
   top: 50% !important;
@@ -425,10 +733,18 @@ html[data-appearance="dark"] .sd-root-modern {
   box-shadow: none !important;
 }
 
-.sd-root-modern .sd-selectbase .sd-item__control-label,
-.sd-root-modern .sd-selectbase .sd-radio__control-label,
-.sd-root-modern .sd-selectbase .sd-checkbox__control-label,
-.sd-root-modern .sd-selectbase .sd-item__text {
+.sd-root-modern fieldset.sd-selectbase .sd-item__control-label,
+.sd-root-modern fieldset.sd-selectbase .sd-radio__control-label,
+.sd-root-modern fieldset.sd-selectbase .sd-checkbox__control-label,
+.sd-root-modern fieldset.sd-selectbase .sd-item__text,
+.sd-root-modern .sd-selectbase[role="radiogroup"] .sd-item__control-label,
+.sd-root-modern .sd-selectbase[role="radiogroup"] .sd-radio__control-label,
+.sd-root-modern .sd-selectbase[role="radiogroup"] .sd-checkbox__control-label,
+.sd-root-modern .sd-selectbase[role="radiogroup"] .sd-item__text,
+.sd-root-modern .sd-selectbase[role="group"] .sd-item__control-label,
+.sd-root-modern .sd-selectbase[role="group"] .sd-radio__control-label,
+.sd-root-modern .sd-selectbase[role="group"] .sd-checkbox__control-label,
+.sd-root-modern .sd-selectbase[role="group"] .sd-item__text {
   display: inline-flex !important;
   align-items: center !important;
   justify-content: center !important;
@@ -450,84 +766,131 @@ html[data-appearance="dark"] .sd-root-modern {
     color 0.14s ease !important;
 }
 
-.sd-root-modern .sd-selectbase .sd-item:hover .sd-item__control-label,
-.sd-root-modern .sd-selectbase .sd-radio:hover .sd-radio__control-label,
-.sd-root-modern .sd-selectbase .sd-checkbox:hover .sd-checkbox__control-label,
-.sd-root-modern .sd-selectbase .sd-item:hover .sd-item__text {
+.sd-root-modern fieldset.sd-selectbase .sd-item:hover .sd-item__control-label,
+.sd-root-modern fieldset.sd-selectbase .sd-radio:hover .sd-radio__control-label,
+.sd-root-modern fieldset.sd-selectbase .sd-checkbox:hover .sd-checkbox__control-label,
+.sd-root-modern fieldset.sd-selectbase .sd-item:hover .sd-item__text,
+.sd-root-modern .sd-selectbase[role="radiogroup"] .sd-item:hover .sd-item__control-label,
+.sd-root-modern .sd-selectbase[role="radiogroup"] .sd-radio:hover .sd-radio__control-label,
+.sd-root-modern .sd-selectbase[role="radiogroup"] .sd-checkbox:hover .sd-checkbox__control-label,
+.sd-root-modern .sd-selectbase[role="radiogroup"] .sd-item:hover .sd-item__text,
+.sd-root-modern .sd-selectbase[role="group"] .sd-item:hover .sd-item__control-label,
+.sd-root-modern .sd-selectbase[role="group"] .sd-radio:hover .sd-radio__control-label,
+.sd-root-modern .sd-selectbase[role="group"] .sd-checkbox:hover .sd-checkbox__control-label,
+.sd-root-modern .sd-selectbase[role="group"] .sd-item:hover .sd-item__text {
   background: var(--ember-sjs-bg-hover) !important;
   border-color: var(--ember-sjs-border) !important;
 }
 
-/* Default checked fallback */
-.sd-root-modern .sd-selectbase .sd-item--checked .sd-item__control-label,
-.sd-root-modern .sd-selectbase .sd-radio--checked .sd-radio__control-label,
-.sd-root-modern .sd-selectbase .sd-checkbox--checked .sd-checkbox__control-label,
-.sd-root-modern .sd-selectbase .sd-item--checked .sd-item__text {
+.sd-root-modern fieldset.sd-selectbase .sd-item--checked .sd-item__control-label,
+.sd-root-modern fieldset.sd-selectbase .sd-radio--checked .sd-radio__control-label,
+.sd-root-modern fieldset.sd-selectbase .sd-checkbox--checked .sd-checkbox__control-label,
+.sd-root-modern fieldset.sd-selectbase .sd-item--checked .sd-item__text,
+.sd-root-modern .sd-selectbase[role="radiogroup"] .sd-item--checked .sd-item__control-label,
+.sd-root-modern .sd-selectbase[role="radiogroup"] .sd-radio--checked .sd-radio__control-label,
+.sd-root-modern .sd-selectbase[role="radiogroup"] .sd-checkbox--checked .sd-checkbox__control-label,
+.sd-root-modern .sd-selectbase[role="radiogroup"] .sd-item--checked .sd-item__text,
+.sd-root-modern .sd-selectbase[role="group"] .sd-item--checked .sd-item__control-label,
+.sd-root-modern .sd-selectbase[role="group"] .sd-radio--checked .sd-radio__control-label,
+.sd-root-modern .sd-selectbase[role="group"] .sd-checkbox--checked .sd-checkbox__control-label,
+.sd-root-modern .sd-selectbase[role="group"] .sd-item--checked .sd-item__text {
   background: var(--ember-sjs-accent-bg) !important;
   border-color: var(--ember-sjs-accent-border) !important;
   color: var(--ember-sjs-text-strong) !important;
   -webkit-text-fill-color: var(--ember-sjs-text-strong) !important;
 }
 
-/* Ja */
-.sd-root-modern .sd-selectbase .ember-answer-ja.sd-item--checked .sd-item__control-label,
-.sd-root-modern .sd-selectbase .ember-answer-ja.sd-radio--checked .sd-radio__control-label,
-.sd-root-modern .sd-selectbase .ember-answer-ja.sd-checkbox--checked .sd-checkbox__control-label,
-.sd-root-modern .sd-selectbase .ember-answer-ja.sd-item--checked .sd-item__text {
+.sd-root-modern fieldset.sd-selectbase .ember-answer-ja.sd-item--checked .sd-item__control-label,
+.sd-root-modern fieldset.sd-selectbase .ember-answer-ja.sd-radio--checked .sd-radio__control-label,
+.sd-root-modern fieldset.sd-selectbase .ember-answer-ja.sd-checkbox--checked .sd-checkbox__control-label,
+.sd-root-modern fieldset.sd-selectbase .ember-answer-ja.sd-item--checked .sd-item__text,
+.sd-root-modern .sd-selectbase[role="radiogroup"] .ember-answer-ja.sd-item--checked .sd-item__control-label,
+.sd-root-modern .sd-selectbase[role="radiogroup"] .ember-answer-ja.sd-radio--checked .sd-radio__control-label,
+.sd-root-modern .sd-selectbase[role="radiogroup"] .ember-answer-ja.sd-checkbox--checked .sd-checkbox__control-label,
+.sd-root-modern .sd-selectbase[role="radiogroup"] .ember-answer-ja.sd-item--checked .sd-item__text {
   background: var(--ember-sjs-success-bg) !important;
   border-color: var(--ember-sjs-success-border) !important;
   color: var(--ember-sjs-success-text) !important;
   -webkit-text-fill-color: var(--ember-sjs-success-text) !important;
 }
 
-/* Nee */
-.sd-root-modern .sd-selectbase .ember-answer-nee.sd-item--checked .sd-item__control-label,
-.sd-root-modern .sd-selectbase .ember-answer-nee.sd-radio--checked .sd-radio__control-label,
-.sd-root-modern .sd-selectbase .ember-answer-nee.sd-checkbox--checked .sd-checkbox__control-label,
-.sd-root-modern .sd-selectbase .ember-answer-nee.sd-item--checked .sd-item__text {
+.sd-root-modern fieldset.sd-selectbase .ember-answer-nee.sd-item--checked .sd-item__control-label,
+.sd-root-modern fieldset.sd-selectbase .ember-answer-nee.sd-radio--checked .sd-radio__control-label,
+.sd-root-modern fieldset.sd-selectbase .ember-answer-nee.sd-checkbox--checked .sd-checkbox__control-label,
+.sd-root-modern fieldset.sd-selectbase .ember-answer-nee.sd-item--checked .sd-item__text,
+.sd-root-modern .sd-selectbase[role="radiogroup"] .ember-answer-nee.sd-item--checked .sd-item__control-label,
+.sd-root-modern .sd-selectbase[role="radiogroup"] .ember-answer-nee.sd-radio--checked .sd-radio__control-label,
+.sd-root-modern .sd-selectbase[role="radiogroup"] .ember-answer-nee.sd-checkbox--checked .sd-checkbox__control-label,
+.sd-root-modern .sd-selectbase[role="radiogroup"] .ember-answer-nee.sd-item--checked .sd-item__text {
   background: var(--ember-sjs-danger-bg) !important;
   border-color: var(--ember-sjs-danger-border) !important;
   color: var(--ember-sjs-danger-text) !important;
   -webkit-text-fill-color: var(--ember-sjs-danger-text) !important;
 }
 
-/* N.V.T. */
-.sd-root-modern .sd-selectbase .ember-answer-nvt.sd-item--checked .sd-item__control-label,
-.sd-root-modern .sd-selectbase .ember-answer-nvt.sd-radio--checked .sd-radio__control-label,
-.sd-root-modern .sd-selectbase .ember-answer-nvt.sd-checkbox--checked .sd-checkbox__control-label,
-.sd-root-modern .sd-selectbase .ember-answer-nvt.sd-item--checked .sd-item__text {
+.sd-root-modern fieldset.sd-selectbase .ember-answer-nvt.sd-item--checked .sd-item__control-label,
+.sd-root-modern fieldset.sd-selectbase .ember-answer-nvt.sd-radio--checked .sd-radio__control-label,
+.sd-root-modern fieldset.sd-selectbase .ember-answer-nvt.sd-checkbox--checked .sd-checkbox__control-label,
+.sd-root-modern fieldset.sd-selectbase .ember-answer-nvt.sd-item--checked .sd-item__text,
+.sd-root-modern .sd-selectbase[role="radiogroup"] .ember-answer-nvt.sd-item--checked .sd-item__control-label,
+.sd-root-modern .sd-selectbase[role="radiogroup"] .ember-answer-nvt.sd-radio--checked .sd-radio__control-label,
+.sd-root-modern .sd-selectbase[role="radiogroup"] .ember-answer-nvt.sd-checkbox--checked .sd-checkbox__control-label,
+.sd-root-modern .sd-selectbase[role="radiogroup"] .ember-answer-nvt.sd-item--checked .sd-item__text {
   background: var(--ember-sjs-neutral-bg) !important;
   border-color: var(--ember-sjs-neutral-border) !important;
   color: var(--ember-sjs-neutral-text) !important;
   -webkit-text-fill-color: var(--ember-sjs-neutral-text) !important;
 }
 
-.sd-root-modern .sd-selectbase .sd-item:focus,
-.sd-root-modern .sd-selectbase .sd-item:focus-within,
-.sd-root-modern .sd-selectbase .sd-radio:focus,
-.sd-root-modern .sd-selectbase .sd-radio:focus-within,
-.sd-root-modern .sd-selectbase .sd-checkbox:focus,
-.sd-root-modern .sd-selectbase .sd-checkbox:focus-within {
+.sd-root-modern fieldset.sd-selectbase .sd-item:focus,
+.sd-root-modern fieldset.sd-selectbase .sd-item:focus-within,
+.sd-root-modern fieldset.sd-selectbase .sd-radio:focus,
+.sd-root-modern fieldset.sd-selectbase .sd-radio:focus-within,
+.sd-root-modern fieldset.sd-selectbase .sd-checkbox:focus,
+.sd-root-modern fieldset.sd-selectbase .sd-checkbox:focus-within,
+.sd-root-modern .sd-selectbase[role="radiogroup"] .sd-item:focus,
+.sd-root-modern .sd-selectbase[role="radiogroup"] .sd-item:focus-within,
+.sd-root-modern .sd-selectbase[role="radiogroup"] .sd-radio:focus,
+.sd-root-modern .sd-selectbase[role="radiogroup"] .sd-radio:focus-within,
+.sd-root-modern .sd-selectbase[role="radiogroup"] .sd-checkbox:focus,
+.sd-root-modern .sd-selectbase[role="radiogroup"] .sd-checkbox:focus-within {
   outline: none !important;
 }
 
-.sd-root-modern .sd-selectbase .sd-item:focus-within .sd-item__control-label,
-.sd-root-modern .sd-selectbase .sd-radio:focus-within .sd-radio__control-label,
-.sd-root-modern .sd-selectbase .sd-checkbox:focus-within .sd-checkbox__control-label {
+.sd-root-modern fieldset.sd-selectbase .sd-item:focus-within .sd-item__control-label,
+.sd-root-modern fieldset.sd-selectbase .sd-radio:focus-within .sd-radio__control-label,
+.sd-root-modern fieldset.sd-selectbase .sd-checkbox:focus-within .sd-checkbox__control-label,
+.sd-root-modern .sd-selectbase[role="radiogroup"] .sd-item:focus-within .sd-item__control-label,
+.sd-root-modern .sd-selectbase[role="radiogroup"] .sd-radio:focus-within .sd-radio__control-label,
+.sd-root-modern .sd-selectbase[role="radiogroup"] .sd-checkbox:focus-within .sd-checkbox__control-label {
   box-shadow: 0 0 0 2px var(--ember-sjs-accent-bg-strong) !important;
 }
 
 /* Small screens */
 @media (max-width: 760px) {
-  .sd-root-modern .sd-selectbase {
+  .sd-root-modern fieldset.sd-selectbase,
+  .sd-root-modern .sd-selectbase[role="radiogroup"],
+  .sd-root-modern .sd-selectbase[role="group"],
+  .sd-root-modern fieldset.sd-selectbase .sd-selectbase--multi-column,
+  .sd-root-modern .sd-selectbase[role="radiogroup"] .sd-selectbase--multi-column,
+  .sd-root-modern .sd-selectbase[role="group"] .sd-selectbase--multi-column {
     flex-wrap: wrap !important;
     row-gap: 8px !important;
+    overflow: visible !important;
   }
 
-  .sd-root-modern .sd-selectbase .sd-item__control-label,
-  .sd-root-modern .sd-selectbase .sd-radio__control-label,
-  .sd-root-modern .sd-selectbase .sd-checkbox__control-label,
-  .sd-root-modern .sd-selectbase .sd-item__text {
+  .sd-root-modern fieldset.sd-selectbase .sd-item__control-label,
+  .sd-root-modern fieldset.sd-selectbase .sd-radio__control-label,
+  .sd-root-modern fieldset.sd-selectbase .sd-checkbox__control-label,
+  .sd-root-modern fieldset.sd-selectbase .sd-item__text,
+  .sd-root-modern .sd-selectbase[role="radiogroup"] .sd-item__control-label,
+  .sd-root-modern .sd-selectbase[role="radiogroup"] .sd-radio__control-label,
+  .sd-root-modern .sd-selectbase[role="radiogroup"] .sd-checkbox__control-label,
+  .sd-root-modern .sd-selectbase[role="radiogroup"] .sd-item__text,
+  .sd-root-modern .sd-selectbase[role="group"] .sd-item__control-label,
+  .sd-root-modern .sd-selectbase[role="group"] .sd-radio__control-label,
+  .sd-root-modern .sd-selectbase[role="group"] .sd-checkbox__control-label,
+  .sd-root-modern .sd-selectbase[role="group"] .sd-item__text {
     min-width: 68px !important;
   }
 }
@@ -1002,5 +1365,36 @@ html[data-appearance="dark"] {
 
   .ember-page-nav-shell {
     --ember-form-nav-top: 52px;
+  }
+}
+
+/* =========================================================
+   Ember matrix v3 safety patches
+   ========================================================= */
+
+.sd-root-modern .sv-dropdown_select-wrapper,
+.sd-root-modern .sv-dropdown_select-wrapper .sd-selectbase {
+  display: block !important;
+  width: 100% !important;
+  min-width: 0 !important;
+  max-width: 100% !important;
+  overflow: visible !important;
+}
+
+.sd-root-modern .ember-matrix-runtime [data-ember-matrix-type="dropdown"] .sv-dropdown_select-wrapper,
+.sd-root-modern .ember-matrix-runtime [data-ember-matrix-type="dropdown"] .sd-dropdown {
+  min-width: 180px !important;
+}
+
+@media (max-width: 760px) {
+  .sd-root-modern .ember-matrix-runtime [data-ember-matrix-col="onderwerp"] .ember-matrix-readonly-text,
+  .sd-root-modern .ember-matrix-runtime [data-ember-matrix-col="onderwerp"] .sd-input,
+  .sd-root-modern .ember-matrix-runtime [data-ember-matrix-col="onderwerp"] input,
+  .sd-root-modern .ember-matrix-runtime [data-ember-matrix-col="onderwerp"] textarea,
+  .sd-root-modern .ember-matrix-runtime [data-ember-matrix-type="dropdown"] .sd-dropdown,
+  .sd-root-modern .ember-matrix-runtime [data-ember-matrix-type="dropdown"] .sv-dropdown_select-wrapper {
+    width: 100% !important;
+    min-width: 0 !important;
+    max-width: 100% !important;
   }
 }
