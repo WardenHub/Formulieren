@@ -539,6 +539,10 @@ export function saveAdminInstallationExternalFields(items) {
   return apiPut("/admin/installations/external-fields", { items: items ?? [] });
 }
 
+export function saveAdminInstallationManagementPortals(items) {
+  return apiPut("/admin/installations/management-portals", { items: items ?? [] });
+}
+
 // admin ai
 export function getAdminAssistantAudit(params = {}) {
   const qs = new URLSearchParams();

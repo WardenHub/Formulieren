@@ -6,6 +6,7 @@ import { TornadoIcon } from "@/components/ui/tornado";
 import { FileStackIcon } from "@/components/ui/file-stack";
 import { BookTextIcon } from "@/components/ui/book-text.jsx";
 import { RefreshCWIcon } from "@/components/ui/refresh-cw";
+import { MonitorCheckIcon } from "@/components/ui/monitor-check";
 
 import {
   getAdminInstallationsCatalog,
@@ -14,6 +15,7 @@ import {
   saveAdminInstallationFields,
   saveAdminInstallationDocuments,
   saveAdminInstallationExternalFields,
+  saveAdminInstallationManagementPortals,
 } from "../../api/emberApi.js";
 
 import AdminInstallationTypesTab from "./AdminInstallationTypesTab.jsx";
@@ -21,6 +23,7 @@ import AdminInstallationTypeAutomationTab from "./AdminInstallationTypeAutomatio
 import AdminInstallationFieldsTab from "./AdminInstallationFieldsTab.jsx";
 import AdminInstallationDocumentsTab from "./AdminInstallationDocumentsTab.jsx";
 import AdminInstallationExternalFieldsTab from "./AdminInstallationExternalFieldsTab.jsx";
+import AdminInstallationManagementPortalsTab from "./AdminInstallationManagementPortalsTab.jsx";
 
 const EMPTY_HEADER_STATE = {
   visible: false,
@@ -39,6 +42,7 @@ const AdminInstallationsTab = forwardRef(function AdminInstallationsTab(
   const fieldsRef = useRef(null);
   const documentsRef = useRef(null);
   const externalFieldsRef = useRef(null);
+  const managementPortalsRef = useRef(null);
 
   const [activeTab, setActiveTab] = useState("types");
   const [catalog, setCatalog] = useState(null);
@@ -65,6 +69,10 @@ const AdminInstallationsTab = forwardRef(function AdminInstallationsTab(
   const [externalFieldsSaving, setExternalFieldsSaving] = useState(false);
   const [externalFieldsSaveOk, setExternalFieldsSaveOk] = useState(false);
 
+  const [managementPortalsDirty, setManagementPortalsDirty] = useState(false);
+  const [managementPortalsSaving, setManagementPortalsSaving] = useState(false);
+  const [managementPortalsSaveOk, setManagementPortalsSaveOk] = useState(false);
+
   async function loadAll() {
     setLoading(true);
     setError(null);
@@ -90,6 +98,7 @@ const AdminInstallationsTab = forwardRef(function AdminInstallationsTab(
     if (activeTab === "fields") return fieldsDirty && !fieldsSaving;
     if (activeTab === "documents") return documentsDirty && !documentsSaving;
     if (activeTab === "external_fields") return externalFieldsDirty && !externalFieldsSaving;
+    if (activeTab === "management_portals") return managementPortalsDirty && !managementPortalsSaving;
     return false;
   }
 
@@ -99,6 +108,7 @@ const AdminInstallationsTab = forwardRef(function AdminInstallationsTab(
     if (activeTab === "fields") return fieldsDirty && !fieldsSaving;
     if (activeTab === "documents") return documentsDirty && !documentsSaving;
     if (activeTab === "external_fields") return externalFieldsDirty && !externalFieldsSaving;
+    if (activeTab === "management_portals") return managementPortalsDirty && !managementPortalsSaving;
     return false;
   }
 
@@ -121,6 +131,10 @@ const AdminInstallationsTab = forwardRef(function AdminInstallationsTab(
     }
     if (activeTab === "external_fields") {
       externalFieldsRef.current?.save?.();
+      return;
+    }
+    if (activeTab === "management_portals") {
+      managementPortalsRef.current?.save?.();
     }
   }
 
@@ -175,13 +189,21 @@ const AdminInstallationsTab = forwardRef(function AdminInstallationsTab(
                 saved: documentsSaveOk,
                 pulse: documentsDirty,
               }
-            : {
-                visible: true,
-                disabled: !externalFieldsDirty,
-                saving: externalFieldsSaving,
-                saved: externalFieldsSaveOk,
-                pulse: externalFieldsDirty,
-              };
+            : activeTab === "external_fields"
+              ? {
+                  visible: true,
+                  disabled: !externalFieldsDirty,
+                  saving: externalFieldsSaving,
+                  saved: externalFieldsSaveOk,
+                  pulse: externalFieldsDirty,
+                }
+              : {
+                  visible: true,
+                  disabled: !managementPortalsDirty,
+                  saving: managementPortalsSaving,
+                  saved: managementPortalsSaveOk,
+                  pulse: managementPortalsDirty,
+                };
 
     onHeaderSaveStateChange?.(nextState);
   }, [
@@ -201,6 +223,9 @@ const AdminInstallationsTab = forwardRef(function AdminInstallationsTab(
     externalFieldsDirty,
     externalFieldsSaving,
     externalFieldsSaveOk,
+    managementPortalsDirty,
+    managementPortalsSaving,
+    managementPortalsSaveOk,
     onHeaderSaveStateChange,
   ]);
 
@@ -323,6 +348,28 @@ const AdminInstallationsTab = forwardRef(function AdminInstallationsTab(
             }}
             onSave={async (items) => {
               const res = await saveAdminInstallationExternalFields(items);
+              setCatalog(res || null);
+            }}
+          />
+        ),
+      },
+      {
+        key: "management_portals",
+        label: "Beheerportalen",
+        Icon: MonitorCheckIcon,
+        content: (
+          <AdminInstallationManagementPortalsTab
+            ref={managementPortalsRef}
+            catalog={catalog}
+            loading={loading}
+            onDirtyChange={setManagementPortalsDirty}
+            onSavingChange={setManagementPortalsSaving}
+            onSaveOk={() => {
+              setManagementPortalsSaveOk(true);
+              window.setTimeout(() => setManagementPortalsSaveOk(false), 2000);
+            }}
+            onSave={async (items) => {
+              const res = await saveAdminInstallationManagementPortals(items);
               setCatalog(res || null);
             }}
           />

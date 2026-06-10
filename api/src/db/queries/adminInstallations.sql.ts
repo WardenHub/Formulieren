@@ -688,6 +688,91 @@ commit tran;
 select cast(1 as bit) as ok;
 `;
 
+export const saveAdminInstallationManagementPortalsSql = `
+if isjson(@itemsJson) <> 1
+begin
+  throw 50000, 'itemsJson must be valid json', 1;
+end;
+
+begin tran;
+
+merge dbo.ManagementPortalDefinition as tgt
+using (
+  select
+    convert(nvarchar(100), json_value(j.value, '$.portal_key')) as portal_key,
+    convert(nvarchar(150), json_value(j.value, '$.display_name')) as display_name,
+    convert(nvarchar(2000), json_value(j.value, '$.notes')) as notes,
+    convert(nvarchar(2000), json_value(j.value, '$.installation_url_template')) as installation_url_template,
+    try_convert(int, json_value(j.value, '$.sort_order')) as sort_order,
+    try_convert(bit, json_value(j.value, '$.is_active')) as is_active
+  from openjson(@itemsJson) j
+) as src
+on tgt.portal_key = src.portal_key
+when matched then update set
+  tgt.display_name = src.display_name,
+  tgt.notes = src.notes,
+  tgt.installation_url_template = src.installation_url_template,
+  tgt.sort_order = src.sort_order,
+  tgt.is_active = isnull(src.is_active, 1),
+  tgt.updated_at = sysutcdatetime(),
+  tgt.updated_by = @updatedBy
+when not matched then insert (
+  portal_key,
+  display_name,
+  notes,
+  installation_url_template,
+  sort_order,
+  is_active,
+  created_at,
+  created_by,
+  updated_at,
+  updated_by
+) values (
+  src.portal_key,
+  src.display_name,
+  src.notes,
+  src.installation_url_template,
+  src.sort_order,
+  isnull(src.is_active, 1),
+  sysutcdatetime(),
+  @updatedBy,
+  sysutcdatetime(),
+  @updatedBy
+);
+
+delete t
+from dbo.ManagementPortalInstallationType t
+where exists (
+  select 1
+  from openjson(@itemsJson) j
+  where convert(nvarchar(100), json_value(j.value, '$.portal_key')) = t.portal_key
+);
+
+insert into dbo.ManagementPortalInstallationType (
+  portal_key,
+  installation_type_key
+)
+select
+  src.portal_key,
+  src.installation_type_key
+from (
+  select distinct
+    convert(nvarchar(100), json_value(j.value, '$.portal_key')) as portal_key,
+    convert(nvarchar(50), a.value) as installation_type_key
+  from openjson(@itemsJson) j
+  cross apply openjson(json_query(j.value, '$.applicability_type_keys')) a
+) src
+where exists (
+  select 1
+  from dbo.InstallationType it
+  where it.installation_type_key = src.installation_type_key
+);
+
+commit tran;
+
+select cast(1 as bit) as ok;
+`;
+
 export const initializeInstallationTypesSql = `
 set nocount on;
 set xact_abort on;

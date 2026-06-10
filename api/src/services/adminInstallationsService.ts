@@ -7,6 +7,7 @@ import {
   saveAdminInstallationFieldsSql,
   saveAdminInstallationDocumentsSql,
   saveAdminInstallationExternalFieldsSql,
+  saveAdminInstallationManagementPortalsSql,
   initializeInstallationTypesSql,
 } from "../db/queries/adminInstallations.sql.js";
 
@@ -401,6 +402,34 @@ export async function saveAdminInstallationExternalFields(items: any[], user: an
   }
 
   await sqlQuery(saveAdminInstallationExternalFieldsSql, {
+    itemsJson: JSON.stringify(normalized),
+    updatedBy: getUserDisplayName(user),
+  });
+
+  return await getAdminInstallationsCatalog();
+}
+
+export async function saveAdminInstallationManagementPortals(items: any[], user: any) {
+  const normalized = (Array.isArray(items) ? items : []).map((x, index) => ({
+    portal_key: normalizeNullableString(x?.portal_key),
+    display_name: normalizeNullableString(x?.display_name),
+    notes: normalizeNullableString(x?.notes),
+    installation_url_template: normalizeNullableString(x?.installation_url_template),
+    sort_order: normalizeNullableNumber(x?.sort_order ?? (index + 1) * 10),
+    is_active: normalizeBool(x?.is_active, true),
+    applicability_type_keys: uniqueStrings(x?.applicability_type_keys),
+  }));
+
+  if (normalized.length === 0) {
+    return { ok: false, error: "geen geldige beheerportalen ontvangen" };
+  }
+
+  for (const item of normalized) {
+    if (!item.portal_key) return { ok: false, error: "portal_key is verplicht" };
+    if (!item.display_name) return { ok: false, error: `display_name is verplicht voor ${item.portal_key}` };
+  }
+
+  await sqlQuery(saveAdminInstallationManagementPortalsSql, {
     itemsJson: JSON.stringify(normalized),
     updatedBy: getUserDisplayName(user),
   });

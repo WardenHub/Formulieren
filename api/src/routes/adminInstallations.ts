@@ -8,6 +8,7 @@ import {
   saveAdminInstallationFields,
   saveAdminInstallationDocuments,
   saveAdminInstallationExternalFields,
+  saveAdminInstallationManagementPortals,
   initializeInstallationTypesFromAtrium,
 } from "../controllers/adminInstallationsController.js";
 
@@ -21,6 +22,7 @@ router.put("/sections", requireRole("admin"), saveAdminInstallationSections);
 router.put("/fields", requireRole("admin"), saveAdminInstallationFields);
 router.put("/documents", requireRole("admin"), saveAdminInstallationDocuments);
 router.put("/external-fields", requireRole("admin"), saveAdminInstallationExternalFields);
+router.put("/management-portals", requireRole("admin"), saveAdminInstallationManagementPortals);
 router.post("/type-initialization/run", requireRole("admin"), initializeInstallationTypesFromAtrium);
 
 export default router;

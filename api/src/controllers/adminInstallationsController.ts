@@ -97,6 +97,22 @@ export async function saveAdminInstallationExternalFields(req: any, res: Respons
   }
 }
 
+export async function saveAdminInstallationManagementPortals(req: any, res: Response) {
+  try {
+    const items = req.body?.items;
+    const data = await service.saveAdminInstallationManagementPortals(items, req.user);
+
+    if (isErrorResult(data)) {
+      return res.status(400).json(data);
+    }
+
+    return res.json(data);
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ error: "saveAdminInstallationManagementPortals failed" });
+  }
+}
+
 export async function initializeInstallationTypesFromAtrium(req: any, res: Response) {
   try {
     const triggerSource = typeof req.body?.trigger_source === "string" ? req.body.trigger_source : "admin";
