@@ -1,7 +1,15 @@
 // /src/components/InstallationTypeRequiredPanel.jsx
 import InstallationTypeTag from "./InstallationTypeTag.jsx";
 
-export default function InstallationTypeRequiredPanel({ title, types, saving, onSelect, compact }) {
+export default function InstallationTypeRequiredPanel({
+  title,
+  types,
+  saving,
+  onSelect,
+  compact,
+  disabled = false,
+  readOnlyMessage = "",
+}) {
   const isChange = String(title || "").toLowerCase().includes("wijzig");
 
   return (
@@ -14,15 +22,21 @@ export default function InstallationTypeRequiredPanel({ title, types, saving, on
           : "Deze installatie heeft nog geen installatiesoort. Kies eerst het type voordat je de eigenschappen kunt invullen."}
       </p>
 
+      {readOnlyMessage ? (
+        <p className="muted" style={{ marginBottom: 16 }}>
+          {readOnlyMessage}
+        </p>
+      ) : null}
+
       <div className="type-panel-options">
         {types.map((t) => (
           <button
             key={t.installation_type_key}
             type="button"
-            disabled={saving}
+            disabled={saving || disabled}
             onClick={() => onSelect(t.installation_type_key)}
             className="type-panel-option"
-            style={{ opacity: saving ? 0.6 : 1 }}
+            style={{ opacity: saving || disabled ? 0.6 : 1 }}
           >
             <InstallationTypeTag typeKey={t.installation_type_key} label={t.display_name} />
           </button>

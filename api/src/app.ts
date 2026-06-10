@@ -9,6 +9,7 @@ import installationTypesRouter from "./routes/installationTypes.js";
 import formsMonitorRouter from "./routes/formsMonitor.js";
 import adminFormsRouter from "./routes/adminForms.js";
 import adminInstallationsRouter from "./routes/adminInstallations.js";
+import internalMaintenanceRouter from "./routes/internalMaintenance.js";
 import homeRouter from "./routes/home.js";
 import profileRouter from "./routes/profile.js";
 import * as profileService from "./services/profileService.js";
@@ -46,6 +47,7 @@ console.log("sql server", process.env.SQL_SERVER);
 console.log("sql database", process.env.SQL_DATABASE);
 console.log("node env", process.env.NODE_ENV);
 console.log("dev auth", process.env.DEV_AUTH);
+console.log("maintenance api key configured", process.env.MAINTENANCE_API_KEY ? "yes" : "no");
 
 const required = ["SQL_SERVER", "SQL_DATABASE"];
 for (const k of required) {
@@ -82,6 +84,7 @@ app.get("/health", async (req, res) => {
 });
 
 app.use("/home", homeRouter);
+app.use("/internal/maintenance", internalMaintenanceRouter);
 
 app.use(authMiddleware);
 app.use("/me/profile", profileRouter);

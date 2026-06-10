@@ -122,7 +122,17 @@ function TabLoadingCard({ title = "Laden...", label = "Bezig met gegevens laden.
 }
 
 const EnergySupplyTab = forwardRef(function EnergySupplyTab(
-  { code, items, brandTypes, onDirtyChange, onSavingChange, onSaveOk, onSaved, onAnyOpenChange },
+  {
+    code,
+    items,
+    brandTypes,
+    onDirtyChange,
+    onSavingChange,
+    onSaveOk,
+    onSaved,
+    onAnyOpenChange,
+    readOnly = false,
+  },
   ref
 ) {
   const initialJsonRef = useRef("");
@@ -187,8 +197,8 @@ const EnergySupplyTab = forwardRef(function EnergySupplyTab(
 
   useEffect(() => {
     const now = JSON.stringify(rows);
-    onDirtyChange?.(now !== initialJsonRef.current);
-  }, [rows, onDirtyChange]);
+    onDirtyChange?.(readOnly ? false : now !== initialJsonRef.current);
+  }, [rows, onDirtyChange, readOnly]);
 
   useEffect(() => {
     const anyOpen = Object.values(openMap).some(Boolean);
@@ -208,11 +218,12 @@ const EnergySupplyTab = forwardRef(function EnergySupplyTab(
   }, [rows]);
 
   function updateRow(idx, patch) {
+    if (readOnly) return;
     setRows((prev) => prev.map((r, i) => (i === idx ? { ...r, ...patch } : r)));
   }
 
   function addRow() {
-    if (saving) return;
+    if (saving || readOnly) return;
 
     const defaultKey = getDefaultBrandTypeKey();
     const bt = defaultKey ? brandTypeMap.get(defaultKey) : null;
@@ -282,7 +293,7 @@ const EnergySupplyTab = forwardRef(function EnergySupplyTab(
   }
 
   async function save() {
-    if (saving) return;
+    if (saving || readOnly) return;
 
     for (const r of rows) {
       const msg = validateRow(r);
@@ -354,6 +365,7 @@ const EnergySupplyTab = forwardRef(function EnergySupplyTab(
   useImperativeHandle(ref, () => ({ save, expandAll, collapseAll }));
 
   async function onDelete(idx) {
+    if (readOnly) return;
     const row = rows[idx];
     if (!row) return;
 
@@ -370,6 +382,7 @@ const EnergySupplyTab = forwardRef(function EnergySupplyTab(
   }
 
   function onBrandTypeChange(idx, newKey) {
+    if (readOnly) return;
     const key = newKey === "" ? null : String(newKey);
     const bt = key ? brandTypeMap.get(String(key)) : null;
 
@@ -381,11 +394,13 @@ const EnergySupplyTab = forwardRef(function EnergySupplyTab(
   }
 
   function incQty(idx) {
+    if (readOnly) return;
     const cur = clampQty(rows[idx]?.quantity ?? 1);
     updateRow(idx, { quantity: cur + 1 });
   }
 
   function decQty(idx) {
+    if (readOnly) return;
     const cur = clampQty(rows[idx]?.quantity ?? 1);
     updateRow(idx, { quantity: Math.max(1, cur - 1) });
   }
@@ -435,7 +450,7 @@ const EnergySupplyTab = forwardRef(function EnergySupplyTab(
           type="button"
           className="btn"
           onClick={addRow}
-          disabled={saving}
+          disabled={saving || readOnly}
           onMouseEnter={() => addIconRef.current?.startAnimation?.()}
           onMouseLeave={() => addIconRef.current?.stopAnimation?.()}
           style={{ display: "flex", alignItems: "center", gap: 8 }}
@@ -591,7 +606,7 @@ const EnergySupplyTab = forwardRef(function EnergySupplyTab(
                       type="button"
                       className="btn danger"
                       onClick={() => onDelete(idx)}
-                      disabled={saving}
+                      disabled={saving || readOnly}
                       onMouseEnter={() => deleteIconRefs.current[key]?.startAnimation?.()}
                       onMouseLeave={() => deleteIconRefs.current[key]?.stopAnimation?.()}
                       style={{ display: "flex", alignItems: "center", gap: 8 }}
@@ -616,6 +631,7 @@ const EnergySupplyTab = forwardRef(function EnergySupplyTab(
                         onChange={(e) => updateRow(idx, { location_label: e.target.value })}
                         placeholder="hoofdpaneel; nevenpaneel 1; etc."
                         disabled={saving}
+                        readOnly={readOnly}
                       />
                     </div>
 
@@ -625,7 +641,7 @@ const EnergySupplyTab = forwardRef(function EnergySupplyTab(
                         className="input"
                         value={brandKeyStr}
                         onChange={(e) => onBrandTypeChange(idx, e.target.value)}
-                        disabled={saving || selectDisabled}
+                        disabled={saving || readOnly || selectDisabled}
                         title={selectDisabled ? "maak handmatig leeg om merk/type te kiezen" : ""}
                       >
                         <option value="">handmatig</option>
@@ -650,14 +666,14 @@ const EnergySupplyTab = forwardRef(function EnergySupplyTab(
                             value={r.brand_type_manual}
                             onChange={(e) => updateRow(idx, { brand_type_manual: e.target.value, brand_type_key: null })}
                             placeholder="bijv. onbekend; of afwijkend type"
-                            disabled={saving}
+                            disabled={saving || readOnly}
                           />
 
                           <button
                             type="button"
                             className="icon-btn"
                             title="handmatig leegmaken"
-                            disabled={saving || !String(r.brand_type_manual || "").trim()}
+                            disabled={saving || readOnly || !String(r.brand_type_manual || "").trim()}
                             onClick={() => updateRow(idx, { brand_type_manual: "" })}
                             onMouseEnter={() => wipeIconRefs.current[key]?.startAnimation?.()}
                             onMouseLeave={() => wipeIconRefs.current[key]?.stopAnimation?.()}
@@ -683,7 +699,7 @@ const EnergySupplyTab = forwardRef(function EnergySupplyTab(
                         lang="nl-NL"
                         value={r.battery_date || ""}
                         onChange={(e) => updateRow(idx, { battery_date: e.target.value || null })}
-                        disabled={saving}
+                        disabled={saving || readOnly}
                       />
                       <div className="muted" style={{ fontSize: 12, marginTop: 6 }}>
                         verplicht
@@ -698,7 +714,7 @@ const EnergySupplyTab = forwardRef(function EnergySupplyTab(
                         value={r.capacity_ah ?? ""}
                         onChange={(e) => updateRow(idx, { capacity_ah: e.target.value })}
                         placeholder="bijv. 26"
-                        disabled={saving}
+                        disabled={saving || readOnly}
                       />
                     </div>
 
@@ -710,7 +726,7 @@ const EnergySupplyTab = forwardRef(function EnergySupplyTab(
                           inputMode="numeric"
                           value={r.quantity ?? 1}
                           onChange={(e) => updateRow(idx, { quantity: e.target.value })}
-                          disabled={saving}
+                          disabled={saving || readOnly}
                         />
                         <div style={{ display: "grid", gap: 8, flex: "0 0 auto" }}>
                           <button
@@ -718,7 +734,7 @@ const EnergySupplyTab = forwardRef(function EnergySupplyTab(
                             className="icon-btn"
                             title="aantal +1"
                             onClick={() => incQty(idx)}
-                            disabled={saving}
+                            disabled={saving || readOnly}
                             style={{ width: 40, height: 40 }}
                           >
                             ▲
@@ -728,7 +744,7 @@ const EnergySupplyTab = forwardRef(function EnergySupplyTab(
                             className="icon-btn"
                             title="aantal -1"
                             onClick={() => decQty(idx)}
-                            disabled={saving}
+                            disabled={saving || readOnly}
                             style={{ width: 40, height: 40 }}
                           >
                             ▼
@@ -743,7 +759,7 @@ const EnergySupplyTab = forwardRef(function EnergySupplyTab(
                         className="input"
                         value={r.configuration}
                         onChange={(e) => updateRow(idx, { configuration: e.target.value })}
-                        disabled={saving}
+                        disabled={saving || readOnly}
                       >
                         <option value="single">single</option>
                         <option value="series">series</option>
@@ -778,7 +794,7 @@ const EnergySupplyTab = forwardRef(function EnergySupplyTab(
                         onChange={(e) => updateRow(idx, { remarks: e.target.value })}
                         placeholder="bijv. bijzondere plaatsing; afwijkingen; attentiepunten."
                         rows={3}
-                        disabled={saving}
+                        disabled={saving || readOnly}
                       />
                     </div>
                   </div>

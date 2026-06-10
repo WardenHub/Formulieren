@@ -2,6 +2,10 @@
 
 import * as formsAssistantService from "../services/formsAssistantService.js";
 
+function isHistoricalReadOnlyMessage(msg: string) {
+  return String(msg || "").toLowerCase().includes("historical installation read-only");
+}
+
 export async function transcribeAssistantAudio(req: any, res: any) {
   try {
     const code = String(req.params.code || "");
@@ -30,6 +34,10 @@ export async function transcribeAssistantAudio(req: any, res: any) {
   } catch (err: any) {
     const msg = String(err?.message || err);
 
+    if (isHistoricalReadOnlyMessage(msg)) {
+      return res.status(409).json({ error: "historical installation read-only" });
+    }
+
     if (msg.toLowerCase().includes("form instance not found")) {
       return res.status(404).json({ error: "form instance not found" });
     }
@@ -56,6 +64,10 @@ export async function interpretAssistantText(req: any, res: any) {
   } catch (err: any) {
     const msg = String(err?.message || err);
 
+    if (isHistoricalReadOnlyMessage(msg)) {
+      return res.status(409).json({ error: "historical installation read-only" });
+    }
+
     if (msg.toLowerCase().includes("form instance not found")) {
       return res.status(404).json({ error: "form instance not found" });
     }
@@ -81,6 +93,9 @@ export async function applyAssistantPatches(req: any, res: any) {
     return res.json(result);
   } catch (err: any) {
     const msg = String(err?.message || err);
+    if (isHistoricalReadOnlyMessage(msg)) {
+      return res.status(409).json({ error: "historical installation read-only" });
+    }
     console.error(err);
     return res.status(500).json({ error: "applyAssistantPatches failed", detail: msg });
   }
@@ -102,6 +117,9 @@ export async function rejectAssistantPatches(req: any, res: any) {
     return res.json(result);
   } catch (err: any) {
     const msg = String(err?.message || err);
+    if (isHistoricalReadOnlyMessage(msg)) {
+      return res.status(409).json({ error: "historical installation read-only" });
+    }
     console.error(err);
     return res.status(500).json({ error: "rejectAssistantPatches failed", detail: msg });
   }

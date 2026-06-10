@@ -14,6 +14,7 @@ import {
   createInstallationDocumentDownloadUrl,
   downloadInstallationDocumentBlob,
 } from "./blobStorageService.js";
+import { assertInstallationWritable } from "./installationsService.js";
 
 function actorName(user: any) {
   return user?.name || user?.email || user?.objectId || "unknown";
@@ -44,6 +45,8 @@ export async function createReplacementDocument(
   payload: any,
   user: any
 ) {
+  await assertInstallationWritable(code);
+
   const parent = await getDocumentContext(code, parentDocumentId);
   if (!parent) {
     throw new Error("parent document not found");
@@ -76,6 +79,8 @@ export async function createAttachmentDocument(
   payload: any,
   user: any
 ) {
+  await assertInstallationWritable(code);
+
   const parent = await getDocumentContext(code, parentDocumentId);
   if (!parent) {
     throw new Error("parent document not found");
@@ -108,6 +113,8 @@ export async function uploadDocumentFile(
   file: Express.Multer.File,
   user: any
 ) {
+  await assertInstallationWritable(code);
+
   if (!file) {
     throw new Error("missing file");
   }

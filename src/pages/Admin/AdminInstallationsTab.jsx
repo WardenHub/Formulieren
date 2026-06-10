@@ -5,6 +5,7 @@ import { CogIcon } from "@/components/ui/cog";
 import { TornadoIcon } from "@/components/ui/tornado";
 import { FileStackIcon } from "@/components/ui/file-stack";
 import { BookTextIcon } from "@/components/ui/book-text.jsx";
+import { RefreshCWIcon } from "@/components/ui/refresh-cw";
 
 import {
   getAdminInstallationsCatalog,
@@ -16,6 +17,7 @@ import {
 } from "../../api/emberApi.js";
 
 import AdminInstallationTypesTab from "./AdminInstallationTypesTab.jsx";
+import AdminInstallationTypeAutomationTab from "./AdminInstallationTypeAutomationTab.jsx";
 import AdminInstallationFieldsTab from "./AdminInstallationFieldsTab.jsx";
 import AdminInstallationDocumentsTab from "./AdminInstallationDocumentsTab.jsx";
 import AdminInstallationExternalFieldsTab from "./AdminInstallationExternalFieldsTab.jsx";
@@ -33,6 +35,7 @@ const AdminInstallationsTab = forwardRef(function AdminInstallationsTab(
   ref
 ) {
   const typesRef = useRef(null);
+  const typeAutomationRef = useRef(null);
   const fieldsRef = useRef(null);
   const documentsRef = useRef(null);
   const externalFieldsRef = useRef(null);
@@ -45,6 +48,10 @@ const AdminInstallationsTab = forwardRef(function AdminInstallationsTab(
   const [typesDirty, setTypesDirty] = useState(false);
   const [typesSaving, setTypesSaving] = useState(false);
   const [typesSaveOk, setTypesSaveOk] = useState(false);
+
+  const [typeAutomationDirty, setTypeAutomationDirty] = useState(false);
+  const [typeAutomationSaving, setTypeAutomationSaving] = useState(false);
+  const [typeAutomationSaveOk, setTypeAutomationSaveOk] = useState(false);
 
   const [fieldsDirty, setFieldsDirty] = useState(false);
   const [fieldsSaving, setFieldsSaving] = useState(false);
@@ -79,6 +86,7 @@ const AdminInstallationsTab = forwardRef(function AdminInstallationsTab(
 
   function hasUnsavedChanges() {
     if (activeTab === "types") return typesDirty && !typesSaving;
+    if (activeTab === "type_automation") return typeAutomationDirty && !typeAutomationSaving;
     if (activeTab === "fields") return fieldsDirty && !fieldsSaving;
     if (activeTab === "documents") return documentsDirty && !documentsSaving;
     if (activeTab === "external_fields") return externalFieldsDirty && !externalFieldsSaving;
@@ -87,6 +95,7 @@ const AdminInstallationsTab = forwardRef(function AdminInstallationsTab(
 
   function canSaveActiveTab() {
     if (activeTab === "types") return typesDirty && !typesSaving;
+    if (activeTab === "type_automation") return typeAutomationDirty && !typeAutomationSaving;
     if (activeTab === "fields") return fieldsDirty && !fieldsSaving;
     if (activeTab === "documents") return documentsDirty && !documentsSaving;
     if (activeTab === "external_fields") return externalFieldsDirty && !externalFieldsSaving;
@@ -96,6 +105,10 @@ const AdminInstallationsTab = forwardRef(function AdminInstallationsTab(
   function saveActiveTab() {
     if (activeTab === "types") {
       typesRef.current?.save?.();
+      return;
+    }
+    if (activeTab === "type_automation") {
+      typeAutomationRef.current?.save?.();
       return;
     }
     if (activeTab === "fields") {
@@ -138,6 +151,14 @@ const AdminInstallationsTab = forwardRef(function AdminInstallationsTab(
             saved: typesSaveOk,
             pulse: typesDirty,
           }
+        : activeTab === "type_automation"
+          ? {
+              visible: true,
+              disabled: !typeAutomationDirty,
+              saving: typeAutomationSaving,
+              saved: typeAutomationSaveOk,
+              pulse: typeAutomationDirty,
+            }
         : activeTab === "fields"
           ? {
               visible: true,
@@ -168,6 +189,9 @@ const AdminInstallationsTab = forwardRef(function AdminInstallationsTab(
     typesDirty,
     typesSaving,
     typesSaveOk,
+    typeAutomationDirty,
+    typeAutomationSaving,
+    typeAutomationSaveOk,
     fieldsDirty,
     fieldsSaving,
     fieldsSaveOk,
@@ -197,11 +221,35 @@ const AdminInstallationsTab = forwardRef(function AdminInstallationsTab(
             ref={typesRef}
             catalog={catalog}
             loading={loading}
+            onCatalogRefresh={loadAll}
             onDirtyChange={setTypesDirty}
             onSavingChange={setTypesSaving}
             onSaveOk={() => {
               setTypesSaveOk(true);
               window.setTimeout(() => setTypesSaveOk(false), 2000);
+            }}
+            onSave={async (items) => {
+              const res = await saveAdminInstallationTypes(items);
+              setCatalog(res || null);
+            }}
+          />
+        ),
+      },
+      {
+        key: "type_automation",
+        label: "Typebijwerker",
+        Icon: RefreshCWIcon,
+        content: (
+          <AdminInstallationTypeAutomationTab
+            ref={typeAutomationRef}
+            catalog={catalog}
+            loading={loading}
+            onCatalogRefresh={loadAll}
+            onDirtyChange={setTypeAutomationDirty}
+            onSavingChange={setTypeAutomationSaving}
+            onSaveOk={() => {
+              setTypeAutomationSaveOk(true);
+              window.setTimeout(() => setTypeAutomationSaveOk(false), 2000);
             }}
             onSave={async (items) => {
               const res = await saveAdminInstallationTypes(items);

@@ -96,3 +96,33 @@ export async function saveAdminInstallationExternalFields(req: any, res: Respons
     return res.status(500).json({ error: "saveAdminInstallationExternalFields failed" });
   }
 }
+
+export async function initializeInstallationTypesFromAtrium(req: any, res: Response) {
+  try {
+    const triggerSource = typeof req.body?.trigger_source === "string" ? req.body.trigger_source : "admin";
+    const data = await service.initializeInstallationTypesFromAtrium(req.user, triggerSource);
+    return res.json(data);
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ error: "initializeInstallationTypesFromAtrium failed" });
+  }
+}
+
+export async function initializeInstallationTypesFromAtriumInternal(req: Request, res: Response) {
+  try {
+    const triggerSource =
+      typeof req.body?.trigger_source === "string" && req.body.trigger_source.trim()
+        ? req.body.trigger_source.trim()
+        : "fabric";
+
+    const data = await service.initializeInstallationTypesFromAtrium(
+      { name: "fabric-maintenance", upn: "fabric-maintenance" },
+      triggerSource
+    );
+
+    return res.json(data);
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ error: "initializeInstallationTypesFromAtriumInternal failed" });
+  }
+}

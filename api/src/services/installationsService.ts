@@ -10,7 +10,8 @@ import {
   getCatalogDocumentTypesSql,
   getCatalogCustomFieldOptionsSql,
   upsertCustomValuesSql,
-  searchInstallationsSql
+  searchInstallationsSql,
+  getInstallationArchiveStateSql,
 } from "../db/queries/installations.sql.js";
 
 import {
@@ -95,6 +96,39 @@ function weightedDetectorCount(row: any) {
   return a + h + (v * 5) + (l * 10) + asp;
 }
 
+export function isHistoricalInstallationStatus(status: any) {
+  return String(status || "").trim().toUpperCase() === "J";
+}
+
+export async function getInstallationArchiveState(code: string) {
+  const cleanCode = String(code || "").trim();
+  const rows = await sqlQuery(getInstallationArchiveStateSql, { code: cleanCode });
+  const row: any = rows?.[0] ?? null;
+
+  if (!row) {
+    throw new Error("atrium installation not found");
+  }
+
+  const status = row.installation_status ?? null;
+
+  return {
+    atrium_installation_code: row.atrium_installation_code ?? cleanCode,
+    installation_status: status,
+    bedrijf_unit: row.BedrijfUnit ?? row.bedrijfUnit ?? null,
+    isHistorical: isHistoricalInstallationStatus(status),
+  };
+}
+
+export async function assertInstallationWritable(code: string) {
+  const state = await getInstallationArchiveState(code);
+
+  if (state.isHistorical) {
+    throw new Error("historical installation read-only");
+  }
+
+  return state;
+}
+
 export async function getInstallationByCode(code: string) {
   const rows = await sqlQuery(getInstallationSql, { code });
   if (!rows.length) return { error: "not found" };
@@ -155,6 +189,8 @@ export async function upsertCustomValues(code: string, values: any[], user: any)
   if (!Array.isArray(values)) {
     return { ok: false, error: "values must be an array" };
   }
+
+  await assertInstallationWritable(code);
 
   const cleaned = values
     .filter((v) => v && typeof v.field_key === "string" && v.field_key.trim().length)
@@ -320,6 +356,8 @@ export async function upsertInstallationDocuments(code: string, documents: any[]
     return { ok: false, error: "documents must be an array" };
   }
 
+  await assertInstallationWritable(code);
+
   const cleaned = documents
     .filter((d) => d && typeof d.document_type_key === "string" && d.document_type_key.trim().length)
     .map((d) => ({
@@ -360,6 +398,8 @@ export async function setInstallationType(
   const cleanCode = String(code || "").trim();
   const key = installation_type_key ? String(installation_type_key) : null;
   const who = updatedBy || "unknown";
+
+  await assertInstallationWritable(cleanCode);
 
   // 1) ensure ember row exists (or throw if code not in Atrium sync)
   await sqlQuery(ensureInstallationSql, {
@@ -437,6 +477,8 @@ export async function upsertInstallationEnergySupplies(code: string, items: any[
     return { ok: false, error: "items must be an array" };
   }
 
+  await assertInstallationWritable(code);
+
   const cleaned = items.map((x) => ({
     energy_supply_id: x.energy_supply_id ?? null,
 
@@ -506,6 +548,8 @@ export async function upsertInstallationEnergySupplies(code: string, items: any[
 export async function deleteInstallationEnergySupply(code: string, energy_supply_id: string, user: any) {
   const updatedBy = user?.name || user?.objectId || "unknown";
 
+  await assertInstallationWritable(code);
+
   const result = await sqlQuery(deleteInstallationEnergySupplySql, {
     code,
     energy_supply_id,
@@ -531,6 +575,8 @@ return { normeringen, functies, matrix };
 }
 
 export async function upsertInstallationPerformanceRequirements(code: string, payload: any, user: any) {
+  await assertInstallationWritable(code);
+
   const normering_key = String(payload?.normering_key || "").trim();
   const doormelding_mode = String(payload?.doormelding_mode || "").trim(); // header default/fallback
   const remarks = payload?.remarks ?? null;
@@ -704,4 +750,3 @@ export async function getInstallationPerformanceRequirements(code: string) {
     },
   };
 }
-

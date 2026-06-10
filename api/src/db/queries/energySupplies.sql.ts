@@ -73,7 +73,7 @@ end;
 
 -- 3) load installation context
 declare @installation_id uniqueidentifier;
-declare @atrium_installation_code nvarchar(64);
+declare @atrium_installation_code nvarchar(450);
 
 select
   @installation_id = i.installation_id,

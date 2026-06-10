@@ -5,6 +5,7 @@ SELECT TOP 1
   fi.form_instance_id,
   fi.installation_id,
   fi.atrium_installation_code,
+  ab.installation_status,
   fi.status,
   fi.draft_rev,
   fi.form_version_id,
@@ -17,6 +18,8 @@ JOIN dbo.FormDefinitionVersion fdv
   ON fdv.form_version_id = fi.form_version_id
 JOIN dbo.FormDefinition fd
   ON fd.form_id = fdv.form_id
+LEFT JOIN dbo.AtriumInstallationBase ab
+  ON ab.installatie_code = fi.atrium_installation_code
 WHERE fi.form_instance_id = @instanceId
   AND fi.atrium_installation_code = @code;
 `;

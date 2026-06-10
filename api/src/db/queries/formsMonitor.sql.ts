@@ -44,6 +44,8 @@ base as (
     fv.version_label,
 
     ab.installatie_naam,
+    ab.installation_status,
+    ab.BedrijfUnit,
     ab.object_code,
     ab.obj_naam,
     ab.gebruiker_code,
@@ -155,6 +157,8 @@ select
   n.version,
   n.version_label,
   n.installatie_naam,
+  n.installation_status,
+  n.BedrijfUnit,
   n.object_code,
   n.obj_naam,
   n.gebruiker_code,
@@ -197,6 +201,8 @@ select top 1
 
   ab.installatie_code,
   ab.installatie_naam,
+  ab.installation_status,
+  ab.BedrijfUnit,
   ab.object_code,
   ab.obj_naam,
 

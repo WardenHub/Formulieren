@@ -7,6 +7,7 @@ import {
   saveAdminInstallationFieldsSql,
   saveAdminInstallationDocumentsSql,
   saveAdminInstallationExternalFieldsSql,
+  initializeInstallationTypesSql,
 } from "../db/queries/adminInstallations.sql.js";
 
 function getUserDisplayName(user: any) {
@@ -43,15 +44,18 @@ export async function getAdminInstallationsCatalog() {
   const recordsets = Array.isArray(result?.recordsets) ? result.recordsets : [];
 
   const installationTypes = Array.isArray(recordsets[0]) ? recordsets[0] : [];
-  const sections = Array.isArray(recordsets[1]) ? recordsets[1] : [];
-  const customFields = Array.isArray(recordsets[2]) ? recordsets[2] : [];
-  const customFieldOptions = Array.isArray(recordsets[3]) ? recordsets[3] : [];
-  const customFieldTypeLinks = Array.isArray(recordsets[4]) ? recordsets[4] : [];
-  const documentTypes = Array.isArray(recordsets[5]) ? recordsets[5] : [];
-  const documentTypeLinks = Array.isArray(recordsets[6]) ? recordsets[6] : [];
-  const documentTypeRequirements = Array.isArray(recordsets[7]) ? recordsets[7] : [];
-  const externalFields = Array.isArray(recordsets[8]) ? recordsets[8] : [];
-  const externalFieldTypeLinks = Array.isArray(recordsets[9]) ? recordsets[9] : [];
+  const installationTypeAtriumMappings = Array.isArray(recordsets[1]) ? recordsets[1] : [];
+  const installationTypeInitializationAudits = Array.isArray(recordsets[2]) ? recordsets[2] : [];
+  const installationTypeInitializationAuditDetails = Array.isArray(recordsets[3]) ? recordsets[3] : [];
+  const sections = Array.isArray(recordsets[4]) ? recordsets[4] : [];
+  const customFields = Array.isArray(recordsets[5]) ? recordsets[5] : [];
+  const customFieldOptions = Array.isArray(recordsets[6]) ? recordsets[6] : [];
+  const customFieldTypeLinks = Array.isArray(recordsets[7]) ? recordsets[7] : [];
+  const documentTypes = Array.isArray(recordsets[8]) ? recordsets[8] : [];
+  const documentTypeLinks = Array.isArray(recordsets[9]) ? recordsets[9] : [];
+  const documentTypeRequirements = Array.isArray(recordsets[10]) ? recordsets[10] : [];
+  const externalFields = Array.isArray(recordsets[11]) ? recordsets[11] : [];
+  const externalFieldTypeLinks = Array.isArray(recordsets[12]) ? recordsets[12] : [];
 
   return {
     installationTypes: installationTypes.map((r: any) => ({
@@ -59,6 +63,45 @@ export async function getAdminInstallationsCatalog() {
       display_name: r.display_name,
       sort_order: r.sort_order == null ? null : Number(r.sort_order),
       is_active: r.is_active === false ? false : true,
+    })),
+    installationTypeAtriumMappings: installationTypeAtriumMappings.map((r: any) => ({
+      mapping_id: r.mapping_id,
+      installation_type_key: r.installation_type_key,
+      atrium_installation_type_code: r.atrium_installation_type_code ?? "",
+      atrium_installation_type_description: r.atrium_installation_type_description ?? null,
+      is_active: r.is_active === false ? false : true,
+      created_at: r.created_at ?? null,
+      created_by: r.created_by ?? null,
+      updated_at: r.updated_at ?? null,
+      updated_by: r.updated_by ?? null,
+    })),
+    installationTypeInitializationAudits: installationTypeInitializationAudits.map((r: any) => ({
+      run_id: r.run_id,
+      trigger_source: r.trigger_source ?? null,
+      triggered_by: r.triggered_by ?? null,
+      status: r.status ?? null,
+      started_at: r.started_at ?? null,
+      completed_at: r.completed_at ?? null,
+      inspected_count: Number(r.inspected_count ?? 0),
+      updated_total: Number(r.updated_total ?? 0),
+      updated_existing_count: Number(r.updated_existing_count ?? 0),
+      inserted_overlay_count: Number(r.inserted_overlay_count ?? 0),
+      skipped_already_typed_count: Number(r.skipped_already_typed_count ?? 0),
+      skipped_historical_count: Number(r.skipped_historical_count ?? 0),
+      skipped_not_current_count: Number(r.skipped_not_current_count ?? 0),
+      unknown_no_mapping_count: Number(r.unknown_no_mapping_count ?? 0),
+      mapping_target_missing_count: Number(r.mapping_target_missing_count ?? 0),
+      error_message: r.error_message ?? null,
+    })),
+    installationTypeInitializationAuditDetails: installationTypeInitializationAuditDetails.map((r: any) => ({
+      run_id: r.run_id,
+      detail_kind: r.detail_kind ?? null,
+      reason: r.reason ?? null,
+      action_type: r.action_type ?? null,
+      atrium_installation_type_code: r.atrium_installation_type_code ?? null,
+      atrium_installation_type_description: r.atrium_installation_type_description ?? null,
+      installation_type_key: r.installation_type_key ?? null,
+      item_count: Number(r.item_count ?? 0),
     })),
     sections: sections.map((r: any) => ({
       section_key: r.section_key,
@@ -125,15 +168,41 @@ export async function saveAdminInstallationTypes(items: any[], user: any) {
     display_name: normalizeNullableString(x?.display_name),
     sort_order: normalizeNullableNumber(x?.sort_order ?? (index + 1) * 10),
     is_active: normalizeBool(x?.is_active, true),
+    atrium_mappings: (Array.isArray(x?.atrium_mappings) ? x.atrium_mappings : []).map((m: any) => ({
+      atrium_installation_type_code: normalizeNullableString(m?.atrium_installation_type_code),
+      atrium_installation_type_description: normalizeNullableString(m?.atrium_installation_type_description),
+      is_active: normalizeBool(m?.is_active, true),
+    })),
   }));
 
   if (normalized.length === 0) {
     return { ok: false, error: "geen geldige installatiesoorten ontvangen" };
   }
 
+  const seenAtriumCodes = new Map<string, string>();
+
   for (const item of normalized) {
     if (!item.installation_type_key) return { ok: false, error: "installation_type_key is verplicht" };
     if (!item.display_name) return { ok: false, error: "display_name is verplicht" };
+
+    for (const mapping of item.atrium_mappings) {
+      if (!mapping.atrium_installation_type_code) {
+        return {
+          ok: false,
+          error: `atrium_installation_type_code is verplicht voor ${item.installation_type_key}`,
+        };
+      }
+
+      const existingOwner = seenAtriumCodes.get(mapping.atrium_installation_type_code);
+      if (existingOwner && existingOwner !== item.installation_type_key) {
+        return {
+          ok: false,
+          error: `Atrium-code ${mapping.atrium_installation_type_code} is dubbel gekoppeld aan ${existingOwner} en ${item.installation_type_key}`,
+        };
+      }
+
+      seenAtriumCodes.set(mapping.atrium_installation_type_code, item.installation_type_key);
+    }
   }
 
   await sqlQuery(saveAdminInstallationTypesSql, {
@@ -281,4 +350,40 @@ export async function saveAdminInstallationExternalFields(items: any[], user: an
   });
 
   return await getAdminInstallationsCatalog();
+}
+
+export async function initializeInstallationTypesFromAtrium(user: any, triggerSource = "admin") {
+  const normalizedTriggerSource = normalizeNullableString(triggerSource) || "admin";
+  const result: any = await sqlQueryRaw(initializeInstallationTypesSql, {
+    updatedBy: getUserDisplayName(user),
+    triggerSource: normalizedTriggerSource,
+  });
+
+  const recordsets = Array.isArray(result?.recordsets) ? result.recordsets : [];
+  const summary = Array.isArray(recordsets[0]) ? recordsets[0][0] ?? null : null;
+  const appliedGroups = Array.isArray(recordsets[1]) ? recordsets[1] : [];
+  const unknownGroups = Array.isArray(recordsets[2]) ? recordsets[2] : [];
+  const skippedGroups = Array.isArray(recordsets[3]) ? recordsets[3] : [];
+  const mappings = Array.isArray(recordsets[4]) ? recordsets[4] : [];
+
+  return {
+    ok: true,
+    summary: summary ?? {
+      run_id: null,
+      trigger_source: normalizedTriggerSource,
+      updated_total: 0,
+      updated_existing_count: 0,
+      inserted_overlay_count: 0,
+      skipped_already_typed_count: 0,
+      skipped_historical_count: 0,
+      skipped_not_current_count: 0,
+      unknown_no_mapping_count: 0,
+      mapping_target_missing_count: 0,
+      inspected_count: 0,
+    },
+    appliedGroups,
+    unknownGroups,
+    skippedGroups,
+    mappings,
+  };
 }

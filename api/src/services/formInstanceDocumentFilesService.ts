@@ -18,6 +18,7 @@ import {
   createFormInstanceDocumentDownloadUrl,
   downloadFormInstanceDocumentBlob,
 } from "./blobStorageService.js";
+import { assertInstallationWritable } from "./installationsService.js";
 
 function actorName(user: any) {
   return user?.name || user?.email || user?.objectId || "unknown";
@@ -133,6 +134,8 @@ export async function upsertFormInstanceDocuments(
   items: any[],
   user: any
 ) {
+  await assertInstallationWritable(code);
+
   const rows = await sqlQuery(upsertFormInstanceDocumentsSql, {
     code,
     instanceId,
@@ -153,6 +156,8 @@ export async function createReplacementDocument(
   payload: any,
   user: any
 ) {
+  await assertInstallationWritable(code);
+
   const parent = await getFormInstanceDocumentContext(code, instanceId, parentDocumentId);
   if (!parent) {
     throw new Error("parent document not found");
@@ -187,6 +192,8 @@ export async function createAttachmentDocument(
   payload: any,
   user: any
 ) {
+  await assertInstallationWritable(code);
+
   const parent = await getFormInstanceDocumentContext(code, instanceId, parentDocumentId);
   if (!parent) {
     throw new Error("parent document not found");
@@ -221,6 +228,8 @@ export async function replaceDocumentLabels(
   labels: any[],
   user: any
 ) {
+  await assertInstallationWritable(code);
+
   const rows = await sqlQuery(replaceFormInstanceDocumentLabelsSql, {
     code,
     instanceId,
@@ -242,6 +251,8 @@ export async function replaceDocumentFollowUps(
   items: any[],
   user: any
 ) {
+  await assertInstallationWritable(code);
+
   const rows = await sqlQuery(replaceFormInstanceDocumentFollowUpsSql, {
     code,
     instanceId,
@@ -263,6 +274,8 @@ export async function uploadDocumentFile(
   file: Express.Multer.File,
   user: any
 ) {
+  await assertInstallationWritable(code);
+
   if (!file) {
     throw new Error("missing file");
   }
@@ -387,6 +400,8 @@ export async function deleteDocument(
   documentId: string,
   user: any
 ) {
+  await assertInstallationWritable(code);
+
   const document = await getFormInstanceDocumentContext(code, instanceId, documentId);
   if (!document) {
     throw new Error("form instance document not found");

@@ -557,3 +557,6 @@ export function getFormsMonitorPdfUrl(formInstanceId) {
   const base = String(import.meta.env.VITE_API_BASE || "").replace(/\/+$/, "");
   return `${base}/forms-monitor/${encodeURIComponent(formInstanceId)}/pdf`;
 }
+export function initializeInstallationTypesFromAtrium(payload = {}) {
+  return apiPost("/admin/installations/type-initialization/run", payload ?? {});
+}

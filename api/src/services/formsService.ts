@@ -25,6 +25,10 @@ import {
   previewFormFollowUps,
   syncFormFollowUps,
 } from "./followUpService.js";
+import {
+  assertInstallationWritable,
+  getInstallationArchiveState,
+} from "./installationsService.js";
 
 function getUserDisplayName(user: any) {
   return user?.name || user?.upn || user?.objectId || "unknown";
@@ -91,6 +95,7 @@ export async function getFormStartPreflight(code: string, formCode: string, user
   const cleanCode = String(code || "").trim();
   const cleanFormCode = String(formCode || "").trim();
   const createdBy = getUserDisplayName(user);
+  const archiveState = await getInstallationArchiveState(cleanCode);
 
   const rows = await sqlQuery(getFormStartPreflightSql, {
     code: cleanCode,
@@ -134,6 +139,14 @@ export async function getFormStartPreflight(code: string, formCode: string, user
     blocking.push({
       key: "form_unknown",
       message: `Onbekend formulier: ${cleanFormCode || "(leeg)"}.`,
+      action: { type: "noop" },
+    });
+  }
+
+  if (archiveState.isHistorical) {
+    blocking.push({
+      key: "installation_historical",
+      message: "Deze installatie is historisch en alleen als dossier beschikbaar.",
       action: { type: "noop" },
     });
   }
@@ -191,6 +204,8 @@ export async function getFormStartPreflight(code: string, formCode: string, user
       atrium_installation_code: row.atrium_installation_code,
       installation_id: row.installation_id,
       installation_type_key: row.installation_type_key,
+      installation_status: archiveState.installation_status,
+      bedrijf_unit: archiveState.bedrijf_unit,
 
       form_code: cleanFormCode,
       form_exists: formExists,
@@ -264,6 +279,8 @@ export async function getInstallationFormInstances(
         instance_note: r.instance_note ?? null,
         parent_instance_id: r.parent_instance_id == null ? null : Number(r.parent_instance_id),
         atrium_installation_code: r.atrium_installation_code ?? null,
+        installation_status: r.installation_status ?? null,
+        BedrijfUnit: r.BedrijfUnit ?? null,
         created_at: r.created_at ?? null,
         created_by: r.created_by ?? null,
         updated_at: r.updated_at ?? null,
@@ -298,6 +315,8 @@ export async function startFormInstance(code: string, formCode: string, user: an
   const cleanFormCode = String(formCode || "").trim();
   const createdBy = getUserDisplayName(user);
 
+  await assertInstallationWritable(cleanCode);
+
   const rows = await sqlQuery(startFormInstanceSql, {
     code: cleanCode,
     formCode: cleanFormCode,
@@ -324,6 +343,8 @@ export async function startChildFormInstance(
   if (parentId == null) {
     return { ok: false, error: "ongeldige parent_instance_id" };
   }
+
+  await assertInstallationWritable(cleanCode);
 
   const rows = await sqlQuery(startChildFormInstanceSql, {
     code: cleanCode,
@@ -365,6 +386,8 @@ export async function updateFormInstanceMetadata(
   if (id == null) {
     return { ok: false, error: "ongeldige form_instance_id" };
   }
+
+  await assertInstallationWritable(cleanCode);
 
   const instance_title = normalizeOptionalText(
     payload?.instance_title ?? payload?.instanceTitle
@@ -423,6 +446,8 @@ export async function saveFormAnswers(code: string, instanceId: number | string,
   if (id == null) {
     return { ok: false, error: "ongeldige form_instance_id" };
   }
+
+  await assertInstallationWritable(cleanCode);
 
   const answers_json = payload?.answers_json ?? payload?.answersJson ?? {};
   const calculated_json = payload?.calculated_json ?? payload?.calculatedJson ?? null;
@@ -581,6 +606,8 @@ export async function submitFormInstance(code: string, instanceId: number | stri
 
   if (id == null) return { error: "not found" };
 
+  await assertInstallationWritable(cleanCode);
+
   const instanceRes = await getFormInstance(cleanCode, id);
   if (instanceRes?.error === "not found") return { error: "not found" };
 
@@ -623,6 +650,8 @@ export async function withdrawFormInstance(code: string, instanceId: number | st
 
   if (id == null) return { error: "not found" };
 
+  await assertInstallationWritable(cleanCode);
+
   const rows = await sqlQuery(withdrawFormInstanceSql, {
     code: cleanCode,
     instanceId: id,
@@ -639,6 +668,8 @@ export async function reopenFormInstance(code: string, instanceId: number | stri
 
   if (id == null) return { error: "not found" };
 
+  await assertInstallationWritable(cleanCode);
+
   const rows = await sqlQuery(reopenFormInstanceSql, {
     code: cleanCode,
     instanceId: id,
@@ -654,6 +685,8 @@ export async function reopenFormInstance(code: string, instanceId: number | stri
 export async function importFormAnswerFile(code: string, file: any, user: any) {
   const cleanCode = String(code || "").trim();
   const updatedBy = getUserDisplayName(user);
+
+  await assertInstallationWritable(cleanCode);
 
   const formCode = String(file?.form?.code || "").trim();
   const versionLabel = String(file?.form?.version_label || "").trim();

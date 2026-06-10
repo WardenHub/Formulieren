@@ -3,6 +3,10 @@ import type { Request, Response } from "express";
 import * as service from "../services/formsMonitorService.js";
 import { buildFormReportPdf } from "../services/formReportPdfService.js";
 
+function isHistoricalReadOnlyMessage(msg: string) {
+  return String(msg || "").toLowerCase().includes("historical installation read-only");
+}
+
 export async function downloadFormsMonitorPdf(req: any, res: any) {
   try {
     const result = await buildFormReportPdf(req.params.formInstanceId, req.user);
@@ -117,6 +121,9 @@ export async function postFormsMonitorStatusAction(req: any, res: Response) {
     if (msg.includes("not found")) {
       return res.status(404).json({ error: "not found" });
     }
+    if (isHistoricalReadOnlyMessage(msg)) {
+      return res.status(409).json({ error: "historical installation read-only" });
+    }
     if (msg.includes("invalid action")) {
       return res.status(400).json({ error: "invalid action" });
     }
@@ -157,6 +164,9 @@ export async function postFormsMonitorFollowUpStatusAction(req: any, res: Respon
     if (msg.includes("not found")) {
       return res.status(404).json({ error: "not found" });
     }
+    if (isHistoricalReadOnlyMessage(msg)) {
+      return res.status(409).json({ error: "historical installation read-only" });
+    }
     if (msg.includes("invalid action")) {
       return res.status(400).json({ error: "invalid action" });
     }
@@ -192,6 +202,9 @@ export async function putFormsMonitorFollowUpNote(req: any, res: Response) {
 
     if (msg.includes("not found")) {
       return res.status(404).json({ error: "not found" });
+    }
+    if (isHistoricalReadOnlyMessage(msg)) {
+      return res.status(409).json({ error: "historical installation read-only" });
     }
     if (msg.includes("forbidden")) {
       return res.status(403).json({ error: "forbidden" });

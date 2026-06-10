@@ -28,6 +28,11 @@ import { ChevronsUpDownIcon } from "@/components/ui/chevrons-up-down";
 import { CogIcon } from "@/components/ui/cog";
 import { RefreshCWIcon } from "@/components/ui/refresh-cw";
 import { pushRecentHomeItem } from "../../lib/recentHomeItems.js";
+import {
+  getInstallationStatusClassName,
+  getInstallationStatusLabel,
+  isHistoricalInstallation,
+} from "../../lib/installationStatus.js";
 
 import {
   getInstallation,
@@ -135,6 +140,8 @@ export default function InstallationDetails() {
   const [typePickerOpen, setTypePickerOpen] = useState(false);
 
   const typeIsSet = Boolean(installation?.installation_type_key);
+  const isHistorical = isHistoricalInstallation(installation);
+  const historicalReason = "Deze installatie is historisch en alleen als dossier beschikbaar.";
 
   const [customDirty, setCustomDirty] = useState(false);
   const [customSaving, setCustomSaving] = useState(false);
@@ -190,6 +197,7 @@ export default function InstallationDetails() {
   }
 
   function hasUnsavedChanges() {
+    if (isHistorical) return false;
     if (activeTab === "custom") return typeIsSet && customDirty && !customSaving;
     if (activeTab === "documents") return docsDirty && !docsSaving;
     if (activeTab === "energy") return energyDirty && !energySaving;
@@ -259,6 +267,7 @@ export default function InstallationDetails() {
   }
 
   async function handleSetType(typeKey) {
+    if (isHistorical) return;
     try {
       setTypeSaving(true);
 
@@ -426,6 +435,7 @@ export default function InstallationDetails() {
 
       if (e.altKey && (key === "s" || key === "S")) {
         e.preventDefault();
+        if (isHistorical) return;
 
         if (activeTab === "custom") {
           if (customDirty && !customSaving) customSaveRef.current?.save?.();
@@ -472,6 +482,7 @@ export default function InstallationDetails() {
     perfSaving,
     showCollapseAllToggle,
     anyOpenInActiveTab,
+    isHistorical,
   ]);
 
   const title = useMemo(() => {
@@ -544,6 +555,7 @@ export default function InstallationDetails() {
             code={code}
             catalog={catalog}
             customValues={customValues || []}
+            readOnly={isHistorical}
             onDirtyChange={setCustomDirty}
             onSavingChange={setCustomSaving}
             onSaveOk={() => {
@@ -559,6 +571,8 @@ export default function InstallationDetails() {
             title="Installatiesoort kiezen"
             types={installationTypes}
             saving={typeSaving}
+            disabled={isHistorical}
+            readOnlyMessage={isHistorical ? historicalReason : ""}
             onSelect={handleSetType}
           />
         ),
@@ -573,6 +587,7 @@ export default function InstallationDetails() {
             code={code}
             docs={docs}
             catalog={catalog}
+            readOnly={isHistorical}
             onDirtyChange={setDocsDirty}
             onSavingChange={setDocsSaving}
             onSaveOk={() => {
@@ -598,6 +613,7 @@ export default function InstallationDetails() {
             code={code}
             items={energySupplies || []}
             brandTypes={energyBrandTypes || []}
+            readOnly={isHistorical}
             onDirtyChange={setEnergyDirty}
             onSavingChange={setEnergySaving}
             onSaveOk={() => {
@@ -618,6 +634,7 @@ export default function InstallationDetails() {
           <PerformanceRequirementsTab
             ref={perfRef}
             code={code}
+            readOnly={isHistorical}
             onDirtyChange={setPerfDirty}
             onSavingChange={setPerfSaving}
             onSaveOk={() => {
@@ -638,6 +655,8 @@ export default function InstallationDetails() {
           <FormsTab
             code={code}
             installation={installation}
+            readOnly={isHistorical}
+            readOnlyReason={historicalReason}
             isActive={activeTab === "forms"}
             activationToken={formsActivationToken}
             selectedFormCode={selectedFormCode}
@@ -789,13 +808,28 @@ export default function InstallationDetails() {
                 style={{ fontSize: 13, display: "flex", gap: 8, alignItems: "center" }}
               >
                 <span>code: {code}</span>
+                {installation?.BedrijfUnit ? (
+                  <span className="ember-label ember-label--muted">{installation.BedrijfUnit}</span>
+                ) : null}
+                {installation?.installation_status ? (
+                  <span className={getInstallationStatusClassName(installation?.installation_status)}>
+                    {getInstallationStatusLabel(installation?.installation_status)}
+                  </span>
+                ) : null}
 
                 <div className="type-picker-wrap" ref={typePickerRef}>
                   <button
                     type="button"
                     className="type-tag-btn"
+                    disabled={isHistorical}
                     onClick={() => setTypePickerOpen((v) => !v)}
-                    title={typeIsSet ? "wijzig installatiesoort" : "kies installatiesoort"}
+                    title={
+                      isHistorical
+                        ? historicalReason
+                        : typeIsSet
+                          ? "wijzig installatiesoort"
+                          : "kies installatiesoort"
+                    }
                   >
                     <InstallationTypeTag
                       typeKey={installation?.installation_type_key}
@@ -845,13 +879,15 @@ export default function InstallationDetails() {
             {showHeaderSave && (
               <SaveButton
                 disabled={
-                  activeTab === "custom"
-                    ? !customDirty
-                    : activeTab === "documents"
-                      ? !docsDirty
-                      : activeTab === "energy"
-                        ? !energyDirty
-                        : !perfDirty
+                  isHistorical
+                    ? true
+                    : activeTab === "custom"
+                      ? !customDirty
+                      : activeTab === "documents"
+                        ? !docsDirty
+                        : activeTab === "energy"
+                          ? !energyDirty
+                          : !perfDirty
                 }
                 saving={
                   activeTab === "custom"
@@ -901,6 +937,12 @@ export default function InstallationDetails() {
           minHeight: 240,
         }}
       >
+        {!pageLoading && isHistorical && (
+          <div className="ember-label ember-label--danger" style={{ marginBottom: 12 }}>
+            {historicalReason}
+          </div>
+        )}
+
         {pageLoading && (
           <BusyOverlay
             iconRef={pageBusyIconRef}

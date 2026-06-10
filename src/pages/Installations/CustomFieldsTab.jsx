@@ -133,7 +133,17 @@ function TabLoadingCard({ title = "Laden...", label = "Bezig met gegevens laden.
 }
 
 const CustomFieldsTab = forwardRef(function CustomFieldsTab(
-  { code, catalog, customValues, onSaved, onDirtyChange, onSavingChange, onSaveOk, onAnyOpenChange },
+  {
+    code,
+    catalog,
+    customValues,
+    onSaved,
+    onDirtyChange,
+    onSavingChange,
+    onSaveOk,
+    onAnyOpenChange,
+    readOnly = false,
+  },
   ref
 ) {
   const [draft, setDraft] = useState({});
@@ -292,8 +302,8 @@ const CustomFieldsTab = forwardRef(function CustomFieldsTab(
   const isDirty = dirtyKeys.size > 0;
 
   useEffect(() => {
-    onDirtyChange?.(isDirty);
-  }, [isDirty, onDirtyChange]);
+    onDirtyChange?.(readOnly ? false : isDirty);
+  }, [isDirty, onDirtyChange, readOnly]);
 
   useEffect(() => {
     onSavingChange?.(saving);
@@ -344,12 +354,14 @@ const CustomFieldsTab = forwardRef(function CustomFieldsTab(
   }
 
   function setField(fieldKey, nextValue) {
+    if (readOnly) return;
     setDraft((prev) => ({ ...prev, [fieldKey]: nextValue }));
     setSaveError(null);
     clearSaved(fieldKey);
   }
 
   function applyCompanyPreset(sectionFields, preset) {
+    if (readOnly) return;
     const fields = Array.isArray(sectionFields) ? sectionFields : [];
     const keyAddress = findAddressFieldKey(fields);
 
@@ -415,7 +427,7 @@ const CustomFieldsTab = forwardRef(function CustomFieldsTab(
   }
 
   async function save() {
-    if (saving) return;
+    if (saving || readOnly) return;
 
     setSaving(true);
     setSaveError(null);
@@ -582,6 +594,7 @@ const CustomFieldsTab = forwardRef(function CustomFieldsTab(
                             className="btn btn-compact"
                             title={`Vul met ${preset.name}`}
                             onClick={() => applyCompanyPreset(g.fields, preset)}
+                            disabled={readOnly}
                           >
                             {preset.name}
                           </button>
@@ -647,6 +660,7 @@ const CustomFieldsTab = forwardRef(function CustomFieldsTab(
                                   type="button"
                                   className={val === true ? "cf-bool-btn active" : "cf-bool-btn"}
                                   onClick={() => setField(f.field_key, true)}
+                                  disabled={readOnly}
                                 >
                                   Ja
                                 </button>
@@ -655,6 +669,7 @@ const CustomFieldsTab = forwardRef(function CustomFieldsTab(
                                   type="button"
                                   className={val === false ? "cf-bool-btn active" : "cf-bool-btn"}
                                   onClick={() => setField(f.field_key, false)}
+                                  disabled={readOnly}
                                 >
                                   Nee
                                 </button>
@@ -664,6 +679,7 @@ const CustomFieldsTab = forwardRef(function CustomFieldsTab(
                                 className="input"
                                 value={val ?? ""}
                                 onChange={(e) => setField(f.field_key, e.target.value)}
+                                disabled={readOnly}
                               >
                                 <option value="">kies</option>
                                 {opts.map((o) => (
@@ -678,6 +694,7 @@ const CustomFieldsTab = forwardRef(function CustomFieldsTab(
                                 value={val ?? ""}
                                 onChange={(e) => setField(f.field_key, e.target.value)}
                                 className="cf-input"
+                                disabled={readOnly}
                               />
                             ) : f.data_type === "date" ? (
                               <input
@@ -685,6 +702,7 @@ const CustomFieldsTab = forwardRef(function CustomFieldsTab(
                                 value={formatDateForInput(val)}
                                 onChange={(e) => setField(f.field_key, e.target.value)}
                                 className="cf-input"
+                                disabled={readOnly}
                               />
                             ) : f.data_type === "json" ? (
                               <textarea
@@ -692,6 +710,7 @@ const CustomFieldsTab = forwardRef(function CustomFieldsTab(
                                 onChange={(e) => setField(f.field_key, e.target.value)}
                                 rows={5}
                                 className="cf-textarea"
+                                disabled={readOnly}
                               />
                             ) : (
                               <input
@@ -699,6 +718,7 @@ const CustomFieldsTab = forwardRef(function CustomFieldsTab(
                                 value={val ?? ""}
                                 onChange={(e) => setField(f.field_key, e.target.value)}
                                 className="input"
+                                disabled={readOnly}
                               />
                             )}
                           </div>

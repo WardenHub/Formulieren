@@ -5,6 +5,10 @@ import * as formsService from "../services/formsService.js";
 import * as documentFilesService from "../services/installationDocumentFilesService.js";
 import * as formDocumentFilesService from "../services/formInstanceDocumentFilesService.js";
 
+function isHistoricalReadOnlyMessage(msg: string) {
+  return String(msg || "").toLowerCase().includes("historical installation read-only");
+}
+
 // -------------------- Installations --------------------
 
 export async function getInstallation(req: Request, res: Response) {
@@ -58,6 +62,10 @@ export async function putCustomValues(req: any, res: any) {
   } catch (err: any) {
     const msg = err?.message || String(err);
 
+    if (isHistoricalReadOnlyMessage(msg)) {
+      return res.status(409).json({ error: "historical installation read-only" });
+    }
+
     if (msg.toLowerCase().includes("installation not found")) {
       return res.status(404).json({ error: "installation not found" });
     }
@@ -102,6 +110,10 @@ export async function putInstallationType(req: any, res: any) {
   } catch (err: any) {
     const msg = (err?.message || String(err)).toLowerCase();
 
+    if (isHistoricalReadOnlyMessage(msg)) {
+      return res.status(409).json({ error: "historical installation read-only" });
+    }
+
     if (msg.includes("atrium installation not found")) {
       return res.status(404).json({ error: "atrium installation not found" });
     }
@@ -122,6 +134,10 @@ export async function putDocuments(req: any, res: any) {
     return res.json(result);
   } catch (err: any) {
     const msg = (err?.message || String(err)).toLowerCase();
+
+    if (isHistoricalReadOnlyMessage(msg)) {
+      return res.status(409).json({ error: "historical installation read-only" });
+    }
 
     if (msg.includes("atrium installation not found")) {
       return res.status(404).json({ error: "atrium installation not found" });
@@ -146,6 +162,10 @@ export async function uploadDocumentFile(req: any, res: any) {
     return res.json(result);
   } catch (err: any) {
     const msg = (err?.message || String(err)).toLowerCase();
+
+    if (isHistoricalReadOnlyMessage(msg)) {
+      return res.status(409).json({ error: "historical installation read-only" });
+    }
 
     if (msg.includes("missing file")) {
       return res.status(400).json({ error: "missing file" });
@@ -195,6 +215,10 @@ export async function createDocumentReplacement(req: any, res: any) {
   } catch (err: any) {
     const msg = (err?.message || String(err)).toLowerCase();
 
+    if (isHistoricalReadOnlyMessage(msg)) {
+      return res.status(409).json({ error: "historical installation read-only" });
+    }
+
     if (msg.includes("parent document not found")) {
       return res.status(404).json({ error: "parent document not found" });
     }
@@ -217,6 +241,10 @@ export async function createDocumentAttachment(req: any, res: any) {
     return res.json(result);
   } catch (err: any) {
     const msg = (err?.message || String(err)).toLowerCase();
+
+    if (isHistoricalReadOnlyMessage(msg)) {
+      return res.status(409).json({ error: "historical installation read-only" });
+    }
 
     if (msg.includes("parent document not found")) {
       return res.status(404).json({ error: "parent document not found" });
@@ -288,6 +316,10 @@ export async function putEnergySupplies(req: any, res: any) {
   } catch (err: any) {
     const msg = (err?.message || String(err)).toLowerCase();
 
+    if (isHistoricalReadOnlyMessage(msg)) {
+      return res.status(409).json({ error: "historical installation read-only" });
+    }
+
     if (msg.includes("atrium installation not found")) {
       return res.status(404).json({ error: "atrium installation not found" });
     }
@@ -308,7 +340,13 @@ export async function deleteEnergySupply(req: any, res: any) {
 
     const result = await service.deleteInstallationEnergySupply(code, energy_supply_id, req.user);
     return res.json(result);
-  } catch (err) {
+  } catch (err: any) {
+    const msg = String(err?.message || err).toLowerCase();
+
+    if (isHistoricalReadOnlyMessage(msg)) {
+      return res.status(409).json({ error: "historical installation read-only" });
+    }
+
     console.error(err);
     return res.status(500).json({ error: "deleteEnergySupply failed" });
   }
@@ -348,6 +386,10 @@ export async function putPerformanceRequirements(req: any, res: any) {
     return res.json(result);
   } catch (err: any) {
     const msg = (err?.message || String(err)).toLowerCase();
+
+    if (isHistoricalReadOnlyMessage(msg)) {
+      return res.status(409).json({ error: "historical installation read-only" });
+    }
 
     if (msg.includes("atrium installation not found")) {
       return res.status(404).json({ error: "atrium installation not found" });
@@ -440,6 +482,7 @@ export async function startFormInstance(req: any, res: Response) {
     return res.json(data);
   } catch (err: any) {
     const msg = (err?.message || String(err)).toLowerCase();
+    if (isHistoricalReadOnlyMessage(msg)) return res.status(409).json({ error: "historical installation read-only" });
     if (msg.includes("atrium installation not found")) return res.status(404).json({ error: "atrium installation not found" });
     if (msg.includes("form not found")) return res.status(404).json({ error: "form not found" });
     console.error(err);
@@ -474,6 +517,10 @@ export async function startChildFormInstance(req: any, res: Response) {
     return res.json(result);
   } catch (err: any) {
     const msg = String(err?.message || err).toLowerCase();
+
+    if (isHistoricalReadOnlyMessage(msg)) {
+      return res.status(409).json({ error: "historical installation read-only" });
+    }
 
     if (msg.includes("atrium installation not found")) {
       return res.status(404).json({ error: "atrium installation not found" });
@@ -521,6 +568,10 @@ export async function putFormInstanceMetadata(req: any, res: any) {
   } catch (err: any) {
     const msg = (err?.message || String(err)).toLowerCase();
 
+    if (isHistoricalReadOnlyMessage(msg)) {
+      return res.status(409).json({ error: "historical installation read-only" });
+    }
+
     if (msg.includes("form instance not found")) {
       return res.status(404).json({ error: "form instance not found" });
     }
@@ -554,6 +605,7 @@ export async function putFormAnswers(req: any, res: any) {
     return res.json(result);
   } catch (err: any) {
     const msg = (err?.message || String(err)).toLowerCase();
+    if (isHistoricalReadOnlyMessage(msg)) return res.status(409).json({ error: "historical installation read-only" });
     if (msg.includes("draft_rev conflict")) return res.status(409).json({ error: "draft_rev conflict" });
     if (msg.includes("form instance not editable")) return res.status(409).json({ error: "form instance not editable" });
     console.error(err);
@@ -586,6 +638,7 @@ export async function submitFormInstance(req: any, res: any) {
     return res.json(result);
   } catch (err: any) {
     const msg = (err?.message || String(err)).toLowerCase();
+    if (isHistoricalReadOnlyMessage(msg)) return res.status(409).json({ error: "historical installation read-only" });
     if (msg.includes("invalid status transition")) return res.status(409).json({ error: "invalid status transition" });
     console.error(err);
     return res.status(500).json({ error: "submitFormInstance failed" });
@@ -601,6 +654,7 @@ export async function withdrawFormInstance(req: any, res: any) {
     return res.json(result);
   } catch (err: any) {
     const msg = (err?.message || String(err)).toLowerCase();
+    if (isHistoricalReadOnlyMessage(msg)) return res.status(409).json({ error: "historical installation read-only" });
     if (msg.includes("invalid status transition")) return res.status(409).json({ error: "invalid status transition" });
     console.error(err);
     return res.status(500).json({ error: "withdrawFormInstance failed" });
@@ -618,6 +672,7 @@ export async function reopenFormInstance(req: any, res: any) {
     return res.json(result);
   } catch (err: any) {
     const msg = (err?.message || String(err)).toLowerCase();
+    if (isHistoricalReadOnlyMessage(msg)) return res.status(409).json({ error: "historical installation read-only" });
     if (msg.includes("invalid status transition")) return res.status(409).json({ error: "invalid status transition" });
     console.error(err);
     return res.status(500).json({ error: "reopenFormInstance failed" });
@@ -635,6 +690,7 @@ export async function importFormAnswerFile(req: any, res: any) {
     return res.json(result);
   } catch (err: any) {
     const msg = (err?.message || String(err)).toLowerCase();
+    if (isHistoricalReadOnlyMessage(msg)) return res.status(409).json({ error: "historical installation read-only" });
     if (msg.includes("draft_rev conflict")) return res.status(409).json({ error: "draft_rev conflict" });
     console.error(err);
     return res.status(500).json({ error: "importFormAnswerFile failed" });
@@ -738,6 +794,10 @@ export async function putFormInstanceDocuments(req: any, res: any) {
   } catch (err: any) {
     const msg = String(err?.message || err).toLowerCase();
 
+    if (isHistoricalReadOnlyMessage(msg)) {
+      return res.status(409).json({ error: "historical installation read-only" });
+    }
+
     if (msg.includes("form instance not found")) {
       return res.status(404).json({ error: "form instance not found" });
     }
@@ -768,6 +828,10 @@ export async function uploadFormInstanceDocumentFile(req: any, res: any) {
     return res.json(result);
   } catch (err: any) {
     const msg = String(err?.message || err).toLowerCase();
+
+    if (isHistoricalReadOnlyMessage(msg)) {
+      return res.status(409).json({ error: "historical installation read-only" });
+    }
 
     if (msg.includes("missing file")) {
       return res.status(400).json({ error: "missing file" });
@@ -867,6 +931,10 @@ export async function createFormInstanceDocumentReplacement(req: any, res: any) 
   } catch (err: any) {
     const msg = String(err?.message || err).toLowerCase();
 
+    if (isHistoricalReadOnlyMessage(msg)) {
+      return res.status(409).json({ error: "historical installation read-only" });
+    }
+
     if (msg.includes("parent document not found")) {
       return res.status(404).json({ error: "parent document not found" });
     }
@@ -900,6 +968,10 @@ export async function createFormInstanceDocumentAttachment(req: any, res: any) {
     return res.json(result);
   } catch (err: any) {
     const msg = String(err?.message || err).toLowerCase();
+
+    if (isHistoricalReadOnlyMessage(msg)) {
+      return res.status(409).json({ error: "historical installation read-only" });
+    }
 
     if (msg.includes("parent document not found")) {
       return res.status(404).json({ error: "parent document not found" });
@@ -935,6 +1007,10 @@ export async function putFormInstanceDocumentLabels(req: any, res: any) {
   } catch (err: any) {
     const msg = String(err?.message || err).toLowerCase();
 
+    if (isHistoricalReadOnlyMessage(msg)) {
+      return res.status(409).json({ error: "historical installation read-only" });
+    }
+
     if (msg.includes("form instance document not editable")) {
       return res.status(409).json({ error: "form instance document not editable" });
     }
@@ -962,6 +1038,10 @@ export async function putFormInstanceDocumentFollowUps(req: any, res: any) {
     return res.json(result);
   } catch (err: any) {
     const msg = String(err?.message || err).toLowerCase();
+
+    if (isHistoricalReadOnlyMessage(msg)) {
+      return res.status(409).json({ error: "historical installation read-only" });
+    }
 
     if (msg.includes("form instance document not found")) {
       return res.status(404).json({ error: "form instance document not found" });
@@ -991,6 +1071,10 @@ export async function deleteFormInstanceDocument(req: any, res: any) {
     return res.json(result);
   } catch (err: any) {
     const msg = String(err?.message || err).toLowerCase();
+
+    if (isHistoricalReadOnlyMessage(msg)) {
+      return res.status(409).json({ error: "historical installation read-only" });
+    }
 
     if (msg.includes("form instance document not found")) {
       return res.status(404).json({ error: "form instance document not found" });

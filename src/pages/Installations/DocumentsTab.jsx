@@ -379,7 +379,17 @@ function ClickableDropBar({
 }
 
 const DocumentsTab = forwardRef(function DocumentsTab(
-  { code, docs, catalog, onDirtyChange, onSavingChange, onSaveOk, onSaved, onAnyOpenChange },
+  {
+    code,
+    docs,
+    catalog,
+    onDirtyChange,
+    onSavingChange,
+    onSaveOk,
+    onSaved,
+    onAnyOpenChange,
+    readOnly = false,
+  },
   ref
 ) {
   const [rowsByType, setRowsByType] = useState({});
@@ -532,8 +542,8 @@ const DocumentsTab = forwardRef(function DocumentsTab(
   const anyDirty = useMemo(() => Object.values(dirtyRows).some(Boolean), [dirtyRows]);
 
   useEffect(() => {
-    onDirtyChange?.(anyDirty);
-  }, [anyDirty, onDirtyChange]);
+    onDirtyChange?.(readOnly ? false : anyDirty);
+  }, [anyDirty, onDirtyChange, readOnly]);
 
   useEffect(() => {
     onSavingChange?.(saving || Boolean(actionBusyKey));
@@ -576,6 +586,7 @@ const DocumentsTab = forwardRef(function DocumentsTab(
   }
 
   function setRow(typeKey, rowId, patch, fieldKey) {
+    if (readOnly) return;
     setRowsByType((prev) => {
       const arr = prev[typeKey] || [];
 
@@ -611,6 +622,7 @@ const DocumentsTab = forwardRef(function DocumentsTab(
   }
 
   function addRow(typeKey, overrides = {}) {
+    if (readOnly) return null;
     const draft = newDraft(typeKey, overrides);
 
     setRowsByType((prev) => {
@@ -635,6 +647,7 @@ const DocumentsTab = forwardRef(function DocumentsTab(
   }
 
   function addFilesAsDrafts(typeKey, files) {
+    if (readOnly) return [];
     const list = Array.from(files || []).filter(Boolean);
     if (!list.length) return [];
 
@@ -733,6 +746,7 @@ const DocumentsTab = forwardRef(function DocumentsTab(
   }
 
   async function save() {
+    if (readOnly) return false;
     setError(null);
     setSaving(true);
 
@@ -960,7 +974,7 @@ const DocumentsTab = forwardRef(function DocumentsTab(
   }
 
   async function handleUploadForRow(typeKey, row, file) {
-    if (!file) return;
+    if (readOnly || !file) return;
 
     setError(null);
     setActionBusyKey(`upload:${row.document_id}`);
@@ -999,6 +1013,7 @@ const DocumentsTab = forwardRef(function DocumentsTab(
   }
 
   async function handleUploadQueuedForType(typeKey) {
+    if (readOnly) return;
     const queuedRows = (rowsByType[typeKey] || []).filter((r) => pendingFilesByRowId[r.document_id]);
     if (!queuedRows.length) return;
 
@@ -1068,6 +1083,7 @@ const DocumentsTab = forwardRef(function DocumentsTab(
   }
 
   async function handleReplaceDocument(typeKey, row, file) {
+    if (readOnly) return;
     if (!file) return;
 
     setError(null);
@@ -1105,6 +1121,7 @@ const DocumentsTab = forwardRef(function DocumentsTab(
   }
 
   async function handleAddAttachments(typeKey, row, files) {
+    if (readOnly) return;
     const list = Array.from(files || []).filter(Boolean);
     if (!list.length) return;
 
@@ -1303,6 +1320,7 @@ const DocumentsTab = forwardRef(function DocumentsTab(
     const isNewTemp = String(row.document_id || "").startsWith("new:");
     const editorOpen = detailOpenMap[editorKey] ?? false;
     const tone = getCardTone(row);
+    const actionDisabled = readOnly || Boolean(actionBusyKey);
 
     return (
       <div
@@ -1330,7 +1348,7 @@ const DocumentsTab = forwardRef(function DocumentsTab(
             >
               <FileOpenIconButton
                 hasFile={row.has_file}
-                disabled={Boolean(actionBusyKey)}
+                disabled={actionDisabled}
                 onClick={() => handleOpenDocument(row)}
               />
 
@@ -1368,7 +1386,7 @@ const DocumentsTab = forwardRef(function DocumentsTab(
                   title="downloaden"
                   Icon={DownloadIcon}
                   onClick={() => handleDownloadDocument(row)}
-                  disabled={Boolean(actionBusyKey)}
+                  disabled={actionDisabled}
                 >
                   downloaden
                 </AnimatedActionButton>
@@ -1383,7 +1401,7 @@ const DocumentsTab = forwardRef(function DocumentsTab(
                     [editorKey]: !editorOpen,
                   }))
                 }
-                disabled={Boolean(actionBusyKey)}
+                disabled={actionDisabled}
               >
                 {editorOpen ? "minder" : "details"}
               </AnimatedActionButton>
@@ -1395,6 +1413,7 @@ const DocumentsTab = forwardRef(function DocumentsTab(
                   onClick={() => {
                     setRow(typeKey, row.document_id, { document_is_active: false }, "document_is_active");
                   }}
+                  disabled={readOnly}
                 >
                   archiveren
                 </AnimatedActionButton>
@@ -1405,6 +1424,7 @@ const DocumentsTab = forwardRef(function DocumentsTab(
                   onClick={() => {
                     setRow(typeKey, row.document_id, { document_is_active: true }, "document_is_active");
                   }}
+                  disabled={readOnly}
                 >
                   actief
                 </AnimatedActionButton>
@@ -1422,6 +1442,7 @@ const DocumentsTab = forwardRef(function DocumentsTab(
                     value={row.title}
                     onChange={(e) => updateTitleAndFileName(typeKey, row, e.target.value)}
                     placeholder="titel"
+                    disabled={readOnly}
                   />
                 </div>
 
@@ -1434,6 +1455,7 @@ const DocumentsTab = forwardRef(function DocumentsTab(
                       setRow(typeKey, row.document_id, { document_number: e.target.value }, "document_number")
                     }
                     placeholder="nummer"
+                    disabled={readOnly}
                   />
                 </div>
 
@@ -1446,6 +1468,7 @@ const DocumentsTab = forwardRef(function DocumentsTab(
                     onChange={(e) =>
                       setRow(typeKey, row.document_id, { document_date: e.target.value || null }, "document_date")
                     }
+                    disabled={readOnly}
                   />
                 </div>
 
@@ -1456,6 +1479,7 @@ const DocumentsTab = forwardRef(function DocumentsTab(
                     value={row.revision}
                     onChange={(e) => setRow(typeKey, row.document_id, { revision: e.target.value }, "revision")}
                     placeholder="bv; A"
+                    disabled={readOnly}
                   />
                 </div>
 
@@ -1467,6 +1491,7 @@ const DocumentsTab = forwardRef(function DocumentsTab(
                     onChange={(e) => setRow(typeKey, row.document_id, { note: e.target.value }, "note")}
                     placeholder="opmerking / context"
                     rows={2}
+                    disabled={readOnly}
                   />
                 </div>
               </div>
@@ -1503,7 +1528,10 @@ const DocumentsTab = forwardRef(function DocumentsTab(
                         : "Deze documentregel heeft nog geen bestand"
                     }
                     isDragOver={isRowDragOver}
-                    onClick={() => openNativeFilePicker(uploadInputRefs.current[row.document_id])}
+                    onClick={() => {
+                      if (readOnly) return;
+                      openNativeFilePicker(uploadInputRefs.current[row.document_id]);
+                    }}
                     onDragOver={(e) => {
                       if (!isFileDragEvent(e)) return;
                       e.preventDefault();
@@ -1527,7 +1555,7 @@ const DocumentsTab = forwardRef(function DocumentsTab(
                       setDragOverRowId(null);
 
                       const file = e.dataTransfer?.files?.[0];
-                      if (!file) return;
+                      if (!file || readOnly) return;
 
                       if (String(row.document_id || "").startsWith("new:") || dirtyRows[row.document_id]) {
                         setPendingFilesByRowId((m) => ({ ...m, [row.document_id]: file }));
@@ -1545,7 +1573,7 @@ const DocumentsTab = forwardRef(function DocumentsTab(
                         title="opslaan en uploaden"
                         Icon={RefreshCWIcon}
                         onClick={() => handleUploadForRow(typeKey, row, pendingFile)}
-                        disabled={Boolean(actionBusyKey)}
+                        disabled={actionDisabled}
                       >
                         uploaden
                       </AnimatedActionButton>
@@ -1579,7 +1607,10 @@ const DocumentsTab = forwardRef(function DocumentsTab(
                         title="Vervangen"
                         subtitle="Sleep een nieuw bestand hierheen of klik om te bladeren"
                         isDragOver={isReplaceDragOver}
-                        onClick={() => openNativeFilePicker(replaceInputRefs.current[row.document_id])}
+                        onClick={() => {
+                          if (readOnly) return;
+                          openNativeFilePicker(replaceInputRefs.current[row.document_id]);
+                        }}
                         onDragOver={(e) => {
                           if (!isFileDragEvent(e)) return;
                           e.preventDefault();
@@ -1603,7 +1634,7 @@ const DocumentsTab = forwardRef(function DocumentsTab(
                           setDragOverReplaceId(null);
 
                           const file = e.dataTransfer?.files?.[0];
-                          if (!file) return;
+                          if (!file || readOnly) return;
 
                           await handleReplaceDocument(typeKey, row, file);
                         }}
@@ -1633,7 +1664,10 @@ const DocumentsTab = forwardRef(function DocumentsTab(
                         title="Bijlage toevoegen"
                         subtitle="Sleep één of meer bestanden hierheen of klik om te bladeren"
                         isDragOver={isAttachDragOver}
-                        onClick={() => openNativeFilePicker(attachInputRefs.current[row.document_id])}
+                        onClick={() => {
+                          if (readOnly) return;
+                          openNativeFilePicker(attachInputRefs.current[row.document_id]);
+                        }}
                         onDragOver={(e) => {
                           if (!isFileDragEvent(e)) return;
                           e.preventDefault();
@@ -1657,7 +1691,7 @@ const DocumentsTab = forwardRef(function DocumentsTab(
                           setDragOverAttachId(null);
 
                           const files = e.dataTransfer?.files;
-                          if (!files?.length) return;
+                          if (!files?.length || readOnly) return;
 
                           await handleAddAttachments(typeKey, row, files);
                         }}
@@ -1907,7 +1941,7 @@ const DocumentsTab = forwardRef(function DocumentsTab(
                                 title="wachtrij opslaan en uploaden"
                                 Icon={RefreshCWIcon}
                                 onClick={() => handleUploadQueuedForType(typeKey)}
-                                disabled={Boolean(actionBusyKey)}
+                                disabled={readOnly || Boolean(actionBusyKey)}
                               >
                                 upload wachtrij
                               </AnimatedActionButton>
@@ -1915,12 +1949,12 @@ const DocumentsTab = forwardRef(function DocumentsTab(
                           )}
 
                           <span onClick={(e) => e.stopPropagation()} className="doc-inline-block">
-                            <AnimatedActionButton
-                              title="document toevoegen"
-                              Icon={PlusIcon}
-                              onClick={() => addRow(typeKey)}
-                              disabled={Boolean(actionBusyKey)}
-                            >
+                              <AnimatedActionButton
+                                title="document toevoegen"
+                                Icon={PlusIcon}
+                                onClick={() => addRow(typeKey)}
+                                disabled={readOnly || Boolean(actionBusyKey)}
+                              >
                               toevoegen
                             </AnimatedActionButton>
                           </span>
@@ -1942,7 +1976,7 @@ const DocumentsTab = forwardRef(function DocumentsTab(
                               onChange={(e) => {
                                 const files = Array.from(e.target.files || []);
                                 e.target.value = "";
-                                if (!files.length) return;
+                                if (!files.length || readOnly) return;
                                 addFilesAsDrafts(typeKey, files);
                               }}
                             />
@@ -1951,7 +1985,10 @@ const DocumentsTab = forwardRef(function DocumentsTab(
                               title={`Sleep bestanden hierheen voor ${dt.document_type_name.toLowerCase()}`}
                               subtitle="Klik ook op deze balk om te bladeren op deze pc"
                               isDragOver={isTypeDragOver}
-                              onClick={() => openNativeFilePicker(typeFileInputRefs.current[typeKey])}
+                              onClick={() => {
+                                if (readOnly) return;
+                                openNativeFilePicker(typeFileInputRefs.current[typeKey]);
+                              }}
                               onDragOver={(e) => {
                                 if (!isFileDragEvent(e)) return;
                                 e.preventDefault();
@@ -1975,6 +2012,7 @@ const DocumentsTab = forwardRef(function DocumentsTab(
                                 setDragOverTypeKey(null);
 
                                 const files = e.dataTransfer?.files;
+                                if (readOnly) return;
                                 if (files?.length) addFilesAsDrafts(typeKey, files);
                               }}
                             />

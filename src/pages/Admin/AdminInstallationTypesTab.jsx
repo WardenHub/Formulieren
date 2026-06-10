@@ -1,11 +1,13 @@
-// src/pages/Admin/AdminInstallationTypesTab.jsx
-
 import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
 import { PlusIcon } from "@/components/ui/plus";
 import { ArrowUpIcon } from "@/components/ui/arrow-up";
 import { ArrowDownIcon } from "@/components/ui/arrow-down";
 
 function normalizeDraft(catalog) {
+  const mappings = Array.isArray(catalog?.installationTypeAtriumMappings)
+    ? catalog.installationTypeAtriumMappings
+    : [];
+
   return Array.isArray(catalog?.installationTypes)
     ? [...catalog.installationTypes]
         .map((x, index) => ({
@@ -13,6 +15,7 @@ function normalizeDraft(catalog) {
           display_name: x.display_name ?? "",
           sort_order: x.sort_order ?? (index + 1) * 10,
           is_active: x.is_active ?? true,
+          mapping_count: mappings.filter((m) => m.installation_type_key === x.installation_type_key).length,
         }))
         .sort((a, b) => {
           const sa = Number(a.sort_order ?? 0);
@@ -118,6 +121,7 @@ const AdminInstallationTypesTab = forwardRef(function AdminInstallationTypesTab(
         display_name: "",
         sort_order: (prev.length + 1) * 10,
         is_active: true,
+        mapping_count: 0,
       },
     ]);
   }
@@ -130,10 +134,23 @@ const AdminInstallationTypesTab = forwardRef(function AdminInstallationTypesTab(
     try {
       await onSave?.(
         draft.map((row, index) => ({
-          ...row,
+          installation_type_key: row.installation_type_key,
+          display_name: row.display_name,
           sort_order: Number.isFinite(Number(row.sort_order))
             ? Number(row.sort_order)
             : (index + 1) * 10,
+          is_active: row.is_active !== false,
+          atrium_mappings:
+            (Array.isArray(catalog?.installationTypeAtriumMappings)
+              ? catalog.installationTypeAtriumMappings
+              : []
+            )
+              .filter((mapping) => mapping.installation_type_key === row.installation_type_key)
+              .map((mapping) => ({
+                atrium_installation_type_code: mapping.atrium_installation_type_code,
+                atrium_installation_type_description: mapping.atrium_installation_type_description,
+                is_active: mapping.is_active !== false,
+              })),
         }))
       );
 
@@ -153,7 +170,7 @@ const AdminInstallationTypesTab = forwardRef(function AdminInstallationTypesTab(
     <div className="admin-grid">
       <AdminPanel
         title="Installatiesoorten"
-        subtitle="Beheer de installatiecategorieën die in Ember beschikbaar zijn. De volgorde wordt gebruikt in dropdowns en overzichten."
+        subtitle="Beheer de Ember-types die in formulieren, documenten en overzichten worden gebruikt. De Atrium-mapping en bijwerklog staan in de aparte tab Typebijwerker."
         actions={
           <>
             {isDirty ? (
@@ -198,6 +215,10 @@ const AdminInstallationTypesTab = forwardRef(function AdminInstallationTypesTab(
 
                     <span className="ember-label ember-label--muted">
                       sortering; {row.sort_order || "-"}
+                    </span>
+
+                    <span className="ember-label ember-label--muted">
+                      mappings; {row.mapping_count || 0}
                     </span>
                   </div>
                 </div>

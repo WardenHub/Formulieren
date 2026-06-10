@@ -145,10 +145,13 @@ select top 1
   fua.note,
   fua.workflow_title,
   fua.resolution_note,
-  fi.status as form_status
+  fi.status as form_status,
+  ab.installation_status
 from dbo.FormFollowUpAction fua
 join dbo.FormInstance fi
   on fi.form_instance_id = fua.form_instance_id
+left join dbo.AtriumInstallationBase ab
+  on ab.installatie_code = fi.atrium_installation_code
 where fua.follow_up_action_id = @followUpActionId
 `;
 

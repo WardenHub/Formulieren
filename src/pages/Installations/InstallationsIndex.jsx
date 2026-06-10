@@ -7,6 +7,10 @@ import { searchInstallations } from "@/api/emberApi.js";
 import { SearchIcon } from "@/components/ui/search";
 import { LoaderPinwheelIcon } from "@/components/ui/loader-pinwheel";
 import InstallationTypeTag from "@/components/InstallationTypeTag.jsx";
+import {
+  getInstallationStatusClassName,
+  getInstallationStatusLabel,
+} from "@/lib/installationStatus.js";
 
 export default function InstallationsIndex() {
   const [q, setQ] = useState("");
@@ -99,6 +103,16 @@ export default function InstallationsIndex() {
                   <div className="installations-row__code">
                     {i.atrium_installation_code}
                   </div>
+
+                  {i.installation_status ? (
+                    <span className={getInstallationStatusClassName(i.installation_status)}>
+                      {getInstallationStatusLabel(i.installation_status)}
+                    </span>
+                  ) : null}
+
+                  {i.BedrijfUnit ? (
+                    <span className="ember-label ember-label--muted">{i.BedrijfUnit}</span>
+                  ) : null}
 
                   {i.installation_type_key && (
                     <InstallationTypeTag

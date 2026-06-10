@@ -25,6 +25,15 @@ left join dbo.InstallationType it
 where a.installatie_code = @code;
 `;
 
+export const getInstallationArchiveStateSql = `
+select top 1
+  a.installatie_code as atrium_installation_code,
+  a.installation_status,
+  a.BedrijfUnit
+from dbo.AtriumInstallationBase a
+where a.installatie_code = @code;
+`;
+
 
 // ------------------------------
 // catalog; sections
@@ -242,7 +251,7 @@ export const upsertCustomValuesSql = `
 -- expects params: @code, @valuesJson, @updatedBy
 
 declare @installation_id uniqueidentifier;
-declare @atrium_installation_code nvarchar(64);
+declare @atrium_installation_code nvarchar(450);
 
 select
   @installation_id = i.installation_id,
@@ -423,7 +432,7 @@ end;
 
 -- 3) load installation context
 declare @installation_id uniqueidentifier;
-declare @atrium_installation_code nvarchar(64);
+declare @atrium_installation_code nvarchar(450);
 
 select
   @installation_id = i.installation_id,
@@ -583,6 +592,8 @@ select top (@take)
   i.installation_id,
   i.installation_type_key,
   it.display_name as installation_type_name,
+  a.BedrijfUnit,
+  a.installation_status,
 
   -- “naam” voor UI
   coalesce(nullif(a.obj_naam, ''), nullif(a.installatie_naam, ''), a.installatie_code) as installation_name,
@@ -614,4 +625,3 @@ order by
   end,
   a.installatie_code;
 `;
-

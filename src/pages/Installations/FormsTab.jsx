@@ -15,6 +15,7 @@ import {
   getFormsCatalog,
   getInstallationFormInstances,
 } from "../../api/emberApi.js";
+import { isHistoricalInstallation } from "../../lib/installationStatus.js";
 
 const STATUS_FILTER_OPTIONS = [
   { key: "INGEDIEND", label: "Ingediend" },
@@ -146,6 +147,7 @@ function getLastModifiedBy(item) {
 function canStartFollowUp(item) {
   const status = String(item?.status || "").trim();
   if (!item?.form_instance_id) return false;
+  if (isHistoricalInstallation(item)) return false;
   if (status === "INGETROKKEN") return false;
   return true;
 }
@@ -273,6 +275,8 @@ function PreflightRow({ item, kind, onOpenTab, showDivider }) {
 export default function FormsTab({
   code,
   installation,
+  readOnly = false,
+  readOnlyReason = "",
   isActive,
   activationToken,
   selectedFormCode,
@@ -364,6 +368,7 @@ export default function FormsTab({
   }, []);
 
   const typeKey = installation?.installation_type_key || null;
+  const historical = readOnly || isHistoricalInstallation(installation);
 
   useEffect(() => {
     let cancelled = false;
@@ -482,7 +487,7 @@ export default function FormsTab({
   const hasPreflight =
     Boolean(selectedFormCode) && Boolean(preflight) && !preflightLoading && !preflightError;
 
-  const okToStart = Boolean(preflight?.ok_to_start);
+  const okToStart = Boolean(preflight?.ok_to_start) && !historical;
 
   const formTypeOptions = useMemo(() => {
     const seen = new Map();
@@ -770,6 +775,12 @@ export default function FormsTab({
   return (
     <div className="forms-tab ember-page-stack">
       <div className="forms-start-panel">
+        {historical && (
+          <div className="ember-label ember-label--danger">
+            {readOnlyReason || "Deze installatie is historisch en alleen als dossier beschikbaar."}
+          </div>
+        )}
+
         <div className="muted ember-small-text">Kies een formulier om te starten.</div>
 
         <div className="forms-start-row">
@@ -777,7 +788,7 @@ export default function FormsTab({
             className="input forms-start-select"
             value={selectedFormCode || ""}
             onChange={(e) => onSelectForm?.(e.target.value || null)}
-            disabled={formsLoading}
+            disabled={formsLoading || historical}
           >
             <option value="">
               {formsLoading ? "Formulieren laden..." : "Selecteer formulier"}
@@ -794,9 +805,15 @@ export default function FormsTab({
           <button
             type="button"
             className="btn btn-secondary forms-nowrap-action"
-            disabled={!selectedFormCode || preflightLoading}
+            disabled={!selectedFormCode || preflightLoading || historical}
             onClick={() => onStartChecklist?.()}
-            title={selectedFormCode ? "Status controleren" : "Kies eerst een formulier"}
+            title={
+              historical
+                ? "Historische installatie; alleen dossier"
+                : selectedFormCode
+                  ? "Status controleren"
+                  : "Kies eerst een formulier"
+            }
             onMouseEnter={() => checklistIconRef.current?.startAnimation?.()}
             onMouseLeave={() => checklistIconRef.current?.stopAnimation?.()}
           >
@@ -935,11 +952,11 @@ export default function FormsTab({
                   const childPreflight = getChildPreflight(itemId);
                   const childBlocking = Array.isArray(childPreflight?.blocking) ? childPreflight.blocking : [];
                   const childWarnings = Array.isArray(childPreflight?.warnings) ? childPreflight.warnings : [];
-                  const childOkToStart = Boolean(childPreflight?.ok_to_start);
+                  const childOkToStart = Boolean(childPreflight?.ok_to_start) && !historical;
                   const childLoading = getChildPreflightLoading(itemId);
                   const childError = getChildPreflightError(itemId);
                   const childExpanded = expandedFollowUpForId === itemId;
-                  const canFollowUp = canStartFollowUp(item);
+                  const canFollowUp = !historical && canStartFollowUp(item);
                   const iconKey = String(itemId);
                   const openIconKey = `open-${itemId}`;
                   const childStartClickable =
@@ -1072,7 +1089,7 @@ export default function FormsTab({
                             <button
                               type="button"
                               className="btn btn-secondary forms-nowrap-action"
-                              disabled={!followUpFormCode || childLoading}
+                              disabled={!followUpFormCode || childLoading || historical}
                               onClick={() => runChildPreflight(itemId, followUpFormCode)}
                             >
                               <ClipboardCheckIcon size={18} />

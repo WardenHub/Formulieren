@@ -24,6 +24,7 @@ select
   c.instcomp_aantal,
   c.instcomp_omschrijving,
   c.instcomp_serienr,
+  c.instcomp_notitie,
   c.instcomp_locatie,
 
   c.instcomp_datum_plaatsing,

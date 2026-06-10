@@ -17,6 +17,10 @@ import {
 import { buildAssistantCommandPatches } from "./formsAssistantCommandService.js";
 import { transcribeAudioBuffer, normalizeTranscriptText } from "./formsAssistantSpeechService.js";
 import { uploadAssistantAudioToBlob } from "./formsAssistantAudioStorageService.js";
+import {
+  assertInstallationWritable,
+  isHistoricalInstallationStatus,
+} from "./installationsService.js";
 
 function getUserDisplayName(user: any) {
   return user?.name || user?.upn || user?.email || user?.objectId || "unknown";
@@ -154,6 +158,10 @@ async function getOrCreateSession(args: {
 }) {
   const ctx = await getContextOrThrow(args.code, args.instanceId);
   const requestedId = parsePositiveInt(args.assistantSessionId);
+
+  if (isHistoricalInstallationStatus(ctx.installation_status)) {
+    throw new Error("historical installation read-only");
+  }
 
   if (requestedId != null) {
     const rows = await sqlQuery(getAssistantSessionSql, {
@@ -476,6 +484,8 @@ export async function markAssistantPatchesApplied(
   const appliedDraftRev =
     payload?.applied_draft_rev == null ? null : Number(payload.applied_draft_rev);
 
+  await assertInstallationWritable(cleanCode);
+
   const rows = await sqlQuery(markAssistantPatchesAppliedSql, {
     code: cleanCode,
     formInstanceId: instanceId,
@@ -499,6 +509,8 @@ export async function markAssistantPatchesRejected(
 
   const patchIds = Array.isArray(payload?.patch_ids) ? payload.patch_ids : [];
   const rejectedReason = String(payload?.reason || "").trim() || null;
+
+  await assertInstallationWritable(cleanCode);
 
   const rows = await sqlQuery(markAssistantPatchesRejectedSql, {
     code: cleanCode,

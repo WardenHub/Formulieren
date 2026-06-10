@@ -450,10 +450,6 @@ export default function FormRunnerBase({ mode }) {
     return String(version).trim();
   }, [instance]);
 
-  const readonlyBanner = useMemo(() => {
-    return buildReadonlyBanner(status, statusLbl);
-  }, [status, statusLbl]);
-
   function allowedActions(s) {
     const st = String(s || "");
 
@@ -470,7 +466,23 @@ export default function FormRunnerBase({ mode }) {
     return { validate: false, save: false, submit: false, withdraw: false, reopen: false };
   }
 
-  const actions = useMemo(() => allowedActions(status), [status]);
+  const isHistorical = String(instance?.installation_status || "").trim().toUpperCase() === "J";
+  const readonlyBanner = useMemo(() => {
+    if (isHistorical) {
+      return {
+        title: "Installatie is historisch",
+        text: "Deze installatie is alleen als dossier beschikbaar. Nieuwe wijzigingen zijn uitgeschakeld.",
+      };
+    }
+    return buildReadonlyBanner(status, statusLbl);
+  }, [status, statusLbl, isHistorical]);
+
+  const actions = useMemo(() => {
+    if (isHistorical) {
+      return { validate: false, save: false, submit: false, withdraw: false, reopen: false };
+    }
+    return allowedActions(status);
+  }, [status, isHistorical]);
 
   const showValidate = actions.validate;
   const showSave = actions.save;
@@ -480,8 +492,8 @@ export default function FormRunnerBase({ mode }) {
 
   const canEditAnswers = actions.save;
   const canEditMetadata = actions.save;
-  const canEditEvidence = ["CONCEPT", "INGEDIEND", "IN_BEHANDELING"].includes(status);
-  const canDeleteEvidence = status === "CONCEPT";
+  const canEditEvidence = !isHistorical && ["CONCEPT", "INGEDIEND", "IN_BEHANDELING"].includes(status);
+  const canDeleteEvidence = !isHistorical && status === "CONCEPT";
 
   const hasMetadataChanges = useMemo(() => {
     return !areInstanceMetadataEqual(instanceMetadata, savedInstanceMetadata);

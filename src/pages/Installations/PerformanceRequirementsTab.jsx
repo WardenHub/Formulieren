@@ -209,7 +209,7 @@ function StepperInput({ label, value, disabled, onChange }) {
 }
 
 const PerformanceRequirementsTab = forwardRef(function PerformanceRequirementsTab(
-  { code, onDirtyChange, onSavingChange, onSaveOk, onSaved, onAnyOpenChange },
+  { code, onDirtyChange, onSavingChange, onSaveOk, onSaved, onAnyOpenChange, readOnly = false },
   ref
 ) {
   const initialJsonRef = useRef("");
@@ -293,8 +293,8 @@ const PerformanceRequirementsTab = forwardRef(function PerformanceRequirementsTa
   // ---- dirty
   useEffect(() => {
     const snap = JSON.stringify({ normeringKey, rows });
-    onDirtyChange?.(snap !== initialJsonRef.current);
-  }, [normeringKey, rows, onDirtyChange]);
+    onDirtyChange?.(readOnly ? false : snap !== initialJsonRef.current);
+  }, [normeringKey, rows, onDirtyChange, readOnly]);
 
   // ---- any open
   useEffect(() => {
@@ -345,6 +345,7 @@ const PerformanceRequirementsTab = forwardRef(function PerformanceRequirementsTa
   );
 
   function updateRow(idx, patch) {
+    if (readOnly) return;
     setRows((prev) => prev.map((r, i) => (i === idx ? { ...r, ...patch } : r)));
   }
 
@@ -374,7 +375,7 @@ const PerformanceRequirementsTab = forwardRef(function PerformanceRequirementsTa
   useImperativeHandle(ref, () => ({ save, expandAll, collapseAll }));
 
   function addRow() {
-    if (saving) return;
+    if (saving || readOnly) return;
 
     const nk = String(normeringKey || "").trim() || DEFAULT_NORMERING;
     if (nk !== normeringKey) setNormeringKey(nk);
@@ -408,6 +409,7 @@ const PerformanceRequirementsTab = forwardRef(function PerformanceRequirementsTa
   }
 
   function removeRow(idx) {
+    if (readOnly) return;
     setRows((prev) => prev.filter((_, i) => i !== idx));
   }
 
@@ -448,7 +450,7 @@ const PerformanceRequirementsTab = forwardRef(function PerformanceRequirementsTa
   }
 
   async function save() {
-    if (saving) return;
+    if (saving || readOnly) return;
 
     const msg = validate();
     if (msg) {
@@ -633,7 +635,7 @@ const PerformanceRequirementsTab = forwardRef(function PerformanceRequirementsTa
           type="button"
           className="btn"
           onClick={addRow}
-          disabled={saving}
+          disabled={saving || readOnly}
           onMouseEnter={() => addIconRef.current?.startAnimation?.()}
           onMouseLeave={() => addIconRef.current?.stopAnimation?.()}
           style={{ display: "flex", alignItems: "center", gap: 8 }}
@@ -660,7 +662,7 @@ const PerformanceRequirementsTab = forwardRef(function PerformanceRequirementsTa
               className="input"
               value={normeringKey}
               onChange={(e) => setNormeringKey(e.target.value || DEFAULT_NORMERING)}
-              disabled={saving}
+              disabled={saving || readOnly}
             >
               <option value="">kies...</option>
               {normeringen.map((n) => (
@@ -777,21 +779,21 @@ const PerformanceRequirementsTab = forwardRef(function PerformanceRequirementsTa
 
                     {rowExternEnabled && (
                       <Badge variant={badgeVariant(calc.dm)} title="Risicoklasse extern">
-                        Extern: {calc.riskE ?? "—"}
+                        Extern: {calc.riskE ?? "n.v.t."}
                       </Badge>
                     )}
 
                     {rowInternEnabled && (
                       <Badge variant={badgeVariant(calc.dm)} title="Risicoklasse intern">
-                        Intern: {calc.riskI ?? "—"}
+                        Intern: {calc.riskI ?? "n.v.t."}
                       </Badge>
                     )}
 
                     {(rowInternEnabled || rowExternEnabled) && (
                       <Badge variant={badgeVariant(calc.dm)} title="O&O max voor deze regel">
                         O&amp;O{" "}
-                        {rowInternEnabled ? `intern: ${calc.imax ?? "—"} ` : ""}
-                        {rowExternEnabled ? `· extern: ${calc.emax ?? "—"}` : ""}
+                        {rowInternEnabled ? `intern: ${calc.imax ?? "n.v.t."} ` : ""}
+                        {rowExternEnabled ? `· extern: ${calc.emax ?? "n.v.t."}` : ""}
                       </Badge>
                     )}
 
@@ -815,7 +817,7 @@ const PerformanceRequirementsTab = forwardRef(function PerformanceRequirementsTa
                     type="button"
                     className="icon-btn icon-btn--danger"
                     title="verwijderen"
-                    disabled={saving}
+                    disabled={saving || readOnly}
                     onClick={(e) => {
                       e.preventDefault();
                       e.stopPropagation();
@@ -860,7 +862,7 @@ const PerformanceRequirementsTab = forwardRef(function PerformanceRequirementsTa
                       className="input"
                       value={r.gebruikersfunctie_key}
                       onChange={(e) => updateRow(idx, { gebruikersfunctie_key: e.target.value })}
-                      disabled={saving}
+                      disabled={saving || readOnly}
                     >
                       {matrixForNorm.length > 0
                         ? matrixForNorm.map((m) => {
@@ -891,7 +893,7 @@ const PerformanceRequirementsTab = forwardRef(function PerformanceRequirementsTa
                       onChange={(e) =>
                         updateRow(idx, { doormelding_mode: String(e.target.value || "GEEN") })
                       }
-                      disabled={saving}
+                      disabled={saving || readOnly}
                     >
                       <option value="GEEN">geen</option>
                       <option value="ZONDER_VERTRAGING">zonder vertraging</option>
@@ -906,35 +908,35 @@ const PerformanceRequirementsTab = forwardRef(function PerformanceRequirementsTa
                       value={r.row_label ?? ""}
                       onChange={(e) => updateRow(idx, { row_label: e.target.value })}
                       placeholder='bijv. "hoofdgebouw"; "bijgebouw"; "magazijn 1"'
-                      disabled={saving}
+                      disabled={saving || readOnly}
                     />
                   </div>
 
                   <StepperInput
                     label="automatische melders"
                     value={r.automatic_detectors ?? 0}
-                    disabled={saving}
+                    disabled={saving || readOnly}
                     onChange={(v) => updateRow(idx, { automatic_detectors: v })}
                   />
 
                   <StepperInput
                     label="handmelders"
                     value={r.manual_call_points ?? 0}
-                    disabled={saving}
+                    disabled={saving || readOnly}
                     onChange={(v) => updateRow(idx, { manual_call_points: v })}
                   />
 
                   <StepperInput
                     label="vlamdetectoren"
                     value={r.flame_detectors ?? 0}
-                    disabled={saving}
+                    disabled={saving || readOnly}
                     onChange={(v) => updateRow(idx, { flame_detectors: v })}
                   />
 
                   <StepperInput
                     label="lijnrookmelders"
                     value={r.linear_smoke_detectors ?? 0}
-                    disabled={saving}
+                    disabled={saving || readOnly}
                     onChange={(v) => updateRow(idx, { linear_smoke_detectors: v })}
                   />
 
@@ -942,7 +944,7 @@ const PerformanceRequirementsTab = forwardRef(function PerformanceRequirementsTa
                     <StepperInput
                       label="aspiratie openingen"
                       value={r.aspirating_openings ?? 0}
-                      disabled={saving}
+                      disabled={saving || readOnly}
                       onChange={(v) => updateRow(idx, { aspirating_openings: v })}
                     />
                   </div>

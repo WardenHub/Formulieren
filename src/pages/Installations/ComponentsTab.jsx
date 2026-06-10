@@ -239,6 +239,7 @@ const ComponentsTab = forwardRef(function ComponentsTab({ code, onAnyOpenChange 
     return items.filter((it) => {
       const parts = [
         it?.instcomp_omschrijving,
+        it?.instcomp_notitie,
         it?.instcomp_serienr,
         it?.instcomp_locatie,
         it?.artikel_code,
@@ -422,6 +423,7 @@ const ComponentsTab = forwardRef(function ComponentsTab({ code, onAnyOpenChange 
 
             const metaLine = artikel ? `artikel ${artikel}` : tarief ? `tarief ${tarief}` : null;
 
+            const notitie = normalizeStr(it?.instcomp_notitie);
             const bronGcid = normalizeStr(it?.source_instcomp_gcid);
             const geladenAt = formatDateTime(it?.data_loaded_at);
 
@@ -446,6 +448,7 @@ const ComponentsTab = forwardRef(function ComponentsTab({ code, onAnyOpenChange 
                     </div>
 
                     {metaLine ? <div className="comp-meta">{metaLine}</div> : null}
+                    {notitie ? <div className="comp-meta">{notitie}</div> : null}
                   </div>
 
                   <div className="comp-head-right">

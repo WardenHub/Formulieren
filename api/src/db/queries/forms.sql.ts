@@ -282,6 +282,8 @@ base as (
     fi.instance_note,
     fi.parent_instance_id,
     fi.atrium_installation_code,
+    ab.installation_status,
+    ab.BedrijfUnit,
     fi.created_at,
     fi.created_by,
     fi.updated_at,
@@ -321,6 +323,8 @@ base as (
     on parent_fv.form_version_id = parent_fi.form_version_id
   left join dbo.FormDefinition parent_fd
     on parent_fd.form_id = parent_fv.form_id
+  left join dbo.AtriumInstallationBase ab
+    on ab.installatie_code = fi.atrium_installation_code
   where fi.atrium_installation_code = @code
 ),
 filtered as (
@@ -353,6 +357,8 @@ select
   instance_note,
   parent_instance_id,
   atrium_installation_code,
+  installation_status,
+  BedrijfUnit,
   created_at,
   created_by,
   updated_at,
@@ -393,6 +399,8 @@ end;
 select top 1
   fi.form_instance_id,
   fi.atrium_installation_code,
+  ab.installation_status,
+  ab.BedrijfUnit,
   fi.installation_id,
   fi.form_version_id,
   fi.status,
@@ -435,6 +443,8 @@ join dbo.FormDefinition fd
   on fd.form_id = fv.form_id
 left join dbo.FormAnswer fa
   on fa.form_instance_id = fi.form_instance_id
+left join dbo.AtriumInstallationBase ab
+  on ab.installatie_code = fi.atrium_installation_code
 where fi.form_instance_id = @instanceId
   and fi.atrium_installation_code = @code;
 `;

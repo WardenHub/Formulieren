@@ -15,6 +15,7 @@ import {
   updateFormFollowUpStatusSql,
   updateFormFollowUpNoteSql,
 } from "../db/queries/formFollowUps.sql.js";
+import { isHistoricalInstallationStatus } from "./installationsService.js";
 
 type UserContext = {
   user: any;
@@ -93,8 +94,14 @@ function buildAllowedActions(item: any, followUpSummary: any, roles: string[]) {
   const hints: Record<string, string> = {};
 
   const status = String(item?.status || "").trim();
+  const historical = isHistoricalInstallationStatus(item?.installation_status);
   const manager = isManager(roles);
   const canMarkDone = Boolean(followUpSummary?.can_mark_form_done);
+
+  if (historical) {
+    hints.historical = "Deze installatie is historisch en alleen als dossier beschikbaar.";
+    return { allowed, hints };
+  }
 
   if (manager && status === "INGEDIEND") {
     allowed.set_in_behandeling = true;
@@ -157,6 +164,7 @@ async function maybeAutoClaim(
 ) {
   if (!autoClaim) return false;
   if (!isManager(roles)) return false;
+  if (isHistoricalInstallationStatus(item?.installation_status)) return false;
   if (String(item?.status || "").trim() !== "INGEDIEND") return false;
 
   await sqlQuery(setFormInstanceInBehandelingIfSubmittedSql, {
@@ -314,6 +322,8 @@ export async function getMonitorList(input: {
 
     installatie_code: r.atrium_installation_code ?? null,
     installatie_naam: r.installatie_naam ?? null,
+    installation_status: r.installation_status ?? null,
+    BedrijfUnit: r.BedrijfUnit ?? null,
     object_code: r.object_code ?? null,
     object_name: r.obj_naam ?? null,
     gebruiker_code: r.gebruiker_code ?? null,
@@ -421,6 +431,10 @@ export async function runMonitorFormStatusAction(formInstanceIdRaw: any, action:
   const item = await getMonitorDetailRow(formInstanceId);
   if (!item) return { error: "not found" };
 
+  if (isHistoricalInstallationStatus(item.installation_status)) {
+    throw new Error("historical installation read-only");
+  }
+
   const followUpSummary = await getFollowUpSummary(formInstanceId);
 
   assertFormStatusActionAllowed(item, action, context.roles || [], followUpSummary);
@@ -453,6 +467,10 @@ export async function runMonitorFollowUpStatusAction(
   const rows = await sqlQuery(getFormFollowUpByIdSql, { followUpActionId });
   const followUpRow: any = rows?.[0] ?? null;
   if (!followUpRow) return { error: "not found" };
+
+  if (isHistoricalInstallationStatus(followUpRow.installation_status)) {
+    throw new Error("historical installation read-only");
+  }
 
   assertFollowUpActionAllowed(followUpRow, action, context.roles || []);
 
@@ -505,6 +523,10 @@ export async function updateMonitorFollowUpNote(
   const existingRows = await sqlQuery(getFormFollowUpByIdSql, { followUpActionId });
   const existing = existingRows?.[0] ?? null;
   if (!existing) return { error: "not found" };
+
+  if (isHistoricalInstallationStatus(existing.installation_status)) {
+    throw new Error("historical installation read-only");
+  }
 
   const rows = await sqlQuery(updateFormFollowUpNoteSql, {
     followUpActionId,
