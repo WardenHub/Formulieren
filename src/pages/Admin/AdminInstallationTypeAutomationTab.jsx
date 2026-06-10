@@ -1,6 +1,10 @@
 import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
 import { RefreshCWIcon } from "@/components/ui/refresh-cw";
 import { PlusIcon } from "@/components/ui/plus";
+import { ChevronDownIcon } from "@/components/ui/chevron-down";
+import { ChevronRightIcon } from "@/components/ui/chevron-right";
+import { ChevronsDownUpIcon } from "@/components/ui/chevrons-down-up";
+import { ChevronsUpDownIcon } from "@/components/ui/chevrons-up-down";
 import { initializeInstallationTypesFromAtrium } from "../../api/emberApi.js";
 
 function normalizeDraft(catalog) {
@@ -78,12 +82,26 @@ const AdminInstallationTypeAutomationTab = forwardRef(function AdminInstallation
   const [runBusy, setRunBusy] = useState(false);
   const [runResult, setRunResult] = useState(null);
   const [runError, setRunError] = useState("");
+  const [typeOpenMap, setTypeOpenMap] = useState({});
+  const [auditOpenMap, setAuditOpenMap] = useState({});
 
   const runIconRef = useRef(null);
   const addIconRefs = useRef({});
+  const collapseAllIconRef = useRef(null);
 
   useEffect(() => {
     setDraft(normalizeDraft(catalog));
+  }, [catalog]);
+
+  useEffect(() => {
+    setTypeOpenMap((prev) => {
+      const next = { ...prev };
+      for (const row of normalizeDraft(catalog)) {
+        const key = row.installation_type_key || row.display_name || "unknown";
+        if (next[key] === undefined) next[key] = false;
+      }
+      return next;
+    });
   }, [catalog]);
 
   const baseSnapshot = useMemo(() => JSON.stringify(normalizeDraft(catalog)), [catalog]);
@@ -105,12 +123,77 @@ const AdminInstallationTypeAutomationTab = forwardRef(function AdminInstallation
   }, [catalog]);
 
   useEffect(() => {
+    setAuditOpenMap((prev) => {
+      const next = { ...prev };
+      for (const audit of auditGroups) {
+        if (next[audit.run_id] === undefined) next[audit.run_id] = false;
+      }
+      return next;
+    });
+  }, [auditGroups]);
+
+  useEffect(() => {
     onDirtyChange?.(isDirty);
   }, [isDirty, onDirtyChange]);
 
   useEffect(() => {
     onSavingChange?.(saving || runBusy);
   }, [saving, runBusy, onSavingChange]);
+
+  const anyOpen = useMemo(() => {
+    return Object.values(typeOpenMap).some(Boolean) || Object.values(auditOpenMap).some(Boolean);
+  }, [typeOpenMap, auditOpenMap]);
+
+  function expandAll() {
+    setTypeOpenMap((prev) => {
+      const next = { ...prev };
+      for (const row of draft) {
+        const key = row.installation_type_key || row.display_name || "unknown";
+        next[key] = true;
+      }
+      return next;
+    });
+
+    setAuditOpenMap((prev) => {
+      const next = { ...prev };
+      for (const audit of auditGroups) next[audit.run_id] = true;
+      return next;
+    });
+  }
+
+  function collapseAll() {
+    setTypeOpenMap((prev) => {
+      const next = { ...prev };
+      for (const row of draft) {
+        const key = row.installation_type_key || row.display_name || "unknown";
+        next[key] = false;
+      }
+      return next;
+    });
+
+    setAuditOpenMap((prev) => {
+      const next = { ...prev };
+      for (const audit of auditGroups) next[audit.run_id] = false;
+      return next;
+    });
+  }
+
+  useEffect(() => {
+    function onKeyDown(e) {
+      const key = String(e.key || "");
+      if (!e.altKey || (key !== "q" && key !== "Q")) return;
+
+      e.preventDefault();
+      if (anyOpen) collapseAll();
+      else expandAll();
+
+      collapseAllIconRef.current?.startAnimation?.();
+      window.setTimeout(() => collapseAllIconRef.current?.stopAnimation?.(), 650);
+    }
+
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [anyOpen, draft, auditGroups]);
 
   function setMapping(typeIndex, mappingIndex, patch) {
     setDraft((prev) =>
@@ -204,16 +287,16 @@ const AdminInstallationTypeAutomationTab = forwardRef(function AdminInstallation
     }
   }
 
-  useImperativeHandle(ref, () => ({ save }));
+  useImperativeHandle(ref, () => ({ save, expandAll, collapseAll }));
 
   if (loading && draft.length === 0) {
-    return <div className="muted">laden; typebijwerker</div>;
+    return <div className="muted">laden; installatiesoort bijwerker</div>;
   }
 
   return (
     <div className="admin-grid">
       <AdminPanel
-        title="Typebijwerker"
+        title="Installatiesoort bijwerker"
         subtitle="Beheer de Atrium-codekoppelingen, draai de handmatige initialisatie en bekijk de audit van eerdere runs."
         actions={
           <>
@@ -222,6 +305,24 @@ const AdminInstallationTypeAutomationTab = forwardRef(function AdminInstallation
             ) : (
               <span className="ember-label ember-label--success">Opgeslagen</span>
             )}
+
+            <button
+              type="button"
+              className="icon-btn"
+              title={anyOpen ? "alles inklappen" : "alles uitklappen"}
+              onClick={() => {
+                if (anyOpen) collapseAll();
+                else expandAll();
+              }}
+              onMouseEnter={() => collapseAllIconRef.current?.startAnimation?.()}
+              onMouseLeave={() => collapseAllIconRef.current?.stopAnimation?.()}
+            >
+              {anyOpen ? (
+                <ChevronsDownUpIcon ref={collapseAllIconRef} size={18} className="nav-anim-icon" />
+              ) : (
+                <ChevronsUpDownIcon ref={collapseAllIconRef} size={18} className="nav-anim-icon" />
+              )}
+            </button>
 
             <button
               type="button"
@@ -262,27 +363,37 @@ const AdminInstallationTypeAutomationTab = forwardRef(function AdminInstallation
 
         <div className="admin-check-grid">
           {draft.map((row, typeIndex) => (
-            <div key={row.installation_type_key || typeIndex} className="admin-subcard">
-              <div className="admin-toolbar">
-                <div className="admin-toolbar-title">
-                  <div className="admin-subcard-title">
+            <div key={row.installation_type_key || typeIndex} className="admin-subcard admin-collapse-card">
+              <button
+                type="button"
+                className="admin-section-head"
+                onClick={() =>
+                  setTypeOpenMap((prev) => ({
+                    ...prev,
+                    [row.installation_type_key || row.display_name || "unknown"]:
+                      !prev[row.installation_type_key || row.display_name || "unknown"],
+                  }))
+                }
+                onMouseEnter={() => addIconRefs.current[typeIndex]?.startAnimation?.()}
+                onMouseLeave={() => addIconRefs.current[typeIndex]?.stopAnimation?.()}
+              >
+                <div className="admin-section-head-main">
+                  <div className="admin-section-title">
                     {row.display_name || row.installation_type_key || "Onbekend type"}
                   </div>
-                  <div className="ember-label-row admin-inline-labels">
-                    <span className="ember-label ember-label--muted">
-                      key; {row.installation_type_key || "-"}
-                    </span>
-                    <span className="ember-label ember-label--muted">
-                      mappings; {row.atrium_mappings.length}
-                    </span>
+                  <div className="admin-section-sub">
+                    key; {row.installation_type_key || "-"} ; mappings; {row.atrium_mappings.length}
                   </div>
                 </div>
 
-                <div className="admin-toolbar-actions">
+                <div className="ember-label-row admin-inline-labels">
                   <button
                     type="button"
                     className="btn btn-secondary"
-                    onClick={() => addMapping(typeIndex)}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      addMapping(typeIndex);
+                    }}
                     onMouseEnter={() => addIconRefs.current[typeIndex]?.startAnimation?.()}
                     onMouseLeave={() => addIconRefs.current[typeIndex]?.stopAnimation?.()}
                   >
@@ -295,84 +406,91 @@ const AdminInstallationTypeAutomationTab = forwardRef(function AdminInstallation
                     />
                     Code toevoegen
                   </button>
+                  {typeOpenMap[row.installation_type_key || row.display_name || "unknown"] ? (
+                    <ChevronDownIcon size={18} className="nav-anim-icon" />
+                  ) : (
+                    <ChevronRightIcon size={18} className="nav-anim-icon" />
+                  )}
                 </div>
-              </div>
+              </button>
 
-              {row.atrium_mappings.length ? (
-                <div style={{ display: "grid", gap: 12 }}>
-                  {row.atrium_mappings.map((mapping, mappingIndex) => (
-                    <div key={`${mapping.mapping_id || "new"}:${mappingIndex}`} className="admin-subcard">
-                      <div className="cf-grid">
-                        <div className="cf-row">
-                          <div className="cf-label">
-                            <div className="cf-label-text">Atrium code</div>
+              {typeOpenMap[row.installation_type_key || row.display_name || "unknown"] ? (
+                row.atrium_mappings.length ? (
+                  <div style={{ display: "grid", gap: 12, marginTop: 6 }}>
+                    {row.atrium_mappings.map((mapping, mappingIndex) => (
+                      <div key={`${mapping.mapping_id || "new"}:${mappingIndex}`} className="admin-subcard">
+                        <div className="cf-grid">
+                          <div className="cf-row">
+                            <div className="cf-label">
+                              <div className="cf-label-text">Atrium code</div>
+                            </div>
+                            <div className="cf-control">
+                              <input
+                                className="input"
+                                value={mapping.atrium_installation_type_code}
+                                onChange={(e) =>
+                                  setMapping(typeIndex, mappingIndex, {
+                                    atrium_installation_type_code: e.target.value,
+                                  })
+                                }
+                                placeholder="02"
+                              />
+                            </div>
                           </div>
-                          <div className="cf-control">
-                            <input
-                              className="input"
-                              value={mapping.atrium_installation_type_code}
-                              onChange={(e) =>
-                                setMapping(typeIndex, mappingIndex, {
-                                  atrium_installation_type_code: e.target.value,
-                                })
-                              }
-                              placeholder="02"
-                            />
-                          </div>
-                        </div>
 
-                        <div className="cf-row">
-                          <div className="cf-label">
-                            <div className="cf-label-text">Omschrijving</div>
+                          <div className="cf-row">
+                            <div className="cf-label">
+                              <div className="cf-label-text">Omschrijving</div>
+                            </div>
+                            <div className="cf-control">
+                              <input
+                                className="input"
+                                value={mapping.atrium_installation_type_description}
+                                onChange={(e) =>
+                                  setMapping(typeIndex, mappingIndex, {
+                                    atrium_installation_type_description: e.target.value,
+                                  })
+                                }
+                                placeholder="Brandmeldsysteem"
+                              />
+                            </div>
                           </div>
-                          <div className="cf-control">
-                            <input
-                              className="input"
-                              value={mapping.atrium_installation_type_description}
-                              onChange={(e) =>
-                                setMapping(typeIndex, mappingIndex, {
-                                  atrium_installation_type_description: e.target.value,
-                                })
-                              }
-                              placeholder="Brandmeldsysteem"
-                            />
-                          </div>
-                        </div>
 
-                        <div className="cf-row">
-                          <div className="cf-label">
-                            <div className="cf-label-text">Actief</div>
-                          </div>
-                          <div className="cf-control" style={{ display: "flex", gap: 8 }}>
-                            <select
-                              className="input"
-                              value={mapping.is_active ? "1" : "0"}
-                              onChange={(e) =>
-                                setMapping(typeIndex, mappingIndex, {
-                                  is_active: e.target.value === "1",
-                                })
-                              }
-                            >
-                              <option value="1">Ja</option>
-                              <option value="0">Nee</option>
-                            </select>
+                          <div className="cf-row">
+                            <div className="cf-label">
+                              <div className="cf-label-text">Actief</div>
+                            </div>
+                            <div className="cf-control" style={{ display: "flex", gap: 8 }}>
+                              <select
+                                className="input"
+                                value={mapping.is_active ? "1" : "0"}
+                                onChange={(e) =>
+                                  setMapping(typeIndex, mappingIndex, {
+                                    is_active: e.target.value === "1",
+                                  })
+                                }
+                              >
+                                <option value="1">Ja</option>
+                                <option value="0">Nee</option>
+                              </select>
 
-                            <button
-                              type="button"
-                              className="btn btn-secondary"
-                              onClick={() => removeMapping(typeIndex, mappingIndex)}
-                            >
-                              Verwijderen
-                            </button>
+                              <button
+                                type="button"
+                                className="btn btn-secondary"
+                                onClick={() => removeMapping(typeIndex, mappingIndex)}
+                              >
+                                Verwijderen
+                              </button>
+                            </div>
                           </div>
                         </div>
                       </div>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <div className="muted">Nog geen Atrium-code gekoppeld.</div>
-              )}
+                    ))}
+                  </div>
+                ) : (
+                  <div className="muted" style={{ padding: "0 14px 14px" }}>Nog geen Atrium-code gekoppeld.</div>
+                )
+              ) : null}
             </div>
           ))}
         </div>
@@ -391,30 +509,42 @@ const AdminInstallationTypeAutomationTab = forwardRef(function AdminInstallation
               const unknownDetails = audit.details.filter((detail) => detail.detail_kind === "unknown");
 
               return (
-                <div key={audit.run_id} className="admin-subcard">
-                  <div className="admin-toolbar">
-                    <div className="admin-toolbar-title">
-                      <div className="admin-subcard-title">
+                <div key={audit.run_id} className="admin-subcard admin-collapse-card">
+                  <button
+                    type="button"
+                    className="admin-section-head"
+                    onClick={() =>
+                      setAuditOpenMap((prev) => ({
+                        ...prev,
+                        [audit.run_id]: !prev[audit.run_id],
+                      }))
+                    }
+                  >
+                    <div className="admin-section-head-main">
+                      <div className="admin-section-title">
                         {formatDateTime(audit.completed_at || audit.started_at)}
                       </div>
-                      <div className="ember-label-row admin-inline-labels">
-                        <span className="ember-label ember-label--muted">
-                          bron; {audit.trigger_source || "onbekend"}
-                        </span>
-                        <span className="ember-label ember-label--muted">
-                          door; {audit.triggered_by || "onbekend"}
-                        </span>
-                        <span className="ember-label ember-label--success">
-                          bijgewerkt; {audit.updated_total}
-                        </span>
-                        <span className="ember-label ember-label--warning">
-                          onbekend; {audit.unknown_no_mapping_count}
-                        </span>
+                      <div className="admin-section-sub">
+                        bron; {audit.trigger_source || "onbekend"} ; door; {audit.triggered_by || "onbekend"}
                       </div>
                     </div>
-                  </div>
 
-                  {appliedDetails.length ? (
+                    <div className="ember-label-row admin-inline-labels">
+                      <span className="ember-label ember-label--success">
+                        bijgewerkt; {audit.updated_total}
+                      </span>
+                      <span className="ember-label ember-label--warning">
+                        onbekend; {audit.unknown_no_mapping_count}
+                      </span>
+                      {auditOpenMap[audit.run_id] ? (
+                        <ChevronDownIcon size={18} className="nav-anim-icon" />
+                      ) : (
+                        <ChevronRightIcon size={18} className="nav-anim-icon" />
+                      )}
+                    </div>
+                  </button>
+
+                  {auditOpenMap[audit.run_id] && appliedDetails.length ? (
                     <div style={{ display: "grid", gap: 8 }}>
                       <div className="admin-panel-subtitle">Toegepast</div>
                       {appliedDetails.map((detail, index) => (
@@ -430,7 +560,7 @@ const AdminInstallationTypeAutomationTab = forwardRef(function AdminInstallation
                     </div>
                   ) : null}
 
-                  {unknownDetails.length ? (
+                  {auditOpenMap[audit.run_id] && unknownDetails.length ? (
                     <div style={{ display: "grid", gap: 8, marginTop: 12 }}>
                       <div className="admin-panel-subtitle">Onbekend of incompleet</div>
                       <div className="ember-label-row admin-inline-labels">

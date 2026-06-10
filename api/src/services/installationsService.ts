@@ -8,6 +8,7 @@ import {
   getCatalogExternalFieldsSql,
   getCatalogCustomFieldsSql,
   getCatalogDocumentTypesSql,
+  getCatalogDocumentTypeAttachmentParentsSql,
   getCatalogCustomFieldOptionsSql,
   upsertCustomValuesSql,
   searchInstallationsSql,
@@ -146,7 +147,7 @@ export async function getCatalog(code: string) {
 
   const installationTypeKey = instRows?.[0]?.installation_type_key ?? null;
 
-  const [sections, externalFields, customFields, documentTypes, optionRows] =
+  const [sections, externalFields, customFields, documentTypes, documentTypeAttachmentParents, optionRows] =
     await Promise.all([
       sqlQuery(getCatalogSectionsSql),
 
@@ -156,6 +157,8 @@ export async function getCatalog(code: string) {
       sqlQuery(getCatalogCustomFieldsSql, { installationTypeKey }),
 
       sqlQuery(getCatalogDocumentTypesSql, { installationTypeKey }),
+
+      sqlQuery(getCatalogDocumentTypeAttachmentParentsSql),
 
       sqlQuery(getCatalogCustomFieldOptionsSql),
     ]);
@@ -177,7 +180,30 @@ export async function getCatalog(code: string) {
     });
   }
 
-  return { sections, fields, documentTypes, fieldOptions };
+  const attachmentParentsByType: Record<string, string[]> = {};
+  for (const row of documentTypeAttachmentParents || []) {
+    const typeKey = String(row?.document_type_key || "").trim();
+    const parentTypeKey = String(row?.parent_document_type_key || "").trim();
+    if (!typeKey || !parentTypeKey) continue;
+    if (!attachmentParentsByType[typeKey]) attachmentParentsByType[typeKey] = [];
+    attachmentParentsByType[typeKey].push(parentTypeKey);
+  }
+
+  return {
+    sections,
+    fields,
+    documentTypes: (documentTypes || []).map((row: any) => ({
+      document_type_key: row.document_type_key,
+      document_type_name: row.document_type_name,
+      section_key: row.section_key ?? null,
+      sort_order: row.sort_order == null ? null : Number(row.sort_order),
+      is_attachment_only: row.is_attachment_only === true,
+      attachment_parent_type_keys: attachmentParentsByType[String(row.document_type_key || "").trim()] || [],
+      is_active: row.is_active === false ? false : true,
+      is_required: row.is_required === true,
+    })),
+    fieldOptions,
+  };
 }
 
 export async function getCustomValues(code: string) {
@@ -232,12 +258,15 @@ export async function getInstallationDocuments(code: string) {
   >();
 
   for (const r of rows as any[]) {
-    if (!byType.has(r.document_type_key)) {
-      byType.set(r.document_type_key, {
-        document_type_key: r.document_type_key,
-        document_type_name: r.document_type_name,
-        section_key: r.section_key ?? null,
-        sort_order: r.sort_order ?? null,
+    const bucketTypeKey = String(r.bucket_document_type_key || r.document_type_key || "").trim();
+    if (!bucketTypeKey) continue;
+
+    if (!byType.has(bucketTypeKey)) {
+      byType.set(bucketTypeKey, {
+        document_type_key: bucketTypeKey,
+        document_type_name: r.bucket_document_type_name ?? r.document_type_name,
+        section_key: r.bucket_section_key ?? r.section_key ?? null,
+        sort_order: r.bucket_sort_order ?? r.sort_order ?? null,
         documents: [],
       });
     }
@@ -246,10 +275,14 @@ export async function getInstallationDocuments(code: string) {
   const rowsByType = new Map<string, any[]>();
   for (const r of rows as any[]) {
     if (!r.document_id) continue;
-    const arr = rowsByType.get(r.document_type_key) || [];
+    const bucketTypeKey = String(r.bucket_document_type_key || r.document_type_key || "").trim();
+    if (!bucketTypeKey) continue;
+
+    const arr = rowsByType.get(bucketTypeKey) || [];
     arr.push({
       document_id: r.document_id,
       document_type_key: r.document_type_key,
+      document_type_name: r.document_type_name ?? null,
       parent_document_id: r.parent_document_id ?? null,
       relation_type: r.relation_type ?? null,
 
@@ -280,7 +313,7 @@ export async function getInstallationDocuments(code: string) {
       attachments: [],
       history: [],
     });
-    rowsByType.set(r.document_type_key, arr);
+    rowsByType.set(bucketTypeKey, arr);
   }
 
   for (const [typeKey, arr] of rowsByType.entries()) {

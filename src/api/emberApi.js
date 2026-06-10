@@ -55,6 +55,45 @@ export function getInstallationTypes() {
   return apiGet("/installation-types");
 }
 
+export function getInstallationSoftware(code) {
+  return apiGet(`/installations/${encodeURIComponent(code)}/software`);
+}
+
+export function putInstallationSoftware(code, payload) {
+  return apiPut(`/installations/${encodeURIComponent(code)}/software`, payload ?? {});
+}
+
+export function uploadInstallationProgramming(code, file, payload = {}) {
+  const fd = new FormData();
+  fd.append("file", file);
+
+  for (const [key, value] of Object.entries(payload || {})) {
+    if (value === undefined || value === null) continue;
+    fd.append(key, String(value));
+  }
+
+  return httpUpload(`/installations/${encodeURIComponent(code)}/software/programming/upload`, fd);
+}
+
+export function getInstallationProgrammingDownloadUrl(code, programmingId) {
+  return apiGet(
+    `/installations/${encodeURIComponent(code)}/software/programming/${encodeURIComponent(programmingId)}/download-url`
+  );
+}
+
+export function downloadInstallationProgrammingFile(code, programmingId) {
+  return httpDownload(
+    `/installations/${encodeURIComponent(code)}/software/programming/${encodeURIComponent(programmingId)}/download`
+  );
+}
+
+export function archiveInstallationProgramming(code, programmingId) {
+  return apiPost(
+    `/installations/${encodeURIComponent(code)}/software/programming/${encodeURIComponent(programmingId)}/archive`,
+    {}
+  );
+}
+
 export function setInstallationType(code, installation_type_key) {
   return apiPut(`/installations/${code}/type`, { installation_type_key });
 }

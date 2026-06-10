@@ -10,6 +10,7 @@ import EnergySupplyTab from "./EnergySupplyTab.jsx";
 import PerformanceRequirementsTab from "./PerformanceRequirementsTab.jsx";
 import FormsTab from "./FormsTab.jsx";
 import ComponentsTab from "./ComponentsTab.jsx";
+import SoftwareTab from "./SoftwareTab.jsx";
 
 import SaveButton from "../../components/SaveButton.jsx";
 import Tabs from "../../components/Tabs.jsx";
@@ -26,6 +27,7 @@ import { FileTextIcon } from "@/components/ui/file-text";
 import { ChevronsDownUpIcon } from "@/components/ui/chevrons-down-up";
 import { ChevronsUpDownIcon } from "@/components/ui/chevrons-up-down";
 import { CogIcon } from "@/components/ui/cog";
+import { MonitorCheckIcon } from "@/components/ui/monitor-check";
 import { RefreshCWIcon } from "@/components/ui/refresh-cw";
 import { pushRecentHomeItem } from "../../lib/recentHomeItems.js";
 import {
@@ -39,6 +41,7 @@ import {
   getCatalog,
   getCustomValues,
   getDocuments,
+  getInstallationSoftware,
   getInstallationTypes,
   setInstallationType,
   getEnergySupplies,
@@ -105,6 +108,79 @@ function BusyOverlay({ iconRef, title, label, fixed = false }) {
   );
 }
 
+function buildRequiredDocumentsHeaderSummary(catalog, docs) {
+  const documentTypes = Array.isArray(catalog?.documentTypes) ? catalog.documentTypes : [];
+  const requiredTypes = documentTypes.filter(
+    (item) => item?.is_required && item?.is_attachment_only !== true
+  );
+
+  if (!requiredTypes.length) {
+    return {
+      tone: "muted",
+      label: "Geen verplichte documenten",
+      missingCount: 0,
+    };
+  }
+
+  const docsByType = new Map(
+    (Array.isArray(docs?.documentTypes) ? docs.documentTypes : []).map((item) => [
+      item.document_type_key,
+      item,
+    ])
+  );
+
+  const missing = requiredTypes.filter((type) => {
+    const rows = Array.isArray(docsByType.get(type.document_type_key)?.documents)
+      ? docsByType.get(type.document_type_key).documents
+      : [];
+
+    return !rows.some((row) => row?.document_is_active !== false && row?.has_file);
+  });
+
+  if (!missing.length) {
+    return {
+      tone: "success",
+      label: "Verplichte documenten compleet",
+      missingCount: 0,
+    };
+  }
+
+  return {
+    tone: "danger",
+    label:
+      missing.length === 1
+        ? "1 verplicht document ontbreekt"
+        : `${missing.length} verplichte documenten ontbreken`,
+    missingCount: missing.length,
+  };
+}
+
+function buildSoftwareHeaderSummary(softwareData) {
+  if (!softwareData) {
+    return {
+      programmingLabel: null,
+      programmingTone: "muted",
+      portalLabel: null,
+      portalUrl: null,
+    };
+  }
+
+  const portal = softwareData?.managementPortal || null;
+  const programmingItems = Array.isArray(softwareData?.programmingItems)
+    ? softwareData.programmingItems
+    : [];
+  const presenceMode = String(softwareData?.programmingState?.presence_mode || "NONE").toUpperCase();
+  const hasProgrammingFiles = programmingItems.some((item) => item?.has_file);
+  const programmingPresent = presenceMode === "MANUAL" || presenceMode === "FILE" || hasProgrammingFiles;
+
+  return {
+    programmingLabel: programmingPresent ? "Programmering aanwezig" : "Geen programmering aanwezig",
+    programmingTone: programmingPresent ? "success" : "danger",
+    portalLabel: portal?.portal_display_name || null,
+    portalUrl: portal?.portal_installation_url || null,
+  };
+}
+
 export default function InstallationDetails() {
   const { code } = useParams();
   const navigate = useNavigate();
@@ -120,6 +196,7 @@ export default function InstallationDetails() {
   const energySaveRef = useRef(null);
   const perfRef = useRef(null);
   const componentsRef = useRef(null);
+  const softwareRef = useRef(null);
   const typePickerRef = useRef(null);
   const saveOkTimerRef = useRef(null);
 
@@ -131,6 +208,7 @@ export default function InstallationDetails() {
   const [docs, setDocs] = useState(null);
   const [energySupplies, setEnergySupplies] = useState(null);
   const [energyBrandTypes, setEnergyBrandTypes] = useState(null);
+  const [softwareData, setSoftwareData] = useState(null);
   const [error, setError] = useState(null);
 
   const [pageLoading, setPageLoading] = useState(true);
@@ -159,6 +237,10 @@ export default function InstallationDetails() {
   const [perfSaving, setPerfSaving] = useState(false);
   const [perfSaveOk, setPerfSaveOk] = useState(false);
 
+  const [softwareDirty, setSoftwareDirty] = useState(false);
+  const [softwareSaving, setSoftwareSaving] = useState(false);
+  const [softwareSaveOk, setSoftwareSaveOk] = useState(false);
+
   const [selectedFormCode, setSelectedFormCode] = useState(null);
   const [preflight, setPreflight] = useState(null);
   const [preflightLoading, setPreflightLoading] = useState(false);
@@ -173,6 +255,7 @@ export default function InstallationDetails() {
     atrium: false,
     custom: false,
     documents: false,
+    software: false,
     energy: false,
     performance: false,
     forms: false,
@@ -193,6 +276,7 @@ export default function InstallationDetails() {
     if (activeTab === "energy") return energySaveRef.current;
     if (activeTab === "performance") return perfRef.current;
     if (activeTab === "documents") return docsSaveRef.current;
+    if (activeTab === "software") return softwareRef.current;
     return null;
   }
 
@@ -200,6 +284,7 @@ export default function InstallationDetails() {
     if (isHistorical) return false;
     if (activeTab === "custom") return typeIsSet && customDirty && !customSaving;
     if (activeTab === "documents") return docsDirty && !docsSaving;
+    if (activeTab === "software") return softwareDirty && !softwareSaving;
     if (activeTab === "energy") return energyDirty && !energySaving;
     if (activeTab === "performance") return perfDirty && !perfSaving;
     return false;
@@ -230,6 +315,11 @@ export default function InstallationDetails() {
     const [items, types] = await Promise.all([getEnergySupplies(code), getEnergySupplyBrandTypes()]);
     setEnergySupplies(items?.items || []);
     setEnergyBrandTypes(types?.types || []);
+  }
+
+  async function reloadSoftware() {
+    const data = await getInstallationSoftware(code);
+    setSoftwareData(data || null);
   }
 
   async function runPreflight(formCode, options = {}) {
@@ -273,13 +363,14 @@ export default function InstallationDetails() {
 
       await setInstallationType(code, typeKey);
 
-      const [inst, cat, vals, docData, energyData, brandTypes] = await Promise.all([
+      const [inst, cat, vals, docData, energyData, brandTypes, software] = await Promise.all([
         getInstallation(code),
         getCatalog(code),
         getCustomValues(code),
         getDocuments(code),
         getEnergySupplies(code),
         getEnergySupplyBrandTypes(),
+        getInstallationSoftware(code),
       ]);
 
       setInstallation(inst.installation || null);
@@ -288,6 +379,7 @@ export default function InstallationDetails() {
       setDocs(docData || null);
       setEnergySupplies(energyData?.items || []);
       setEnergyBrandTypes(brandTypes?.types || []);
+      setSoftwareData(software || null);
 
       setCustomDirty(false);
       setCustomSaveOk(false);
@@ -300,6 +392,9 @@ export default function InstallationDetails() {
 
       setPerfDirty(false);
       setPerfSaveOk(false);
+
+      setSoftwareDirty(false);
+      setSoftwareSaveOk(false);
 
       setSelectedFormCode(null);
       setPreflight(null);
@@ -353,10 +448,11 @@ export default function InstallationDetails() {
       getDocuments(code),
       getEnergySupplies(code),
       getEnergySupplyBrandTypes(),
+      getInstallationSoftware(code),
     ]).then((results) => {
       if (cancelled) return;
 
-      const [instR, catR, valsR, docR, energyR, brandR] = results;
+      const [instR, catR, valsR, docR, energyR, brandR, softwareR] = results;
 
       if (instR.status === "fulfilled") setInstallation(instR.value.installation || null);
       if (catR.status === "fulfilled") setCatalogState(catR.value || null);
@@ -368,6 +464,9 @@ export default function InstallationDetails() {
 
       if (brandR.status === "fulfilled") setEnergyBrandTypes(brandR.value?.types || []);
       else setEnergyBrandTypes([]);
+
+      if (softwareR.status === "fulfilled") setSoftwareData(softwareR.value || null);
+      else setSoftwareData(null);
 
       const firstErr = results.find((x) => x.status === "rejected");
       if (firstErr) setError(firstErr.reason?.message || String(firstErr.reason));
@@ -421,7 +520,7 @@ export default function InstallationDetails() {
 
     window.addEventListener("beforeunload", onBeforeUnload);
     return () => window.removeEventListener("beforeunload", onBeforeUnload);
-  }, [activeTab, typeIsSet, customDirty, customSaving, docsDirty, docsSaving, energyDirty, energySaving, perfDirty, perfSaving]);
+  }, [activeTab, typeIsSet, customDirty, customSaving, docsDirty, docsSaving, softwareDirty, softwareSaving, energyDirty, energySaving, perfDirty, perfSaving]);
 
   useEffect(() => {
     if (activeTab === "forms") {
@@ -441,6 +540,8 @@ export default function InstallationDetails() {
           if (customDirty && !customSaving) customSaveRef.current?.save?.();
         } else if (activeTab === "documents") {
           if (docsDirty && !docsSaving) docsSaveRef.current?.save?.();
+        } else if (activeTab === "software") {
+          if (softwareDirty && !softwareSaving) softwareRef.current?.save?.();
         } else if (activeTab === "energy") {
           if (energyDirty && !energySaving) energySaveRef.current?.save?.();
         } else if (activeTab === "performance") {
@@ -476,6 +577,8 @@ export default function InstallationDetails() {
     customSaving,
     docsDirty,
     docsSaving,
+    softwareDirty,
+    softwareSaving,
     energyDirty,
     energySaving,
     perfDirty,
@@ -600,6 +703,28 @@ export default function InstallationDetails() {
               setDocs(docData || null);
             }}
             onAnyOpenChange={(v) => setAnyOpen("documents", v)}
+          />
+        ),
+      },
+      {
+        key: "software",
+        label: "Software",
+        Icon: MonitorCheckIcon,
+        content: (
+          <SoftwareTab
+            ref={softwareRef}
+            code={code}
+            softwareData={softwareData}
+            readOnly={isHistorical}
+            onDirtyChange={setSoftwareDirty}
+            onSavingChange={setSoftwareSaving}
+            onSaveOk={() => {
+              setSoftwareSaveOk(true);
+              if (saveOkTimerRef.current) clearTimeout(saveOkTimerRef.current);
+              saveOkTimerRef.current = setTimeout(() => setSoftwareSaveOk(false), 2500);
+            }}
+            onSaved={reloadSoftware}
+            onAnyOpenChange={(v) => setAnyOpen("software", v)}
           />
         ),
       },
@@ -756,6 +881,7 @@ export default function InstallationDetails() {
     typeSaving,
     energySupplies,
     energyBrandTypes,
+    softwareData,
     isAdmin,
     activeTab,
     formsActivationToken,
@@ -772,8 +898,17 @@ export default function InstallationDetails() {
   const showHeaderSave =
     (activeTab === "custom" && typeIsSet) ||
     activeTab === "documents" ||
+    activeTab === "software" ||
     activeTab === "energy" ||
     activeTab === "performance";
+
+  const documentHeaderSummary = useMemo(() => {
+    return buildRequiredDocumentsHeaderSummary(catalog, docs);
+  }, [catalog, docs]);
+
+  const softwareHeaderSummary = useMemo(() => {
+    return buildSoftwareHeaderSummary(softwareData);
+  }, [softwareData]);
 
   return (
     <div>
@@ -815,6 +950,37 @@ export default function InstallationDetails() {
                   <span className={getInstallationStatusClassName(installation?.installation_status)}>
                     {getInstallationStatusLabel(installation?.installation_status)}
                   </span>
+                ) : null}
+                {documentHeaderSummary?.label ? (
+                  <span
+                    className={[
+                      `ember-label ember-label--${documentHeaderSummary.tone}`,
+                      documentHeaderSummary.tone === "danger" ? "doc-required-status-tag" : "",
+                    ].filter(Boolean).join(" ")}
+                  >
+                    {documentHeaderSummary.label}
+                  </span>
+                ) : null}
+                {softwareHeaderSummary?.programmingLabel ? (
+                  <span className={`ember-label ember-label--${softwareHeaderSummary.programmingTone}`}>
+                    {softwareHeaderSummary.programmingLabel}
+                  </span>
+                ) : null}
+                {softwareHeaderSummary?.portalLabel ? (
+                  softwareHeaderSummary.portalUrl ? (
+                    <a
+                      className="ember-label ember-label--info"
+                      href={softwareHeaderSummary.portalUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      {softwareHeaderSummary.portalLabel}
+                    </a>
+                  ) : (
+                    <span className="ember-label ember-label--info">
+                      {softwareHeaderSummary.portalLabel}
+                    </span>
+                  )
                 ) : null}
 
                 <div className="type-picker-wrap" ref={typePickerRef}>
@@ -885,6 +1051,8 @@ export default function InstallationDetails() {
                       ? !customDirty
                       : activeTab === "documents"
                         ? !docsDirty
+                        : activeTab === "software"
+                          ? !softwareDirty
                         : activeTab === "energy"
                           ? !energyDirty
                           : !perfDirty
@@ -894,6 +1062,8 @@ export default function InstallationDetails() {
                     ? customSaving
                     : activeTab === "documents"
                       ? docsSaving
+                      : activeTab === "software"
+                        ? softwareSaving
                       : activeTab === "energy"
                         ? energySaving
                         : perfSaving
@@ -903,6 +1073,8 @@ export default function InstallationDetails() {
                     ? customSaveOk
                     : activeTab === "documents"
                       ? docsSaveOk
+                      : activeTab === "software"
+                        ? softwareSaveOk
                       : activeTab === "energy"
                         ? energySaveOk
                         : perfSaveOk
@@ -912,6 +1084,8 @@ export default function InstallationDetails() {
                     ? customDirty
                     : activeTab === "documents"
                       ? docsDirty
+                      : activeTab === "software"
+                        ? softwareDirty
                       : activeTab === "energy"
                         ? energyDirty
                         : perfDirty
@@ -919,6 +1093,7 @@ export default function InstallationDetails() {
                 onClick={() => {
                   if (activeTab === "custom") customSaveRef.current?.save?.();
                   if (activeTab === "documents") docsSaveRef.current?.save?.();
+                  if (activeTab === "software") softwareRef.current?.save?.();
                   if (activeTab === "energy") energySaveRef.current?.save?.();
                   if (activeTab === "performance") perfRef.current?.save?.();
                 }}

@@ -17,6 +17,7 @@ export default function InstallationsIndex() {
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState(null);
+  const [showHistorical, setShowHistorical] = useState(false);
 
   const loaderRef = useRef(null);
 
@@ -50,6 +51,10 @@ export default function InstallationsIndex() {
   }, [q]);
 
   const hasQuery = useMemo(() => q.trim().length > 0, [q]);
+  const visibleItems = useMemo(() => {
+    if (showHistorical) return items;
+    return items.filter((item) => String(item.installation_status || "").toUpperCase() !== "J");
+  }, [items, showHistorical]);
 
   return (
     <div className="installations-index">
@@ -59,6 +64,17 @@ export default function InstallationsIndex() {
           <div className="page-hero__subtitle">
             Zoek een installatie op code, naam, object of relatie.
           </div>
+        </div>
+
+        <div className="installations-index__hero-actions">
+          <label className="form-assistant-toggle">
+            <input
+              type="checkbox"
+              checked={showHistorical}
+              onChange={(e) => setShowHistorical(e.target.checked)}
+            />
+            <span>toon historische installaties</span>
+          </label>
         </div>
       </div>
 
@@ -86,13 +102,19 @@ export default function InstallationsIndex() {
         <div className="ui-empty">typ een code om te zoeken</div>
       )}
 
-      {!loading && hasQuery && items.length === 0 && (
+      {!loading && hasQuery && visibleItems.length === 0 && items.length === 0 && (
         <div className="ui-empty">geen resultaten</div>
       )}
 
-      {!loading && items.length > 0 && (
+      {!loading && hasQuery && visibleItems.length === 0 && items.length > 0 && !showHistorical && (
+        <div className="ui-empty">
+          geen actuele resultaten; zet 'toon historische installaties' aan om het archief mee te nemen
+        </div>
+      )}
+
+      {!loading && visibleItems.length > 0 && (
         <div className="installations-list">
-          {items.map((i) => (
+          {visibleItems.map((i) => (
             <Link
               key={i.atrium_installation_code}
               to={`/installaties/${i.atrium_installation_code}`}

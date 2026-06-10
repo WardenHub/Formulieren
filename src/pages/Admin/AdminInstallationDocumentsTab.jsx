@@ -25,6 +25,13 @@ function buildDraft(catalog) {
     requiredByDocType.set(link.document_type_key, arr);
   }
 
+  const attachmentParentsByDocType = new Map();
+  for (const link of catalog?.documentTypeAttachmentParents || []) {
+    const arr = attachmentParentsByDocType.get(link.document_type_key) || [];
+    arr.push(link.parent_document_type_key);
+    attachmentParentsByDocType.set(link.document_type_key, arr);
+  }
+
   return Array.isArray(catalog?.documentTypes)
     ? catalog.documentTypes
         .map((x, index) => ({
@@ -32,9 +39,11 @@ function buildDraft(catalog) {
           document_type_name: x.document_type_name ?? "",
           section_key: x.section_key ?? "",
           sort_order: x.sort_order ?? (index + 1) * 10,
+          is_attachment_only: x.is_attachment_only === true,
           is_active: x.is_active ?? true,
           applicability_type_keys: applicabilityByDocType.get(x.document_type_key) || [],
-          required_type_keys: requiredByDocType.get(x.document_type_key) || [],
+          required_type_keys: x.is_attachment_only === true ? [] : (requiredByDocType.get(x.document_type_key) || []),
+          attachment_parent_type_keys: attachmentParentsByDocType.get(x.document_type_key) || [],
         }))
         .sort((a, b) => {
           const sa = Number(a?.sort_order ?? 0);
@@ -231,6 +240,37 @@ const AdminInstallationDocumentsTab = forwardRef(function AdminInstallationDocum
     );
   }
 
+  function toggleAttachmentOnly(index, nextValue) {
+    setDraft((prev) =>
+      prev.map((row, i) => {
+        if (i !== index) return row;
+        return {
+          ...row,
+          is_attachment_only: Boolean(nextValue),
+          required_type_keys: nextValue ? [] : row.required_type_keys,
+          attachment_parent_type_keys: nextValue ? row.attachment_parent_type_keys || [] : [],
+        };
+      })
+    );
+  }
+
+  function toggleAttachmentParent(index, parentTypeKey) {
+    setDraft((prev) =>
+      prev.map((row, i) => {
+        if (i !== index) return row;
+
+        const next = new Set(row.attachment_parent_type_keys || []);
+        if (next.has(parentTypeKey)) next.delete(parentTypeKey);
+        else next.add(parentTypeKey);
+
+        return {
+          ...row,
+          attachment_parent_type_keys: Array.from(next),
+        };
+      })
+    );
+  }
+
   function addRow() {
     setDraft((prev) => [
       ...prev,
@@ -242,6 +282,8 @@ const AdminInstallationDocumentsTab = forwardRef(function AdminInstallationDocum
         is_active: true,
         applicability_type_keys: [],
         required_type_keys: [],
+        is_attachment_only: false,
+        attachment_parent_type_keys: [],
       },
     ]);
   }
@@ -332,6 +374,12 @@ const AdminInstallationDocumentsTab = forwardRef(function AdminInstallationDocum
                           <span className="ember-label ember-label--muted">
                             sortering; {row.sort_order || "-"}
                           </span>
+
+                          {row.is_attachment_only ? (
+                            <span className="ember-label ember-label--warning">
+                              Alleen bijlage
+                            </span>
+                          ) : null}
                         </div>
                       </div>
 
@@ -465,7 +513,79 @@ const AdminInstallationDocumentsTab = forwardRef(function AdminInstallationDocum
                           </select>
                         </div>
                       </div>
+
+                      <div className="cf-row">
+                        <div className="cf-label">
+                          <div className="cf-label-text">Alleen als bijlage</div>
+                        </div>
+
+                        <div className="cf-control">
+                          <select
+                            className="input"
+                            value={row.is_attachment_only ? "1" : "0"}
+                            onChange={(e) =>
+                              toggleAttachmentOnly(index, e.target.value === "1")
+                            }
+                          >
+                            <option value="0">Nee</option>
+                            <option value="1">Ja</option>
+                          </select>
+                        </div>
+                      </div>
                     </div>
+
+                    {row.is_attachment_only ? (
+                      <div className="admin-subcard" style={{ marginTop: 16 }}>
+                        <SectionHeader
+                          title="Toegestane parent documenttypes"
+                          subtitle="Kies op welke hoofd-documenttypes dit type als bijlage gekoppeld mag worden."
+                          actions={
+                            <span className="ember-label ember-label--muted">
+                              {row.attachment_parent_type_keys?.length || 0} gekozen
+                            </span>
+                          }
+                        />
+
+                        <div className="admin-check-grid">
+                          {draft
+                            .filter((candidate, candidateIndex) => candidateIndex !== index)
+                            .map((candidate) => {
+                              const checked = (row.attachment_parent_type_keys || []).includes(
+                                candidate.document_type_key
+                              );
+
+                              return (
+                                <label
+                                  key={candidate.document_type_key || candidate.document_type_name}
+                                  className={`admin-compact-row ${checked ? "ember-accent-active" : ""}`}
+                                >
+                                  <div className="admin-compact-row-main">
+                                    <div className="admin-compact-row-title-wrap">
+                                      <div className="admin-compact-row-title">
+                                        {candidate.document_type_name || candidate.document_type_key || "Onbekend"}
+                                      </div>
+                                      <div className="admin-compact-row-sub">
+                                        {candidate.document_type_key || "-"}
+                                      </div>
+                                    </div>
+                                  </div>
+
+                                  <div className="admin-compact-row-right">
+                                    <input
+                                      type="checkbox"
+                                      checked={checked}
+                                      disabled={!candidate.document_type_key}
+                                      onChange={() =>
+                                        toggleAttachmentParent(index, candidate.document_type_key)
+                                      }
+                                    />
+                                  </div>
+                                </label>
+                              );
+                            })}
+                        </div>
+                      </div>
+                    ) : null}
                   </div>
                 ))}
               </div>
@@ -558,14 +678,20 @@ const AdminInstallationDocumentsTab = forwardRef(function AdminInstallationDocum
                             </span>
                           )}
 
+                          {row.is_attachment_only ? (
+                            <span className="ember-label ember-label--warning">
+                              Alleen bijlage
+                            </span>
+                          ) : null}
+
                           <span
                             className={
-                              requiredSet.size > 0
+                              !row.is_attachment_only && requiredSet.size > 0
                                 ? "ember-label ember-label--warning"
                                 : "ember-label ember-label--muted"
                             }
                           >
-                            {requiredSet.size} verplicht
+                            {row.is_attachment_only ? "Niet los verplicht" : `${requiredSet.size} verplicht`}
                           </span>
 
                           {isOpen ? <ChevronDownIcon size={18} /> : <ChevronRightIcon size={18} />}
@@ -578,7 +704,8 @@ const AdminInstallationDocumentsTab = forwardRef(function AdminInstallationDocum
                             {installationTypes.map((type) => {
                               const applicable = applicabilitySet.has(type.installation_type_key);
                               const required = requiredSet.has(type.installation_type_key);
-                              const canRequire = applicable || allTypesImplicit;
+                              const canRequire =
+                                !row.is_attachment_only && (applicable || allTypesImplicit);
 
                               return (
                                 <div

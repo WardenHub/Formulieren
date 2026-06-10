@@ -154,6 +154,7 @@ select
   dt.naam as document_type_name,
   dt.sectie_key as section_key,
   dt.sort_order,
+  dt.is_attachment_only,
   dt.is_active,
   cast(
     case
@@ -193,6 +194,16 @@ order by
   dt.sectie_key,
   case when dt.sort_order is null then 999999 else dt.sort_order end,
   dt.document_type_key
+`;
+
+export const getCatalogDocumentTypeAttachmentParentsSql = `
+select
+  x.document_type_key,
+  x.parent_document_type_key
+from dbo.DocumentTypeAttachmentParent x
+order by
+  x.document_type_key,
+  x.parent_document_type_key
 `;
 
 // ------------------------------

@@ -93,6 +93,7 @@ export async function createAttachmentDocument(
   const rows = await sqlQuery(createInstallationDocumentAttachmentSql, {
     code,
     parentDocumentId,
+    documentTypeKey: toNullableString(payload?.document_type_key),
     title: toNullableString(payload?.title),
     note: toNullableString(payload?.note),
     documentNumber: toNullableString(payload?.document_number),

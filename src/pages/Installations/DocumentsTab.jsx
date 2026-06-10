@@ -20,6 +20,7 @@ import { DownloadIcon } from "@/components/ui/download";
 import { RefreshCWIcon } from "@/components/ui/refresh-cw";
 import { UploadIcon } from "@/components/ui/upload";
 import { FileTextIcon } from "@/components/ui/file-text";
+import { FileStackIcon } from "@/components/ui/file-stack";
 
 function cx(...parts) {
   return parts.filter(Boolean).join(" ");
@@ -32,6 +33,14 @@ function isoDate(value) {
   const yyyy = String(d.getFullYear());
   const mm = String(d.getMonth() + 1).padStart(2, "0");
   const dd = String(d.getDate()).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd}`;
+}
+
+function todayIsoDate() {
+  const now = new Date();
+  const yyyy = String(now.getFullYear());
+  const mm = String(now.getMonth() + 1).padStart(2, "0");
+  const dd = String(now.getDate()).padStart(2, "0");
   return `${yyyy}-${mm}-${dd}`;
 }
 
@@ -128,6 +137,7 @@ function flattenTypeDocuments(items) {
     out.push({
       document_id: doc.document_id,
       document_type_key: doc.document_type_key,
+      document_type_name: doc.document_type_name ?? null,
       parent_document_id: doc.parent_document_id ?? null,
       relation_type: doc.relation_type ?? null,
       title: doc.title ?? "",
@@ -378,6 +388,223 @@ function ClickableDropBar({
   );
 }
 
+function buildDocumentRequirementState(documentTypes, rowsByType, pendingFilesByRowId) {
+  const items = (Array.isArray(documentTypes) ? documentTypes : [])
+    .filter((dt) => dt?.is_attachment_only !== true)
+    .map((dt) => {
+    const allRows = rowsByType?.[dt.document_type_key] || [];
+    const model = buildDisplayModel(allRows);
+    const hasQueuedFile = allRows.some((row) => Boolean(pendingFilesByRowId?.[row.document_id]));
+    const hasActiveFile = model.active.some(({ main }) => Boolean(main?.has_file));
+    const present = hasActiveFile || hasQueuedFile;
+
+    return {
+      document_type_key: dt.document_type_key,
+      document_type_name: dt.document_type_name,
+      section_key: dt.section_key || "overig",
+      is_required: dt.is_required === true,
+      is_missing_required: dt.is_required === true && !present,
+      is_present_required: dt.is_required === true && present,
+      present,
+      active_count: model.active.length,
+      archived_count: model.archived.length,
+      queued_count: allRows.filter((row) => pendingFilesByRowId?.[row.document_id]).length,
+    };
+  });
+
+  const requiredItems = items.filter((item) => item.is_required);
+  const missingRequiredItems = requiredItems.filter((item) => item.is_missing_required);
+  const queuedCount = items.reduce((sum, item) => sum + Number(item.queued_count || 0), 0);
+
+  return {
+    items,
+    requiredItems,
+    missingRequiredItems,
+    requiredCount: requiredItems.length,
+    missingRequiredCount: missingRequiredItems.length,
+    queuedCount,
+    allRequiredPresent: requiredItems.length > 0 && missingRequiredItems.length === 0,
+  };
+}
+
+function BulkUploadModal({
+  open,
+  documentTypes,
+  items,
+  onAddFiles,
+  onUpdateItem,
+  onRemoveItem,
+  onClose,
+  onConfirm,
+  saveBusy = false,
+  readOnly = false,
+}) {
+  const inputRef = useRef(null);
+
+  if (!open) return null;
+
+  const canConfirm = items.length > 0 && items.every((item) => String(item.document_type_key || "").trim());
+  const hasItems = items.length > 0;
+
+  return (
+    <div className="doc-bulk-modal-backdrop" onClick={onClose}>
+      <div className="card doc-bulk-modal" onClick={(e) => e.stopPropagation()}>
+        <div className="doc-bulk-modal__head">
+          <div>
+            <div className="doc-bulk-modal__title">Bulk-bestanden toevoegen</div>
+            <div className="muted doc-bulk-modal__subtitle">
+              Kies per bestand het documenttype; na bevestigen worden de bestanden direct opgeslagen en geüpload.
+            </div>
+          </div>
+
+          <div className="doc-inline-actions">
+            <button type="button" className="btn btn-secondary" onClick={() => openNativeFilePicker(inputRef.current)}>
+              Bladeren
+            </button>
+            <button type="button" className="btn btn-secondary" onClick={onClose}>
+              Sluiten
+            </button>
+          </div>
+        </div>
+
+        <input
+          ref={inputRef}
+          type="file"
+          hidden
+          multiple
+          onChange={(e) => {
+            const files = Array.from(e.target.files || []);
+            e.target.value = "";
+            if (files.length) onAddFiles?.(files);
+          }}
+        />
+
+        <ClickableDropBar
+          title={hasItems ? "Voeg meer bestanden toe" : "Sleep bestanden hierheen"}
+          subtitle="Je kunt hier één of meerdere bestanden tegelijk neerzetten"
+          onClick={() => openNativeFilePicker(inputRef.current)}
+          onDragOver={(e) => {
+            if (!isFileDragEvent(e)) return;
+            e.preventDefault();
+          }}
+          onDrop={(e) => {
+            if (!isFileDragEvent(e)) return;
+            e.preventDefault();
+            const files = Array.from(e.dataTransfer?.files || []);
+            if (files.length) onAddFiles?.(files);
+          }}
+        />
+
+        <div className="doc-bulk-list">
+          {items.length === 0 ? (
+            <div className="muted doc-empty-box">Nog geen bestanden gekozen.</div>
+          ) : (
+            items.map((item) => {
+              const blocked = !String(item.document_type_key || "").trim();
+
+              return (
+              <div
+                key={item.id}
+                className={cx(
+                  "doc-bulk-item",
+                  blocked && "doc-bulk-item--blocked"
+                )}
+              >
+                <div className="doc-bulk-item__meta">
+                  <div className="doc-bulk-item__meta-copy">
+                    <div className="doc-bulk-item__name">{item.file?.name || "Bestand"}</div>
+                    <div className="muted doc-bulk-item__sub">{formatBytes(item.file?.size)}</div>
+                  </div>
+                  <div className="doc-bulk-item__badges">
+                    {blocked ? <StatusChip tone="warning">Kies documenttype</StatusChip> : null}
+                    {item.prefilled_date ? (
+                      <span className="ember-label ember-label--muted doc-bulk-prefill-chip">
+                        Datum vooringevuld; vandaag
+                      </span>
+                    ) : null}
+                  </div>
+                </div>
+
+                <div className="doc-bulk-item__fields">
+                  <select
+                    className="input"
+                    value={item.document_type_key}
+                    onChange={(e) => onUpdateItem?.(item.id, { document_type_key: e.target.value })}
+                    disabled={readOnly}
+                  >
+                    <option value="">Kies documenttype</option>
+                    {documentTypes.map((dt) => (
+                      <option key={dt.document_type_key} value={dt.document_type_key}>
+                        {dt.document_type_name}
+                      </option>
+                    ))}
+                  </select>
+
+                  <input
+                    className="input"
+                    value={item.title}
+                    onChange={(e) => onUpdateItem?.(item.id, { title: e.target.value })}
+                    placeholder="Titel"
+                    disabled={readOnly}
+                  />
+
+                  <input
+                    className="input"
+                    value={item.document_number}
+                    onChange={(e) => onUpdateItem?.(item.id, { document_number: e.target.value })}
+                    placeholder="Nummer"
+                    disabled={readOnly}
+                  />
+
+                  <input
+                    className={cx("input", item.prefilled_date && "doc-bulk-date-input--prefilled")}
+                    type="date"
+                    value={item.document_date || ""}
+                    onChange={(e) =>
+                      onUpdateItem?.(item.id, {
+                        document_date: e.target.value || null,
+                        prefilled_date: false,
+                      })
+                    }
+                    disabled={readOnly}
+                  />
+
+                  <input
+                    className="input"
+                    value={item.revision}
+                    onChange={(e) => onUpdateItem?.(item.id, { revision: e.target.value })}
+                    placeholder="Revisie"
+                    disabled={readOnly}
+                  />
+
+                  <button type="button" className="btn btn-secondary" onClick={() => onRemoveItem?.(item.id)}>
+                    Verwijderen
+                  </button>
+                </div>
+              </div>
+            );
+            })
+          )}
+        </div>
+
+        <div className="doc-bulk-modal__foot">
+          <div className="muted doc-text-sm">
+            {items.length} bestand(en) klaar; na bevestigen wordt de wachtrij direct opgeslagen.
+          </div>
+          <div className="doc-inline-actions">
+            <button type="button" className="btn btn-secondary" onClick={onClose}>
+              Annuleren
+            </button>
+            <button type="button" className="btn" disabled={!canConfirm || readOnly || saveBusy} onClick={onConfirm}>
+              Toevoegen en opslaan
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 const DocumentsTab = forwardRef(function DocumentsTab(
   {
     code,
@@ -411,6 +638,10 @@ const DocumentsTab = forwardRef(function DocumentsTab(
   const [sectionDropQueue, setSectionDropQueue] = useState({});
   const [accentRowId, setAccentRowId] = useState(null);
   const [error, setError] = useState(null);
+  const [viewFilter, setViewFilter] = useState("all");
+  const [bulkModalOpen, setBulkModalOpen] = useState(false);
+  const [bulkItems, setBulkItems] = useState([]);
+  const [bulkAutoSavePending, setBulkAutoSavePending] = useState(false);
 
   const sectionToggleIconRefs = useRef({});
   const typeFileInputRefs = useRef({});
@@ -418,6 +649,8 @@ const DocumentsTab = forwardRef(function DocumentsTab(
   const replaceInputRefs = useRef({});
   const attachInputRefs = useRef({});
   const rowRefs = useRef({});
+  const bulkPickerRef = useRef(null);
+  const bulkActionIconRef = useRef(null);
 
   const sectionsByKey = useMemo(() => {
     const map = new Map();
@@ -434,11 +667,15 @@ const DocumentsTab = forwardRef(function DocumentsTab(
     return map;
   }, [catalog]);
 
+  const catalogDocumentTypes = useMemo(() => {
+    return Array.isArray(catalog?.documentTypes) ? catalog.documentTypes : [];
+  }, [catalog]);
+
   const documentTypes = useMemo(() => {
-    const list = catalog?.documentTypes || [];
+    const list = catalogDocumentTypes || [];
 
     return list
-      .filter((dt) => dt && dt.is_active !== false)
+      .filter((dt) => dt && dt.is_active !== false && dt.is_attachment_only !== true)
       .slice()
       .sort((a, b) => {
         const sa = a.section_key || "overig";
@@ -458,7 +695,27 @@ const DocumentsTab = forwardRef(function DocumentsTab(
         const lb = String(b.document_type_name || b.document_type_key || "");
         return la.localeCompare(lb);
       });
-  }, [catalog, sectionOrderByKey]);
+  }, [catalogDocumentTypes, sectionOrderByKey]);
+
+  const attachmentTypeOptionsByParent = useMemo(() => {
+    const map = new Map();
+
+    for (const dt of catalogDocumentTypes) {
+      if (!dt || dt.is_active === false || dt.is_attachment_only !== true) continue;
+
+      const parentKeys = Array.isArray(dt.attachment_parent_type_keys)
+        ? dt.attachment_parent_type_keys.map((x) => String(x || "").trim()).filter(Boolean)
+        : [];
+
+      for (const parentTypeKey of parentKeys) {
+        const arr = map.get(parentTypeKey) || [];
+        arr.push(dt);
+        map.set(parentTypeKey, arr);
+      }
+    }
+
+    return map;
+  }, [catalogDocumentTypes]);
 
   const grouped = useMemo(() => {
     const map = new Map();
@@ -500,7 +757,7 @@ const DocumentsTab = forwardRef(function DocumentsTab(
     setTypeOpenMap((prev) => {
       const next = { ...prev };
       for (const dt of documentTypes) {
-        if (next[dt.document_type_key] === undefined) next[dt.document_type_key] = true;
+        if (next[dt.document_type_key] === undefined) next[dt.document_type_key] = false;
       }
       return next;
     });
@@ -527,6 +784,7 @@ const DocumentsTab = forwardRef(function DocumentsTab(
     setPendingFilesByRowId({});
     setRowStatusById({});
     setError(null);
+    setBulkItems([]);
   }, [catalog, docs, documentTypes]);
 
   useEffect(() => {
@@ -540,6 +798,9 @@ const DocumentsTab = forwardRef(function DocumentsTab(
   }, [accentRowId]);
 
   const anyDirty = useMemo(() => Object.values(dirtyRows).some(Boolean), [dirtyRows]);
+  const requirementState = useMemo(() => {
+    return buildDocumentRequirementState(documentTypes, rowsByType, pendingFilesByRowId);
+  }, [documentTypes, rowsByType, pendingFilesByRowId]);
 
   useEffect(() => {
     onDirtyChange?.(readOnly ? false : anyDirty);
@@ -548,6 +809,17 @@ const DocumentsTab = forwardRef(function DocumentsTab(
   useEffect(() => {
     onSavingChange?.(saving || Boolean(actionBusyKey));
   }, [saving, actionBusyKey, onSavingChange]);
+
+  useEffect(() => {
+    if (!bulkAutoSavePending || readOnly || saving) return;
+    if (Object.keys(pendingFilesByRowId || {}).length === 0) {
+      setBulkAutoSavePending(false);
+      return;
+    }
+
+    setBulkAutoSavePending(false);
+    void save();
+  }, [bulkAutoSavePending, pendingFilesByRowId, readOnly, saving]);
 
   function accentAndScrollRow(rowId, behavior = "smooth") {
     if (!rowId) return;
@@ -706,6 +978,106 @@ const DocumentsTab = forwardRef(function DocumentsTab(
     }
 
     return createdRows.map((x) => x.rowId);
+  }
+
+  function buildBulkItemsFromFiles(files) {
+    return Array.from(files || [])
+      .filter(Boolean)
+      .map((file) => ({
+        id: crypto.randomUUID(),
+        file,
+        document_type_key: "",
+        title: fileBaseName(file.name),
+        document_number: "",
+        document_date: todayIsoDate(),
+        revision: "",
+        note: "",
+        prefilled_date: true,
+      }));
+  }
+
+  function appendBulkFiles(files) {
+    const nextItems = buildBulkItemsFromFiles(files);
+    if (!nextItems.length) return;
+
+    setBulkItems((prev) => [...prev, ...nextItems]);
+    setBulkModalOpen(true);
+  }
+
+  function updateBulkItem(itemId, patch) {
+    setBulkItems((prev) =>
+      prev.map((item) => {
+        if (item.id !== itemId) return item;
+        return {
+          ...item,
+          ...patch,
+        };
+      })
+    );
+  }
+
+  function removeBulkItem(itemId) {
+    setBulkItems((prev) => prev.filter((item) => item.id !== itemId));
+  }
+
+  function queueSingleDraft(typeKey, file, overrides = {}) {
+    if (readOnly || !file) return null;
+
+    const draft = newDraft(typeKey, {
+      title: fileBaseName(file.name),
+      file_name: file.name,
+      ...overrides,
+    });
+
+    setRowsByType((prev) => {
+      const arr = prev[typeKey] || [];
+      return { ...prev, [typeKey]: [draft, ...arr] };
+    });
+
+    setDirtyRows((prev) => ({ ...prev, [draft.document_id]: true }));
+    setDirtyFields((prev) => ({
+      ...prev,
+      [draft.document_id]: {
+        title: true,
+        ...(overrides.document_number ? { document_number: true } : {}),
+        ...(overrides.document_date ? { document_date: true } : {}),
+        ...(overrides.revision ? { revision: true } : {}),
+        ...(overrides.note ? { note: true } : {}),
+      },
+    }));
+
+    setPendingFilesByRowId((prev) => ({ ...prev, [draft.document_id]: file }));
+    setRowStatus(draft.document_id, "queued", "Wordt geüpload bij opslaan");
+    openSectionForType(typeKey);
+    setDetailOpenMap((prev) => ({ ...prev, [`editor:${draft.document_id}`]: true }));
+    return draft.document_id;
+  }
+
+  function applyBulkQueue() {
+    if (readOnly) return;
+
+    const readyItems = bulkItems.filter((item) => String(item.document_type_key || "").trim());
+    if (!readyItems.length) return;
+
+    let firstRowId = null;
+
+    for (const item of readyItems) {
+      const rowId = queueSingleDraft(item.document_type_key, item.file, {
+        title: item.title || fileBaseName(item.file?.name),
+        document_number: item.document_number || "",
+        document_date: item.document_date || null,
+        revision: item.revision || "",
+        note: item.note || "",
+      });
+
+      if (!firstRowId && rowId) firstRowId = rowId;
+    }
+
+    setBulkItems([]);
+    setBulkModalOpen(false);
+    setBulkAutoSavePending(true);
+
+    if (firstRowId) accentAndScrollRow(firstRowId, "smooth");
   }
 
   function compileChangedRows() {
@@ -1135,7 +1507,19 @@ const DocumentsTab = forwardRef(function DocumentsTab(
       let firstAttachmentId = null;
 
       for (const file of list) {
+        const attachmentTypeOptions =
+          attachmentTypeOptionsByParent.get(String(row?.document_type_key || "").trim()) || [];
+
+        if (attachmentTypeOptions.length > 1) {
+          throw new Error(
+            `meerdere bijlage-documenttypes beschikbaar voor ${row?.title || row?.document_type_key || "dit document"}; kies eerst een specifiek bijlagetype in beheer`
+          );
+        }
+
+        const attachmentTypeKey = attachmentTypeOptions[0]?.document_type_key || null;
+
         const created = await createInstallationDocumentAttachment(code, persistedId, {
+          document_type_key: attachmentTypeKey,
           title: fileBaseName(file.name) || "Bijlage",
           note: null,
           document_number: null,
@@ -1199,6 +1583,17 @@ const DocumentsTab = forwardRef(function DocumentsTab(
       delete next[sectionKey];
       return next;
     });
+  }
+
+  function focusDocumentType(typeKey) {
+    const sectionKey = openSectionForType(typeKey);
+    setViewFilter("all");
+
+    window.setTimeout(() => {
+      const el = document.querySelector(`[data-doc-type-key="${typeKey}"]`);
+      if (!el) return;
+      el.scrollIntoView({ behavior: "smooth", block: "start", inline: "nearest" });
+    }, sectionKey ? 120 : 80);
   }
 
   function expandAll() {
@@ -1304,6 +1699,21 @@ const DocumentsTab = forwardRef(function DocumentsTab(
     };
   }
 
+  const visibleGrouped = useMemo(() => {
+    if (viewFilter !== "missing_required") return grouped;
+
+    const missingKeys = new Set(
+      requirementState.missingRequiredItems.map((item) => item.document_type_key)
+    );
+
+    return grouped
+      .map((group) => ({
+        ...group,
+        types: group.types.filter((type) => missingKeys.has(type.document_type_key)),
+      }))
+      .filter((group) => group.types.length > 0);
+  }, [grouped, requirementState, viewFilter]);
+
   function renderDocumentCard(typeKey, row, options = {}) {
     const compact = options.compact === true;
     const summary = renderFileSummary(row);
@@ -1368,6 +1778,9 @@ const DocumentsTab = forwardRef(function DocumentsTab(
                     {accentRowId === row.document_id ? <StatusChip tone="accent">Zojuist toegevoegd</StatusChip> : null}
                     {isNewTemp ? <StatusChip tone="warning">Nieuw concept</StatusChip> : null}
                     {!row.document_is_active ? <StatusChip tone="neutral">Gearchiveerd</StatusChip> : null}
+                    {row.document_type_key && row.document_type_key !== typeKey && row.document_type_name ? (
+                      <StatusChip tone="neutral">{row.document_type_name}</StatusChip>
+                    ) : null}
                     {row.document_number ? <StatusChip tone="neutral">Nr; {row.document_number}</StatusChip> : null}
                     {row.revision ? <StatusChip tone="neutral">Rev; {row.revision}</StatusChip> : null}
                     {row.document_date ? <StatusChip tone="neutral">Datum; {isoDate(row.document_date)}</StatusChip> : null}
@@ -1381,6 +1794,17 @@ const DocumentsTab = forwardRef(function DocumentsTab(
             </div>
 
             <div className="doc-card__actions">
+              {canOpen && (
+                <AnimatedActionButton
+                  title="openen"
+                  Icon={FileTextIcon}
+                  onClick={() => handleOpenDocument(row)}
+                  disabled={actionDisabled}
+                >
+                  openen
+                </AnimatedActionButton>
+              )}
+
               {canOpen && (
                 <AnimatedActionButton
                   title="downloaden"
@@ -1661,8 +2085,8 @@ const DocumentsTab = forwardRef(function DocumentsTab(
 
                       <ClickableDropBar
                         compact
-                        title="Bijlage toevoegen"
-                        subtitle="Sleep één of meer bestanden hierheen of klik om te bladeren"
+                        title="Bijlage aan dit document toevoegen"
+                        subtitle="Wordt gekoppeld aan dit document; sleep bestanden hierheen of klik om te bladeren"
                         isDragOver={isAttachDragOver}
                         onClick={() => {
                           if (readOnly) return;
@@ -1742,18 +2166,134 @@ const DocumentsTab = forwardRef(function DocumentsTab(
         if (!isFileDragEvent(e)) return;
         e.preventDefault();
         e.stopPropagation();
+        if (readOnly) return;
+        appendBulkFiles(e.dataTransfer?.files);
       }}
     >
+      <BulkUploadModal
+        open={bulkModalOpen}
+        documentTypes={documentTypes}
+        items={bulkItems}
+        onAddFiles={appendBulkFiles}
+        onUpdateItem={updateBulkItem}
+        onRemoveItem={removeBulkItem}
+        onClose={() => {
+          setBulkItems([]);
+          setBulkModalOpen(false);
+          setBulkAutoSavePending(false);
+        }}
+        onConfirm={applyBulkQueue}
+        saveBusy={saving}
+        readOnly={readOnly}
+      />
+
       {error ? <p className="ember-error-text doc-error">{error}</p> : null}
 
-      <div className="card doc-help-card">
-        <div className="doc-help-card__title">Bestanden toevoegen</div>
-        <div className="muted doc-help-card__text">
-          Sleep bestanden op een sectiebalk, op een documenttype, op een documentregel zonder bestand, of op de balken voor vervangen en bijlage. Nieuwe items worden automatisch in beeld gebracht.
+      <div className="card doc-status-rail">
+        <div className="doc-status-rail__summary">
+          <div className="ember-label-row admin-inline-labels">
+            {requirementState.requiredCount > 0 ? (
+              requirementState.missingRequiredCount === 0 ? (
+                <span className="ember-label ember-label--success">Verplichte documenten compleet</span>
+              ) : (
+                <span className="ember-label ember-label--danger doc-required-status-tag">
+                  {requirementState.missingRequiredCount === 1
+                    ? "1 verplicht document ontbreekt"
+                    : `${requirementState.missingRequiredCount} verplichte documenten ontbreken`}
+                </span>
+              )
+            ) : (
+              <span className="ember-label ember-label--muted">Geen verplichte documenten</span>
+            )}
+
+            {requirementState.queuedCount > 0 ? (
+              <span className="ember-label ember-label--warning">
+                {requirementState.queuedCount} bestand(en) in wachtrij
+              </span>
+            ) : null}
+          </div>
+        </div>
+
+        <div className="doc-status-rail__actions">
+          <button
+            type="button"
+            className={cx("btn btn-secondary", viewFilter === "all" && "ember-accent-active")}
+            onClick={() => setViewFilter("all")}
+          >
+            Alles
+          </button>
+          <button
+            type="button"
+            className={cx("btn btn-secondary", viewFilter === "missing_required" && "ember-accent-active")}
+            onClick={() => setViewFilter("missing_required")}
+          >
+            Ontbrekende verplichte documenten
+            {requirementState.missingRequiredCount > 0 ? ` (${requirementState.missingRequiredCount})` : ""}
+          </button>
+          <button
+            type="button"
+            className="btn"
+            disabled={readOnly}
+            onClick={() => {
+              setBulkItems([]);
+              openNativeFilePicker(bulkPickerRef.current);
+            }}
+            onMouseEnter={() => bulkActionIconRef.current?.startAnimation?.()}
+            onMouseLeave={() => bulkActionIconRef.current?.stopAnimation?.()}
+          >
+            <FileStackIcon ref={bulkActionIconRef} size={16} className="doc-anim-icon" />
+            Bulk-bestanden toevoegen
+          </button>
+          <input
+            ref={bulkPickerRef}
+            type="file"
+            hidden
+            multiple
+            onChange={(e) => {
+              const files = Array.from(e.target.files || []);
+              e.target.value = "";
+              if (files.length) appendBulkFiles(files);
+            }}
+          />
         </div>
       </div>
 
-      {grouped.map((g) => {
+      {requirementState.missingRequiredCount > 0 && (
+        <div className="card doc-required-alert">
+          <div className="doc-required-alert__head">
+            <div className="doc-required-alert__title">
+              Ontbrekende verplichte documenten ({requirementState.missingRequiredCount})
+            </div>
+            <div className="muted doc-text-sm">
+              Klik op een documenttype om direct naar de juiste plek in het dossier te springen.
+            </div>
+          </div>
+
+          <div className="ember-label-row admin-inline-labels">
+            {requirementState.missingRequiredItems.map((item) => (
+              <button
+                key={item.document_type_key}
+                type="button"
+                className="btn btn-secondary"
+                onClick={() => focusDocumentType(item.document_type_key)}
+              >
+                {item.document_type_name}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {visibleGrouped.length === 0 && viewFilter === "missing_required" ? (
+        <div className="card doc-help-card">
+          <div className="doc-help-card__title">Geen ontbrekende verplichte documenten</div>
+          <div className="muted doc-help-card__text">
+            Voor deze installatie zijn alle verplichte documenten aanwezig of er zijn geen verplichte documenten ingesteld.
+          </div>
+        </div>
+      ) : null}
+
+      {visibleGrouped.map((g) => {
         const isOpen = Boolean(sectionOpenMap[g.section_key]);
         const sectionIsDragOver = dragOverSectionKey === g.section_key;
         const sectionQueuedFiles = sectionDropQueue[g.section_key] || [];
@@ -1764,9 +2304,11 @@ const DocumentsTab = forwardRef(function DocumentsTab(
             const model = buildDisplayModel(rowsByType[typeKey] || []);
             acc.active += model.active.length;
             acc.archived += model.archived.length;
+            const requirement = requirementState.items.find((item) => item.document_type_key === typeKey);
+            if (requirement?.is_missing_required) acc.missingRequired += 1;
             return acc;
           },
-          { active: 0, archived: 0 }
+          { active: 0, archived: 0, missingRequired: 0 }
         );
 
         const ToggleIcon = isOpen ? ChevronDownIcon : ChevronRightIcon;
@@ -1819,6 +2361,13 @@ const DocumentsTab = forwardRef(function DocumentsTab(
                 <span className="doc-section-toggle__title">{g.section?.section_name || g.section_key}</span>
                 <span className="muted doc-section-toggle__meta">{totals.active} actief</span>
                 <span className="muted doc-section-toggle__meta">{totals.archived} gearchiveerd</span>
+                {totals.missingRequired > 0 ? (
+                  <StatusChip tone="danger">
+                    {totals.missingRequired === 1
+                      ? "1 verplicht document ontbreekt"
+                      : `${totals.missingRequired} verplichte documenten ontbreken`}
+                  </StatusChip>
+                ) : null}
                 {sectionIsDragOver ? <StatusChip tone="info">Laat los om toe te voegen</StatusChip> : null}
               </span>
 
@@ -1872,6 +2421,7 @@ const DocumentsTab = forwardRef(function DocumentsTab(
                   const model = buildDisplayModel(all);
                   const active = model.active;
                   const archived = model.archived;
+                  const requirement = requirementState.items.find((item) => item.document_type_key === typeKey);
                   const isCollapsed = collapsedArchived[typeKey] !== false;
                   const queuedCount = all.filter((r) => pendingFilesByRowId[r.document_id]).length;
                   const isTypeDragOver = dragOverTypeKey === typeKey;
@@ -1881,10 +2431,12 @@ const DocumentsTab = forwardRef(function DocumentsTab(
                   return (
                     <div
                       key={typeKey}
+                      data-doc-type-key={typeKey}
                       className={cx(
                         "doc-type-card",
                         isTypeOpen && "doc-type-card--open",
-                        isTypeDragOver && "doc-type-card--drag"
+                        isTypeDragOver && "doc-type-card--drag",
+                        requirement?.is_missing_required && "doc-type-card--missing"
                       )}
                       onDragOver={(e) => {
                         if (!isFileDragEvent(e)) return;
@@ -1925,6 +2477,13 @@ const DocumentsTab = forwardRef(function DocumentsTab(
                         <span className="doc-type-head__main">
                           <span className="doc-type-head__title-row">
                             <span className="doc-type-head__title">{dt.document_type_name}</span>
+                            {requirement?.is_required ? (
+                              requirement?.is_missing_required ? (
+                                <StatusChip tone="danger">Verplicht ontbreekt</StatusChip>
+                              ) : (
+                                <StatusChip tone="success">Verplicht aanwezig</StatusChip>
+                              )
+                            ) : null}
                             {queuedCount > 0 ? <StatusChip tone="warning">{queuedCount} in wachtrij</StatusChip> : null}
                             {isTypeDragOver ? <StatusChip tone="info">Laat los om toe te voegen</StatusChip> : null}
                           </span>

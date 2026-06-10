@@ -237,7 +237,7 @@ const AdminInstallationsTab = forwardRef(function AdminInstallationsTab(
       },
       {
         key: "type_automation",
-        label: "Typebijwerker",
+        label: "Installatiesoort bijwerker",
         Icon: RefreshCWIcon,
         content: (
           <AdminInstallationTypeAutomationTab

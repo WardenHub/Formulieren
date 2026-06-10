@@ -17,6 +17,12 @@ import {
   searchInstallations,
   getEnergySupplies,
   putEnergySupplies,
+  getInstallationSoftware,
+  putInstallationSoftware,
+  uploadInstallationProgramming,
+  getInstallationProgrammingDownloadUrl,
+  downloadInstallationProgrammingFile,
+  archiveInstallationProgramming,
   getEnergySupplyBrandTypes,
   putEnergySupplyBrandTypes,
   deleteEnergySupply,
@@ -86,6 +92,30 @@ router.put("/energy-supply-brand-types", requireRole("admin"), putEnergySupplyBr
 router.get("/:code/energy-supplies", requireRole("admin", "gebruiker"), getEnergySupplies);
 router.put("/:code/energy-supplies", requireRole("admin", "gebruiker"), putEnergySupplies);
 router.delete("/:code/energy-supplies/:energySupplyId", requireRole("admin", "gebruiker"), deleteEnergySupply);
+
+router.get("/:code/software", requireRole("admin", "gebruiker"), getInstallationSoftware);
+router.put("/:code/software", requireRole("admin", "gebruiker"), putInstallationSoftware);
+router.post(
+  "/:code/software/programming/upload",
+  requireRole("admin", "gebruiker"),
+  upload.single("file"),
+  uploadInstallationProgramming
+);
+router.get(
+  "/:code/software/programming/:programmingId/download-url",
+  requireRole("admin", "gebruiker"),
+  getInstallationProgrammingDownloadUrl
+);
+router.get(
+  "/:code/software/programming/:programmingId/download",
+  requireRole("admin", "gebruiker"),
+  downloadInstallationProgrammingFile
+);
+router.post(
+  "/:code/software/programming/:programmingId/archive",
+  requireRole("admin", "gebruiker"),
+  archiveInstallationProgramming
+);
 
 // NEN2535 prestatie-eisen catalog
 router.get("/nen2535/catalog", requireRole("admin", "gebruiker"), getNen2535Catalog);

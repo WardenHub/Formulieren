@@ -336,6 +336,58 @@ export async function downloadFormInstanceDocumentBlob(storageKey: string) {
 }
 
 /* =========================================================
+   installatie-programmering
+   ========================================================= */
+
+export function buildInstallationProgrammingStorageKey(
+  installationCode: string,
+  originalFileName: string,
+  programmingId: string
+) {
+  const { baseName, extension } = splitFileNameParts(originalFileName);
+  const safeInstallationCode = sanitizePart(installationCode) || installationCode;
+  const safeProgrammingId = sanitizePart(programmingId) || programmingId;
+
+  return `installaties/${safeInstallationCode}/software/programmering/${safeProgrammingId}/${baseName}${extension}`;
+}
+
+export async function uploadInstallationProgrammingBlob(args: {
+  installationCode: string;
+  programmingId: string;
+  fileName: string;
+  contentType?: string | null;
+  buffer: Buffer;
+}) {
+  const storageKey = buildInstallationProgrammingStorageKey(
+    args.installationCode,
+    args.fileName,
+    args.programmingId
+  );
+
+  return uploadBlob({
+    storageKey,
+    contentType: args.contentType,
+    buffer: args.buffer,
+  });
+}
+
+export async function deleteInstallationProgrammingBlob(storageKey: string) {
+  return deleteBlob(storageKey);
+}
+
+export async function createInstallationProgrammingDownloadUrl(args: {
+  storageKey: string;
+  expiresInSeconds?: number;
+  downloadFileName?: string | null;
+}) {
+  return createDownloadUrl(args);
+}
+
+export async function downloadInstallationProgrammingBlob(storageKey: string) {
+  return downloadBlob(storageKey);
+}
+
+/* =========================================================
    user profile media
    ========================================================= */
 

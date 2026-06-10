@@ -1382,6 +1382,61 @@ html[data-appearance="light"] .type-telefonie{
   background: var(--card-bg);
 }
 
+.doc-status-rail,
+.doc-required-alert{
+  padding: 14px;
+  display: grid;
+  gap: 12px;
+}
+
+.doc-status-rail{
+  border-color: var(--border-soft);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+}
+
+.doc-status-rail__summary{
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.doc-required-alert__head{
+  display: grid;
+  gap: 6px;
+}
+
+.doc-status-rail__title,
+.doc-required-alert__title,
+.doc-bulk-modal__title{
+  font-weight: 850;
+  font-size: 16px;
+  color: var(--text-strong);
+}
+
+.doc-status-rail__actions{
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  margin-left: auto;
+}
+
+.doc-required-alert{
+  border-color: var(--danger-border);
+  background: var(--danger-bg-soft);
+}
+
+.doc-required-status-tag{
+  border-color: #ef4444;
+  background: #fee2e2;
+  color: #991b1b;
+  box-shadow: inset 0 0 0 1px rgba(239,68,68,.18);
+}
+
 .doc-help-card__title{
   font-weight: 850;
   font-size: 16px;
@@ -1516,6 +1571,11 @@ html[data-appearance="light"] .type-telefonie{
   background: var(--info-bg-soft);
 }
 
+.doc-type-card--missing{
+  border-color: var(--danger-border);
+  background: color-mix(in srgb, var(--danger-bg-soft) 55%, var(--card-bg) 45%);
+}
+
 .doc-type-head{
   width: 100%;
   display: grid;
@@ -1558,6 +1618,136 @@ html[data-appearance="light"] .type-telefonie{
 .doc-type-meta{
   font-size: 13px;
   color: var(--muted);
+}
+
+.doc-bulk-modal-backdrop{
+  position: fixed;
+  inset: 0;
+  z-index: 120;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(15, 23, 42, 0.32);
+  backdrop-filter: blur(3px);
+}
+
+.doc-bulk-modal{
+  width: min(1120px, 100%);
+  max-height: calc(100vh - 48px);
+  overflow: auto;
+  display: grid;
+  gap: 14px;
+  padding: 18px;
+}
+
+.doc-bulk-modal__head,
+.doc-bulk-modal__foot{
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.doc-bulk-modal__subtitle{
+  font-size: 13px;
+  line-height: 1.35;
+}
+
+.doc-bulk-list{
+  display: grid;
+  gap: 12px;
+}
+
+.doc-bulk-item{
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-lg);
+  background: var(--card-bg);
+  padding: 12px;
+  display: grid;
+  gap: 10px;
+}
+
+.doc-bulk-item--blocked{
+  border-color: var(--warning-border);
+  background: var(--warning-bg-soft);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--warning-border) 70%, transparent);
+}
+
+.doc-bulk-item__meta{
+  display: flex;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 10px;
+}
+
+.doc-bulk-item__meta-copy,
+.doc-bulk-item__badges{
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.doc-bulk-item__name{
+  font-weight: 750;
+  color: var(--text-strong);
+}
+
+.doc-bulk-item__sub{
+  font-size: 12px;
+}
+
+.doc-bulk-item__fields{
+  display: grid;
+  grid-template-columns: minmax(180px, 1.2fr) minmax(180px, 1.4fr) minmax(120px, 1fr) minmax(150px, 1fr) minmax(120px, .8fr) auto;
+  gap: 10px;
+  align-items: center;
+}
+
+.doc-bulk-prefill-chip{
+  animation: doc-prefill-glow 2.2s ease;
+}
+
+.doc-bulk-date-input--prefilled{
+  animation: doc-prefill-glow 2.2s ease;
+}
+
+@keyframes doc-prefill-glow{
+  0%{
+    box-shadow: 0 0 0 0 rgba(245,158,11,.24);
+    border-color: color-mix(in srgb, var(--warning-border) 90%, transparent);
+    background: color-mix(in srgb, var(--warning-bg-soft) 85%, var(--input-bg) 15%);
+  }
+  100%{
+    box-shadow: none;
+    border-color: var(--input-border);
+    background: var(--input-bg);
+  }
+}
+
+@media (max-width: 980px){
+  .doc-status-rail__actions,
+  .doc-bulk-modal__head,
+  .doc-bulk-modal__foot{
+    grid-auto-flow: row;
+  }
+
+  .doc-bulk-item__fields{
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+@media (max-width: 680px){
+  .doc-bulk-modal-backdrop{
+    padding: 10px;
+  }
+
+  .doc-bulk-item__fields{
+    grid-template-columns: 1fr;
+  }
 }
 
 .doc-type-head__actions{
@@ -3104,6 +3294,14 @@ html[data-appearance="light"] .type-telefonie{
 .installations-index{
   display: grid;
   gap: 14px;
+}
+
+.installations-index__hero-actions{
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  min-height: 40px;
 }
 
 .installations-search{

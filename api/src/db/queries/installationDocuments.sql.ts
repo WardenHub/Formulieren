@@ -16,6 +16,40 @@ select
   dt.sectie_key as section_key,
   dt.sort_order,
   dt.is_active as document_type_is_active,
+  dt.is_attachment_only,
+
+  case
+    when d.document_id is null then dt.document_type_key
+    when d.relation_type = N'BIJLAGE'
+      and dt.is_attachment_only = 1
+      and pdt.document_type_key is not null
+    then pdt.document_type_key
+    else dt.document_type_key
+  end as bucket_document_type_key,
+  case
+    when d.document_id is null then dt.naam
+    when d.relation_type = N'BIJLAGE'
+      and dt.is_attachment_only = 1
+      and pdt.document_type_key is not null
+    then pdt.naam
+    else dt.naam
+  end as bucket_document_type_name,
+  case
+    when d.document_id is null then dt.sectie_key
+    when d.relation_type = N'BIJLAGE'
+      and dt.is_attachment_only = 1
+      and pdt.document_type_key is not null
+    then pdt.sectie_key
+    else dt.sectie_key
+  end as bucket_section_key,
+  case
+    when d.document_id is null then dt.sort_order
+    when d.relation_type = N'BIJLAGE'
+      and dt.is_attachment_only = 1
+      and pdt.document_type_key is not null
+    then pdt.sort_order
+    else dt.sort_order
+  end as bucket_sort_order,
 
   d.document_id,
   d.parent_document_id,
@@ -52,6 +86,10 @@ from dbo.DocumentType dt
 left join dbo.InstallationDocument d
   on d.document_type_key = dt.document_type_key
  and d.atrium_installation_code = @code
+left join dbo.InstallationDocument pd
+  on pd.document_id = d.parent_document_id
+left join dbo.DocumentType pdt
+  on pdt.document_type_key = pd.document_type_key
 where dt.is_active = 1
 and (
   not exists (
@@ -121,6 +159,22 @@ begin
   throw 50000, 'installation not found', 1;
 end;
 
+if exists (
+  select 1
+  from openjson(@documentsJson)
+  with (
+    document_id uniqueidentifier '$.document_id',
+    document_type_key nvarchar(50) '$.document_type_key'
+  ) src
+  join dbo.DocumentType dt
+    on dt.document_type_key = src.document_type_key
+  where src.document_id is null
+    and dt.is_attachment_only = 1
+)
+begin
+  throw 50000, 'attachment-only document type requires parent document', 1;
+end;
+
 declare @actions table (action nvarchar(10));
 
 merge dbo.InstallationDocument as tgt
@@ -130,6 +184,7 @@ using (
     @installation_id as installation_id,
     @atrium_installation_code as atrium_installation_code,
     src.document_type_key,
+    dt.is_attachment_only,
     src.title,
     src.note,
     src.document_number,
@@ -165,7 +220,7 @@ when matched then update set
   tgt.is_active = isnull(s.is_active, 1),
   tgt.updated_at = sysutcdatetime(),
   tgt.updated_by = @updatedBy
-when not matched then insert (
+when not matched and isnull(s.is_attachment_only, 0) = 0 then insert (
   document_id,
   installation_id,
   atrium_installation_code,
@@ -329,7 +384,7 @@ where d.document_id = @newId;
 
 export const createInstallationDocumentAttachmentSql = `
 -- expects:
--- @code, @parentDocumentId,
+-- @code, @parentDocumentId, @documentTypeKey,
 -- @title, @note, @documentNumber, @documentDate, @revision,
 -- @createdBy
 
@@ -341,6 +396,43 @@ if not exists (
 )
 begin
   throw 50000, 'parent document not found', 1;
+end;
+
+declare @targetDocumentTypeKey nvarchar(50);
+
+select top 1
+  @targetDocumentTypeKey = coalesce(@documentTypeKey, p.document_type_key)
+from dbo.InstallationDocument p
+where p.atrium_installation_code = @code
+  and p.document_id = @parentDocumentId;
+
+if @targetDocumentTypeKey is null
+begin
+  throw 50000, 'attachment document type invalid', 1;
+end;
+
+if @documentTypeKey is not null
+and @documentTypeKey <> (
+  select top 1 p.document_type_key
+  from dbo.InstallationDocument p
+  where p.atrium_installation_code = @code
+    and p.document_id = @parentDocumentId
+)
+and not exists (
+  select 1
+  from dbo.DocumentType dt
+  join dbo.InstallationDocument p
+    on p.atrium_installation_code = @code
+   and p.document_id = @parentDocumentId
+  join dbo.DocumentTypeAttachmentParent x
+    on x.document_type_key = dt.document_type_key
+   and x.parent_document_type_key = p.document_type_key
+  where dt.document_type_key = @documentTypeKey
+    and dt.is_active = 1
+    and dt.is_attachment_only = 1
+)
+begin
+  throw 50000, 'attachment document type invalid', 1;
 end;
 
 declare @newId uniqueidentifier = newid();
@@ -367,7 +459,7 @@ select
   @newId,
   p.installation_id,
   p.atrium_installation_code,
-  p.document_type_key,
+  @targetDocumentTypeKey,
   p.document_id,
   N'BIJLAGE',
   @title,

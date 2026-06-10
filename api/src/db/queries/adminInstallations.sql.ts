@@ -124,6 +124,7 @@ select
   dt.naam as document_type_name,
   dt.sectie_key as section_key,
   dt.sort_order,
+  dt.is_attachment_only,
   dt.is_active
 from dbo.DocumentType dt
 order by
@@ -173,6 +174,39 @@ select
 from dbo.ExternalFieldDefinitionType x
 order by
   x.field_key,
+  x.installation_type_key;
+
+select
+  x.document_type_key,
+  x.parent_document_type_key
+from dbo.DocumentTypeAttachmentParent x
+order by
+  x.document_type_key,
+  x.parent_document_type_key;
+
+select
+  p.portal_key,
+  p.display_name,
+  p.notes,
+  p.installation_url_template,
+  p.sort_order,
+  p.is_active,
+  p.created_at,
+  p.created_by,
+  p.updated_at,
+  p.updated_by
+from dbo.ManagementPortalDefinition p
+order by
+  case when p.sort_order is null then 999999 else p.sort_order end,
+  p.display_name,
+  p.portal_key;
+
+select
+  x.portal_key,
+  x.installation_type_key
+from dbo.ManagementPortalInstallationType x
+order by
+  x.portal_key,
   x.installation_type_key;
 `;
 
@@ -426,6 +460,7 @@ using (
     convert(nvarchar(150), json_value(j.value, '$.document_type_name')) as document_type_name,
     convert(nvarchar(100), json_value(j.value, '$.section_key')) as section_key,
     try_convert(int, json_value(j.value, '$.sort_order')) as sort_order,
+    try_convert(bit, json_value(j.value, '$.is_attachment_only')) as is_attachment_only,
     try_convert(bit, json_value(j.value, '$.is_active')) as is_active
   from openjson(@itemsJson) j
 ) as src
@@ -434,12 +469,14 @@ when matched then update set
   tgt.naam = src.document_type_name,
   tgt.sectie_key = src.section_key,
   tgt.sort_order = src.sort_order,
+  tgt.is_attachment_only = isnull(src.is_attachment_only, 0),
   tgt.is_active = isnull(src.is_active, 1)
 when not matched then insert (
   document_type_key,
   naam,
   sectie_key,
   sort_order,
+  is_attachment_only,
   is_active,
   created_at
 ) values (
@@ -447,6 +484,7 @@ when not matched then insert (
   src.document_type_name,
   src.section_key,
   src.sort_order,
+  isnull(src.is_attachment_only, 0),
   isnull(src.is_active, 1),
   sysutcdatetime()
 );
@@ -487,6 +525,14 @@ where exists (
   where convert(nvarchar(50), json_value(j.value, '$.document_type_key')) = r.document_type_key
 );
 
+delete ap
+from dbo.DocumentTypeAttachmentParent ap
+where exists (
+  select 1
+  from openjson(@itemsJson) j
+  where convert(nvarchar(50), json_value(j.value, '$.document_type_key')) = ap.document_type_key
+);
+
 insert into dbo.DocumentTypeRequirement (
   document_type_key,
   installation_type_key,
@@ -521,6 +567,34 @@ and (
       and x.installation_type_key = src.installation_type_key
   )
 );
+
+insert into dbo.DocumentTypeAttachmentParent (
+  document_type_key,
+  parent_document_type_key
+)
+select distinct
+  child.document_type_key,
+  parentType.parent_document_type_key
+from (
+  select
+    convert(nvarchar(50), json_value(j.value, '$.document_type_key')) as document_type_key,
+    isnull(try_convert(bit, json_value(j.value, '$.is_attachment_only')), 0) as is_attachment_only,
+    json_query(j.value, '$.attachment_parent_type_keys') as attachment_parent_type_keys_json
+  from openjson(@itemsJson) j
+) child
+cross apply openjson(child.attachment_parent_type_keys_json) parentValues
+cross apply (
+  select convert(nvarchar(50), parentValues.value) as parent_document_type_key
+) parentType
+where child.document_type_key is not null
+  and child.is_attachment_only = 1
+  and parentType.parent_document_type_key is not null
+  and parentType.parent_document_type_key <> child.document_type_key
+  and exists (
+    select 1
+    from dbo.DocumentType parentDt
+    where parentDt.document_type_key = parentType.parent_document_type_key
+  );
 
 commit tran;
 

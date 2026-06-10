@@ -4,6 +4,7 @@ import * as service from "../services/installationsService.js";
 import * as formsService from "../services/formsService.js";
 import * as documentFilesService from "../services/installationDocumentFilesService.js";
 import * as formDocumentFilesService from "../services/formInstanceDocumentFilesService.js";
+import * as softwareService from "../services/installationSoftwareService.js";
 
 function isHistoricalReadOnlyMessage(msg: string) {
   return String(msg || "").toLowerCase().includes("historical installation read-only");
@@ -146,6 +147,9 @@ export async function putDocuments(req: any, res: any) {
     if (msg.includes("installation not found")) {
       return res.status(404).json({ error: "installation not found" });
     }
+    if (msg.includes("attachment-only document type requires parent document")) {
+      return res.status(409).json({ error: "attachment-only document type requires parent document" });
+    }
 
     console.error(err);
     return res.status(500).json({ error: "putDocuments failed" });
@@ -252,6 +256,9 @@ export async function createDocumentAttachment(req: any, res: any) {
     if (msg.includes("parent document invalid")) {
       return res.status(409).json({ error: "parent document invalid" });
     }
+    if (msg.includes("attachment document type invalid")) {
+      return res.status(409).json({ error: "attachment document type invalid" });
+    }
 
     console.error(err);
     return res.status(500).json({ error: "createDocumentAttachment failed" });
@@ -278,6 +285,145 @@ export async function getEnergySupplyBrandTypes(req: any, res: Response) {
   } catch (err) {
     console.error(err);
     return res.status(500).json({ error: "getEnergySupplyBrandTypes failed" });
+  }
+}
+
+export async function getInstallationSoftware(req: any, res: Response) {
+  try {
+    const code = String(req.params.code || "");
+    const data = await softwareService.getInstallationSoftware(code);
+    return res.json(data);
+  } catch (err: any) {
+    const msg = String(err?.message || err).toLowerCase();
+    if (msg.includes("atrium installation not found")) {
+      return res.status(404).json({ error: "atrium installation not found" });
+    }
+    console.error(err);
+    return res.status(500).json({ error: "getInstallationSoftware failed" });
+  }
+}
+
+export async function putInstallationSoftware(req: any, res: any) {
+  try {
+    const code = String(req.params.code || "");
+    const payload = req.body || {};
+    const data = await softwareService.upsertInstallationSoftware(code, payload, req.user);
+    return res.json(data);
+  } catch (err: any) {
+    const msg = String(err?.message || err).toLowerCase();
+    if (isHistoricalReadOnlyMessage(msg)) {
+      return res.status(409).json({ error: "historical installation read-only" });
+    }
+    if (msg.includes("atrium installation not found")) {
+      return res.status(404).json({ error: "atrium installation not found" });
+    }
+    if (msg.includes("installation not found")) {
+      return res.status(404).json({ error: "installation not found" });
+    }
+    if (msg.includes("management portal invalid")) {
+      return res.status(409).json({ error: "management portal invalid" });
+    }
+    if (msg.includes("management portal not applicable")) {
+      return res.status(409).json({ error: "management portal not applicable" });
+    }
+    if (msg.includes("invalid programming presence mode")) {
+      return res.status(400).json({ error: "invalid programming presence mode" });
+    }
+    console.error(err);
+    return res.status(500).json({ error: "putInstallationSoftware failed" });
+  }
+}
+
+export async function uploadInstallationProgramming(req: any, res: any) {
+  try {
+    const code = String(req.params.code || "");
+    const payload = req.body || {};
+    const file = req.file;
+    const data = await softwareService.uploadInstallationProgramming(code, payload, file, req.user);
+    return res.json(data);
+  } catch (err: any) {
+    const msg = String(err?.message || err).toLowerCase();
+    if (isHistoricalReadOnlyMessage(msg)) {
+      return res.status(409).json({ error: "historical installation read-only" });
+    }
+    if (msg.includes("missing file")) {
+      return res.status(400).json({ error: "missing file" });
+    }
+    if (msg.includes("programming file must be zip")) {
+      return res.status(400).json({ error: "programming file must be zip" });
+    }
+    if (msg.includes("parent programming not found")) {
+      return res.status(404).json({ error: "parent programming not found" });
+    }
+    if (msg.includes("atrium installation not found")) {
+      return res.status(404).json({ error: "atrium installation not found" });
+    }
+    if (msg.includes("installation not found")) {
+      return res.status(404).json({ error: "installation not found" });
+    }
+    console.error(err);
+    return res.status(500).json({ error: "uploadInstallationProgramming failed" });
+  }
+}
+
+export async function getInstallationProgrammingDownloadUrl(req: any, res: any) {
+  try {
+    const code = String(req.params.code || "");
+    const programmingId = String(req.params.programmingId || "");
+    const data = await softwareService.getInstallationProgrammingDownloadUrl(code, programmingId);
+    return res.json(data);
+  } catch (err: any) {
+    const msg = String(err?.message || err).toLowerCase();
+    if (msg.includes("programming not found")) {
+      return res.status(404).json({ error: "programming not found" });
+    }
+    if (msg.includes("programming has no file")) {
+      return res.status(404).json({ error: "programming has no file" });
+    }
+    console.error(err);
+    return res.status(500).json({ error: "getInstallationProgrammingDownloadUrl failed" });
+  }
+}
+
+export async function downloadInstallationProgrammingFile(req: any, res: any) {
+  try {
+    const code = String(req.params.code || "");
+    const programmingId = String(req.params.programmingId || "");
+    const data = await softwareService.downloadInstallationProgrammingFile(code, programmingId);
+
+    res.setHeader("Content-Type", data.contentType);
+    res.setHeader("Content-Length", String(data.contentLength));
+    res.setHeader("Content-Disposition", data.contentDisposition);
+    return res.status(200).send(data.buffer);
+  } catch (err: any) {
+    const msg = String(err?.message || err).toLowerCase();
+    if (msg.includes("programming not found")) {
+      return res.status(404).json({ error: "programming not found" });
+    }
+    if (msg.includes("programming has no file")) {
+      return res.status(404).json({ error: "programming has no file" });
+    }
+    console.error(err);
+    return res.status(500).json({ error: "downloadInstallationProgrammingFile failed" });
+  }
+}
+
+export async function archiveInstallationProgramming(req: any, res: any) {
+  try {
+    const code = String(req.params.code || "");
+    const programmingId = String(req.params.programmingId || "");
+    const data = await softwareService.archiveInstallationProgramming(code, programmingId, req.user);
+    return res.json(data);
+  } catch (err: any) {
+    const msg = String(err?.message || err).toLowerCase();
+    if (isHistoricalReadOnlyMessage(msg)) {
+      return res.status(409).json({ error: "historical installation read-only" });
+    }
+    if (msg.includes("programming not found")) {
+      return res.status(404).json({ error: "programming not found" });
+    }
+    console.error(err);
+    return res.status(500).json({ error: "archiveInstallationProgramming failed" });
   }
 }
 

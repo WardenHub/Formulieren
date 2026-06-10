@@ -56,6 +56,9 @@ export async function getAdminInstallationsCatalog() {
   const documentTypeRequirements = Array.isArray(recordsets[10]) ? recordsets[10] : [];
   const externalFields = Array.isArray(recordsets[11]) ? recordsets[11] : [];
   const externalFieldTypeLinks = Array.isArray(recordsets[12]) ? recordsets[12] : [];
+  const documentTypeAttachmentParents = Array.isArray(recordsets[13]) ? recordsets[13] : [];
+  const managementPortals = Array.isArray(recordsets[14]) ? recordsets[14] : [];
+  const managementPortalTypeLinks = Array.isArray(recordsets[15]) ? recordsets[15] : [];
 
   return {
     installationTypes: installationTypes.map((r: any) => ({
@@ -133,6 +136,7 @@ export async function getAdminInstallationsCatalog() {
       document_type_name: r.document_type_name,
       section_key: r.section_key ?? null,
       sort_order: r.sort_order == null ? null : Number(r.sort_order),
+      is_attachment_only: r.is_attachment_only === true,
       is_active: r.is_active === false ? false : true,
     })),
     documentTypeLinks: documentTypeLinks.map((r: any) => ({
@@ -157,6 +161,26 @@ export async function getAdminInstallationsCatalog() {
     })),
     externalFieldTypeLinks: externalFieldTypeLinks.map((r: any) => ({
       field_key: r.field_key,
+      installation_type_key: r.installation_type_key,
+    })),
+    documentTypeAttachmentParents: documentTypeAttachmentParents.map((r: any) => ({
+      document_type_key: r.document_type_key,
+      parent_document_type_key: r.parent_document_type_key,
+    })),
+    managementPortals: managementPortals.map((r: any) => ({
+      portal_key: r.portal_key,
+      display_name: r.display_name ?? "",
+      notes: r.notes ?? null,
+      installation_url_template: r.installation_url_template ?? null,
+      sort_order: r.sort_order == null ? null : Number(r.sort_order),
+      is_active: r.is_active === false ? false : true,
+      created_at: r.created_at ?? null,
+      created_by: r.created_by ?? null,
+      updated_at: r.updated_at ?? null,
+      updated_by: r.updated_by ?? null,
+    })),
+    managementPortalTypeLinks: managementPortalTypeLinks.map((r: any) => ({
+      portal_key: r.portal_key,
       installation_type_key: r.installation_type_key,
     })),
   };
@@ -286,9 +310,11 @@ export async function saveAdminInstallationDocuments(items: any[], user: any) {
     document_type_name: normalizeNullableString(x?.document_type_name),
     section_key: normalizeNullableString(x?.section_key),
     sort_order: normalizeNullableNumber(x?.sort_order ?? (index + 1) * 10),
+    is_attachment_only: normalizeBool(x?.is_attachment_only, false),
     is_active: normalizeBool(x?.is_active, true),
     applicability_type_keys: uniqueStrings(x?.applicability_type_keys),
     desired_type_keys: uniqueStrings(x?.desired_type_keys ?? x?.required_type_keys),
+    attachment_parent_type_keys: uniqueStrings(x?.attachment_parent_type_keys),
   }));
 
   if (normalized.length === 0) {
@@ -299,12 +325,42 @@ export async function saveAdminInstallationDocuments(items: any[], user: any) {
     if (!item.document_type_key) return { ok: false, error: "document_type_key is verplicht" };
     if (!item.document_type_name) return { ok: false, error: "document_type_name is verplicht" };
 
+    if (item.is_attachment_only && item.desired_type_keys.length > 0) {
+      return {
+        ok: false,
+        error: `attachment-only documenttype ${item.document_type_key} mag niet als los verplicht documenttype worden ingesteld`,
+      };
+    }
+
+    if (!item.is_attachment_only && item.attachment_parent_type_keys.length > 0) {
+      return {
+        ok: false,
+        error: `attachment_parent_type_keys is alleen toegestaan voor attachment-only documenttypes; ${item.document_type_key}`,
+      };
+    }
+
+    if (item.is_attachment_only && item.attachment_parent_type_keys.length === 0) {
+      return {
+        ok: false,
+        error: `attachment-only documenttype ${item.document_type_key} moet minimaal een parent documenttype hebben`,
+      };
+    }
+
     const applicabilitySet = new Set(item.applicability_type_keys);
     for (const typeKey of item.desired_type_keys) {
       if (applicabilitySet.size > 0 && !applicabilitySet.has(typeKey)) {
         return {
           ok: false,
           error: `desired_type_keys bevat ${typeKey} voor ${item.document_type_key}, maar dat type is niet van toepassing`,
+        };
+      }
+    }
+
+    for (const parentTypeKey of item.attachment_parent_type_keys) {
+      if (parentTypeKey === item.document_type_key) {
+        return {
+          ok: false,
+          error: `documenttype ${item.document_type_key} kan geen bijlage van zichzelf zijn`,
         };
       }
     }
