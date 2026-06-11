@@ -4,6 +4,8 @@ export const getFormReportPdfSql = `
 select top 1
   fi.form_instance_id,
   fi.status,
+  fi.instance_title,
+  fi.instance_note,
   fi.atrium_installation_code,
   fi.created_at,
   fi.created_by,
@@ -22,7 +24,13 @@ select top 1
 
   ab.installatie_naam,
   ab.obj_naam,
-  ab.obj_adr_formatted
+  ab.obj_adr_formatted,
+  ab.gebruiker_code,
+  ab.gebruiker_naam,
+  ab.beheerder_code,
+  ab.beheerder_naam,
+  ab.eigenaar_code,
+  ab.eigenaar_naam
 from dbo.FormInstance fi
 join dbo.FormDefinitionVersion fv
   on fv.form_version_id = fi.form_version_id

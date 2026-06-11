@@ -15,7 +15,7 @@ import { requireRole } from "../middleware/roleMiddleware.js";
 const router = Router();
 
 router.get("/", requireRole("admin", "gebruiker", "documentbeheerder"), getFormsMonitorList);
-router.get("/:formInstanceId/pdf", downloadFormsMonitorPdf);
+router.get("/:formInstanceId/pdf", requireRole("admin", "gebruiker", "documentbeheerder"), downloadFormsMonitorPdf);
 router.get("/:formInstanceId/follow-ups", requireRole("admin", "gebruiker", "documentbeheerder"), getFormsMonitorFollowUps);
 router.get("/:formInstanceId", requireRole("admin", "gebruiker", "documentbeheerder"), getFormsMonitorDetail);
 

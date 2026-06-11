@@ -88,6 +88,39 @@ from dbo.UserProfile up
 where up.user_object_id = @userObjectId;
 `;
 
+export const findUserProfileByActorSql = `
+select top 1
+  up.user_object_id,
+  up.email_snapshot,
+  up.display_name_snapshot,
+  up.preferred_display_name,
+  up.profile_note,
+  up.appearance_preference,
+  up.avatar_source_preference,
+  up.signature_source_preference,
+  up.created_at,
+  up.created_by,
+  up.updated_at,
+  up.updated_by
+from dbo.UserProfile up
+where
+  nullif(ltrim(rtrim(@actorValue)), N'') is not null
+  and (
+    nullif(ltrim(rtrim(up.preferred_display_name)), N'') = nullif(ltrim(rtrim(@actorValue)), N'')
+    or nullif(ltrim(rtrim(up.display_name_snapshot)), N'') = nullif(ltrim(rtrim(@actorValue)), N'')
+    or nullif(ltrim(rtrim(up.email_snapshot)), N'') = nullif(ltrim(rtrim(@actorValue)), N'')
+  )
+order by
+  case
+    when nullif(ltrim(rtrim(up.preferred_display_name)), N'') = nullif(ltrim(rtrim(@actorValue)), N'') then 0
+    when nullif(ltrim(rtrim(up.display_name_snapshot)), N'') = nullif(ltrim(rtrim(@actorValue)), N'') then 1
+    when nullif(ltrim(rtrim(up.email_snapshot)), N'') = nullif(ltrim(rtrim(@actorValue)), N'') then 2
+    else 9
+  end,
+  up.updated_at desc,
+  up.created_at desc;
+`;
+
 export const getActiveUserProfileAvatarSql = `
 select top 1
   a.avatar_id,
