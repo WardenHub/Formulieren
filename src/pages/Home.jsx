@@ -12,6 +12,7 @@ import { BrainIcon } from "@/components/ui/brain";
 import { ArrowBigRightIcon } from "@/components/ui/arrow-big-right";
 import { FileCheckIcon } from "@/components/ui/file-check";
 import { IdCardIcon } from "@/components/ui/id-card";
+import { BookTextIcon } from "@/components/ui/book-text";
 
 function formatDate(value) {
   if (!value) return "";
@@ -209,6 +210,15 @@ export default function Home() {
               title="Smoelenboek"
               text="Bekijk collega’s in Ember, profielfoto’s, profielnotities en activiteit."
             />
+
+            {(roles.includes("admin") || roles.includes("uitlegbeheerder")) && (
+              <AnimatedHomeCard
+                to="/uitlegbeheer"
+                Icon={BookTextIcon}
+                title="Uitlegbeheer"
+                text="Beheer toelichtingen, afbeeldingen en video’s per formuliervraag."
+              />
+            )}
 
             {roles.includes("admin") && (
               <AnimatedHomeCard

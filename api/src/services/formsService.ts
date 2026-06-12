@@ -11,6 +11,7 @@ import {
 import {
   importAnswerFileSql,
   getFormInstanceSql,
+  getFormGuidanceSql,
   getInstallationFormInstancesSql,
   startFormInstanceSql,
   startChildFormInstanceSql,
@@ -29,6 +30,7 @@ import {
   assertInstallationWritable,
   getInstallationArchiveState,
 } from "./installationsService.js";
+import { createFormGuidanceMediaDownloadUrl } from "./blobStorageService.js";
 
 function getUserDisplayName(user: any) {
   return user?.name || user?.upn || user?.objectId || "unknown";
@@ -89,6 +91,73 @@ function parseRequiredDraftRev(value: any): number | null {
   if (!Number.isFinite(n) || n < 0) return null;
   if (!Number.isInteger(n)) return null;
   return n;
+}
+
+async function resolveGuidanceMediaUrl(storageKey: any, fileName: any, fallbackUrl: any) {
+  const normalizedStorageKey = normalizeOptionalText(storageKey);
+  if (normalizedStorageKey) {
+    try {
+      return await createFormGuidanceMediaDownloadUrl({
+        storageKey: normalizedStorageKey,
+        downloadFileName: normalizeOptionalText(fileName),
+        expiresInSeconds: 600,
+      });
+    } catch (err) {
+      console.error("[forms guidance] media url failed", err);
+    }
+  }
+
+  return normalizeOptionalText(fallbackUrl);
+}
+
+async function buildGuidanceMap(rows: any[]) {
+  const byQuestion: Record<string, any[]> = {};
+
+  for (const row of Array.isArray(rows) ? rows : []) {
+    const questionName = String(row?.question_name || "").trim();
+    if (!questionName) continue;
+
+    if (!byQuestion[questionName]) byQuestion[questionName] = [];
+
+    const video_url = await resolveGuidanceMediaUrl(
+      row?.active_video_storage_key,
+      row?.active_video_file_name,
+      row?.active_video_external_url ?? row?.video_url
+    );
+
+    const image_url = await resolveGuidanceMediaUrl(
+      row?.active_image_storage_key,
+      row?.active_image_file_name,
+      row?.active_image_external_url ?? row?.image_url
+    );
+
+    byQuestion[questionName].push({
+      guidance_id: row?.guidance_id ?? null,
+      title: normalizeOptionalText(row?.title) || "Toelichting",
+      body_markdown: normalizeOptionalText(row?.body_markdown),
+      video_url,
+      image_url,
+      image_caption:
+        normalizeOptionalText(row?.active_image_caption) ||
+        normalizeOptionalText(row?.image_caption),
+      sort_order:
+        row?.link_sort_order == null || !Number.isFinite(Number(row?.link_sort_order))
+          ? row?.guidance_sort_order == null || !Number.isFinite(Number(row?.guidance_sort_order))
+            ? 0
+            : Number(row.guidance_sort_order)
+          : Number(row.link_sort_order),
+    });
+  }
+
+  Object.keys(byQuestion).forEach((questionName) => {
+    byQuestion[questionName] = byQuestion[questionName].sort((a, b) => {
+      const sortDelta = Number(a?.sort_order || 0) - Number(b?.sort_order || 0);
+      if (sortDelta !== 0) return sortDelta;
+      return String(a?.title || "").localeCompare(String(b?.title || ""), "nl");
+    });
+  });
+
+  return byQuestion;
 }
 
 export async function getFormStartPreflight(code: string, formCode: string, user: any) {
@@ -287,6 +356,11 @@ export async function getInstallationFormInstances(
         updated_by: r.updated_by ?? null,
         submitted_at: r.submitted_at ?? null,
         submitted_by: r.submitted_by ?? null,
+        assigned_user_object_id: r.assigned_user_object_id ?? null,
+        assigned_display_name_snapshot: r.assigned_display_name_snapshot ?? null,
+        assigned_email_snapshot: r.assigned_email_snapshot ?? null,
+        assigned_at: r.assigned_at ?? null,
+        assigned_by: r.assigned_by ?? null,
         form_code: r.form_code ?? null,
         form_name: r.form_name ?? null,
         version: r.version == null ? null : Number(r.version),
@@ -370,7 +444,16 @@ export async function getFormInstance(code: string, instanceId: number | string)
   const row: any = rows?.[0] ?? null;
   if (!row) return { error: "not found" };
 
-  return { item: row };
+  const guidanceRows = row?.form_id
+    ? await sqlQuery(getFormGuidanceSql, { formId: row.form_id })
+    : [];
+
+  return {
+    item: {
+      ...row,
+      guidance_by_question: await buildGuidanceMap(guidanceRows),
+    },
+  };
 }
 
 export async function updateFormInstanceMetadata(

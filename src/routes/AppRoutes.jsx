@@ -8,6 +8,7 @@ import FormRunner from "../pages/Forms/FormRunner.jsx";
 import FormRunnerDebug from "../pages/Forms/FormRunnerDebug.jsx";
 import SurveyDesigner from "../pages/dev/FormDesigner.jsx";
 import AdminPage from "../pages/Admin/AdminPage.jsx";
+import GuidanceAdminPage from "../pages/Guidance/GuidanceAdminPage.jsx";
 import FormsMonitorPage from "../pages/Monitor/FormsMonitorPage.jsx";
 import FormsMonitorDetailPage from "../pages/Monitor/FormsMonitorDetailPage.jsx";
 import NotFound from "../pages/NotFound.jsx";
@@ -32,6 +33,7 @@ export default function AppRoutes() {
         <Route path="/monitor/formulieren/:instanceId" element={<FormsMonitorDetailPage />} />
         <Route path="/profiel" element={<ProfilePage />} />
         <Route path="/smoelenboek" element={<DirectoryPage />} />
+        <Route path="/uitlegbeheer" element={<GuidanceAdminPage />} />
         <Route path="/dev/formdev" element={<SurveyDesigner />} />
         <Route path="/admin" element={<AdminPage />} />
         <Route path="*" element={<NotFound />} />

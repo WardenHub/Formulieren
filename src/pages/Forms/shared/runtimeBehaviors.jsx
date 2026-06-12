@@ -1,5 +1,9 @@
 // src/pages/Forms/shared/runtimeBehaviors.jsx
 
+import { createRoot } from "react-dom/client";
+
+import { CircleHelpIcon } from "@/components/ui/circle-help";
+
 import {
   toNumberOrNull,
   formatMaybeNumber,
@@ -27,6 +31,39 @@ function queryQuestionRoot(name) {
 
   if (!escaped) return null;
   return document.querySelector(`[data-name="${escaped}"]`);
+}
+
+function normalizeGuidanceQuestionName(value) {
+  return String(value || "").trim();
+}
+
+function getQuestionTitleText(question) {
+  return String(
+    question?.fullTitle ||
+      question?.title ||
+      question?.locTitle?.renderedHtml ||
+      question?.name ||
+      "Vraag"
+  ).trim();
+}
+
+function getQuestionGuidanceItems(guidanceByQuestion, questionName) {
+  const key = normalizeGuidanceQuestionName(questionName);
+  if (!key) return [];
+  const items = guidanceByQuestion?.[key];
+  return Array.isArray(items) ? items : [];
+}
+
+function getQuestionGuidanceAnchor(questionRoot) {
+  if (!questionRoot) return null;
+
+  return (
+    questionRoot.querySelector(".sd-question__header") ||
+    questionRoot.querySelector(".sd-question__title") ||
+    questionRoot.querySelector(".sd-element__title") ||
+    questionRoot.querySelector(".sd-question__content") ||
+    questionRoot
+  );
 }
 
 function isDropdownQuestion(question) {
@@ -664,6 +701,8 @@ export function attachRuntimeBehaviors({
   suppressDirtyRef,
   onAnswersSnapshotChange,
   onValidationSummaryChange,
+  guidanceByQuestion = null,
+  onOpenQuestionGuidance,
 }) {
   if (!model) return () => {};
 
@@ -673,8 +712,72 @@ export function attachRuntimeBehaviors({
 
   let activeDropdownAnchorEl = null;
   const detachDomListeners = [];
+  const guidanceReactRoots = new Set();
 
   let popupObserver = null;
+
+  function ensureQuestionGuidanceButton(question, htmlElement) {
+    const questionName = normalizeGuidanceQuestionName(question?.name);
+    const guidanceItems = getQuestionGuidanceItems(guidanceByQuestion, questionName);
+    const questionRoot = htmlElement || queryQuestionRoot(questionName);
+    if (!questionRoot) return;
+
+    const existingButton = questionRoot.querySelector(".ember-question-guidance-btn");
+
+    if (guidanceItems.length === 0) {
+      if (existingButton?._emberReactRoot) {
+        existingButton._emberReactRoot.unmount();
+        guidanceReactRoots.delete(existingButton._emberReactRoot);
+      }
+      existingButton?.remove();
+      questionRoot.classList.remove("ember-question-guidance-host");
+      return;
+    }
+
+    questionRoot.classList.add("ember-question-guidance-host");
+
+    const anchor = getQuestionGuidanceAnchor(questionRoot);
+    if (!anchor) return;
+
+    let button = existingButton;
+    if (!button) {
+      button = document.createElement("button");
+      button.type = "button";
+      button.className = "ember-question-guidance-btn";
+      button.setAttribute("aria-label", "Toon toelichting bij deze vraag");
+
+      const iconMount = document.createElement("span");
+      iconMount.className = "ember-question-guidance-btn__icon";
+      button.appendChild(iconMount);
+
+      const text = document.createElement("span");
+      text.className = "ember-question-guidance-btn__text";
+      text.textContent = "Toelichting";
+      button.appendChild(text);
+
+      const root = createRoot(iconMount);
+      root.render(<CircleHelpIcon size={16} className="nav-anim-icon" />);
+      button._emberReactRoot = root;
+      guidanceReactRoots.add(root);
+
+      anchor.appendChild(button);
+    }
+
+    button.title =
+      guidanceItems.length > 1
+        ? `${guidanceItems.length} toelichtingen beschikbaar`
+        : "Toelichting beschikbaar";
+
+    button.onclick = (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      onOpenQuestionGuidance?.({
+        questionName,
+        questionTitle: getQuestionTitleText(question),
+        items: guidanceItems,
+      });
+    };
+  }
 
   function scheduleAnswerClassRefresh(root) {
     if (answerClassRaf) cancelAnimationFrame(answerClassRaf);
@@ -840,6 +943,7 @@ export function attachRuntimeBehaviors({
     scheduleAnswerClassRefresh(options?.htmlElement);
 
     registerDropdownAnchor(options?.question, options?.htmlElement);
+    ensureQuestionGuidanceButton(options?.question, options?.htmlElement);
 
     const qname = String(options?.question?.name || "");
 
@@ -891,6 +995,9 @@ export function attachRuntimeBehaviors({
       tryRepositionActiveDropdownPopup();
       applyAllAnswerItemClasses(model);
       applyAllMatrixLayoutClasses(model);
+      (model?.getAllQuestions?.() || []).forEach((question) => {
+        ensureQuestionGuidanceButton(question, queryQuestionRoot(question?.name));
+      });
     });
   });
 
@@ -906,6 +1013,8 @@ export function attachRuntimeBehaviors({
 
     detachDomListeners.forEach((fn) => fn());
     detachDomListeners.length = 0;
+    guidanceReactRoots.forEach((root) => root.unmount());
+    guidanceReactRoots.clear();
 
     model.onValueChanged.remove(valueChangedHandler);
     model.onAfterRenderQuestion.remove(afterRenderQuestionHandler);

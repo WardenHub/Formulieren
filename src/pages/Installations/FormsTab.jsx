@@ -139,6 +139,45 @@ function RelationTag({ children, title }) {
   );
 }
 
+function buildTeamsChatUrl(email, formInstanceId) {
+  const cleanEmail = String(email || "").trim();
+  if (!cleanEmail) return null;
+  const monitorUrl = `${window.location.origin}/monitor/formulieren/${encodeURIComponent(formInstanceId)}`;
+  const message =
+    `Hallo; ik wil het hebben over formulier ${formInstanceId}. ` +
+    `Je vindt het formulier hier: ${monitorUrl}`;
+  const topic = `Formulier ${formInstanceId}`;
+  return `https://teams.microsoft.com/l/chat/0/0?users=${encodeURIComponent(cleanEmail)}&topicname=${encodeURIComponent(topic)}&message=${encodeURIComponent(message)}`;
+}
+
+function AssignedTag({ item }) {
+  const displayName = String(item?.assigned_display_name_snapshot || "").trim();
+  const email = String(item?.assigned_email_snapshot || "").trim();
+  if (!displayName && !email) return null;
+
+  const label = displayName || email;
+  const teamsUrl = buildTeamsChatUrl(email, item?.form_instance_id);
+
+  if (!teamsUrl) {
+    return (
+      <span className="ember-label ember-label--info" title="Toegewezen aan">
+        Toegewezen aan {label}
+      </span>
+    );
+  }
+
+  return (
+    <button
+      type="button"
+      className="ember-label ember-label--info ember-label--button"
+      title={`Stuur Teams-bericht naar ${label}`}
+      onClick={() => window.open(teamsUrl, "_blank", "noopener,noreferrer")}
+    >
+      Toegewezen aan {label}
+    </button>
+  );
+}
+
 function getLastModifiedBy(item) {
   if (!item) return "-";
   return item.updated_by || item.submitted_by || item.created_by || "-";
@@ -988,6 +1027,7 @@ export default function FormsTab({
                             <StatusTag status={item.status} />
                             <SummaryTag title="Formuliernummer">#{item.form_instance_id}</SummaryTag>
                             <SummaryTag title="Versie">v{item.version_label || "-"}</SummaryTag>
+                            <AssignedTag item={item} />
 
                             {item.parent_instance_id ? (
                               <RelationTag title="Vervolgrelatie">

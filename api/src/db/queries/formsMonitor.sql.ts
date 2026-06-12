@@ -17,11 +17,18 @@ export const getFormsMonitorListSql = `
     nullif(ltrim(rtrim(convert(nvarchar(400), @q))), N'') as q_n,
     nullif(ltrim(rtrim(convert(nvarchar(30), @status))), N'') as status_n,
     nullif(ltrim(rtrim(convert(nvarchar(100), @formCode))), N'') as form_code_n,
-    nullif(ltrim(rtrim(convert(nvarchar(200), @actor))), N'') as actor_n,
+    nullif(ltrim(rtrim(convert(nvarchar(100), @assignedUserObjectId))), N'') as assigned_user_object_id_n,
+    nullif(ltrim(rtrim(convert(nvarchar(250), @assignedSearch))), N'') as assigned_search_n,
 
     case when isnull(@mine, 0) = 1 then 1 else 0 end as mine_n,
     case when isnull(@includeWithdrawn, 0) = 1 then 1 else 0 end as include_withdrawn_n,
-    case when isnull(@onlyActionable, 0) = 1 then 1 else 0 end as only_actionable_n
+    case when isnull(@onlyActionable, 0) = 1 then 1 else 0 end as only_actionable_n,
+    case when isnull(@unassignedOnly, 0) = 1 then 1 else 0 end as unassigned_only_n
+),
+actor_candidates as (
+  select distinct nullif(ltrim(rtrim(convert(nvarchar(200), [value]))), N'') as actor_value
+  from openjson(isnull(@actorCandidatesJson, N'[]'))
+  where nullif(ltrim(rtrim(convert(nvarchar(200), [value]))), N'') is not null
 ),
 base as (
   select
@@ -37,6 +44,11 @@ base as (
     fi.updated_by,
     fi.submitted_at,
     fi.submitted_by,
+    fi.assigned_user_object_id,
+    fi.assigned_display_name_snapshot,
+    fi.assigned_email_snapshot,
+    fi.assigned_at,
+    fi.assigned_by,
 
     fd.code as form_code,
     fd.name as form_name,
@@ -71,12 +83,21 @@ base as (
     and (
       p.mine_n = 0
       or (
-        p.actor_n is not null
-        and (
-          fi.created_by = p.actor_n
-          or fi.submitted_by = p.actor_n
+        exists (
+          select 1
+          from actor_candidates ac
+          where fi.created_by = ac.actor_value
+             or fi.submitted_by = ac.actor_value
         )
       )
+    )
+    and (
+      p.assigned_user_object_id_n is null
+      or fi.assigned_user_object_id = p.assigned_user_object_id_n
+    )
+    and (
+      p.unassigned_only_n = 0
+      or fi.assigned_user_object_id is null
     )
     and (
       p.q_n is null
@@ -92,6 +113,13 @@ base as (
       or isnull(ab.obj_naam, N'') like N'%' + p.q_n + N'%'
       or isnull(ab.gebruiker_code, N'') like N'%' + p.q_n + N'%'
       or isnull(ab.gebruiker_naam, N'') like N'%' + p.q_n + N'%'
+      or isnull(fi.assigned_display_name_snapshot, N'') like N'%' + p.q_n + N'%'
+      or isnull(fi.assigned_email_snapshot, N'') like N'%' + p.q_n + N'%'
+    )
+    and (
+      p.assigned_search_n is null
+      or isnull(fi.assigned_display_name_snapshot, N'') like N'%' + p.assigned_search_n + N'%'
+      or isnull(fi.assigned_email_snapshot, N'') like N'%' + p.assigned_search_n + N'%'
     )
 ),
 fu as (
@@ -152,6 +180,11 @@ select
   n.updated_by,
   n.submitted_at,
   n.submitted_by,
+  n.assigned_user_object_id,
+  n.assigned_display_name_snapshot,
+  n.assigned_email_snapshot,
+  n.assigned_at,
+  n.assigned_by,
   n.form_code,
   n.form_name,
   n.version,
@@ -193,6 +226,11 @@ select top 1
   fi.updated_by,
   fi.submitted_at,
   fi.submitted_by,
+  fi.assigned_user_object_id,
+  fi.assigned_display_name_snapshot,
+  fi.assigned_email_snapshot,
+  fi.assigned_at,
+  fi.assigned_by,
 
   fd.code as form_code,
   fd.name as form_name,
@@ -231,6 +269,8 @@ select top 1
   pfi.status,
   pfi.instance_title,
   pfi.atrium_installation_code,
+  pfi.assigned_display_name_snapshot,
+  pfi.assigned_email_snapshot,
   fd.code as form_code,
   fd.name as form_name,
   fv.version_label
@@ -250,6 +290,8 @@ select
   cfi.status,
   cfi.instance_title,
   cfi.atrium_installation_code,
+  cfi.assigned_display_name_snapshot,
+  cfi.assigned_email_snapshot,
   cfi.created_at,
   fd.code as form_code,
   fd.name as form_name,
@@ -278,6 +320,187 @@ select top 1
   updated_by
 from dbo.FormInstance
 where form_instance_id = @formInstanceId;
+`;
+
+export const updateFormInstanceAssignmentSql = `
+declare @current_assigned_user_object_id nvarchar(100);
+declare @current_assigned_display_name_snapshot nvarchar(250);
+declare @current_assigned_email_snapshot nvarchar(320);
+
+select top 1
+  @current_assigned_user_object_id = fi.assigned_user_object_id,
+  @current_assigned_display_name_snapshot = fi.assigned_display_name_snapshot,
+  @current_assigned_email_snapshot = fi.assigned_email_snapshot
+from dbo.FormInstance fi
+where fi.form_instance_id = @formInstanceId;
+
+update dbo.FormInstance
+set
+  assigned_user_object_id = @assignedUserObjectId,
+  assigned_display_name_snapshot = @assignedDisplayNameSnapshot,
+  assigned_email_snapshot = @assignedEmailSnapshot,
+  assigned_at = case when @assignedUserObjectId is null then null else sysutcdatetime() end,
+  assigned_by = case when @assignedUserObjectId is null then null else @changedBy end,
+  updated_at = sysutcdatetime(),
+  updated_by = @changedBy
+where form_instance_id = @formInstanceId;
+
+insert into dbo.FormInstanceAssignmentAudit (
+  form_instance_id,
+  previous_assigned_user_object_id,
+  previous_assigned_display_name_snapshot,
+  previous_assigned_email_snapshot,
+  assigned_user_object_id,
+  assigned_display_name_snapshot,
+  assigned_email_snapshot,
+  action_type,
+  changed_by
+)
+values (
+  @formInstanceId,
+  @current_assigned_user_object_id,
+  @current_assigned_display_name_snapshot,
+  @current_assigned_email_snapshot,
+  @assignedUserObjectId,
+  @assignedDisplayNameSnapshot,
+  @assignedEmailSnapshot,
+  case when @assignedUserObjectId is null then N'clear' else N'assign' end,
+  @changedBy
+);
+
+select top 1
+  fi.form_instance_id,
+  fi.assigned_user_object_id,
+  fi.assigned_display_name_snapshot,
+  fi.assigned_email_snapshot,
+  fi.assigned_at,
+  fi.assigned_by,
+  fi.updated_at,
+  fi.updated_by
+from dbo.FormInstance fi
+where fi.form_instance_id = @formInstanceId;
+`;
+
+export const getFormInstanceComplimentPointsSql = `
+select
+  cp.compliment_point_id,
+  cp.form_instance_id,
+  cp.reviewer_user_object_id,
+  cp.reviewer_display_name_snapshot,
+  cp.reviewer_email_snapshot,
+  cp.point_value,
+  cp.reason,
+  cp.created_at,
+  cp.created_by,
+  cp.updated_at,
+  cp.updated_by
+from dbo.FormInstanceComplimentPoint cp
+where cp.form_instance_id = @formInstanceId
+order by
+  isnull(cp.updated_at, cp.created_at) desc,
+  cp.created_at desc,
+  cp.compliment_point_id desc;
+`;
+
+export const upsertFormInstanceComplimentPointSql = `
+if isnull(@pointValue, 0) = 0
+begin
+  delete from dbo.FormInstanceComplimentPoint
+  where form_instance_id = @formInstanceId
+    and reviewer_user_object_id = @reviewerUserObjectId;
+
+  insert into dbo.FormInstanceComplimentPointAudit (
+    form_instance_id,
+    reviewer_user_object_id,
+    reviewer_display_name_snapshot,
+    reviewer_email_snapshot,
+    point_value,
+    reason,
+    action_type,
+    changed_by
+  )
+  values (
+    @formInstanceId,
+    @reviewerUserObjectId,
+    @reviewerDisplayNameSnapshot,
+    @reviewerEmailSnapshot,
+    null,
+    null,
+    N'clear',
+    @changedBy
+  );
+
+  select cast(0 as bit) as has_point;
+  return;
+end;
+
+merge dbo.FormInstanceComplimentPoint as tgt
+using (
+  select
+    @formInstanceId as form_instance_id,
+    @reviewerUserObjectId as reviewer_user_object_id,
+    @reviewerDisplayNameSnapshot as reviewer_display_name_snapshot,
+    @reviewerEmailSnapshot as reviewer_email_snapshot,
+    @pointValue as point_value,
+    @reason as reason,
+    @changedBy as changed_by
+) as src
+on tgt.form_instance_id = src.form_instance_id
+and tgt.reviewer_user_object_id = src.reviewer_user_object_id
+when matched then
+  update set
+    reviewer_display_name_snapshot = src.reviewer_display_name_snapshot,
+    reviewer_email_snapshot = src.reviewer_email_snapshot,
+    point_value = src.point_value,
+    reason = src.reason,
+    updated_at = sysutcdatetime(),
+    updated_by = src.changed_by
+when not matched then
+  insert (
+    form_instance_id,
+    reviewer_user_object_id,
+    reviewer_display_name_snapshot,
+    reviewer_email_snapshot,
+    point_value,
+    reason,
+    created_by,
+    updated_at,
+    updated_by
+  )
+  values (
+    src.form_instance_id,
+    src.reviewer_user_object_id,
+    src.reviewer_display_name_snapshot,
+    src.reviewer_email_snapshot,
+    src.point_value,
+    src.reason,
+    src.changed_by,
+    sysutcdatetime(),
+    src.changed_by
+  );
+
+insert into dbo.FormInstanceComplimentPointAudit (
+  form_instance_id,
+  reviewer_user_object_id,
+  reviewer_display_name_snapshot,
+  reviewer_email_snapshot,
+  point_value,
+  reason,
+  action_type,
+  changed_by
+)
+values (
+  @formInstanceId,
+  @reviewerUserObjectId,
+  @reviewerDisplayNameSnapshot,
+  @reviewerEmailSnapshot,
+  @pointValue,
+  @reason,
+  N'set',
+  @changedBy
+);
+
+select cast(1 as bit) as has_point;
 `;
 
 export const setFormInstanceInBehandelingIfSubmittedSql = `

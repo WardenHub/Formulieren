@@ -5,12 +5,14 @@ const ROLE_GROUPS: Record<string, string> = {
   admin: "b0b4c5d3-d918-46a6-971e-c734afa21536",
   gebruiker: "64e2c12f-73d5-4b2a-9d56-fc465e3cc9bf",
   documentbeheerder: "7cadb29c-c15c-4e1e-acff-71214865e00a",
+  uitlegbeheerder: "c4b6dc5c-e4e9-4dd0-a283-08747e1ea505",
 };
 
 const APP_ROLE_MAP: Record<string, string> = {
   "Ember.Admin": "admin",
   "Ember.Gebruiker": "gebruiker",
   "Ember.Documentbeheerder": "documentbeheerder",
+  "Ember.Uitlegbeheerder": "uitlegbeheerder",
 };
 
 function isDevAuthEnabled() {

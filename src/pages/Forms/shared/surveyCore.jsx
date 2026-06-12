@@ -114,13 +114,16 @@ export function getAnswersObject(inst) {
   return null;
 }
 
-export function buildSubmitConfirmText(previewRes) {
+export function buildSubmitConfirmText(previewRes, options = {}) {
   const items = Array.isArray(previewRes?.follow_ups?.items)
     ? previewRes.follow_ups.items
     : [];
 
   const workflowCount = items.filter((x) => x?.kind === "workflow").length;
   const reportOnlyCount = items.filter((x) => x?.kind === "report-only").length;
+  const rawAttachmentCount = Number(options?.formAttachmentCount);
+  const hasAttachmentCount = Number.isFinite(rawAttachmentCount) && rawAttachmentCount >= 0;
+  const formAttachmentCount = hasAttachmentCount ? rawAttachmentCount : null;
 
   const lines = [];
 
@@ -151,6 +154,18 @@ export function buildSubmitConfirmText(previewRes) {
     }
   } else {
     lines.push("Er zijn geen opvolgregistraties gevonden voor dit formulier.");
+  }
+
+  if (formAttachmentCount !== null) {
+    lines.push("");
+
+    if (formAttachmentCount > 0) {
+      lines.push(`Formulierbijlagen aanwezig: ${formAttachmentCount}`);
+    } else if (workflowCount > 0 || reportOnlyCount > 0) {
+      lines.push("Let op:");
+      lines.push("Er zijn wel opvolgacties of rapportopmerkingen gevonden, maar er zijn nog geen formulierbijlagen toegevoegd.");
+      lines.push("Controleer of foto’s of andere bewijsstukken nodig zijn om deze beoordeling goed te onderbouwen.");
+    }
   }
 
   return lines.join("\n");

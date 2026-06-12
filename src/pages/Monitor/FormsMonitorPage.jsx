@@ -3,6 +3,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
 import { getFormsMonitorList } from "../../api/emberApi.js";
+import { getUserDirectory } from "../../api/emberApi.js";
 
 import { SearchIcon } from "@/components/ui/search";
 import { ArrowBigRightIcon } from "@/components/ui/arrow-big-right";
@@ -85,6 +86,17 @@ function getStatusGroupChipClass(groupKey, active) {
   if (groupKey === "INGETROKKEN") return "monitor-tag monitor-tag--danger";
   if (groupKey === "AFGEHANDELD") return "monitor-tag monitor-tag--success";
   return "monitor-tag monitor-tag--neutral";
+}
+
+function buildTeamsChatUrl(email, formInstanceId) {
+  const cleanEmail = String(email || "").trim();
+  if (!cleanEmail) return null;
+  const monitorUrl = `${window.location.origin}/monitor/formulieren/${encodeURIComponent(formInstanceId)}`;
+  const message =
+    `Hallo; ik wil het hebben over formulier ${formInstanceId}. ` +
+    `Je vindt het formulier hier: ${monitorUrl}`;
+  const topic = `Formulier ${formInstanceId}`;
+  return `https://teams.microsoft.com/l/chat/0/0?users=${encodeURIComponent(cleanEmail)}&topicname=${encodeURIComponent(topic)}&message=${encodeURIComponent(message)}`;
 }
 
 function buildEffectiveStatuses(selectedGroupKeys) {
@@ -197,6 +209,9 @@ export default function FormsMonitorPage() {
   const [filters, setFilters] = useState({
     q: storedState?.filters?.q ?? "",
     mine: storedState?.filters?.mine ?? true,
+    assignedUserObjectId: storedState?.filters?.assignedUserObjectId ?? "",
+    assignedSearch: storedState?.filters?.assignedSearch ?? "",
+    unassignedOnly: storedState?.filters?.unassignedOnly ?? false,
     onlyActionable: storedState?.filters?.onlyActionable ?? false,
     noRemainingOpenActionPoints: storedState?.filters?.noRemainingOpenActionPoints ?? false,
     selectedStatusGroups: Array.isArray(storedState?.filters?.selectedStatusGroups)
@@ -211,6 +226,8 @@ export default function FormsMonitorPage() {
 
   const [items, setItems] = useState([]);
   const [autoRefreshEnabled, setAutoRefreshEnabled] = useState(storedState?.autoRefreshEnabled ?? false);
+  const [directoryItems, setDirectoryItems] = useState([]);
+  const [viewerUserObjectId, setViewerUserObjectId] = useState(null);
 
   const effectiveSelectedStatuses = useMemo(() => {
     return buildEffectiveStatuses(filters.selectedStatusGroups);
@@ -314,6 +331,9 @@ export default function FormsMonitorPage() {
       const res = await getFormsMonitorList({
         q: nextFilters.q,
         mine: nextFilters.mine,
+        assignedUserObjectId: nextFilters.assignedUserObjectId,
+        assignedSearch: nextFilters.assignedSearch,
+        unassignedOnly: nextFilters.unassignedOnly,
         onlyActionable: nextFilters.onlyActionable,
         includeWithdrawn: true,
         take: nextFilters.take,
@@ -321,6 +341,7 @@ export default function FormsMonitorPage() {
       });
 
       setItems(Array.isArray(res?.items) ? res.items : []);
+      setViewerUserObjectId(String(res?.meta?.viewer?.user_object_id || "").trim() || null);
     } catch (e) {
       setError(e?.message || String(e));
       setItems([]);
@@ -332,6 +353,24 @@ export default function FormsMonitorPage() {
   useEffect(() => {
     loadList();
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    getUserDirectory()
+      .then((res) => {
+        if (cancelled) return;
+        setDirectoryItems(Array.isArray(res?.items) ? res.items : []);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setDirectoryItems([]);
+      });
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   useEffect(() => {
@@ -347,6 +386,9 @@ export default function FormsMonitorPage() {
   }, [
     filters.q,
     filters.mine,
+    filters.assignedUserObjectId,
+    filters.assignedSearch,
+    filters.unassignedOnly,
     filters.onlyActionable,
     filters.noRemainingOpenActionPoints,
     filters.selectedStatusGroups,
@@ -368,6 +410,29 @@ export default function FormsMonitorPage() {
 
   async function toggleMine() {
     const next = { ...filters, mine: !filters.mine };
+    setFilters(next);
+    await loadList(next);
+  }
+
+  async function toggleMyAssignments() {
+    if (!viewerUserObjectId) return;
+    const nextAssignedUserObjectId =
+      filters.assignedUserObjectId === viewerUserObjectId ? "" : viewerUserObjectId;
+    const next = {
+      ...filters,
+      assignedUserObjectId: nextAssignedUserObjectId,
+      unassignedOnly: false,
+    };
+    setFilters(next);
+    await loadList(next);
+  }
+
+  async function toggleUnassignedOnly() {
+    const next = {
+      ...filters,
+      unassignedOnly: !filters.unassignedOnly,
+      assignedUserObjectId: "",
+    };
     setFilters(next);
     await loadList(next);
   }
@@ -398,6 +463,16 @@ export default function FormsMonitorPage() {
       ...prev,
       actionStatusFilter: prev.actionStatusFilter === nextKey ? "ALL" : nextKey,
     }));
+  }
+
+  async function applyAssignedUserSelection(userObjectId) {
+    const next = {
+      ...filters,
+      assignedUserObjectId: String(userObjectId || "").trim(),
+      unassignedOnly: false,
+    };
+    setFilters(next);
+    await loadList(next);
   }
 
   function openPopupNearButton(buttonEl, setStyle, width = 420) {
@@ -487,6 +562,65 @@ export default function FormsMonitorPage() {
                 title="Toon alleen formulieren van de huidige gebruiker"
                 onClick={toggleMine}
               />
+            </FilterGroup>
+
+            <FilterGroup label="Toegewezen aan">
+              {viewerUserObjectId ? (
+                <FilterChip
+                  active={filters.assignedUserObjectId === viewerUserObjectId}
+                  label="Mijn toewijzingen"
+                  title="Toon formulieren die aan jou zijn toegewezen"
+                  onClick={toggleMyAssignments}
+                />
+              ) : null}
+
+              <FilterChip
+                active={Boolean(filters.unassignedOnly)}
+                label="Niet toegewezen"
+                title="Toon alleen formulieren zonder toegewezen behandelaar"
+                onClick={toggleUnassignedOnly}
+              />
+
+              <input
+                className="input"
+                list="forms-monitor-assignees"
+                placeholder="Zoek toegewezen collega"
+                value={filters.assignedSearch}
+                onChange={(e) =>
+                  setFilters((prev) => ({
+                    ...prev,
+                    assignedSearch: e.target.value,
+                  }))
+                }
+                onKeyDown={(e) => {
+                  if (e.key !== "Enter") return;
+                  const hit = directoryItems.find((item) => {
+                    const label = String(
+                      item?.effective_display_name ||
+                      item?.preferred_display_name ||
+                      item?.display_name_snapshot ||
+                      item?.email_snapshot ||
+                      ""
+                    ).trim();
+                    return label === String(filters.assignedSearch || "").trim();
+                  });
+                  applyAssignedUserSelection(hit?.user_object_id || "");
+                }}
+                style={{ minWidth: 220 }}
+              />
+              <datalist id="forms-monitor-assignees">
+                {directoryItems.map((item) => {
+                  const label = String(
+                    item?.effective_display_name ||
+                    item?.preferred_display_name ||
+                    item?.display_name_snapshot ||
+                    item?.email_snapshot ||
+                    ""
+                  ).trim();
+                  if (!label) return null;
+                  return <option key={item.user_object_id || label} value={label} />;
+                })}
+              </datalist>
             </FilterGroup>
 
             <FilterGroup label="Slimme filters">
@@ -699,6 +833,30 @@ export default function FormsMonitorPage() {
                           <SummaryTag title="Formulierversie" tone="muted">
                             v{row.version_label || "-"}
                           </SummaryTag>
+
+                          {row.assigned_display_name_snapshot || row.assigned_email_snapshot ? (
+                            <button
+                              type="button"
+                              className="monitor-tag monitor-tag--active"
+                              title={
+                                row.assigned_email_snapshot
+                                  ? `Stuur Teams-bericht naar ${row.assigned_display_name_snapshot || row.assigned_email_snapshot}`
+                                  : "Toegewezen behandelaar"
+                              }
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                const teamsUrl = buildTeamsChatUrl(
+                                  row.assigned_email_snapshot,
+                                  row.form_instance_id
+                                );
+                                if (teamsUrl) {
+                                  window.open(teamsUrl, "_blank", "noopener,noreferrer");
+                                }
+                              }}
+                            >
+                              Toegewezen aan {row.assigned_display_name_snapshot || row.assigned_email_snapshot}
+                            </button>
+                          ) : null}
 
                           {row.parent_instance_id ? (
                             <button

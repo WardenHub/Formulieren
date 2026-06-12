@@ -25,10 +25,12 @@ import { AttachFileIcon } from "@/components/ui/attach-file";
 import { MicIcon } from "@/components/ui/mic";
 import { AirVentIcon } from "@/components/ui/air-vent";
 import { MenuIcon } from "@/components/ui/menu";
+import { CircleHelpIcon } from "@/components/ui/circle-help";
 import { pushRecentHomeItem } from "../../lib/recentHomeItems.js";
 
 import {
   getFormInstance,
+  getFormInstanceDocuments,
   putFormInstanceMetadata,
   putFormAnswers,
   submitFormInstance,
@@ -68,6 +70,14 @@ import {
 import {
   attachRuntimeBehaviors,
 } from "./shared/runtimeBehaviors.jsx";
+
+const AUTOSAVE_IDLE_MS = 15000;
+const AUTOSAVE_SAFETY_MS = 60000;
+
+function isDirectVideoUrl(url) {
+  const value = String(url || "").trim().toLowerCase();
+  return value.endsWith(".mp4") || value.endsWith(".webm") || value.endsWith(".ogg");
+}
 
 function buildReadonlyBanner(status, statusLbl) {
   const st = String(status || "");
@@ -133,6 +143,43 @@ function normalizeSubmitSyncCounts(submitRes) {
     unchanged: Number.isFinite(Number(counts.unchanged)) ? Number(counts.unchanged) : 0,
     vervallen: Number.isFinite(Number(counts.vervallen)) ? Number(counts.vervallen) : 0,
   };
+}
+
+function normalizeFormDocumentsResponse(data) {
+  if (Array.isArray(data)) return data;
+  if (Array.isArray(data?.items)) return data.items;
+  if (Array.isArray(data?.documents)) return data.documents;
+  if (Array.isArray(data?.rows)) return data.rows;
+  return [];
+}
+
+function hasStoredFormDocumentFile(doc) {
+  if (!doc) return false;
+
+  const active = !(doc?.is_active === false || Number(doc?.is_active) === 0);
+  if (!active) return false;
+
+  return Boolean(
+    doc?.file_name ||
+      doc?.storage_key ||
+      doc?.has_file ||
+      doc?.uploaded_at ||
+      (Number.isFinite(Number(doc?.file_size_bytes)) && Number(doc.file_size_bytes) > 0)
+  );
+}
+
+async function loadFormAttachmentSummary(code, instanceId) {
+  try {
+    const res = await getFormInstanceDocuments(code, instanceId);
+    const docs = normalizeFormDocumentsResponse(res);
+    return {
+      formAttachmentCount: docs.filter(hasStoredFormDocumentFile).length,
+    };
+  } catch {
+    return {
+      formAttachmentCount: null,
+    };
+  }
 }
 
 function formatFollowUpKindLabel(kind) {
@@ -366,6 +413,7 @@ export default function FormRunnerBase({ mode }) {
   const [contextPanelOpen, setContextPanelOpen] = useState(false);
   const [assistantPanelOpen, setAssistantPanelOpen] = useState(false);
   const [actionsMenuOpen, setActionsMenuOpen] = useState(false);
+  const [guidanceDialog, setGuidanceDialog] = useState(null);
 
   const [debugCards, setDebugCards] = useState(defaultDebugCards);
 
@@ -411,6 +459,7 @@ export default function FormRunnerBase({ mode }) {
   const postSubmitReloadTimerRef = useRef(null);
   const validationCollapseAnimTimerRef = useRef(null);
   const autosaveTimerRef = useRef(null);
+  const autosaveIdleTimerRef = useRef(null);
   const autosaveRunningRef = useRef(false);
 
   const lastLoadedKeyRef = useRef("");
@@ -915,6 +964,37 @@ export default function FormRunnerBase({ mode }) {
     };
   }
 
+  async function runAutosaveNow({ animateSave = true } = {}) {
+    if (autosaveRunningRef.current) return false;
+    if (busy || loading || !hasUnsavedChanges) return false;
+
+    const cur = getCurrentAnswersObject();
+    if (!cur.ok) {
+      setError(cur.error);
+      return false;
+    }
+
+    autosaveRunningRef.current = true;
+
+    try {
+      await persistPendingChanges(cur.value, { reloadAfter: false, animateSave });
+      return true;
+    } catch (e) {
+      const msg = String(e?.message || e || "").toLowerCase();
+
+      if (msg.includes("draft_rev") || msg.includes("expected_draft_rev")) {
+        setError("Automatisch opslaan conflict. Ik heb de nieuwste versie opgehaald. Controleer je wijzigingen en probeer opnieuw.");
+        await reload({ forceEditor: true });
+      } else {
+        setError(translateApiError(e, status));
+      }
+
+      return false;
+    } finally {
+      autosaveRunningRef.current = false;
+    }
+  }
+
   async function reload({ forceEditor } = {}) {
     setLoading(true);
     setError(null);
@@ -1011,6 +1091,8 @@ export default function FormRunnerBase({ mode }) {
         suppressDirtyRef,
         onAnswersSnapshotChange: setAnswersPreview,
         onValidationSummaryChange: setValidationSummary,
+        guidanceByQuestion: inst?.guidance_by_question || null,
+        onOpenQuestionGuidance: setGuidanceDialog,
       });
 
       if (isDebug && shouldOverwriteEditor) {
@@ -1066,9 +1148,21 @@ export default function FormRunnerBase({ mode }) {
       if (prefillRefreshOkTimerRef.current) clearTimeout(prefillRefreshOkTimerRef.current);
       if (postSubmitReloadTimerRef.current) clearTimeout(postSubmitReloadTimerRef.current);
       if (validationCollapseAnimTimerRef.current) clearTimeout(validationCollapseAnimTimerRef.current);
+      if (autosaveIdleTimerRef.current) clearTimeout(autosaveIdleTimerRef.current);
       if (autosaveTimerRef.current) clearInterval(autosaveTimerRef.current);
     };
   }, []);
+
+  useEffect(() => {
+    function onKeyDown(event) {
+      if (event.key === "Escape" && guidanceDialog) {
+        setGuidanceDialog(null);
+      }
+    }
+
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [guidanceDialog]);
 
   useEffect(() => {
     function onKeyDown(e) {
@@ -1110,33 +1204,34 @@ export default function FormRunnerBase({ mode }) {
   useEffect(() => {
     if (isDebug || !canEditAnswers) return undefined;
 
+    if (autosaveIdleTimerRef.current) {
+      clearTimeout(autosaveIdleTimerRef.current);
+      autosaveIdleTimerRef.current = null;
+    }
+
+    if (busy || loading || !hasUnsavedChanges) return undefined;
+
+    const timer = window.setTimeout(() => {
+      runAutosaveNow({ animateSave: true });
+    }, AUTOSAVE_IDLE_MS);
+
+    autosaveIdleTimerRef.current = timer;
+
+    return () => {
+      window.clearTimeout(timer);
+      if (autosaveIdleTimerRef.current === timer) {
+        autosaveIdleTimerRef.current = null;
+      }
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isDebug, canEditAnswers, busy, loading, hasUnsavedChanges, status, instance, instanceMetadata, savedInstanceMetadata, dirty]);
+
+  useEffect(() => {
+    if (isDebug || !canEditAnswers) return undefined;
+
     const timer = window.setInterval(async () => {
-      if (autosaveRunningRef.current) return;
-      if (busy || loading || !hasUnsavedChanges) return;
-
-      const cur = getCurrentAnswersObject();
-      if (!cur.ok) {
-        setError(cur.error);
-        return;
-      }
-
-      autosaveRunningRef.current = true;
-
-      try {
-        await persistPendingChanges(cur.value, { reloadAfter: false, animateSave: true });
-      } catch (e) {
-        const msg = String(e?.message || e || "").toLowerCase();
-
-        if (msg.includes("draft_rev") || msg.includes("expected_draft_rev")) {
-          setError("Automatisch opslaan conflict. Ik heb de nieuwste versie opgehaald. Controleer je wijzigingen en probeer opnieuw.");
-          await reload({ forceEditor: true });
-        } else {
-          setError(translateApiError(e, status));
-        }
-      } finally {
-        autosaveRunningRef.current = false;
-      }
-    }, 60000);
+      await runAutosaveNow({ animateSave: true });
+    }, AUTOSAVE_SAFETY_MS);
 
     autosaveTimerRef.current = timer;
 
@@ -1298,7 +1393,17 @@ export default function FormRunnerBase({ mode }) {
         return;
       }
 
-      const confirmed = window.confirm(buildSubmitConfirmText(preview));
+      const previewSummary = normalizePreviewFollowUps(preview);
+      const attachmentSummary =
+        previewSummary.totalCount > 0
+          ? await loadFormAttachmentSummary(code, instanceId)
+          : { formAttachmentCount: null };
+
+      const confirmed = window.confirm(
+        buildSubmitConfirmText(preview, {
+          formAttachmentCount: attachmentSummary.formAttachmentCount,
+        })
+      );
       if (!confirmed) return;
 
       if (hasUnsavedChanges) {
@@ -1307,7 +1412,6 @@ export default function FormRunnerBase({ mode }) {
 
       const submitRes = await submitFormInstance(code, instanceId);
 
-      const previewSummary = normalizePreviewFollowUps(preview);
       const syncCounts = normalizeSubmitSyncCounts(submitRes);
 
       setSubmitSummary({
@@ -2536,6 +2640,84 @@ export default function FormRunnerBase({ mode }) {
           </div>
         </>
       )}
+
+      {guidanceDialog ? (
+        <>
+          <button
+            type="button"
+            aria-label="Sluit toelichting"
+            className="form-guidance-modal-backdrop"
+            onClick={() => setGuidanceDialog(null)}
+          />
+
+          <div className="card form-guidance-modal" role="dialog" aria-modal="true" aria-label="Toelichting bij vraag">
+            <div className="form-guidance-modal__head">
+              <div style={{ display: "flex", gap: 10, alignItems: "flex-start", minWidth: 0 }}>
+                <CircleHelpIcon size={18} />
+                <div style={{ minWidth: 0 }}>
+                  <div className="form-guidance-modal__title">
+                    {guidanceDialog.questionTitle || guidanceDialog.questionName || "Toelichting"}
+                  </div>
+                  <div className="muted form-guidance-modal__subtitle">
+                    vraag: {guidanceDialog.questionName || "onbekend"}
+                  </div>
+                </div>
+              </div>
+
+              <button type="button" className="btn btn-secondary" onClick={() => setGuidanceDialog(null)}>
+                Sluiten
+              </button>
+            </div>
+
+            <div className="form-guidance-modal__body">
+              {(Array.isArray(guidanceDialog.items) ? guidanceDialog.items : []).map((item) => (
+                <div key={item.guidance_id || item.title} className="card form-guidance-modal__item">
+                  <div className="form-guidance-modal__item-title">{item.title || "Toelichting"}</div>
+
+                  {item.body_markdown ? (
+                    <div className="form-guidance-modal__item-body">{item.body_markdown}</div>
+                  ) : null}
+
+                  {item.image_url ? (
+                    <div className="form-guidance-modal__media">
+                      <img
+                        src={item.image_url}
+                        alt={item.image_caption || item.title || "Toelichting"}
+                        className="form-guidance-modal__image"
+                      />
+                      {item.image_caption ? (
+                        <div className="muted form-guidance-modal__caption">{item.image_caption}</div>
+                      ) : null}
+                    </div>
+                  ) : null}
+
+                  {item.video_url ? (
+                    isDirectVideoUrl(item.video_url) ? (
+                      <video
+                        className="form-guidance-modal__video"
+                        controls
+                        preload="metadata"
+                        src={item.video_url}
+                      />
+                    ) : (
+                      <div>
+                        <a
+                          className="btn btn-secondary"
+                          href={item.video_url}
+                          target="_blank"
+                          rel="noreferrer"
+                        >
+                          Video openen
+                        </a>
+                      </div>
+                    )
+                  ) : null}
+                </div>
+              ))}
+            </div>
+          </div>
+        </>
+      ) : null}
     </div>
   );
 }

@@ -446,6 +446,18 @@ export async function getFormsMonitorList(params = {}) {
     qs.set("onlyActionable", params.onlyActionable ? "1" : "0");
   }
 
+  if (params.assignedUserObjectId && String(params.assignedUserObjectId).trim()) {
+    qs.set("assignedUserObjectId", String(params.assignedUserObjectId).trim());
+  }
+
+  if (params.assignedSearch && String(params.assignedSearch).trim()) {
+    qs.set("assignedSearch", String(params.assignedSearch).trim());
+  }
+
+  if (params.unassignedOnly !== undefined && params.unassignedOnly !== null) {
+    qs.set("unassignedOnly", params.unassignedOnly ? "1" : "0");
+  }
+
   if (params.take != null) qs.set("take", String(params.take));
   if (params.skip != null) qs.set("skip", String(params.skip));
 
@@ -472,6 +484,20 @@ export function postFormsMonitorStatusAction(formInstanceId, action) {
   return apiPost(
     `/forms-monitor/${encodeURIComponent(formInstanceId)}/status-action`,
     { action }
+  );
+}
+
+export function putFormsMonitorAssignment(formInstanceId, payload) {
+  return apiPut(
+    `/forms-monitor/${encodeURIComponent(formInstanceId)}/assignment`,
+    payload ?? {}
+  );
+}
+
+export function putFormsMonitorComplimentPoint(formInstanceId, payload) {
+  return apiPut(
+    `/forms-monitor/${encodeURIComponent(formInstanceId)}/compliment-point`,
+    payload ?? {}
   );
 }
 
@@ -541,6 +567,55 @@ export function saveAdminInstallationExternalFields(items) {
 
 export function saveAdminInstallationManagementPortals(items) {
   return apiPut("/admin/installations/management-portals", { items: items ?? [] });
+}
+
+// admin guidance
+export function getAdminGuidanceCatalog() {
+  return apiGet("/admin/guidance");
+}
+
+export function createAdminGuidanceItem(payload) {
+  return apiPost("/admin/guidance/items", payload ?? {});
+}
+
+export function updateAdminGuidanceItem(guidanceId, payload) {
+  return apiPut(`/admin/guidance/items/${encodeURIComponent(guidanceId)}`, payload ?? {});
+}
+
+export function saveAdminGuidanceLinks(guidanceId, links) {
+  return apiPut(`/admin/guidance/items/${encodeURIComponent(guidanceId)}/links`, {
+    links: Array.isArray(links) ? links : [],
+  });
+}
+
+export function uploadAdminGuidanceMedia(guidanceId, file, payload = {}) {
+  const fd = new FormData();
+  fd.append("file", file);
+
+  for (const [key, value] of Object.entries(payload || {})) {
+    if (value === undefined || value === null) continue;
+    fd.append(key, String(value));
+  }
+
+  return httpUpload(`/admin/guidance/items/${encodeURIComponent(guidanceId)}/media/upload`, fd);
+}
+
+export function createAdminGuidanceExternalMedia(guidanceId, payload = {}) {
+  return apiPost(`/admin/guidance/items/${encodeURIComponent(guidanceId)}/media/external`, payload);
+}
+
+export function activateAdminGuidanceMedia(guidanceId, guidanceMediaId) {
+  return apiPost(
+    `/admin/guidance/items/${encodeURIComponent(guidanceId)}/media/${encodeURIComponent(guidanceMediaId)}/activate`,
+    {}
+  );
+}
+
+export function archiveAdminGuidanceMedia(guidanceId, guidanceMediaId) {
+  return apiPost(
+    `/admin/guidance/items/${encodeURIComponent(guidanceId)}/media/${encodeURIComponent(guidanceMediaId)}/archive`,
+    {}
+  );
 }
 
 // admin ai

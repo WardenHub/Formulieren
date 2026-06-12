@@ -214,3 +214,78 @@ export async function putFormsMonitorFollowUpNote(req: any, res: Response) {
     return res.status(500).json({ error: "putFormsMonitorFollowUpNote failed" });
   }
 }
+
+export async function putFormsMonitorAssignment(req: any, res: Response) {
+  try {
+    const formInstanceId = String(req.params.formInstanceId || "");
+    const payload = req.body || {};
+
+    const data = await service.updateMonitorFormAssignment(formInstanceId, payload, {
+      user: req.user,
+      roles: req.roles || [],
+    });
+
+    if (data?.error === "not found") {
+      return res.status(404).json({ error: "not found" });
+    }
+
+    return res.json(data);
+  } catch (err: any) {
+    const msg = String(err?.message || err).toLowerCase();
+
+    if (msg.includes("not found")) {
+      return res.status(404).json({ error: "not found" });
+    }
+    if (msg.includes("assigned user not found")) {
+      return res.status(400).json({ error: "assigned user not found" });
+    }
+    if (isHistoricalReadOnlyMessage(msg)) {
+      return res.status(409).json({ error: "historical installation read-only" });
+    }
+    if (msg.includes("forbidden")) {
+      return res.status(403).json({ error: "forbidden" });
+    }
+
+    console.error(err);
+    return res.status(500).json({ error: "putFormsMonitorAssignment failed" });
+  }
+}
+
+export async function putFormsMonitorComplimentPoint(req: any, res: Response) {
+  try {
+    const formInstanceId = String(req.params.formInstanceId || "");
+    const payload = req.body || {};
+
+    const data = await service.upsertMonitorComplimentPoint(formInstanceId, payload, {
+      user: req.user,
+      roles: req.roles || [],
+    });
+
+    if (data?.error === "not found") {
+      return res.status(404).json({ error: "not found" });
+    }
+
+    return res.json(data);
+  } catch (err: any) {
+    const msg = String(err?.message || err).toLowerCase();
+
+    if (msg.includes("not found")) {
+      return res.status(404).json({ error: "not found" });
+    }
+    if (msg.includes("negative compliment point requires reason")) {
+      return res.status(400).json({ error: "negative compliment point requires reason" });
+    }
+    if (msg.includes("compliment points not allowed for withdrawn forms")) {
+      return res.status(409).json({ error: "compliment points not allowed for withdrawn forms" });
+    }
+    if (isHistoricalReadOnlyMessage(msg)) {
+      return res.status(409).json({ error: "historical installation read-only" });
+    }
+    if (msg.includes("forbidden")) {
+      return res.status(403).json({ error: "forbidden" });
+    }
+
+    console.error(err);
+    return res.status(500).json({ error: "putFormsMonitorComplimentPoint failed" });
+  }
+}

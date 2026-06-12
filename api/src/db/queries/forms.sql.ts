@@ -290,6 +290,11 @@ base as (
     fi.updated_by,
     fi.submitted_at,
     fi.submitted_by,
+    fi.assigned_user_object_id,
+    fi.assigned_display_name_snapshot,
+    fi.assigned_email_snapshot,
+    fi.assigned_at,
+    fi.assigned_by,
 
     fd.code as form_code,
     fd.name as form_name,
@@ -348,6 +353,8 @@ filtered as (
       or isnull(b.created_by, N'') like N'%' + convert(nvarchar(400), @q) + N'%'
       or isnull(b.updated_by, N'') like N'%' + convert(nvarchar(400), @q) + N'%'
       or isnull(b.submitted_by, N'') like N'%' + convert(nvarchar(400), @q) + N'%'
+      or isnull(b.assigned_display_name_snapshot, N'') like N'%' + convert(nvarchar(400), @q) + N'%'
+      or isnull(b.assigned_email_snapshot, N'') like N'%' + convert(nvarchar(400), @q) + N'%'
     )
 )
 select
@@ -365,6 +372,11 @@ select
   updated_by,
   submitted_at,
   submitted_by,
+  assigned_user_object_id,
+  assigned_display_name_snapshot,
+  assigned_email_snapshot,
+  assigned_at,
+  assigned_by,
   form_code,
   form_name,
   version,
@@ -404,6 +416,7 @@ select top 1
   fi.installation_id,
   fi.form_version_id,
   fi.status,
+  fd.form_id,
 
   fi.instance_title,
   fi.instance_note,
@@ -447,6 +460,68 @@ left join dbo.AtriumInstallationBase ab
   on ab.installatie_code = fi.atrium_installation_code
 where fi.form_instance_id = @instanceId
   and fi.atrium_installation_code = @code;
+`;
+
+export const getFormGuidanceSql = `
+-- expects:
+--   @formId uniqueidentifier
+
+select
+  fgl.guidance_id,
+  fgl.form_id,
+  fgl.question_name,
+  fgl.sort_order as link_sort_order,
+  fgi.title,
+  fgi.body_markdown,
+  fgi.video_url,
+  fgi.image_url,
+  fgi.image_caption,
+  video_media.external_url as active_video_external_url,
+  video_media.file_name as active_video_file_name,
+  video_media.storage_key as active_video_storage_key,
+  image_media.external_url as active_image_external_url,
+  image_media.file_name as active_image_file_name,
+  image_media.storage_key as active_image_storage_key,
+  image_media.caption as active_image_caption,
+  fgi.sort_order as guidance_sort_order,
+  fgi.is_active,
+  fgi.created_at,
+  fgi.created_by,
+  fgi.updated_at,
+  fgi.updated_by
+from dbo.FormGuidanceLink fgl
+join dbo.FormGuidanceItem fgi
+  on fgi.guidance_id = fgl.guidance_id
+outer apply (
+  select top 1
+    gma.external_url,
+    gma.file_name,
+    gma.storage_key
+  from dbo.FormGuidanceMediaAsset gma
+  where gma.guidance_id = fgi.guidance_id
+    and gma.media_kind = N'video'
+    and gma.is_active = 1
+  order by gma.created_at desc
+) video_media
+outer apply (
+  select top 1
+    gma.external_url,
+    gma.file_name,
+    gma.storage_key,
+    gma.caption
+  from dbo.FormGuidanceMediaAsset gma
+  where gma.guidance_id = fgi.guidance_id
+    and gma.media_kind = N'image'
+    and gma.is_active = 1
+  order by gma.created_at desc
+) image_media
+where fgl.form_id = @formId
+  and fgi.is_active = 1
+order by
+  fgl.question_name,
+  fgl.sort_order,
+  fgi.sort_order,
+  fgi.title;
 `;
 
 // =========================================================

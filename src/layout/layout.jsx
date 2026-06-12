@@ -12,6 +12,7 @@ import { BrainIcon } from "@/components/ui/brain";
 import { MonitorCheckIcon } from "@/components/ui/monitor-check";
 import { IdCardIcon } from "@/components/ui/id-card";
 import { MenuIcon } from "@/components/ui/menu";
+import { BookTextIcon } from "@/components/ui/book-text";
 
 function initialsFromProfilePayload(profileData, meData) {
   return (
@@ -390,6 +391,12 @@ export default function Layout() {
           <AnimatedNavButton to="/smoelenboek" Icon={IdCardIcon}>
             Smoelenboek
           </AnimatedNavButton>
+
+          {(roles.includes("admin") || roles.includes("uitlegbeheerder")) && (
+            <AnimatedNavButton to="/uitlegbeheer" Icon={BookTextIcon}>
+              Uitlegbeheer
+            </AnimatedNavButton>
+          )}
 
           {roles.includes("admin") && (
             <AnimatedNavButton to="/admin" Icon={BrainIcon}>

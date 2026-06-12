@@ -6,6 +6,8 @@ import {
   getFormsMonitorDetail,
   getFormsMonitorFollowUps,
   postFormsMonitorStatusAction,
+  putFormsMonitorAssignment,
+  putFormsMonitorComplimentPoint,
   postFormsMonitorFollowUpStatusAction,
   putFormsMonitorFollowUpNote,
   getFormsMonitorPdfUrl,
@@ -17,6 +19,7 @@ import {
   putFormInstanceDocumentLabels,
   putFormInstanceDocumentFollowUps,
   deleteFormInstanceDocument,
+  getUserDirectory,
 } from "../../api/emberApi.js";
 
 import { ArrowBigRightIcon } from "@/components/ui/arrow-big-right";
@@ -88,6 +91,27 @@ function SummaryTag({ children, title, tone = "neutral", active = false, onClick
       {children}
     </span>
   );
+}
+
+function buildTeamsChatUrl(email, formInstanceId) {
+  const cleanEmail = String(email || "").trim();
+  if (!cleanEmail) return null;
+  const monitorUrl = `${window.location.origin}/monitor/formulieren/${encodeURIComponent(formInstanceId)}`;
+  const message =
+    `Hallo; ik wil het hebben over formulier ${formInstanceId}. ` +
+    `Je vindt het formulier hier: ${monitorUrl}`;
+  const topic = `Formulier ${formInstanceId}`;
+  return `https://teams.microsoft.com/l/chat/0/0?users=${encodeURIComponent(cleanEmail)}&topicname=${encodeURIComponent(topic)}&message=${encodeURIComponent(message)}`;
+}
+
+function getDirectoryDisplayName(item) {
+  return String(
+    item?.effective_display_name ||
+      item?.preferred_display_name ||
+      item?.display_name_snapshot ||
+      item?.email_snapshot ||
+      ""
+  ).trim();
 }
 
 function ActionFooter({
@@ -1194,6 +1218,7 @@ export default function FormsMonitorDetailPage() {
   const setConceptIconRef = useRef(null);
   const propsToggleIconRef = useRef(null);
   const relationToggleIconRef = useRef(null);
+  const assignmentToggleIconRef = useRef(null);
   const evidenceToggleIconRef = useRef(null);
   const filterInfoIconRef = useRef(null);
   const filterInfoBtnRef = useRef(null);
@@ -1211,6 +1236,7 @@ export default function FormsMonitorDetailPage() {
 
   const [propertiesOpen, setPropertiesOpen] = useState(storedUiState?.propertiesOpen ?? false);
   const [relationsOpen, setRelationsOpen] = useState(storedUiState?.relationsOpen ?? false);
+  const [assignmentOpen, setAssignmentOpen] = useState(storedUiState?.assignmentOpen ?? true);
   const [evidenceOpen, setEvidenceOpen] = useState(storedUiState?.evidenceOpen ?? true);
   const [statusOpenMap, setStatusOpenMap] = useState(
     storedUiState?.statusOpenMap ?? {
@@ -1234,6 +1260,12 @@ export default function FormsMonitorDetailPage() {
   const [followUps, setFollowUps] = useState([]);
   const [followUpSummary, setFollowUpSummary] = useState(null);
   const [evidenceDocuments, setEvidenceDocuments] = useState([]);
+  const [directoryItems, setDirectoryItems] = useState([]);
+  const [assignmentSearch, setAssignmentSearch] = useState("");
+  const [assignmentSaving, setAssignmentSaving] = useState(false);
+  const [complimentPointValue, setComplimentPointValue] = useState(0);
+  const [complimentReason, setComplimentReason] = useState("");
+  const [complimentSaving, setComplimentSaving] = useState(false);
 
   const [formActionBusy, setFormActionBusy] = useState(false);
   const [followUpBusyId, setFollowUpBusyId] = useState(null);
@@ -1245,6 +1277,7 @@ export default function FormsMonitorDetailPage() {
   const [showFinishCelebration, setShowFinishCelebration] = useState(false);
 
   const allowedActions = detail?.allowed_actions || {};
+  const permissions = detail?.permissions || {};
   const item = detail?.item || null;
   const canEditEvidence = ["CONCEPT", "INGEDIEND", "IN_BEHANDELING"].includes(
     String(item?.status || "")
@@ -1254,6 +1287,14 @@ export default function FormsMonitorDetailPage() {
   const relationRows = useMemo(() => buildRelationRows(item), [item]);
   const followUpCounts = useMemo(() => buildFollowUpStatusCounts(followUps), [followUps]);
   const openLikeCount = Number(followUpCounts.OPEN ?? 0) + Number(followUpCounts.WACHTENOPDERDEN ?? 0);
+  const viewerUserObjectId = String(detail?.viewer?.user_object_id || "").trim() || null;
+  const complimentPoints = Array.isArray(detail?.compliment_points) ? detail.compliment_points : [];
+  const currentViewerCompliment = useMemo(() => {
+    if (!viewerUserObjectId) return null;
+    return complimentPoints.find(
+      (row) => String(row?.reviewer_user_object_id || "").trim() === viewerUserObjectId
+    ) || null;
+  }, [complimentPoints, viewerUserObjectId]);
 
   const groupedFollowUps = useMemo(() => {
     let groups = groupFollowUpsByStatus(followUps);
@@ -1276,6 +1317,7 @@ export default function FormsMonitorDetailPage() {
   const anyOpenInDetail =
     propertiesOpen ||
     relationsOpen ||
+    assignmentOpen ||
     evidenceOpen ||
     Object.values(statusOpenMap || {}).some(Boolean);
 
@@ -1289,13 +1331,14 @@ export default function FormsMonitorDetailPage() {
 
   useEffect(() => {
     saveStateToStorage(DETAIL_UI_LS_KEY, {
-      propertiesOpen,
-      relationsOpen,
-      evidenceOpen,
-      statusOpenMap,
-      activeStatusFilters,
-    });
-  }, [propertiesOpen, relationsOpen, evidenceOpen, statusOpenMap, activeStatusFilters]);
+    propertiesOpen,
+    relationsOpen,
+    assignmentOpen,
+    evidenceOpen,
+    statusOpenMap,
+    activeStatusFilters,
+  });
+  }, [propertiesOpen, relationsOpen, assignmentOpen, evidenceOpen, statusOpenMap, activeStatusFilters]);
 
   useEffect(() => {
     saveStateToStorage(DETAIL_NOTES_LS_KEY, {
@@ -1415,8 +1458,103 @@ export default function FormsMonitorDetailPage() {
     loadDetailPage();
   }, [instanceId]);
 
+  useEffect(() => {
+    let cancelled = false;
+
+    getUserDirectory()
+      .then((res) => {
+        if (cancelled) return;
+        setDirectoryItems(Array.isArray(res?.items) ? res.items : []);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setDirectoryItems([]);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    setComplimentPointValue(
+      currentViewerCompliment?.point_value === 1
+        ? 1
+        : currentViewerCompliment?.point_value === -1
+          ? -1
+          : 0
+    );
+    setComplimentReason(String(currentViewerCompliment?.reason || ""));
+  }, [currentViewerCompliment]);
+
+  useEffect(() => {
+    const assignedLabel = String(
+      item?.assigned_display_name_snapshot || item?.assigned_email_snapshot || ""
+    ).trim();
+    setAssignmentSearch(assignedLabel);
+  }, [item?.assigned_user_object_id, item?.assigned_display_name_snapshot, item?.assigned_email_snapshot]);
+
   async function refreshDetailOnly() {
     await loadDetailPage();
+  }
+
+  async function handleAssignmentSave(clear = false) {
+    if (!item?.form_instance_id || assignmentSaving) return;
+
+    let selectedUserObjectId = "";
+    if (!clear) {
+      const hit = directoryItems.find((entry) => {
+        const label = getDirectoryDisplayName(entry);
+        return label === String(assignmentSearch || "").trim();
+      });
+      selectedUserObjectId = String(hit?.user_object_id || "").trim();
+      if (!selectedUserObjectId) {
+        window.alert("Kies eerst een geldige Ember-gebruiker uit de lijst.");
+        return;
+      }
+    }
+
+    setAssignmentSaving(true);
+    try {
+      const next = await putFormsMonitorAssignment(item.form_instance_id, {
+        assigned_user_object_id: clear ? null : selectedUserObjectId,
+        clear: clear ? 1 : 0,
+      });
+      setDetail(next || null);
+      if (clear) {
+        setAssignmentSearch("");
+      } else {
+        const hit = directoryItems.find(
+          (entry) => String(entry?.user_object_id || "").trim() === selectedUserObjectId
+        );
+        setAssignmentSearch(getDirectoryDisplayName(hit));
+      }
+    } catch (e) {
+      window.alert(e?.message || String(e));
+    } finally {
+      setAssignmentSaving(false);
+    }
+  }
+
+  async function handleComplimentSave(nextPointValue) {
+    if (!item?.form_instance_id || complimentSaving) return;
+    if (nextPointValue === -1 && !String(complimentReason || "").trim()) {
+      window.alert("Geef bij een minpunt eerst kort aan waarom dit minpunt wordt toegekend.");
+      return;
+    }
+
+    setComplimentSaving(true);
+    try {
+      const next = await putFormsMonitorComplimentPoint(item.form_instance_id, {
+        point_value: nextPointValue,
+        reason: nextPointValue === 0 ? null : complimentReason,
+      });
+      setDetail(next || null);
+    } catch (e) {
+      window.alert(e?.message || String(e));
+    } finally {
+      setComplimentSaving(false);
+    }
   }
 
   async function handleFormAction(action) {
@@ -1771,6 +1909,29 @@ export default function FormsMonitorDetailPage() {
                     <SummaryTag title="Openstaande actiepunten; inclusief wachten op derden" tone="muted">
                       {openLikeCount} open
                     </SummaryTag>
+
+                    {item.assigned_display_name_snapshot || item.assigned_email_snapshot ? (
+                      <button
+                        type="button"
+                        className="ember-label ember-label--info"
+                        title={
+                          item.assigned_email_snapshot
+                            ? `Stuur Teams-bericht naar ${item.assigned_display_name_snapshot || item.assigned_email_snapshot}`
+                            : "Toegewezen behandelaar"
+                        }
+                        onClick={() => {
+                          const teamsUrl = buildTeamsChatUrl(
+                            item.assigned_email_snapshot,
+                            item.form_instance_id
+                          );
+                          if (teamsUrl) {
+                            window.open(teamsUrl, "_blank", "noopener,noreferrer");
+                          }
+                        }}
+                      >
+                        Toegewezen aan {item.assigned_display_name_snapshot || item.assigned_email_snapshot}
+                      </button>
+                    ) : null}
                   </div>
 
                   {item.instance_title ? (
@@ -2009,6 +2170,186 @@ export default function FormsMonitorDetailPage() {
                     </div>
                   </div>
                 ))}
+              </div>
+            </CollapseSection>
+
+            <CollapseSection
+              open={assignmentOpen}
+              title="Toewijzing en complimentpunten"
+              onToggle={() => setAssignmentOpen((prev) => !prev)}
+              iconRef={assignmentToggleIconRef}
+            >
+              <div className="ui-stack">
+                <div className="cf-grid">
+                  <div className="cf-row wide">
+                    <div className="cf-label">
+                      <div className="cf-label-text cf-label-text--accent">Toegewezen aan</div>
+                    </div>
+                    <div className="cf-control ui-stack-sm">
+                      <input
+                        className="input"
+                        list="monitor-assignment-directory"
+                        value={assignmentSearch}
+                        onChange={(e) => setAssignmentSearch(e.target.value)}
+                        placeholder="Kies een Ember-gebruiker"
+                        readOnly={!permissions.can_assign_form}
+                      />
+                      <datalist id="monitor-assignment-directory">
+                        {directoryItems.map((entry) => {
+                          const label = getDirectoryDisplayName(entry);
+                          if (!label) return null;
+                          return <option key={entry.user_object_id || label} value={label} />;
+                        })}
+                      </datalist>
+
+                      <div className="ember-label-row">
+                        {item.assigned_display_name_snapshot || item.assigned_email_snapshot ? (
+                          <SummaryTag title="Huidige toewijzing" tone="info">
+                            {item.assigned_display_name_snapshot || item.assigned_email_snapshot}
+                          </SummaryTag>
+                        ) : (
+                          <SummaryTag title="Huidige toewijzing" tone="muted">
+                            Niet toegewezen
+                          </SummaryTag>
+                        )}
+
+                        {item.assigned_email_snapshot ? (
+                          <button
+                            type="button"
+                            className="btn btn-secondary"
+                            onClick={() => {
+                              const teamsUrl = buildTeamsChatUrl(
+                                item.assigned_email_snapshot,
+                                item.form_instance_id
+                              );
+                              if (teamsUrl) {
+                                window.open(teamsUrl, "_blank", "noopener,noreferrer");
+                              }
+                            }}
+                          >
+                            Teams-bericht
+                          </button>
+                        ) : null}
+                      </div>
+
+                      {permissions.can_assign_form ? (
+                        <div className="ember-toolbar">
+                          <button
+                            type="button"
+                            className="btn btn-secondary"
+                            disabled={assignmentSaving}
+                            onClick={() => handleAssignmentSave(false)}
+                          >
+                            Toewijzen
+                          </button>
+                          <button
+                            type="button"
+                            className="btn btn-secondary"
+                            disabled={assignmentSaving}
+                            onClick={() => handleAssignmentSave(true)}
+                          >
+                            Toewijzing opheffen
+                          </button>
+                        </div>
+                      ) : null}
+
+                      <div className="ember-page-subtitle">
+                        {item.assigned_at
+                          ? `Bijgewerkt op ${formatDateTime(item.assigned_at)}${item.assigned_by ? ` door ${item.assigned_by}` : ""}`
+                          : "Nog geen behandelaar toegewezen."}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="cf-grid">
+                  <div className="cf-row wide">
+                    <div className="cf-label">
+                      <div className="cf-label-text cf-label-text--accent">Complimentpunten</div>
+                    </div>
+                    <div className="cf-control ui-stack-sm">
+                      <div className="ember-label-row">
+                        <button
+                          type="button"
+                          className={
+                            complimentPointValue === 1
+                              ? "ember-label ember-label--success ember-label--button"
+                              : "ember-label ember-label--muted ember-label--button"
+                          }
+                          disabled={!permissions.can_set_compliment_points || complimentSaving}
+                          onClick={() => setComplimentPointValue((prev) => (prev === 1 ? 0 : 1))}
+                        >
+                          +1 complimentpunt
+                        </button>
+                        <button
+                          type="button"
+                          className={
+                            complimentPointValue === -1
+                              ? "ember-label ember-label--danger ember-label--button"
+                              : "ember-label ember-label--muted ember-label--button"
+                          }
+                          disabled={!permissions.can_set_compliment_points || complimentSaving}
+                          onClick={() => setComplimentPointValue((prev) => (prev === -1 ? 0 : -1))}
+                        >
+                          -1 complimentpunt
+                        </button>
+                        <SummaryTag title="Totaal actieve beoordelingen" tone="muted">
+                          {complimentPoints.length} beoordeling(en)
+                        </SummaryTag>
+                      </div>
+
+                      <textarea
+                        className="cf-textarea"
+                        rows={3}
+                        placeholder="Waarom geef je dit complimentpunt?"
+                        value={complimentReason}
+                        onChange={(e) => setComplimentReason(e.target.value)}
+                        readOnly={!permissions.can_set_compliment_points}
+                      />
+
+                      {permissions.can_set_compliment_points ? (
+                        <div className="ember-toolbar">
+                          <button
+                            type="button"
+                            className="btn btn-secondary"
+                            disabled={complimentSaving}
+                            onClick={() => handleComplimentSave(complimentPointValue)}
+                          >
+                            Opslaan
+                          </button>
+                          <button
+                            type="button"
+                            className="btn btn-secondary"
+                            disabled={complimentSaving}
+                            onClick={() => handleComplimentSave(0)}
+                          >
+                            Wissen
+                          </button>
+                        </div>
+                      ) : null}
+
+                      <div className="ui-stack-sm">
+                        {complimentPoints.length === 0 ? (
+                          <div className="ember-page-subtitle">Nog geen complimentpunten vastgelegd.</div>
+                        ) : (
+                          complimentPoints.map((point) => (
+                            <div key={point.compliment_point_id || `${point.reviewer_user_object_id}-${point.point_value}`} className="ember-label-row">
+                              <SummaryTag
+                                title="Beoordelaar"
+                                tone={Number(point.point_value) === 1 ? "success" : "danger"}
+                              >
+                                {Number(point.point_value) === 1 ? "+1" : "-1"} {point.reviewer_display_name_snapshot || point.reviewer_email_snapshot || "Beoordelaar"}
+                              </SummaryTag>
+                              {point.reason ? (
+                                <span className="ember-page-subtitle">{point.reason}</span>
+                              ) : null}
+                            </div>
+                          ))
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </div>
               </div>
             </CollapseSection>
 

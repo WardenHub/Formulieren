@@ -9,6 +9,8 @@ import {
   postFormsMonitorFollowUpStatusAction,
   putFormsMonitorFollowUpNote,
   downloadFormsMonitorPdf,
+  putFormsMonitorAssignment,
+  putFormsMonitorComplimentPoint,
 } from "../controllers/formsMonitorController.js";
 import { requireRole } from "../middleware/roleMiddleware.js";
 
@@ -21,6 +23,8 @@ router.get("/:formInstanceId", requireRole("admin", "gebruiker", "documentbeheer
 
 
 router.post("/:formInstanceId/status-action", requireRole("admin", "documentbeheerder"), postFormsMonitorStatusAction);
+router.put("/:formInstanceId/assignment", requireRole("admin", "documentbeheerder"), putFormsMonitorAssignment);
+router.put("/:formInstanceId/compliment-point", requireRole("admin", "documentbeheerder"), putFormsMonitorComplimentPoint);
 router.post("/follow-ups/:followUpActionId/status-action", requireRole("admin", "documentbeheerder"), postFormsMonitorFollowUpStatusAction);
 router.put("/follow-ups/:followUpActionId/note", requireRole("admin", "documentbeheerder"), putFormsMonitorFollowUpNote);
 

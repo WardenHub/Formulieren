@@ -7,6 +7,9 @@ import {
   getFormsMonitorChildrenSql,
   updateFormInstanceStatusSql,
   setFormInstanceInBehandelingIfSubmittedSql,
+  updateFormInstanceAssignmentSql,
+  getFormInstanceComplimentPointsSql,
+  upsertFormInstanceComplimentPointSql,
 } from "../db/queries/formsMonitor.sql.js";
 import {
   getFormFollowUpSummaryByInstanceSql,
@@ -15,6 +18,7 @@ import {
   updateFormFollowUpStatusSql,
   updateFormFollowUpNoteSql,
 } from "../db/queries/formFollowUps.sql.js";
+import { getUserProfileSql } from "../db/queries/profile.sql.js";
 import { isHistoricalInstallationStatus } from "./installationsService.js";
 
 type UserContext = {
@@ -60,6 +64,51 @@ function getActor(user: any) {
     "unknown";
 
   return String(raw).trim() || "unknown";
+}
+
+function getActorObjectId(user: any) {
+  const raw = user?.objectId || user?.email || user?.upn || user?.preferred_username || user?.name || null;
+  const clean = String(raw || "").trim();
+  return clean || null;
+}
+
+function getActorCandidates(user: any) {
+  return Array.from(
+    new Set(
+      [
+        user?.email,
+        user?.upn,
+        user?.preferred_username,
+        user?.name,
+        user?.objectId,
+      ]
+        .map((value) => String(value || "").trim())
+        .filter(Boolean)
+    )
+  );
+}
+
+function profileDisplayName(row: any) {
+  const first =
+    row?.preferred_display_name ??
+    row?.display_name_snapshot ??
+    row?.email_snapshot ??
+    null;
+  const clean = String(first || "").trim();
+  return clean || null;
+}
+
+async function getUserProfileSnapshot(userObjectIdRaw: any) {
+  const userObjectId = normalizeOptionalString(userObjectIdRaw);
+  if (!userObjectId) return null;
+  const rows = await sqlQuery(getUserProfileSql, { userObjectId });
+  const row: any = rows?.[0] ?? null;
+  if (!row) return null;
+  return {
+    user_object_id: String(row.user_object_id || userObjectId),
+    display_name_snapshot: profileDisplayName(row),
+    email_snapshot: normalizeOptionalString(row.email_snapshot),
+  };
 }
 
 function isManager(roles: string[]) {
@@ -289,6 +338,11 @@ export async function getMonitorList(input: {
   const take = Math.min(Math.max(Number(input?.query?.take ?? 25) || 25, 1), 200);
   const skip = Math.max(Number(input?.query?.skip ?? 0) || 0, 0);
   const actor = getActor(input.user);
+  const actorCandidates = getActorCandidates(input.user);
+  const assignedUserObjectId = normalizeOptionalString(input?.query?.assignedUserObjectId);
+  const assignedSearch = normalizeOptionalString(input?.query?.assignedSearch);
+  const unassignedOnly = normalizeBoolean(input?.query?.unassignedOnly, false);
+  const viewerUserObjectId = getActorObjectId(input.user);
 
   const rows = await sqlQuery(getFormsMonitorListSql, {
     q,
@@ -300,6 +354,10 @@ export async function getMonitorList(input: {
     take,
     skip,
     actor,
+    actorCandidatesJson: JSON.stringify(actorCandidates),
+    assignedUserObjectId,
+    assignedSearch,
+    unassignedOnly,
   });
 
   const items = (rows || []).map((r: any) => ({
@@ -315,6 +373,11 @@ export async function getMonitorList(input: {
     updated_by: r.updated_by,
     submitted_at: r.submitted_at,
     submitted_by: r.submitted_by,
+    assigned_user_object_id: r.assigned_user_object_id ?? null,
+    assigned_display_name_snapshot: r.assigned_display_name_snapshot ?? null,
+    assigned_email_snapshot: r.assigned_email_snapshot ?? null,
+    assigned_at: r.assigned_at ?? null,
+    assigned_by: r.assigned_by ?? null,
     form_code: r.form_code,
     form_name: r.form_name,
     version: r.version == null ? null : Number(r.version),
@@ -361,6 +424,9 @@ export async function getMonitorList(input: {
       defaults: {
         mine,
       },
+      viewer: {
+        user_object_id: viewerUserObjectId,
+      },
     },
   };
 }
@@ -392,6 +458,7 @@ export async function getMonitorDetail(formInstanceIdRaw: any, context: DetailCo
     getChildrenRows(formInstanceId),
     getFollowUpSummary(formInstanceId),
   ]);
+  const complimentPoints = await sqlQuery(getFormInstanceComplimentPointsSql, { formInstanceId });
 
   const { allowed, hints } = buildAllowedActions(item, followUpSummary, context.roles || []);
 
@@ -400,8 +467,17 @@ export async function getMonitorDetail(formInstanceIdRaw: any, context: DetailCo
     parent,
     children,
     follow_up_summary: followUpSummary,
+    compliment_points: Array.isArray(complimentPoints) ? complimentPoints : [],
     allowed_actions: allowed,
     action_hints: hints,
+    permissions: {
+      can_assign_form: isManager(context.roles || []),
+      can_set_compliment_points: isManager(context.roles || []),
+    },
+    viewer: {
+      actor: getActor(context.user),
+      user_object_id: getActorObjectId(context.user),
+    },
   };
 }
 
@@ -538,4 +614,99 @@ export async function updateMonitorFollowUpNote(
     ok: true,
     item: rows?.[0] ?? null,
   };
+}
+
+export async function updateMonitorFormAssignment(
+  formInstanceIdRaw: any,
+  payload: any,
+  context: UserContext
+) {
+  const formInstanceId = parsePositiveInt(formInstanceIdRaw);
+  if (formInstanceId == null) return { error: "not found" };
+  if (!isManager(context.roles || [])) throw new Error("forbidden");
+
+  const item = await getMonitorDetailRow(formInstanceId);
+  if (!item) return { error: "not found" };
+  if (isHistoricalInstallationStatus(item.installation_status)) {
+    throw new Error("historical installation read-only");
+  }
+
+  const changedBy = getActor(context.user);
+  const clearRequested = normalizeBoolean(payload?.clear, false);
+  const requestedUserObjectId = clearRequested
+    ? null
+    : normalizeOptionalString(payload?.assigned_user_object_id ?? payload?.assignedUserObjectId);
+
+  let snapshot = null;
+  if (requestedUserObjectId) {
+    snapshot = await getUserProfileSnapshot(requestedUserObjectId);
+    if (!snapshot) throw new Error("assigned user not found");
+  }
+
+  await sqlQuery(updateFormInstanceAssignmentSql, {
+    formInstanceId,
+    assignedUserObjectId: snapshot?.user_object_id ?? null,
+    assignedDisplayNameSnapshot: snapshot?.display_name_snapshot ?? null,
+    assignedEmailSnapshot: snapshot?.email_snapshot ?? null,
+    changedBy,
+  });
+
+  return await getMonitorDetail(formInstanceId, {
+    user: context.user,
+    roles: context.roles || [],
+    autoClaim: false,
+  });
+}
+
+export async function upsertMonitorComplimentPoint(
+  formInstanceIdRaw: any,
+  payload: any,
+  context: UserContext
+) {
+  const formInstanceId = parsePositiveInt(formInstanceIdRaw);
+  if (formInstanceId == null) return { error: "not found" };
+  if (!isManager(context.roles || [])) throw new Error("forbidden");
+
+  const item = await getMonitorDetailRow(formInstanceId);
+  if (!item) return { error: "not found" };
+  if (String(item.status || "").trim() === "INGETROKKEN") {
+    throw new Error("compliment points not allowed for withdrawn forms");
+  }
+  if (isHistoricalInstallationStatus(item.installation_status)) {
+    throw new Error("historical installation read-only");
+  }
+
+  const reviewerUserObjectId = getActorObjectId(context.user);
+  if (!reviewerUserObjectId) throw new Error("missing reviewer");
+
+  const pointValueRaw = Number(payload?.point_value ?? payload?.pointValue ?? 0);
+  const pointValue =
+    pointValueRaw === 1 ? 1 : pointValueRaw === -1 ? -1 : 0;
+  const reason = normalizeOptionalString(payload?.reason);
+
+  if (pointValue === -1 && !reason) {
+    throw new Error("negative compliment point requires reason");
+  }
+
+  const reviewerSnapshot = {
+    user_object_id: reviewerUserObjectId,
+    display_name_snapshot: normalizeOptionalString(context.user?.name) || getActor(context.user),
+    email_snapshot: normalizeOptionalString(context.user?.email || context.user?.preferred_username),
+  };
+
+  await sqlQuery(upsertFormInstanceComplimentPointSql, {
+    formInstanceId,
+    reviewerUserObjectId: reviewerSnapshot.user_object_id,
+    reviewerDisplayNameSnapshot: reviewerSnapshot.display_name_snapshot,
+    reviewerEmailSnapshot: reviewerSnapshot.email_snapshot,
+    pointValue,
+    reason,
+    changedBy: getActor(context.user),
+  });
+
+  return await getMonitorDetail(formInstanceId, {
+    user: context.user,
+    roles: context.roles || [],
+    autoClaim: false,
+  });
 }

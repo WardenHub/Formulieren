@@ -388,6 +388,58 @@ export async function downloadInstallationProgrammingBlob(storageKey: string) {
 }
 
 /* =========================================================
+   form guidance media
+   ========================================================= */
+
+export function buildFormGuidanceMediaStorageKey(
+  guidanceId: string,
+  originalFileName: string,
+  guidanceMediaId: string
+) {
+  const { baseName, extension } = splitFileNameParts(originalFileName);
+  const safeGuidanceId = sanitizePart(guidanceId) || guidanceId;
+  const safeGuidanceMediaId = sanitizePart(guidanceMediaId) || guidanceMediaId;
+
+  return `formulieren/uitleg/${safeGuidanceId}/media/${safeGuidanceMediaId}/${baseName}${extension}`;
+}
+
+export async function uploadFormGuidanceMediaBlob(args: {
+  guidanceId: string;
+  guidanceMediaId: string;
+  fileName: string;
+  contentType?: string | null;
+  buffer: Buffer;
+}) {
+  const storageKey = buildFormGuidanceMediaStorageKey(
+    args.guidanceId,
+    args.fileName,
+    args.guidanceMediaId
+  );
+
+  return uploadBlob({
+    storageKey,
+    contentType: args.contentType,
+    buffer: args.buffer,
+  });
+}
+
+export async function deleteFormGuidanceMediaBlob(storageKey: string) {
+  return deleteBlob(storageKey);
+}
+
+export async function createFormGuidanceMediaDownloadUrl(args: {
+  storageKey: string;
+  expiresInSeconds?: number;
+  downloadFileName?: string | null;
+}) {
+  return createDownloadUrl(args);
+}
+
+export async function downloadFormGuidanceMediaBlob(storageKey: string) {
+  return downloadBlob(storageKey);
+}
+
+/* =========================================================
    user profile media
    ========================================================= */
 
