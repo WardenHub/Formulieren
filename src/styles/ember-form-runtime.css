@@ -1,0 +1,460 @@
+.ember-runtime-page {
+  display: grid;
+  gap: 18px;
+  color: var(--text);
+}
+
+.ember-runtime-page__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.ember-runtime-page__title {
+  font-size: clamp(1.6rem, 1.2rem + 1vw, 2.2rem);
+  font-weight: 900;
+  line-height: 1.05;
+}
+
+.ember-runtime-page__body {
+  display: grid;
+  gap: 18px;
+}
+
+.ember-runtime-panel {
+  padding: 18px;
+  display: grid;
+  gap: 16px;
+}
+
+.ember-runtime-panel__title {
+  font-size: 1.15rem;
+  font-weight: 900;
+}
+
+.ember-runtime-panel__content {
+  display: grid;
+  gap: 14px;
+}
+
+.ember-runtime-panel__content--grid {
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+}
+
+.ember-runtime-field {
+  display: grid;
+  gap: 8px;
+}
+
+.ember-runtime-field--compact {
+  gap: 6px;
+}
+
+.ember-runtime-field__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.ember-runtime-field__title-wrap {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.ember-runtime-field__label {
+  font-weight: 800;
+  line-height: 1.2;
+}
+
+.ember-runtime-required {
+  color: var(--danger);
+}
+
+.ember-runtime-field__description {
+  color: var(--muted);
+  font-size: 0.94rem;
+  line-height: 1.45;
+}
+
+.ember-runtime-guidance-btn {
+  flex: 0 0 auto;
+}
+
+.ember-runtime-input,
+.ember-runtime-select,
+.ember-runtime-textarea {
+  width: 100%;
+  min-height: 46px;
+  border: 1px solid var(--border);
+  background: var(--input-bg, var(--surface-2));
+  color: var(--text);
+  border-radius: 14px;
+  padding: 12px 14px;
+  font: inherit;
+  box-sizing: border-box;
+}
+
+.ember-runtime-textarea {
+  min-height: 112px;
+  resize: vertical;
+}
+
+.ember-runtime-input:focus,
+.ember-runtime-select:focus,
+.ember-runtime-textarea:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 20%, transparent);
+}
+
+.ember-runtime-input[disabled],
+.ember-runtime-select[disabled],
+.ember-runtime-textarea[disabled] {
+  opacity: 1;
+  cursor: default;
+  color: var(--text);
+}
+
+.ember-runtime-html {
+  color: var(--muted);
+  line-height: 1.55;
+}
+
+.ember-runtime-html p,
+.ember-runtime-html ul,
+.ember-runtime-html ol {
+  margin: 0 0 12px;
+}
+
+.ember-runtime-html p:last-child,
+.ember-runtime-html ul:last-child,
+.ember-runtime-html ol:last-child {
+  margin-bottom: 0;
+}
+
+.ember-runtime-field-errors {
+  display: grid;
+  gap: 4px;
+}
+
+.ember-runtime-field-error {
+  color: var(--danger);
+  font-size: 0.9rem;
+  font-weight: 700;
+  line-height: 1.35;
+}
+
+.ember-runtime-segment-row {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.ember-runtime-segment-row--tight {
+  gap: 8px;
+}
+
+.ember-runtime-segment {
+  min-height: 46px;
+  border-radius: 14px;
+  border: 1px solid var(--border);
+  background: var(--card-bg, var(--surface));
+  color: var(--text);
+  font: inherit;
+  font-weight: 800;
+  padding: 0 14px;
+  cursor: pointer;
+  transition:
+    transform 160ms ease,
+    border-color 160ms ease,
+    background-color 160ms ease,
+    color 160ms ease,
+    box-shadow 160ms ease;
+}
+
+.ember-runtime-segment:hover:not(:disabled) {
+  transform: translateY(-1px);
+  border-color: color-mix(in srgb, var(--accent) 34%, var(--border));
+}
+
+.ember-runtime-segment:disabled {
+  cursor: default;
+}
+
+.ember-runtime-segment--selected {
+  background: color-mix(in srgb, var(--accent) 14%, var(--card-bg, var(--surface)));
+  border-color: color-mix(in srgb, var(--accent) 48%, var(--border));
+  color: var(--text-strong, var(--text));
+}
+
+.ember-runtime-segment--touch {
+  min-height: 52px;
+  font-size: 1rem;
+}
+
+.ember-runtime-matrix {
+  display: grid;
+  gap: 12px;
+}
+
+.ember-runtime-matrix__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.ember-runtime-matrix__title {
+  font-size: 1.05rem;
+  font-weight: 900;
+}
+
+.ember-runtime-add-btn,
+.ember-runtime-remove-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.ember-runtime-card-list {
+  display: grid;
+  gap: 14px;
+}
+
+.ember-runtime-row-card {
+  padding: 16px;
+  display: grid;
+  gap: 14px;
+}
+
+.ember-runtime-row-card__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.ember-runtime-row-card__title {
+  font-weight: 900;
+}
+
+.ember-runtime-row-card__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+}
+
+.ember-runtime-card-field {
+  display: grid;
+  gap: 6px;
+}
+
+.ember-runtime-card-field--full {
+  grid-column: 1 / -1;
+}
+
+.ember-runtime-card-field__label {
+  font-size: 0.92rem;
+  font-weight: 800;
+  color: var(--muted);
+}
+
+.ember-runtime-textarea--card {
+  min-height: 108px;
+}
+
+.ember-runtime-textarea--matrix {
+  min-height: 112px;
+}
+
+.ember-runtime-table-shell {
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+}
+
+.ember-runtime-table {
+  width: 100%;
+  min-width: max-content;
+  border-collapse: collapse;
+  background: var(--card-bg, var(--surface));
+}
+
+.ember-runtime-table th,
+.ember-runtime-table td {
+  padding: 12px 14px;
+  text-align: left;
+  border-bottom: 1px solid var(--border);
+  vertical-align: top;
+}
+
+.ember-runtime-table th {
+  font-weight: 900;
+  color: var(--text-strong, var(--text));
+  background: color-mix(in srgb, var(--surface-2) 72%, transparent);
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+
+.ember-runtime-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.ember-runtime-assessment {
+  display: grid;
+  gap: 10px;
+}
+
+.ember-runtime-assessment__grid {
+  display: grid;
+  grid-template-columns: 86px 42px minmax(240px, 1.25fr) minmax(280px, 0.9fr) minmax(260px, 1fr);
+  gap: 12px;
+  align-items: start;
+}
+
+.ember-runtime-assessment__header {
+  padding: 0 2px;
+  color: var(--text-strong, var(--text));
+  font-weight: 900;
+}
+
+.ember-runtime-assessment__rows {
+  display: grid;
+  gap: 12px;
+}
+
+.ember-runtime-assessment__row {
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  background: var(--card-bg, var(--surface));
+}
+
+.ember-runtime-assessment__nr,
+.ember-runtime-assessment__topic,
+.ember-runtime-assessment__guidance,
+.ember-runtime-assessment__answer,
+.ember-runtime-assessment__comment {
+  min-width: 0;
+}
+
+.ember-runtime-assessment__guidance {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.ember-runtime-readonly-cell {
+  min-height: 46px;
+  display: flex;
+  align-items: center;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--input-bg, var(--surface-2));
+  padding: 10px 14px;
+  box-sizing: border-box;
+}
+
+.ember-runtime-readonly-cell--topic {
+  font-weight: 700;
+}
+
+.ember-runtime-dynamic-list {
+  display: grid;
+  gap: 14px;
+}
+
+.ember-runtime-dynamic-card {
+  padding: 16px;
+  display: grid;
+  gap: 12px;
+}
+
+.ember-runtime-dynamic-card__title {
+  font-weight: 900;
+  font-size: 1rem;
+}
+
+.ember-runtime-dynamic-card__body {
+  display: grid;
+  gap: 12px;
+}
+
+.ember-runtime-empty,
+.ember-runtime-unsupported {
+  color: var(--muted);
+  padding: 10px 0;
+}
+
+@media (max-width: 1180px) {
+  .ember-runtime-assessment__grid {
+    grid-template-columns: 76px 38px minmax(200px, 1fr) minmax(220px, 0.9fr);
+  }
+
+  .ember-runtime-assessment__header > :last-child {
+    display: none;
+  }
+
+  .ember-runtime-assessment__comment {
+    grid-column: 3 / -1;
+  }
+}
+
+@media (max-width: 860px) {
+  .ember-runtime-page__title {
+    font-size: 1.45rem;
+  }
+
+  .ember-runtime-panel {
+    padding: 14px;
+  }
+
+  .ember-runtime-assessment__grid {
+    grid-template-columns: 72px 38px minmax(0, 1fr);
+  }
+
+  .ember-runtime-assessment__header {
+    display: none;
+  }
+
+  .ember-runtime-assessment__answer,
+  .ember-runtime-assessment__comment {
+    grid-column: 3 / -1;
+  }
+
+  .ember-runtime-assessment__answer {
+    margin-top: 4px;
+  }
+
+  .ember-runtime-row-card__grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 640px) {
+  .ember-runtime-segment-row {
+    grid-template-columns: 1fr;
+  }
+
+  .ember-runtime-assessment__grid {
+    grid-template-columns: 1fr;
+  }
+
+  .ember-runtime-assessment__guidance,
+  .ember-runtime-assessment__answer,
+  .ember-runtime-assessment__comment,
+  .ember-runtime-assessment__topic,
+  .ember-runtime-assessment__nr {
+    grid-column: auto;
+  }
+
+  .ember-runtime-assessment__guidance {
+    justify-content: flex-start;
+  }
+}

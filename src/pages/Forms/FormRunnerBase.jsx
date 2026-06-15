@@ -6,6 +6,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import { Survey } from "survey-react-ui";
 import "survey-core/survey-core.min.css";
 import "../../styles/surveyjs-overrides.css";
+import "../../styles/ember-form-runtime.css";
 
 import { ChevronLeftIcon } from "@/components/ui/chevron-left";
 import { FileCogIcon } from "@/components/ui/file-cog";
@@ -42,6 +43,7 @@ import {
 import FormPageNavigator from "./shared/FormPageNavigator.jsx";
 import FormContextPanel from "./shared/FormContextPanel";
 import FormAssistantPanel from "./shared/FormAssistantPanel.jsx";
+import EmberRuntimeSurvey from "./shared/EmberRuntimeSurvey.jsx";
 
 import {
   normalizeInstanceResponse,
@@ -287,6 +289,73 @@ function themedErrorStyle(extra = {}) {
     color: "var(--danger, salmon)",
     ...extra,
   };
+}
+
+function walkSurveyElements(node, visit) {
+  if (!node || typeof node !== "object") return;
+
+  visit(node);
+
+  ["pages", "elements", "templateElements", "questions"].forEach((key) => {
+    const items = node[key];
+    if (!Array.isArray(items)) return;
+    items.forEach((item) => walkSurveyElements(item, visit));
+  });
+}
+
+function getEmberOwnedRuntimeCapabilityReport(surveyParsed) {
+  if (!surveyParsed?.ok || !surveyParsed?.value) {
+    return {
+      supported: false,
+      unsupportedTypes: ["survey_json"],
+    };
+  }
+
+  const supportedTypes = new Set([
+    "survey",
+    "page",
+    "panel",
+    "html",
+    "text",
+    "comment",
+    "dropdown",
+    "radiogroup",
+    "matrixdynamic",
+    "paneldynamic",
+  ]);
+
+  const unsupportedTypes = new Set();
+
+  walkSurveyElements(surveyParsed.value, (node) => {
+    const type = String(node?.type || node?.getType?.() || "survey")
+      .trim()
+      .toLowerCase();
+
+    if (!supportedTypes.has(type)) {
+      unsupportedTypes.add(type || "(leeg)");
+    }
+  });
+
+  return {
+    supported: unsupportedTypes.size === 0,
+    unsupportedTypes: Array.from(unsupportedTypes),
+  };
+}
+
+function shouldUseEmberOwnedRuntime(instance, surveyParsed) {
+  const capability = getEmberOwnedRuntimeCapabilityReport(surveyParsed);
+  if (!capability.supported) return false;
+
+  if (typeof window === "undefined") return false;
+
+  const params = new URLSearchParams(window.location.search);
+  const runtimeMode = String(params.get("runtime") || "").trim().toLowerCase();
+  if (runtimeMode !== "ember") return false;
+
+  const formCode = String(instance?.form_code || "").trim().toUpperCase();
+  if (!formCode) return false;
+
+  return true;
 }
 
 function ToggleRow({ title, meta, isOpen, onToggle, iconRef, onIconEnter, onIconLeave }) {
@@ -1059,6 +1128,7 @@ export default function FormRunnerBase({ mode }) {
       const alreadyLoaded = lastLoadedKeyRef.current === key;
 
       const parsedSurvey = safeSurveyParse(inst?.survey_json);
+      const useEmberOwnedRuntime = shouldUseEmberOwnedRuntime(inst, parsedSurvey);
 
       const shouldOverwriteEditor = forceEditor || (!dirty && !alreadyLoaded);
       const shouldOverwriteMetadata = forceEditor || (!hasMetadataChanges && !alreadyLoaded);
@@ -1126,19 +1196,21 @@ export default function FormRunnerBase({ mode }) {
       setLastAppliedMap(runtime.lastAppliedMap || {});
       setAnswersPreview({ ...(runtime.model.data || {}) });
 
-      runtimeDetachRef.current = attachRuntimeBehaviors({
-        model: runtime.model,
-        prefillPayload: runtime.prefillPayload,
-        energyAutoStateRef,
-        availabilityAutoStateRef,
-        validationActivatedRef,
-        suppressDirtyRef,
-        onAnswersSnapshotChange: setAnswersPreview,
-        onValidationSummaryChange: setValidationSummary,
-        guidanceByQuestion: inst?.guidance_by_question || null,
-        guidanceByMatrixRow: inst?.guidance_by_matrix_row || null,
-        onOpenQuestionGuidance: setGuidanceDialog,
-      });
+      runtimeDetachRef.current = useEmberOwnedRuntime
+        ? () => {}
+        : attachRuntimeBehaviors({
+            model: runtime.model,
+            prefillPayload: runtime.prefillPayload,
+            energyAutoStateRef,
+            availabilityAutoStateRef,
+            validationActivatedRef,
+            suppressDirtyRef,
+            onAnswersSnapshotChange: setAnswersPreview,
+            onValidationSummaryChange: setValidationSummary,
+            guidanceByQuestion: inst?.guidance_by_question || null,
+            guidanceByMatrixRow: inst?.guidance_by_matrix_row || null,
+            onOpenQuestionGuidance: setGuidanceDialog,
+          });
 
       if (isDebug && shouldOverwriteEditor) {
         setDebugAnswersText(JSON.stringify(answersObj || {}, null, 2));
@@ -1591,6 +1663,7 @@ export default function FormRunnerBase({ mode }) {
   }
 
   const model = !isDebug ? surveyModelRef.current : null;
+  const useEmberRuntime = !isDebug && shouldUseEmberOwnedRuntime(instance, surveyParsed);
 
   if (loading) return <div className="muted">Laden...</div>;
 
@@ -2339,7 +2412,20 @@ export default function FormRunnerBase({ mode }) {
                 color: "var(--text)",
               }}
             >
-              <Survey key={surveyRenderKey} model={model} />
+              {useEmberRuntime ? (
+                <EmberRuntimeSurvey
+                  key={surveyRenderKey}
+                  model={model}
+                  canEdit={canEditAnswers}
+                  hasValidatedOnce={hasValidatedOnce}
+                  validationSummary={validationSummary}
+                  guidanceByQuestion={instance?.guidance_by_question || null}
+                  guidanceByMatrixRow={instance?.guidance_by_matrix_row || null}
+                  onOpenGuidance={setGuidanceDialog}
+                />
+              ) : (
+                <Survey key={surveyRenderKey} model={model} />
+              )}
             </div>
           )}
         </div>
