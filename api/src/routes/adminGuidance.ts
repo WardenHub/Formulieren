@@ -7,6 +7,7 @@ import {
   createGuidanceItem,
   getAdminGuidanceCatalog,
   replaceGuidanceLinks,
+  updateGuidanceMedia,
   updateGuidanceItem,
   uploadGuidanceMedia,
 } from "../controllers/adminGuidanceController.js";
@@ -42,6 +43,11 @@ router.post(
   "/items/:guidanceId/media/:guidanceMediaId/activate",
   requireRole(...allowedRoles),
   activateGuidanceMedia
+);
+router.put(
+  "/items/:guidanceId/media/:guidanceMediaId",
+  requireRole(...allowedRoles),
+  updateGuidanceMedia
 );
 router.post(
   "/items/:guidanceId/media/:guidanceMediaId/archive",

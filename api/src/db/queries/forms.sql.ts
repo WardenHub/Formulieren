@@ -470,6 +470,8 @@ select
   fgl.guidance_id,
   fgl.form_id,
   fgl.question_name,
+  fgl.matrix_row_key,
+  fgl.matrix_row_label,
   fgl.sort_order as link_sort_order,
   fgi.title,
   fgi.body_markdown,
@@ -519,6 +521,7 @@ where fgl.form_id = @formId
   and fgi.is_active = 1
 order by
   fgl.question_name,
+  fgl.matrix_row_key,
   fgl.sort_order,
   fgi.sort_order,
   fgi.title;

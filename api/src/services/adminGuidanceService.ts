@@ -8,6 +8,7 @@ import {
   getAdminGuidanceCatalogSql,
   getGuidanceMediaAssetContextSql,
   replaceGuidanceLinksSql,
+  updateGuidanceMediaAssetSql,
   updateGuidanceItemSql,
 } from "../db/queries/adminGuidance.sql.js";
 import {
@@ -56,56 +57,165 @@ function parseJsonObject(value: any, fallback: any = null) {
   }
 }
 
-function collectSurveyQuestions(elements: any, target: Map<string, { question_name: string; title: string }>) {
+function deepCloneJson<T>(value: T): T {
+  return JSON.parse(JSON.stringify(value));
+}
+
+function normalizeQuestionType(value: any) {
+  return String(value || "").trim().toLowerCase();
+}
+
+function normalizeMatrixRowKey(value: any) {
+  return String(value || "").trim();
+}
+
+function isQuestionContainerType(type: string) {
+  return type === "panel";
+}
+
+function isIncludedQuestionType(type: string) {
+  return Boolean(type) && type !== "panel" && type !== "html" && type !== "expression";
+}
+
+function isMatrixQuestionType(type: string) {
+  return type === "matrixdynamic" || type === "matrix" || type === "matrixdropdown";
+}
+
+function resolveElementTitle(element: any) {
+  return normalizeRequiredText(
+    element?.title ??
+      element?.locTitle?.defaultText ??
+      element?.locTitleName ??
+      element?.name
+  );
+}
+
+function normalizeGuidancePageKey(value: any) {
+  return String(value || "")
+    .trim()
+    .toLowerCase()
+    .replaceAll(" ", "")
+    .replaceAll("-", "")
+    .replaceAll("_", "");
+}
+
+function isGuidanceExcludedPage(page: any) {
+  const pageName = normalizeGuidancePageKey(page?.name);
+  const pageTitle = normalizeGuidancePageKey(resolveElementTitle(page));
+  return pageName === "algemeen" || pageTitle === "algemeen" || pageName === "documenten" || pageTitle === "documenten";
+}
+
+function resolveDisplayQuestionTitle(element: any, fallbackContextTitle = "") {
+  const explicitTitle = resolveElementTitle(element);
+  const titleLocation = String(element?.titleLocation || "").trim().toLowerCase();
+
+  if (explicitTitle && titleLocation !== "hidden") {
+    return explicitTitle;
+  }
+
+  if (fallbackContextTitle) {
+    return fallbackContextTitle;
+  }
+
+  return explicitTitle || normalizeRequiredText(element?.name);
+}
+
+function resolveMatrixRowCode(row: any) {
+  return normalizeOptionalText(row?.item_code ?? row?.itemCode ?? row?.nr ?? row?.code);
+}
+
+function resolveMatrixRowTitle(row: any, rowIndex: number) {
+  return (
+    normalizeRequiredText(row?.onderwerp ?? row?.title ?? row?.omschrijving ?? row?.label) ||
+    `Regel ${rowIndex + 1}`
+  );
+}
+
+function resolveMatrixRowKey(row: any, rowIndex: number) {
+  const directKey =
+    normalizeMatrixRowKey(row?.item_code ?? row?.itemCode ?? row?.nr ?? row?.code ?? row?.name);
+
+  if (directKey) return directKey;
+
+  const fallbackTitle = normalizeMatrixRowKey(row?.onderwerp ?? row?.title ?? row?.omschrijving);
+  if (fallbackTitle) return fallbackTitle;
+
+  return String(rowIndex + 1);
+}
+
+function extractMatrixRows(element: any) {
+  const rows = Array.isArray(element?.defaultValue)
+    ? element.defaultValue
+    : Array.isArray(element?.jsonObj?.defaultValue)
+      ? element.jsonObj.defaultValue
+      : [];
+
+  return rows
+    .map((row: any, rowIndex: number) => {
+      const matrixRowKey = resolveMatrixRowKey(row, rowIndex);
+      if (!matrixRowKey) return null;
+
+      const rowCode = resolveMatrixRowCode(row);
+      const rowTitle = resolveMatrixRowTitle(row, rowIndex);
+
+      return {
+        matrix_row_key: matrixRowKey,
+        matrix_row_label: [rowCode, rowTitle].filter(Boolean).join(" ; ") || rowTitle,
+        row_code: rowCode,
+        row_title: rowTitle,
+        row_index: rowIndex,
+        preview_row_json: deepCloneJson(row),
+      };
+    })
+    .filter(Boolean);
+}
+
+function collectSurveyQuestions(
+  elements: any,
+  target: Map<
+    string,
+    {
+      question_name: string;
+      title: string;
+      question_type: string;
+      page_title: string;
+      context_title: string | null;
+      display_order: number;
+      preview_element_json: any;
+      matrix_rows: any[];
+    }
+  >,
+  ctx: { pageTitle: string; contextTitle: string; nextOrderRef: { value: number } }
+) {
   if (!Array.isArray(elements)) return;
 
   for (const element of elements) {
     if (!element || typeof element !== "object") continue;
 
-    const type = String(element.type || "").trim().toLowerCase();
+    const type = normalizeQuestionType(element.type);
     const name = normalizeRequiredText(element.name);
-    const title = normalizeRequiredText(
-      element.title ??
-        element.locTitle?.defaultText ??
-        element.locTitleName ??
-        element.name
-    );
+    const elementTitle = resolveElementTitle(element);
+    const nextContextTitle = elementTitle || ctx.contextTitle || ctx.pageTitle || "";
 
-    const isContainer =
-      type === "panel" ||
-      type === "paneldynamic" ||
-      type === "multipletext" ||
-      type === "matrixdynamic" ||
-      type === "matrixdropdown" ||
-      type === "matrix";
-
-    if (name && type !== "html" && type !== "expression" && !target.has(name)) {
+    if (name && isIncludedQuestionType(type) && !target.has(name)) {
       target.set(name, {
         question_name: name,
-        title: title || name,
+        title: resolveDisplayQuestionTitle(element, ctx.contextTitle || ctx.pageTitle || ""),
+        question_type: type,
+        page_title: ctx.pageTitle || "",
+        context_title: ctx.contextTitle || null,
+        display_order: ctx.nextOrderRef.value++,
+        preview_element_json: deepCloneJson(element),
+        matrix_rows: isMatrixQuestionType(type) ? extractMatrixRows(element) : [],
       });
     }
 
-    if (Array.isArray(element.elements)) {
-      collectSurveyQuestions(element.elements, target);
-    }
-
-    if (Array.isArray(element.templateElements)) {
-      collectSurveyQuestions(element.templateElements, target);
-    }
-
-    if (Array.isArray(element.rows)) {
-      for (const row of element.rows) {
-        if (Array.isArray(row?.elements)) {
-          collectSurveyQuestions(row.elements, target);
-        }
-      }
-    }
-
-    if (isContainer && Array.isArray(element.panels)) {
-      for (const panel of element.panels) {
-        collectSurveyQuestions(panel?.elements, target);
-      }
+    if (isQuestionContainerType(type) && Array.isArray(element.elements)) {
+      collectSurveyQuestions(element.elements, target, {
+        pageTitle: ctx.pageTitle,
+        contextTitle: nextContextTitle,
+        nextOrderRef: ctx.nextOrderRef,
+      });
     }
   }
 }
@@ -113,14 +223,34 @@ function collectSurveyQuestions(elements: any, target: Map<string, { question_na
 function extractSurveyQuestions(surveyJson: any) {
   const parsed = parseJsonObject(surveyJson, null);
   const pages = Array.isArray(parsed?.pages) ? parsed.pages : [];
-  const map = new Map<string, { question_name: string; title: string }>();
+  const map = new Map<
+    string,
+    {
+      question_name: string;
+      title: string;
+      question_type: string;
+      page_title: string;
+      context_title: string | null;
+      display_order: number;
+      preview_element_json: any;
+      matrix_rows: any[];
+    }
+  >();
+  const nextOrderRef = { value: 1 };
 
   for (const page of pages) {
-    collectSurveyQuestions(page?.elements, map);
+    if (isGuidanceExcludedPage(page)) continue;
+
+    const pageTitle = resolveElementTitle(page);
+    collectSurveyQuestions(page?.elements, map, {
+      pageTitle,
+      contextTitle: pageTitle,
+      nextOrderRef,
+    });
   }
 
-  return Array.from(map.values()).sort((a, b) =>
-    String(a.title || a.question_name).localeCompare(String(b.title || b.question_name), "nl")
+  return Array.from(map.values()).sort(
+    (a, b) => Number(a.display_order || 0) - Number(b.display_order || 0)
   );
 }
 
@@ -211,6 +341,8 @@ export async function getAdminGuidanceCatalog() {
       form_code: normalizeOptionalText(row?.form_code),
       form_name: normalizeOptionalText(row?.form_name),
       question_name: normalizeRequiredText(row?.question_name),
+      matrix_row_key: normalizeMatrixRowKey(row?.matrix_row_key),
+      matrix_row_label: normalizeOptionalText(row?.matrix_row_label),
       sort_order: normalizeSortOrder(row?.sort_order, 0),
       created_at: row?.created_at ?? null,
       created_by: normalizeOptionalText(row?.created_by),
@@ -232,7 +364,12 @@ export async function getAdminGuidanceCatalog() {
       const links = (linksByGuidanceId.get(guidanceId) || []).sort((a, b) => {
         const sortDelta = Number(a.sort_order || 0) - Number(b.sort_order || 0);
         if (sortDelta !== 0) return sortDelta;
-        return String(a.question_name || "").localeCompare(String(b.question_name || ""), "nl");
+        const questionDelta = String(a.question_name || "").localeCompare(
+          String(b.question_name || ""),
+          "nl"
+        );
+        if (questionDelta !== 0) return questionDelta;
+        return String(a.matrix_row_key || "").localeCompare(String(b.matrix_row_key || ""), "nl");
       });
       const mediaAssets = (mediaByGuidanceId.get(guidanceId) || []).sort((a, b) => {
         const activeDelta = Number(b.is_active === true) - Number(a.is_active === true);
@@ -323,6 +460,8 @@ export async function replaceGuidanceLinks(guidanceId: string, links: any[], use
     .map((row, index) => ({
       form_id: normalizeOptionalText(row?.form_id),
       question_name: normalizeRequiredText(row?.question_name),
+      matrix_row_key: normalizeMatrixRowKey(row?.matrix_row_key),
+      matrix_row_label: normalizeOptionalText(row?.matrix_row_label),
       sort_order: normalizeSortOrder(row?.sort_order, (index + 1) * 10),
     }))
     .filter((row) => row.form_id && row.question_name);
@@ -439,6 +578,17 @@ export async function activateGuidanceMedia(guidanceId: string, guidanceMediaId:
   await sqlQuery(activateGuidanceMediaAssetSql, {
     guidanceId,
     guidanceMediaId,
+    actor: actorName(user),
+  });
+
+  return getAdminGuidanceCatalog();
+}
+
+export async function updateGuidanceMedia(guidanceId: string, guidanceMediaId: string, payload: any, user: any) {
+  await sqlQuery(updateGuidanceMediaAssetSql, {
+    guidanceId,
+    guidanceMediaId,
+    caption: normalizeOptionalText(payload?.caption),
     actor: actorName(user),
   });
 

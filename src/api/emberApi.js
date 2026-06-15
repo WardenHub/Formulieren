@@ -611,6 +611,13 @@ export function activateAdminGuidanceMedia(guidanceId, guidanceMediaId) {
   );
 }
 
+export function updateAdminGuidanceMedia(guidanceId, guidanceMediaId, payload = {}) {
+  return apiPut(
+    `/admin/guidance/items/${encodeURIComponent(guidanceId)}/media/${encodeURIComponent(guidanceMediaId)}`,
+    payload ?? {}
+  );
+}
+
 export function archiveAdminGuidanceMedia(guidanceId, guidanceMediaId) {
   return apiPost(
     `/admin/guidance/items/${encodeURIComponent(guidanceId)}/media/${encodeURIComponent(guidanceMediaId)}/archive`,

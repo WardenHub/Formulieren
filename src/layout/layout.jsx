@@ -394,7 +394,7 @@ export default function Layout() {
 
           {(roles.includes("admin") || roles.includes("uitlegbeheerder")) && (
             <AnimatedNavButton to="/uitlegbeheer" Icon={BookTextIcon}>
-              Uitlegbeheer
+              Uitleg
             </AnimatedNavButton>
           )}
 

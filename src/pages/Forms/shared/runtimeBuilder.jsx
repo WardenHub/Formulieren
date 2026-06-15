@@ -82,17 +82,17 @@ export function createRuntimeSurveyModel(
 
   model.onValueChanged.add(() => {
     markDirty();
-    syncAllMatrixQuestionVisualErrors(model);
+    syncAllMatrixQuestionVisualErrors(model, false);
   });
 
   model.onMatrixRowAdded.add(() => {
     markDirty();
-    syncAllMatrixQuestionVisualErrors(model);
+    syncAllMatrixQuestionVisualErrors(model, false);
   });
 
   model.onMatrixRowRemoved.add(() => {
     markDirty();
-    syncAllMatrixQuestionVisualErrors(model);
+    syncAllMatrixQuestionVisualErrors(model, false);
   });
 
   return model;
@@ -102,7 +102,7 @@ export function setRuntimeSurveyData(model, answersObj, suppressDirtyRef) {
   suppressDirtyRef.current = true;
   try {
     model.data = answersObj && typeof answersObj === "object" ? answersObj : {};
-    syncAllMatrixQuestionVisualErrors(model);
+    syncAllMatrixQuestionVisualErrors(model, false);
   } finally {
     suppressDirtyRef.current = false;
   }
@@ -267,7 +267,7 @@ export function applyRuntimePrefillToModel({
   }
 
   applyRuntimeInstanceFields(model, instance);
-  syncAllMatrixQuestionVisualErrors(model);
+  syncAllMatrixQuestionVisualErrors(model, false);
 
   const afterData = model.data && typeof model.data === "object" ? deepClone(model.data) : {};
   const changed = !deepEqual(beforeData, afterData);

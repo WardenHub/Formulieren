@@ -116,7 +116,7 @@ export function buildMatrixRowValidationItems(question, pageIndex, pageTitle) {
   return items;
 }
 
-export function syncMatrixQuestionVisualError(question) {
+export function syncMatrixQuestionVisualError(question, showErrors = false) {
   if (!question || question?.getType?.() !== "matrixdynamic") return;
 
   const page = question.page;
@@ -130,18 +130,18 @@ export function syncMatrixQuestionVisualError(question) {
 
   question.clearErrors();
 
-  if (rowItems.length > 0) {
+  if (showErrors && rowItems.length > 0) {
     question.addError(new CustomError(rowItems[0].message));
   }
 }
 
-export function syncAllMatrixQuestionVisualErrors(model) {
+export function syncAllMatrixQuestionVisualErrors(model, showErrors = false) {
   if (!model) return;
 
   const questions = model.getAllQuestions?.() || [];
   questions.forEach((question) => {
     if (question?.getType?.() === "matrixdynamic") {
-      syncMatrixQuestionVisualError(question);
+      syncMatrixQuestionVisualError(question, showErrors);
     }
   });
 }

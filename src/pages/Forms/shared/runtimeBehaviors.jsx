@@ -37,6 +37,17 @@ function normalizeGuidanceQuestionName(value) {
   return String(value || "").trim();
 }
 
+function normalizeGuidanceMatrixRowKey(value) {
+  return String(value || "").trim();
+}
+
+function buildMatrixGuidanceLookupKey(questionName, matrixRowKey) {
+  const cleanQuestionName = normalizeGuidanceQuestionName(questionName);
+  const cleanMatrixRowKey = normalizeGuidanceMatrixRowKey(matrixRowKey);
+  if (!cleanQuestionName || !cleanMatrixRowKey) return "";
+  return `${cleanQuestionName}::${cleanMatrixRowKey}`;
+}
+
 function getQuestionTitleText(question) {
   return String(
     question?.fullTitle ||
@@ -51,6 +62,13 @@ function getQuestionGuidanceItems(guidanceByQuestion, questionName) {
   const key = normalizeGuidanceQuestionName(questionName);
   if (!key) return [];
   const items = guidanceByQuestion?.[key];
+  return Array.isArray(items) ? items : [];
+}
+
+function getMatrixRowGuidanceItems(guidanceByMatrixRow, questionName, matrixRowKey) {
+  const lookupKey = buildMatrixGuidanceLookupKey(questionName, matrixRowKey);
+  if (!lookupKey) return [];
+  const items = guidanceByMatrixRow?.[lookupKey];
   return Array.isArray(items) ? items : [];
 }
 
@@ -312,6 +330,63 @@ function getMatrixQuestionDefaultRows(question) {
   return [];
 }
 
+function resolveMatrixRowGuidanceKey(rowData, defaultRowData, rowIndex) {
+  const candidates = [
+    rowData?.item_code,
+    rowData?.itemCode,
+    rowData?.nr,
+    rowData?.code,
+    defaultRowData?.item_code,
+    defaultRowData?.itemCode,
+    defaultRowData?.nr,
+    defaultRowData?.code,
+    rowData?.onderwerp,
+    rowData?.title,
+    defaultRowData?.onderwerp,
+    defaultRowData?.title,
+    rowIndex != null ? String(Number(rowIndex) + 1) : "",
+  ];
+
+  for (const candidate of candidates) {
+    const normalized = normalizeGuidanceMatrixRowKey(candidate);
+    if (normalized) return normalized;
+  }
+
+  return "";
+}
+
+function resolveMatrixRowGuidanceLabel(rowData, defaultRowData, rowIndex) {
+  const codeCandidates = [
+    rowData?.item_code,
+    rowData?.itemCode,
+    rowData?.nr,
+    rowData?.code,
+    defaultRowData?.item_code,
+    defaultRowData?.itemCode,
+    defaultRowData?.nr,
+    defaultRowData?.code,
+  ];
+
+  const titleCandidates = [
+    rowData?.onderwerp,
+    rowData?.title,
+    rowData?.omschrijving,
+    defaultRowData?.onderwerp,
+    defaultRowData?.title,
+    defaultRowData?.omschrijving,
+  ];
+
+  const code = codeCandidates
+    .map((candidate) => String(candidate || "").trim())
+    .find(Boolean);
+
+  const title = titleCandidates
+    .map((candidate) => String(candidate || "").trim())
+    .find(Boolean);
+
+  return [code, title || `Regel ${Number(rowIndex) + 1}`].filter(Boolean).join(" ; ");
+}
+
 function isEmptyMatrixWithoutAdd(question, rows) {
   const allowAddRows = question?.allowAddRows === true || question?.jsonObj?.allowAddRows === true;
   return !allowAddRows && Array.isArray(rows) && rows.length === 0;
@@ -339,7 +414,17 @@ function ensureMatrixDisplayText(cell, text, className = "ember-matrix-readonly-
     cell.appendChild(display);
   }
 
-  display.textContent = normalized;
+  let label = display.querySelector(":scope > .ember-matrix-readonly-text__label");
+  if (!label) {
+    const existingButton = display.querySelector(":scope > .ember-matrix-row-guidance-btn");
+    display.textContent = "";
+    if (existingButton) display.appendChild(existingButton);
+    label = document.createElement("span");
+    label.className = "ember-matrix-readonly-text__label";
+    display.appendChild(label);
+  }
+
+  label.textContent = normalized;
   display.title = normalized;
 }
 
@@ -371,6 +456,25 @@ function ensureFixedTopicText(cell, rowData, defaultRowData, col) {
   ensureReadonlyTopicText(cell);
 }
 
+function ensureMatrixHeaderCellContent(cell) {
+  if (!cell) return;
+  const isHeaderCell = cell.tagName === "TH" || cell.classList.contains("sd-table__cell--header");
+  if (!isHeaderCell) return;
+
+  let label = cell.querySelector(":scope > .ember-matrix-header-label");
+  if (label) return;
+
+  label = document.createElement("div");
+  label.className = "ember-matrix-header-label";
+
+  Array.from(cell.childNodes).forEach((node) => {
+    const isEmptyText = node.nodeType === Node.TEXT_NODE && !String(node.textContent || "").trim();
+    if (!isEmptyText) label.appendChild(node);
+  });
+
+  cell.appendChild(label);
+}
+
 function classifyMatrixCell(cell, col, rowData, defaultRowData) {
   if (!cell || !col?.name) return;
 
@@ -385,9 +489,183 @@ function classifyMatrixCell(cell, col, rowData, defaultRowData) {
   if (col.name === "onderwerp") {
     ensureFixedTopicText(cell, rowData, defaultRowData, col);
   }
+
+  ensureMatrixHeaderCellContent(cell);
 }
 
-function applyMatrixColumnAttributes(question, htmlElement) {
+function getMatrixDataCells(row) {
+  if (!row) return [];
+  return Array.from(row.querySelectorAll(":scope > th, :scope > td"));
+}
+
+function getMatrixColumnTrack(col) {
+  const name = String(col?.name || "").toLowerCase();
+  const type = String(col?.cellType || "").toLowerCase();
+
+  if (name === "item_code" || name === "nr") return "86px";
+  if (name === "onderwerp" || name === "titel" || name === "title") return "minmax(260px, 1.2fr)";
+  if (name === "voldoet") return "minmax(300px, 0.82fr)";
+  if (name === "opmerking" || type === "comment") return "minmax(320px, 1.12fr)";
+  if (name.includes("document")) return "minmax(190px, 0.9fr)";
+  if (name.includes("datum") || name.includes("date")) return "minmax(140px, 0.65fr)";
+  if (name.includes("revisie") || name.includes("revision") || name.includes("rev")) return "minmax(120px, 0.55fr)";
+  if (type === "dropdown") return "minmax(180px, 1fr)";
+
+  return "minmax(150px, 1fr)";
+}
+
+function applyMatrixGridTemplate(root, columns) {
+  if (!root || !Array.isArray(columns) || columns.length === 0) return;
+
+  const template = columns.map(getMatrixColumnTrack).join(" ");
+  root.style.setProperty("--ember-matrix-grid-template", template);
+  root.style.setProperty("--ember-matrix-col-count", String(columns.length));
+  root.classList.add("ember-matrix-runtime--grid");
+}
+
+function removeMatrixColGroup(root) {
+  if (!root) return;
+  root
+    .querySelectorAll("colgroup[data-ember-matrix-colgroup]")
+    .forEach((colgroup) => colgroup.remove());
+}
+
+function hasMatrixRowGuidanceForQuestion(guidanceByMatrixRow, questionName) {
+  const cleanQuestionName = normalizeGuidanceQuestionName(questionName);
+  if (!cleanQuestionName || !guidanceByMatrixRow || typeof guidanceByMatrixRow !== "object") return false;
+
+  const prefix = `${cleanQuestionName}::`;
+  return Object.entries(guidanceByMatrixRow).some(
+    ([key, items]) => String(key || "").startsWith(prefix) && Array.isArray(items) && items.length > 0
+  );
+}
+
+function unmountMatrixGuidanceButton(button, guidanceReactRoots) {
+  if (button?._emberReactRoot) {
+    button._emberReactRoot.unmount();
+    guidanceReactRoots?.delete?.(button._emberReactRoot);
+  }
+  button?.remove();
+}
+
+function clearMatrixGuidanceButtons(cell, guidanceReactRoots) {
+  if (!cell) return;
+  cell
+    .querySelectorAll(".ember-matrix-row-guidance-btn")
+    .forEach((button) => unmountMatrixGuidanceButton(button, guidanceReactRoots));
+  cell.classList.remove("ember-matrix-guidance-cell");
+  cell
+    .querySelectorAll(".ember-matrix-readonly-text--with-guidance")
+    .forEach((element) => element.classList.remove("ember-matrix-readonly-text--with-guidance"));
+}
+
+function removeMatrixGuidanceColumnCell(row, guidanceReactRoots) {
+  const cell = row?.querySelector(":scope > .ember-matrix-guidance-col");
+  if (!cell) return;
+  clearMatrixGuidanceButtons(cell, guidanceReactRoots);
+  cell.remove();
+}
+
+function ensureMatrixRowGuidanceButton({
+  question,
+  rowCells,
+  columns,
+  rowData,
+  defaultRowData,
+  rowIndex,
+  guidanceByMatrixRow,
+  onOpenQuestionGuidance,
+  guidanceReactRoots,
+}) {
+  if (!question) return;
+
+  const questionName = normalizeGuidanceQuestionName(question?.name);
+  const matrixRowKey = resolveMatrixRowGuidanceKey(rowData, defaultRowData, rowIndex);
+  const guidanceItems = getMatrixRowGuidanceItems(guidanceByMatrixRow, questionName, matrixRowKey);
+
+  const topicIndex = columns.findIndex((col) => col?.name === "onderwerp");
+  const numberIndex = columns.findIndex((col) => col?.name === "item_code" || col?.name === "nr");
+  const anchorIndex = topicIndex >= 0 ? topicIndex : numberIndex >= 0 ? numberIndex : 0;
+  const fallbackAnchorCell = Array.isArray(rowCells) ? rowCells[anchorIndex] : null;
+  const buttonCell = fallbackAnchorCell;
+  if (!buttonCell) return;
+
+  if (Array.isArray(rowCells)) {
+    rowCells.forEach((cell) => {
+      if (cell !== buttonCell) clearMatrixGuidanceButtons(cell, guidanceReactRoots);
+    });
+  }
+
+  const existingButton = buttonCell.querySelector(".ember-matrix-row-guidance-btn");
+
+  if (guidanceItems.length === 0) {
+    unmountMatrixGuidanceButton(existingButton, guidanceReactRoots);
+    buttonCell.classList.remove("ember-matrix-guidance-cell");
+    buttonCell
+      .querySelectorAll(".ember-matrix-readonly-text--with-guidance")
+      .forEach((element) => element.classList.remove("ember-matrix-readonly-text--with-guidance"));
+    return;
+  }
+
+  buttonCell.classList.add("ember-matrix-guidance-cell");
+  const display = buttonCell.querySelector(":scope > .ember-matrix-readonly-text");
+  const buttonHost = buttonCell;
+  if (display) display.classList.remove("ember-matrix-readonly-text--with-guidance");
+
+  let button = existingButton;
+  if (!button) {
+    button = document.createElement("button");
+    button.type = "button";
+    button.className = "ember-matrix-row-guidance-btn";
+    button.setAttribute("aria-label", "Toon uitleg bij deze matrixregel");
+
+    const iconMount = document.createElement("span");
+    iconMount.className = "ember-matrix-row-guidance-btn__icon";
+    button.appendChild(iconMount);
+
+    const root = createRoot(iconMount);
+    root.render(<CircleHelpIcon size={16} className="nav-anim-icon" />);
+    button._emberReactRoot = root;
+    guidanceReactRoots?.add?.(root);
+
+    buttonCell.appendChild(button);
+  }
+
+  button
+    .querySelectorAll(".ember-matrix-row-guidance-btn__text")
+    .forEach((element) => element.remove());
+
+  if (button.parentElement !== buttonHost) {
+    buttonHost.appendChild(button);
+  }
+
+  const matrixRowLabel = resolveMatrixRowGuidanceLabel(rowData, defaultRowData, rowIndex);
+
+  button.title =
+    guidanceItems.length > 1
+      ? `${guidanceItems.length} uitlegitems beschikbaar`
+      : "Uitleg beschikbaar";
+
+  button.onclick = (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    onOpenQuestionGuidance?.({
+      questionName,
+      questionTitle: matrixRowLabel || getQuestionTitleText(question),
+      matrixRowKey,
+      matrixRowLabel,
+      items: guidanceItems,
+    });
+  };
+}
+
+function applyMatrixColumnAttributes(
+  question,
+  htmlElement,
+  guidanceByMatrixRow = null,
+  onOpenQuestionGuidance,
+  guidanceReactRoots
+) {
   if (!question || !htmlElement) return;
 
   const type = String(question?.getType?.() || question?.jsonObj?.type || "").trim();
@@ -400,8 +678,13 @@ function applyMatrixColumnAttributes(question, htmlElement) {
   const names = new Set(columns.map((col) => col.name));
   const rowsValue = getMatrixQuestionRows(question);
   const defaultRows = getMatrixQuestionDefaultRows(question);
+  const hasGuidanceColumn = hasMatrixRowGuidanceForQuestion(guidanceByMatrixRow, question?.name);
 
   root.classList.add("ember-matrix-runtime");
+  root.classList.toggle("ember-matrix-runtime--has-guidance", hasGuidanceColumn);
+
+  applyMatrixGridTemplate(root, columns);
+  removeMatrixColGroup(root);
 
   if (isEmptyMatrixWithoutAdd(question, rowsValue)) {
     root.classList.add("ember-matrix-runtime--empty-readonly");
@@ -424,7 +707,9 @@ function applyMatrixColumnAttributes(question, htmlElement) {
   let bodyRowIndex = 0;
   const tableRows = root.querySelectorAll("tr");
   tableRows.forEach((row) => {
-    const cells = Array.from(row.querySelectorAll(":scope > th, :scope > td"));
+    removeMatrixGuidanceColumnCell(row, guidanceReactRoots);
+
+    const cells = getMatrixDataCells(row);
     if (!cells.length) return;
 
     const isHeaderRow = cells.some((cell) => cell.tagName === "TH") || row.closest("thead");
@@ -433,11 +718,30 @@ function applyMatrixColumnAttributes(question, htmlElement) {
 
     columns.forEach((col, index) => classifyMatrixCell(cells[index], col, rowData, defaultRowData));
 
+    if (!isHeaderRow) {
+      ensureMatrixRowGuidanceButton({
+        question,
+        rowCells: cells,
+        columns,
+        rowData,
+        defaultRowData,
+        rowIndex: bodyRowIndex,
+        guidanceByMatrixRow,
+        onOpenQuestionGuidance,
+        guidanceReactRoots,
+      });
+    }
+
     if (!isHeaderRow) bodyRowIndex += 1;
   });
 }
 
-function applyAllMatrixLayoutClasses(model) {
+function applyAllMatrixLayoutClasses(
+  model,
+  guidanceByMatrixRow = null,
+  onOpenQuestionGuidance,
+  guidanceReactRoots
+) {
   const questions = model?.getAllQuestions?.() || [];
 
   questions.forEach((question) => {
@@ -449,13 +753,19 @@ function applyAllMatrixLayoutClasses(model) {
     const root = queryQuestionRoot(name);
     if (!root) return;
 
-    applyMatrixColumnAttributes(question, root);
+    applyMatrixColumnAttributes(
+      question,
+      root,
+      guidanceByMatrixRow,
+      onOpenQuestionGuidance,
+      guidanceReactRoots
+    );
   });
 }
 
 function syncValidationVisualsOnlyWhenActivated(model, validationActivatedRef) {
   if (!validationActivatedRef?.current) return;
-  syncAllMatrixQuestionVisualErrors(model);
+  syncAllMatrixQuestionVisualErrors(model, true);
 }
 
 export function applyCapWarnings(model) {
@@ -702,6 +1012,7 @@ export function attachRuntimeBehaviors({
   onAnswersSnapshotChange,
   onValidationSummaryChange,
   guidanceByQuestion = null,
+  guidanceByMatrixRow = null,
   onOpenQuestionGuidance,
 }) {
   if (!model) return () => {};
@@ -713,8 +1024,58 @@ export function attachRuntimeBehaviors({
   let activeDropdownAnchorEl = null;
   const detachDomListeners = [];
   const guidanceReactRoots = new Set();
+  const matrixLayoutTimers = new Set();
 
   let popupObserver = null;
+  let matrixLayoutRaf = 0;
+
+  function forceMatrixTableReflow() {
+    const roots = document.querySelectorAll(".ember-matrix-runtime");
+    roots.forEach((root) => {
+      const table =
+        root.querySelector("table") ||
+        root.querySelector(".sd-matrixdynamic__table") ||
+        root.querySelector(".sd-table");
+      if (table) {
+        table.style.transform = "translateZ(0)";
+        void table.offsetWidth;
+        table.style.transform = "";
+      }
+    });
+
+    window.dispatchEvent(new Event("resize"));
+  }
+
+  function refreshAllMatrixLayouts() {
+    applyAllMatrixLayoutClasses(
+      model,
+      guidanceByMatrixRow,
+      onOpenQuestionGuidance,
+      guidanceReactRoots
+    );
+    applyAllAnswerItemClasses(model);
+    forceMatrixTableReflow();
+  }
+
+  function scheduleMatrixLayoutStabilization() {
+    if (matrixLayoutRaf) cancelAnimationFrame(matrixLayoutRaf);
+
+    matrixLayoutRaf = requestAnimationFrame(() => {
+      matrixLayoutRaf = 0;
+      refreshAllMatrixLayouts();
+    });
+
+    matrixLayoutTimers.forEach((timer) => clearTimeout(timer));
+    matrixLayoutTimers.clear();
+
+    [40, 140, 360].forEach((delay) => {
+      const timer = window.setTimeout(() => {
+        matrixLayoutTimers.delete(timer);
+        refreshAllMatrixLayouts();
+      }, delay);
+      matrixLayoutTimers.add(timer);
+    });
+  }
 
   function ensureQuestionGuidanceButton(question, htmlElement) {
     const questionName = normalizeGuidanceQuestionName(question?.name);
@@ -833,7 +1194,7 @@ export function attachRuntimeBehaviors({
 
       try {
         model.validate(true);
-        syncAllMatrixQuestionVisualErrors(model);
+        syncAllMatrixQuestionVisualErrors(model, true);
 
         const summary = collectValidationSummary(model);
         onValidationSummaryChange?.(summary);
@@ -961,8 +1322,15 @@ export function attachRuntimeBehaviors({
 
     if (options?.question?.getType?.() === "matrixdynamic") {
       requestAnimationFrame(() => {
-        applyMatrixColumnAttributes(options?.question, options?.htmlElement);
+        applyMatrixColumnAttributes(
+          options?.question,
+          options?.htmlElement,
+          guidanceByMatrixRow,
+          onOpenQuestionGuidance,
+          guidanceReactRoots
+        );
         syncValidationVisualsOnlyWhenActivated(model, validationActivatedRef);
+        scheduleMatrixLayoutStabilization();
       });
     }
   };
@@ -986,7 +1354,7 @@ export function attachRuntimeBehaviors({
     normalizeEnergyRows(model, prefillPayload, energyAutoStateRef);
     normalizeAvailabilityRows(model, availabilityAutoStateRef);
     applyAllAnswerItemClasses(model);
-    applyAllMatrixLayoutClasses(model);
+    refreshAllMatrixLayouts();
 
     requestAnimationFrame(() => {
       applyCapWarnings(model);
@@ -994,7 +1362,8 @@ export function attachRuntimeBehaviors({
       syncValidationVisualsOnlyWhenActivated(model, validationActivatedRef);
       tryRepositionActiveDropdownPopup();
       applyAllAnswerItemClasses(model);
-      applyAllMatrixLayoutClasses(model);
+      refreshAllMatrixLayouts();
+      scheduleMatrixLayoutStabilization();
       (model?.getAllQuestions?.() || []).forEach((question) => {
         ensureQuestionGuidanceButton(question, queryQuestionRoot(question?.name));
       });
@@ -1005,6 +1374,9 @@ export function attachRuntimeBehaviors({
     if (normalizeRaf) cancelAnimationFrame(normalizeRaf);
     if (validationRaf) cancelAnimationFrame(validationRaf);
     if (answerClassRaf) cancelAnimationFrame(answerClassRaf);
+    if (matrixLayoutRaf) cancelAnimationFrame(matrixLayoutRaf);
+    matrixLayoutTimers.forEach((timer) => clearTimeout(timer));
+    matrixLayoutTimers.clear();
 
     if (popupObserver) {
       popupObserver.disconnect();

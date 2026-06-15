@@ -21,13 +21,15 @@ select
   fd.code as form_code,
   fd.name as form_name,
   fgl.question_name,
+  fgl.matrix_row_key,
+  fgl.matrix_row_label,
   fgl.sort_order,
   fgl.created_at,
   fgl.created_by
 from dbo.FormGuidanceLink fgl
 join dbo.FormDefinition fd
   on fd.form_id = fgl.form_id
-order by fd.sort_order asc, fd.name asc, fgl.question_name asc, fgl.sort_order asc;
+order by fd.sort_order asc, fd.name asc, fgl.question_name asc, fgl.matrix_row_key asc, fgl.sort_order asc;
 
 select
   gma.guidance_media_id,
@@ -74,10 +76,7 @@ order by fd.sort_order asc, fd.name asc;
 `;
 
 export const createGuidanceItemSql = `
-declare @guidanceId uniqueidentifier = newsequentialid();
-
 insert into dbo.FormGuidanceItem (
-  guidance_id,
   title,
   body_markdown,
   sort_order,
@@ -87,8 +86,8 @@ insert into dbo.FormGuidanceItem (
   updated_at,
   updated_by
 )
+output inserted.guidance_id
 values (
-  @guidanceId,
   @title,
   @bodyMarkdown,
   @sortOrder,
@@ -98,8 +97,6 @@ values (
   sysutcdatetime(),
   @actor
 );
-
-select @guidanceId as guidance_id;
 `;
 
 export const updateGuidanceItemSql = `
@@ -145,6 +142,8 @@ where guidance_id = @guidanceId;
   select
     try_convert(uniqueidentifier, json_value(j.value, '$.form_id')) as form_id,
     nullif(ltrim(rtrim(convert(nvarchar(200), json_value(j.value, '$.question_name')))), N'') as question_name,
+    isnull(nullif(ltrim(rtrim(convert(nvarchar(200), json_value(j.value, '$.matrix_row_key')))), N''), N'') as matrix_row_key,
+    nullif(ltrim(rtrim(convert(nvarchar(400), json_value(j.value, '$.matrix_row_label')))), N'') as matrix_row_label,
     isnull(try_convert(int, json_value(j.value, '$.sort_order')), 0) as sort_order
   from openjson(@linksJson) j
 )
@@ -152,6 +151,8 @@ insert into dbo.FormGuidanceLink (
   guidance_id,
   form_id,
   question_name,
+  matrix_row_key,
+  matrix_row_label,
   sort_order,
   created_at,
   created_by
@@ -160,6 +161,8 @@ select
   @guidanceId,
   src.form_id,
   src.question_name,
+  src.matrix_row_key,
+  src.matrix_row_label,
   src.sort_order,
   sysutcdatetime(),
   @actor
@@ -321,6 +324,23 @@ where guidance_id = @guidanceId
   and guidance_media_id = @guidanceMediaId;
 
 commit tran;
+
+select @guidanceMediaId as guidance_media_id;
+`;
+
+export const updateGuidanceMediaAssetSql = `
+update dbo.FormGuidanceMediaAsset
+set
+  caption = @caption,
+  updated_at = sysutcdatetime(),
+  updated_by = @actor
+where guidance_id = @guidanceId
+  and guidance_media_id = @guidanceMediaId;
+
+if @@rowcount = 0
+begin
+  throw 50000, 'guidance media not found', 1;
+end;
 
 select @guidanceMediaId as guidance_media_id;
 `;

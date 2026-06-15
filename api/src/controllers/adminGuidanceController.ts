@@ -137,6 +137,25 @@ export async function activateGuidanceMedia(req: any, res: Response) {
   }
 }
 
+export async function updateGuidanceMedia(req: any, res: Response) {
+  try {
+    const data = await service.updateGuidanceMedia(
+      String(req.params.guidanceId || ""),
+      String(req.params.guidanceMediaId || ""),
+      req.body || {},
+      req.user
+    );
+    return res.json(data);
+  } catch (err: any) {
+    const msg = errorMessage(err);
+    if (msg.includes("guidance media not found")) {
+      return res.status(404).json({ error: "guidance media not found" });
+    }
+    console.error(err);
+    return res.status(500).json({ error: "updateGuidanceMedia failed" });
+  }
+}
+
 export async function archiveGuidanceMedia(req: any, res: Response) {
   try {
     const data = await service.archiveGuidanceMedia(

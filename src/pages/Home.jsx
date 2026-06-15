@@ -215,7 +215,7 @@ export default function Home() {
               <AnimatedHomeCard
                 to="/uitlegbeheer"
                 Icon={BookTextIcon}
-                title="Uitlegbeheer"
+                title="Uitleg"
                 text="Beheer toelichtingen, afbeeldingen en video’s per formuliervraag."
               />
             )}

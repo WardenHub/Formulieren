@@ -741,7 +741,7 @@ export default function FormRunnerBase({ mode }) {
         suppressDirtyRef.current = true;
         try {
           surveyModelRef.current.data = parsed.value;
-          syncAllMatrixQuestionVisualErrors(surveyModelRef.current);
+          syncAllMatrixQuestionVisualErrors(surveyModelRef.current, true);
           const summary = collectValidationSummary(surveyModelRef.current);
 
           return {
@@ -769,7 +769,7 @@ export default function FormRunnerBase({ mode }) {
 
     try {
       model.validate(true);
-      syncAllMatrixQuestionVisualErrors(model);
+      syncAllMatrixQuestionVisualErrors(model, true);
 
       const summary = collectValidationSummary(model);
       return {
@@ -892,7 +892,10 @@ export default function FormRunnerBase({ mode }) {
     );
   }
 
-  async function persistPendingChanges(curValue, { reloadAfter = true, animateSave = true } = {}) {
+  async function persistPendingChanges(
+    curValue,
+    { reloadAfter = true, animateSave = true, forceAnswerSave = false } = {}
+  ) {
     let workingDraftRev = getDraftRev(instance);
     let didSaveSomething = false;
 
@@ -928,7 +931,7 @@ export default function FormRunnerBase({ mode }) {
           : workingDraftRev + 1;
     }
 
-    if (dirty) {
+    if (dirty || forceAnswerSave) {
       await putFormAnswers(code, instanceId, {
         answers_json: curValue,
         expected_draft_rev: workingDraftRev,
@@ -962,6 +965,47 @@ export default function FormRunnerBase({ mode }) {
       didSaveSomething,
       nextDraftRev: workingDraftRev,
     };
+  }
+
+  async function persistAssistantChangesNow() {
+    const cur = getCurrentAnswersObject();
+    if (!cur.ok) {
+      setError(cur.error);
+      return {
+        ok: false,
+        saved: false,
+        message: cur.error,
+      };
+    }
+
+    try {
+      const result = await persistPendingChanges(cur.value, {
+        reloadAfter: false,
+        animateSave: true,
+        forceAnswerSave: true,
+      });
+
+      return {
+        ok: true,
+        saved: Boolean(result?.didSaveSomething),
+        message: "Wijzigingen zijn toegepast en opgeslagen.",
+      };
+    } catch (e) {
+      const msg = String(e?.message || e || "").toLowerCase();
+
+      if (msg.includes("draft_rev") || msg.includes("expected_draft_rev")) {
+        setError("Automatisch opslaan na assistentbewerking gaf een conflict. Ik heb de nieuwste versie opgehaald; controleer het resultaat.");
+        await reload({ forceEditor: true });
+      } else {
+        setError(translateApiError(e, status));
+      }
+
+      return {
+        ok: false,
+        saved: false,
+        message: "Wijzigingen zijn toegepast; automatisch opslaan is niet gelukt.",
+      };
+    }
   }
 
   async function runAutosaveNow({ animateSave = true } = {}) {
@@ -1092,6 +1136,7 @@ export default function FormRunnerBase({ mode }) {
         onAnswersSnapshotChange: setAnswersPreview,
         onValidationSummaryChange: setValidationSummary,
         guidanceByQuestion: inst?.guidance_by_question || null,
+        guidanceByMatrixRow: inst?.guidance_by_matrix_row || null,
         onOpenQuestionGuidance: setGuidanceDialog,
       });
 
@@ -1293,8 +1338,14 @@ export default function FormRunnerBase({ mode }) {
     }
   }
 
-  function handleAssistantApplied(result) {
-    if (!result?.changed) return;
+  async function handleAssistantApplied(result) {
+    if (!result?.changed) {
+      return {
+        ok: true,
+        saved: false,
+        message: "Geen nieuwe wijzigingen om op te slaan.",
+      };
+    }
 
     setDirty(true);
     setSurveyRenderKey((prev) => prev + 1);
@@ -1303,6 +1354,8 @@ export default function FormRunnerBase({ mode }) {
       const validation = runLocalValidation();
       applyValidationResult(validation, { showSuccess: false });
     }
+
+    return persistAssistantChangesNow();
   }
 
   async function validateForm() {
@@ -2660,6 +2713,7 @@ export default function FormRunnerBase({ mode }) {
                   </div>
                   <div className="muted form-guidance-modal__subtitle">
                     vraag: {guidanceDialog.questionName || "onbekend"}
+                    {guidanceDialog.matrixRowLabel ? ` ; ${guidanceDialog.matrixRowLabel}` : ""}
                   </div>
                 </div>
               </div>
@@ -2670,50 +2724,61 @@ export default function FormRunnerBase({ mode }) {
             </div>
 
             <div className="form-guidance-modal__body">
-              {(Array.isArray(guidanceDialog.items) ? guidanceDialog.items : []).map((item) => (
-                <div key={item.guidance_id || item.title} className="card form-guidance-modal__item">
-                  <div className="form-guidance-modal__item-title">{item.title || "Toelichting"}</div>
+              {(Array.isArray(guidanceDialog.items) ? guidanceDialog.items : []).map((item) => {
+                const items = Array.isArray(guidanceDialog.items) ? guidanceDialog.items : [];
+                const itemTitle = String(item.title || "").trim();
+                const dialogTitle = String(
+                  guidanceDialog.questionTitle || guidanceDialog.questionName || ""
+                ).trim();
+                const showItemTitle = items.length > 1 && itemTitle && itemTitle !== dialogTitle;
 
-                  {item.body_markdown ? (
-                    <div className="form-guidance-modal__item-body">{item.body_markdown}</div>
-                  ) : null}
+                return (
+                  <div key={item.guidance_id || item.title} className="card form-guidance-modal__item">
+                    {showItemTitle ? (
+                      <div className="form-guidance-modal__item-title">{itemTitle}</div>
+                    ) : null}
 
-                  {item.image_url ? (
-                    <div className="form-guidance-modal__media">
-                      <img
-                        src={item.image_url}
-                        alt={item.image_caption || item.title || "Toelichting"}
-                        className="form-guidance-modal__image"
-                      />
-                      {item.image_caption ? (
-                        <div className="muted form-guidance-modal__caption">{item.image_caption}</div>
-                      ) : null}
-                    </div>
-                  ) : null}
+                    {item.body_markdown ? (
+                      <div className="form-guidance-modal__item-body">{item.body_markdown}</div>
+                    ) : null}
 
-                  {item.video_url ? (
-                    isDirectVideoUrl(item.video_url) ? (
-                      <video
-                        className="form-guidance-modal__video"
-                        controls
-                        preload="metadata"
-                        src={item.video_url}
-                      />
-                    ) : (
-                      <div>
-                        <a
-                          className="btn btn-secondary"
-                          href={item.video_url}
-                          target="_blank"
-                          rel="noreferrer"
-                        >
-                          Video openen
-                        </a>
+                    {item.image_url ? (
+                      <div className="form-guidance-modal__media">
+                        <img
+                          src={item.image_url}
+                          alt={item.image_caption || item.title || "Toelichting"}
+                          className="form-guidance-modal__image"
+                        />
+                        {item.image_caption ? (
+                          <div className="muted form-guidance-modal__caption">{item.image_caption}</div>
+                        ) : null}
                       </div>
-                    )
-                  ) : null}
-                </div>
-              ))}
+                    ) : null}
+
+                    {item.video_url ? (
+                      isDirectVideoUrl(item.video_url) ? (
+                        <video
+                          className="form-guidance-modal__video"
+                          controls
+                          preload="metadata"
+                          src={item.video_url}
+                        />
+                      ) : (
+                        <div>
+                          <a
+                            className="btn btn-secondary"
+                            href={item.video_url}
+                            target="_blank"
+                            rel="noreferrer"
+                          >
+                            Video openen
+                          </a>
+                        </div>
+                      )
+                    ) : null}
+                  </div>
+                );
+              })}
             </div>
           </div>
         </>

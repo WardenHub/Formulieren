@@ -110,14 +110,26 @@ async function resolveGuidanceMediaUrl(storageKey: any, fileName: any, fallbackU
   return normalizeOptionalText(fallbackUrl);
 }
 
+function normalizeGuidanceMatrixRowKey(value: any) {
+  return String(value || "").trim();
+}
+
+function buildMatrixGuidanceLookupKey(questionName: any, matrixRowKey: any) {
+  const cleanQuestionName = String(questionName || "").trim();
+  const cleanMatrixRowKey = normalizeGuidanceMatrixRowKey(matrixRowKey);
+  if (!cleanQuestionName || !cleanMatrixRowKey) return "";
+  return `${cleanQuestionName}::${cleanMatrixRowKey}`;
+}
+
 async function buildGuidanceMap(rows: any[]) {
   const byQuestion: Record<string, any[]> = {};
+  const byMatrixRow: Record<string, any[]> = {};
 
   for (const row of Array.isArray(rows) ? rows : []) {
     const questionName = String(row?.question_name || "").trim();
     if (!questionName) continue;
-
-    if (!byQuestion[questionName]) byQuestion[questionName] = [];
+    const matrixRowKey = normalizeGuidanceMatrixRowKey(row?.matrix_row_key);
+    const matrixLookupKey = buildMatrixGuidanceLookupKey(questionName, matrixRowKey);
 
     const video_url = await resolveGuidanceMediaUrl(
       row?.active_video_storage_key,
@@ -131,7 +143,7 @@ async function buildGuidanceMap(rows: any[]) {
       row?.active_image_external_url ?? row?.image_url
     );
 
-    byQuestion[questionName].push({
+    const normalizedItem = {
       guidance_id: row?.guidance_id ?? null,
       title: normalizeOptionalText(row?.title) || "Toelichting",
       body_markdown: normalizeOptionalText(row?.body_markdown),
@@ -140,13 +152,24 @@ async function buildGuidanceMap(rows: any[]) {
       image_caption:
         normalizeOptionalText(row?.active_image_caption) ||
         normalizeOptionalText(row?.image_caption),
+      matrix_row_key: matrixRowKey || null,
+      matrix_row_label: normalizeOptionalText(row?.matrix_row_label),
       sort_order:
         row?.link_sort_order == null || !Number.isFinite(Number(row?.link_sort_order))
           ? row?.guidance_sort_order == null || !Number.isFinite(Number(row?.guidance_sort_order))
             ? 0
             : Number(row.guidance_sort_order)
           : Number(row.link_sort_order),
-    });
+    };
+
+    if (matrixLookupKey) {
+      if (!byMatrixRow[matrixLookupKey]) byMatrixRow[matrixLookupKey] = [];
+      byMatrixRow[matrixLookupKey].push(normalizedItem);
+      continue;
+    }
+
+    if (!byQuestion[questionName]) byQuestion[questionName] = [];
+    byQuestion[questionName].push(normalizedItem);
   }
 
   Object.keys(byQuestion).forEach((questionName) => {
@@ -157,7 +180,18 @@ async function buildGuidanceMap(rows: any[]) {
     });
   });
 
-  return byQuestion;
+  Object.keys(byMatrixRow).forEach((lookupKey) => {
+    byMatrixRow[lookupKey] = byMatrixRow[lookupKey].sort((a, b) => {
+      const sortDelta = Number(a?.sort_order || 0) - Number(b?.sort_order || 0);
+      if (sortDelta !== 0) return sortDelta;
+      return String(a?.title || "").localeCompare(String(b?.title || ""), "nl");
+    });
+  });
+
+  return {
+    byQuestion,
+    byMatrixRow,
+  };
 }
 
 export async function getFormStartPreflight(code: string, formCode: string, user: any) {
@@ -447,11 +481,13 @@ export async function getFormInstance(code: string, instanceId: number | string)
   const guidanceRows = row?.form_id
     ? await sqlQuery(getFormGuidanceSql, { formId: row.form_id })
     : [];
+  const guidanceMaps = await buildGuidanceMap(guidanceRows);
 
   return {
     item: {
       ...row,
-      guidance_by_question: await buildGuidanceMap(guidanceRows),
+      guidance_by_question: guidanceMaps.byQuestion,
+      guidance_by_matrix_row: guidanceMaps.byMatrixRow,
     },
   };
 }

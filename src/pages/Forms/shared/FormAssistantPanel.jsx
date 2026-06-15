@@ -466,6 +466,7 @@ export default function FormAssistantPanel({
   const [lastApplySnapshot, setLastApplySnapshot] = useState(null);
   const [undoVisible, setUndoVisible] = useState(false);
   const [undoMessage, setUndoMessage] = useState("");
+  const [applyStatusMessage, setApplyStatusMessage] = useState("");
 
   const summaries = useMemo(() => patches.map(summarizeAssistantPatch), [patches]);
   const minConfidence = useMemo(() => minPatchConfidence(patches), [patches]);
@@ -539,6 +540,7 @@ export default function FormAssistantPanel({
     setApplied(false);
     setUndoVisible(false);
     setUndoMessage("");
+    setApplyStatusMessage("");
 
     return {
       ...res,
@@ -575,14 +577,22 @@ export default function FormAssistantPanel({
     setLastApplySnapshot({ patches: nextPatches, result });
     setUndoVisible(true);
     setUndoMessage("");
+    setApplyStatusMessage("");
     checkIconRef.current?.startAnimation?.();
 
-    onApplied?.({
+    const applyFeedback = await onApplied?.({
       changed: result.changed,
       changedCount: result.changedCount,
       patches: nextPatches,
       result,
     });
+
+    setApplyStatusMessage(
+      applyFeedback?.message ||
+        (result.changed
+          ? "Wijzigingen zijn toegepast en opgeslagen."
+          : "Geen wijzigingen toegepast.")
+    );
 
     return result;
   }
@@ -594,10 +604,10 @@ export default function FormAssistantPanel({
       restoreAppliedSnapshotToSurvey(surveyModel, lastApplySnapshot.result);
       setApplied(false);
       setUndoVisible(false);
-      setUndoMessage("Laatste toepassing is lokaal teruggedraaid. Vergeet niet opnieuw op te slaan.");
+      setApplyStatusMessage("");
       undoIconRef.current?.startAnimation?.();
 
-      onApplied?.({
+      const undoFeedback = await onApplied?.({
         changed: true,
         changedCount: lastApplySnapshot?.result?.changedCount || 1,
         patches: [],
@@ -606,6 +616,11 @@ export default function FormAssistantPanel({
           changedCount: lastApplySnapshot?.result?.changedCount || 1,
         },
       });
+
+      setUndoMessage(
+        undoFeedback?.message ||
+          "Laatste toepassing is ongedaan gemaakt en opgeslagen."
+      );
     } catch (e) {
       setError(getErrorMessage(e, "Terugdraaien mislukt."));
     }
@@ -629,6 +644,7 @@ export default function FormAssistantPanel({
     setEditingTranscript(false);
     setUndoVisible(false);
     setUndoMessage("");
+    setApplyStatusMessage("");
 
     try {
       await recorder.start();
@@ -738,6 +754,7 @@ export default function FormAssistantPanel({
     setApplied(false);
     setUndoVisible(false);
     setUndoMessage("");
+    setApplyStatusMessage("");
 
     try {
       const interpreted = await interpretText(text, assistantSessionId);
@@ -843,7 +860,7 @@ export default function FormAssistantPanel({
                 <li>Voeg aanvullende opmerking toe: offerte nodig voor extra paneel.</li>
               </ul>
               <div className="muted" style={{ fontSize: 12 }}>
-                Direct toepassen voert zekere voorstellen meteen uit. Het formulier wordt niet automatisch opgeslagen.
+                Direct toepassen voert zekere voorstellen meteen uit en Ember slaat ze daarna automatisch op.
               </div>
             </div>
           ) : null}
@@ -1050,7 +1067,7 @@ export default function FormAssistantPanel({
       {selectedStep === "apply" ? (
         applied ? (
           <div className="form-assistant-success">
-            Wijzigingen zijn toegepast. Vergeet niet het formulier op te slaan.
+            {applyStatusMessage || "Wijzigingen zijn toegepast en opgeslagen."}
           </div>
         ) : (
           <div className="form-assistant-muted">
