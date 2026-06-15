@@ -1,5 +1,7 @@
 import { startTransition, useDeferredValue, useEffect, useMemo, useState } from "react";
 
+import { ChevronDownIcon } from "@/components/ui/chevron-down";
+import { ChevronUpIcon } from "@/components/ui/chevron-up";
 import { CircleHelpIcon } from "@/components/ui/circle-help";
 import { DeleteIcon } from "@/components/ui/delete";
 import { PlusIcon } from "@/components/ui/plus";
@@ -10,6 +12,14 @@ import { getPageTitle, getQuestionTitle } from "./surveyCore.jsx";
 function normalizeText(value) {
   const text = String(value || "").trim();
   return text.length ? text : "";
+}
+
+function normalizeName(value) {
+  return String(value || "").trim();
+}
+
+function normalizeLower(value) {
+  return normalizeText(value).toLowerCase();
 }
 
 function getChoiceItems(questionOrColumn) {
@@ -40,6 +50,14 @@ function getChoiceItems(questionOrColumn) {
       text: normalizeText(value),
     };
   });
+}
+
+function getAnswerToneClass(value) {
+  const text = normalizeLower(value).replaceAll(".", "").replaceAll(" ", "");
+  if (text === "ja" || text === "yes" || text === "true") return "ember-runtime-segment--yes";
+  if (text === "nee" || text === "no" || text === "false") return "ember-runtime-segment--no";
+  if (text === "nvt" || text === "nv.t" || text === "n.v.t") return "ember-runtime-segment--neutral";
+  return "";
 }
 
 function getQuestionItemsMap(itemsByQuestion, questionName) {
@@ -87,7 +105,9 @@ function getCurrentValue(question) {
 
 function getInputType(question) {
   const inputType = String(question?.inputType || question?.jsonObj?.inputType || "").trim();
-  if (inputType === "date" || inputType === "time" || inputType === "number") return inputType;
+  if (inputType === "date" || inputType === "time" || inputType === "number" || inputType === "tel") {
+    return inputType;
+  }
   return "text";
 }
 
@@ -107,8 +127,42 @@ function isPanelLike(element) {
   return String(element?.getType?.() || element?.jsonObj?.type || "").trim() === "panel";
 }
 
+function getQuestionType(question) {
+  return String(question?.getType?.() || question?.jsonObj?.type || "").trim();
+}
+
+function getColumnType(column, cellQuestion) {
+  return String(cellQuestion?.getType?.() || column?.cellType || "text").trim();
+}
+
+function getColumnTitle(column, fallback = "") {
+  return normalizeText(column?.title || column?.name || fallback);
+}
+
+function getMatrixColumns(question) {
+  return Array.isArray(question?.columns) ? question.columns : [];
+}
+
+function findMatrixColumn(question, names) {
+  const wanted = new Set(
+    names.map((name) =>
+      String(name || "")
+        .trim()
+        .toLowerCase()
+    )
+  );
+
+  return getMatrixColumns(question).find((column) =>
+    wanted.has(
+      String(column?.name || "")
+        .trim()
+        .toLowerCase()
+    )
+  );
+}
+
 function isAssessmentMatrix(question) {
-  const columns = Array.isArray(question?.columns) ? question.columns : [];
+  const columns = getMatrixColumns(question);
   const names = new Set(
     columns.map((column) =>
       String(column?.name || "")
@@ -118,7 +172,7 @@ function isAssessmentMatrix(question) {
   );
 
   return (
-    names.has("item_code") &&
+    (names.has("item_code") || names.has("nr") || names.has("code")) &&
     names.has("onderwerp") &&
     names.has("voldoet") &&
     names.has("opmerking")
@@ -127,7 +181,9 @@ function isAssessmentMatrix(question) {
 
 function isReadonlyMatrix(question) {
   if (question?.canAddRow || question?.canRemoveRows) return false;
-  const columns = Array.isArray(question?.columns) ? question.columns : [];
+  if (question?.isReadOnly === true || question?.readOnly === true) return true;
+
+  const columns = getMatrixColumns(question);
   if (!columns.length) return false;
 
   return columns.every((column) => column?.readOnly === true || column?.cellType === "text");
@@ -156,12 +212,79 @@ function getMatrixRowErrors(validationSummary, questionName, rowIndex, columnNam
 }
 
 function buildReadonlyMatrixColumns(question) {
-  const columns = Array.isArray(question?.columns) ? question.columns : [];
-  return columns.map((column, index) => ({
-    key: String(column?.name || `col-${index}`),
-    title: normalizeText(column?.title || column?.name || `Kolom ${index + 1}`),
-    width: String(column?.width || "").trim(),
-  }));
+  const columns = getMatrixColumns(question);
+  return columns
+    .filter((column) => column?.visible !== false && column?.isVisible !== false)
+    .map((column, index) => ({
+      key: String(column?.name || `col-${index}`),
+      title: normalizeText(column?.title || column?.name || `Kolom ${index + 1}`),
+      width: String(column?.width || "").trim(),
+    }));
+}
+
+function parseColumnWidthPercent(width) {
+  const match = String(width || "").trim().match(/^(\d+(?:\.\d+)?)%$/);
+  if (!match) return null;
+
+  const value = Number(match[1]);
+  return Number.isFinite(value) ? value : null;
+}
+
+function getReadonlyColumnMinWidth(column) {
+  const key = normalizeLower(column?.key || column?.name);
+  const title = normalizeLower(column?.title || column?.name);
+  const widthPercent = parseColumnWidthPercent(column?.width);
+
+  if (key.includes("omschrijving") || key.includes("opmerking") || title.includes("omschrijving")) {
+    return 220;
+  }
+
+  if (key.includes("gebruikersfunctie") || title.includes("gebruikersfunctie")) {
+    return 190;
+  }
+
+  if (key.includes("doormelding") || title.includes("doormelding")) {
+    return 180;
+  }
+
+  if (key.includes("label") || key.includes("ruimte") || key.includes("locatie")) {
+    return 170;
+  }
+
+  if (key.includes("max_") || title.startsWith("max") || key.includes("risico")) {
+    return 118;
+  }
+
+  if (title.length <= 3 || key.includes("aantal") || key.endsWith("_v") || key.endsWith("_ah")) {
+    return 84;
+  }
+
+  if (widthPercent != null) {
+    if (widthPercent >= 20) return 190;
+    if (widthPercent >= 14) return 170;
+    if (widthPercent >= 10) return 140;
+    if (widthPercent <= 5) return 84;
+  }
+
+  return 130;
+}
+
+function getReadonlyTableMinWidth(columns) {
+  const items = Array.isArray(columns) ? columns : [];
+  if (!items.length) return 720;
+
+  const total = items.reduce((sum, column) => sum + getReadonlyColumnMinWidth(column), 0);
+  return Math.max(760, Math.min(2200, total));
+}
+
+function isWideReadonlyMatrix(columns) {
+  const items = Array.isArray(columns) ? columns : [];
+  if (items.length >= 7) return true;
+
+  return items.some((column) => {
+    const key = normalizeLower(column?.key || column?.name);
+    return key.startsWith("pr_") || key.startsWith("es_");
+  });
 }
 
 function buildReadonlyMatrixRows(question) {
@@ -175,6 +298,13 @@ function buildReadonlyMatrixRows(question) {
       `row-${rowIndex}`,
     data: row && typeof row === "object" ? row : {},
   }));
+}
+
+function getMatrixRowData(question, row, rowIndex) {
+  if (row?.value && typeof row.value === "object") return row.value;
+  const value = Array.isArray(question?.value) ? question.value : [];
+  const hit = value[rowIndex];
+  return hit && typeof hit === "object" ? hit : {};
 }
 
 function getColumnCellDisplayValue(rowData, columnName) {
@@ -382,28 +512,12 @@ function RuntimeRadioGroupQuestion({ question, canEdit, showErrors, guidanceItem
       guidanceItems={guidanceItems}
       onOpenGuidance={onOpenGuidance}
     >
-      <div className="ember-runtime-segment-row">
-        {choices.map((choice) => {
-          const choiceValue = choice.value == null ? "" : String(choice.value);
-          const selected = value === normalizeText(choiceValue);
-
-          return (
-            <button
-              key={choice.key}
-              type="button"
-              className={`ember-runtime-segment ${selected ? "ember-runtime-segment--selected" : ""}`}
-              onClick={() => {
-                if (readOnly) return;
-                setQuestionValue(question, choice.value);
-              }}
-              disabled={readOnly}
-              aria-pressed={selected}
-            >
-              {choice.text}
-            </button>
-          );
-        })}
-      </div>
+      <SegmentButtons
+        choices={choices}
+        value={value}
+        readOnly={readOnly}
+        onChange={(nextValue) => setQuestionValue(question, nextValue)}
+      />
     </RuntimeFieldShell>
   );
 }
@@ -426,10 +540,46 @@ function RuntimeHtmlQuestion({ question }) {
   );
 }
 
+function SegmentButtons({ choices, value, readOnly, onChange }) {
+  return (
+    <div className="ember-runtime-segment-row">
+      {choices.map((choice) => {
+        const choiceValue = choice.value == null ? "" : String(choice.value);
+        const selected = normalizeText(value) === normalizeText(choiceValue);
+        const toneClass = getAnswerToneClass(choiceValue || choice.text);
+
+        return (
+          <button
+            key={choice.key}
+            type="button"
+            className={[
+              "ember-runtime-segment",
+              toneClass,
+              selected ? "ember-runtime-segment--selected" : "",
+            ]
+              .filter(Boolean)
+              .join(" ")}
+            onClick={() => {
+              if (readOnly) return;
+              onChange?.(choice.value);
+            }}
+            disabled={readOnly}
+            aria-pressed={selected}
+          >
+            {choice.text}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 function MatrixReadonlyTable({ question }) {
   const columns = buildReadonlyMatrixColumns(question);
   const rows = buildReadonlyMatrixRows(question);
   const titleVisible = String(question?.titleLocation || "").trim().toLowerCase() !== "hidden";
+  const isWide = isWideReadonlyMatrix(columns);
+  const minWidth = getReadonlyTableMinWidth(columns);
 
   return (
     <div className="ember-runtime-matrix" data-name={question?.name || undefined}>
@@ -439,25 +589,72 @@ function MatrixReadonlyTable({ question }) {
         </div>
       ) : null}
 
-      <div className="ember-runtime-table-shell">
-        <table className="ember-runtime-table">
+      <div
+        className={[
+          "ember-runtime-table-shell",
+          isWide ? "ember-runtime-table-shell--wide" : "",
+        ]
+          .filter(Boolean)
+          .join(" ")}
+      >
+        <table
+          className={[
+            "ember-runtime-table",
+            isWide ? "ember-runtime-table--wide" : "",
+          ]
+            .filter(Boolean)
+            .join(" ")}
+          style={isWide ? { "--ember-runtime-table-min-width": `${minWidth}px` } : undefined}
+        >
           <thead>
             <tr>
               {columns.map((column) => (
-                <th key={column.key} style={column.width ? { width: column.width } : undefined}>
-                  {column.title}
+                <th
+                  key={column.key}
+                  style={
+                    isWide
+                      ? { minWidth: `${getReadonlyColumnMinWidth(column)}px` }
+                      : column.width
+                        ? { width: column.width }
+                        : undefined
+                  }
+                >
+                  <span className="ember-runtime-table-heading">{column.title}</span>
                 </th>
               ))}
             </tr>
           </thead>
           <tbody>
-            {rows.map((row) => (
-              <tr key={row.key}>
-                {columns.map((column) => (
-                  <td key={`${row.key}-${column.key}`}>{getColumnCellDisplayValue(row.data, column.key)}</td>
-                ))}
+            {rows.length ? (
+              rows.map((row) => (
+                <tr key={row.key}>
+                  {columns.map((column) => {
+                    const cellValue = getColumnCellDisplayValue(row.data, column.key);
+
+                    return (
+                      <td key={`${row.key}-${column.key}`} data-label={column.title}>
+                        <span
+                          className={[
+                            "ember-runtime-table-cell",
+                            cellValue ? "" : "ember-runtime-table-cell--empty",
+                          ]
+                            .filter(Boolean)
+                            .join(" ")}
+                        >
+                          {cellValue || "-"}
+                        </span>
+                      </td>
+                    );
+                  })}
+                </tr>
+              ))
+            ) : (
+              <tr>
+                <td colSpan={Math.max(1, columns.length)} className="muted">
+                  Geen gegevens beschikbaar.
+                </td>
               </tr>
-            ))}
+            )}
           </tbody>
         </table>
       </div>
@@ -465,27 +662,74 @@ function MatrixReadonlyTable({ question }) {
   );
 }
 
+function AssessmentReadonlyCell({ value, strong = false }) {
+  return (
+    <div className={`ember-runtime-readonly-cell ${strong ? "ember-runtime-readonly-cell--topic" : ""}`}>
+      {value}
+    </div>
+  );
+}
+
+function AssessmentTextCell({ cellQuestion, rowData, column, canEdit, fallback }) {
+  const value = cellQuestion?.value ?? rowData?.[column?.name] ?? fallback ?? "";
+  const readOnly = isQuestionReadOnly(cellQuestion, canEdit) || column?.readOnly === true;
+  const inputType = getInputType(cellQuestion || column);
+  const placeholder = normalizeText(column?.placeholder || column?.placeHolder);
+
+  if (readOnly) {
+    return <AssessmentReadonlyCell value={value == null ? "" : String(value)} strong={column?.name === "onderwerp"} />;
+  }
+
+  return (
+    <input
+      type={inputType}
+      className="ember-runtime-input"
+      value={value == null ? "" : String(value)}
+      readOnly={readOnly}
+      disabled={readOnly}
+      placeholder={placeholder || undefined}
+      onChange={(event) => setQuestionValue(cellQuestion, event.target.value)}
+    />
+  );
+}
+
 function MatrixAssessment({ question, canEdit, showErrors, validationSummary, guidanceByMatrixRow, onOpenGuidance }) {
   const rows = getMatrixVisibleRows(question);
-  const questionName = String(question?.name || "").trim();
+  const questionName = normalizeName(question?.name);
+
+  const codeColumn = findMatrixColumn(question, ["item_code", "nr", "code"]);
+  const topicColumn = findMatrixColumn(question, ["onderwerp"]);
+  const answerColumn = findMatrixColumn(question, ["voldoet"]);
+  const commentColumn = findMatrixColumn(question, ["opmerking"]);
+
+  const codeName = normalizeName(codeColumn?.name);
+  const topicName = normalizeName(topicColumn?.name);
+  const answerName = normalizeName(answerColumn?.name);
+  const commentName = normalizeName(commentColumn?.name);
+
+  const codeTitle = getColumnTitle(codeColumn, "Nr");
+  const topicTitle = getColumnTitle(topicColumn, "Onderwerp");
+  const answerTitle = getColumnTitle(answerColumn, "Voldoet");
+  const commentTitle = getColumnTitle(commentColumn, "Opmerking");
 
   return (
     <div className="ember-runtime-assessment" data-name={questionName || undefined}>
       <div className="ember-runtime-assessment__header ember-runtime-assessment__grid">
-        <div>Nr</div>
+        <div>{codeTitle}</div>
         <div aria-hidden="true" />
-        <div>Onderwerp</div>
-        <div>Voldoet *</div>
-        <div>Opmerking</div>
+        <div>{topicTitle}</div>
+        <div>{answerTitle} *</div>
+        <div>{commentTitle}</div>
       </div>
 
       <div className="ember-runtime-assessment__rows">
         {rows.map((row, rowIndex) => {
-          const rowData = row?.value && typeof row.value === "object" ? row.value : {};
-          const nrQuestion = getMatrixCellQuestion(row, "item_code");
-          const topicQuestion = getMatrixCellQuestion(row, "onderwerp");
-          const answerQuestion = getMatrixCellQuestion(row, "voldoet");
-          const commentQuestion = getMatrixCellQuestion(row, "opmerking");
+          const rowData = getMatrixRowData(question, row, rowIndex);
+          const nrQuestion = getMatrixCellQuestion(row, codeName);
+          const topicQuestion = getMatrixCellQuestion(row, topicName);
+          const answerQuestion = getMatrixCellQuestion(row, answerName);
+          const commentQuestion = getMatrixCellQuestion(row, commentName);
+
           const guidanceItems = getMatrixGuidanceItems(
             guidanceByMatrixRow,
             questionName,
@@ -493,24 +737,39 @@ function MatrixAssessment({ question, canEdit, showErrors, validationSummary, gu
             rowIndex
           );
 
-          const answerErrors = getMatrixRowErrors(validationSummary, questionName, rowIndex, "voldoet");
-          const commentErrors = getMatrixRowErrors(validationSummary, questionName, rowIndex, "opmerking");
-          const answerValue = normalizeText(answerQuestion?.value);
-          const readOnly = isQuestionReadOnly(answerQuestion, canEdit);
-          const commentReadOnly = isQuestionReadOnly(commentQuestion, canEdit);
-          const choices = getChoiceItems(answerQuestion);
-          const matrixRowLabel = [rowData?.item_code, rowData?.onderwerp].filter(Boolean).join(" ; ");
+          const answerErrors = getMatrixRowErrors(validationSummary, questionName, rowIndex, answerName);
+          const commentErrors = getMatrixRowErrors(validationSummary, questionName, rowIndex, commentName);
+
+          const answerValue = normalizeText(answerQuestion?.value ?? rowData?.[answerName]);
+          const answerReadOnly = isQuestionReadOnly(answerQuestion, canEdit) || answerColumn?.readOnly === true;
+          const commentReadOnly = isQuestionReadOnly(commentQuestion, canEdit) || commentColumn?.readOnly === true;
+          const choices = getChoiceItems(answerQuestion || answerColumn);
+
+          const codeValue =
+            getCurrentValue(nrQuestion) ||
+            rowData?.[codeName] ||
+            rowData?.item_code ||
+            rowData?.nr ||
+            rowData?.code ||
+            rowIndex + 1;
+
+          const topicValue =
+            getCurrentValue(topicQuestion) ||
+            rowData?.[topicName] ||
+            rowData?.onderwerp ||
+            "";
+
+          const matrixRowLabel = [codeValue, topicValue].filter(Boolean).join(" ; ");
 
           return (
             <div key={`${questionName}-row-${rowIndex}`} className="ember-runtime-assessment__row">
               <div className="ember-runtime-assessment__grid">
-                <div className="ember-runtime-assessment__nr">
-                  <div className="ember-runtime-readonly-cell">
-                    {getCurrentValue(nrQuestion) || rowData?.item_code || rowIndex + 1}
-                  </div>
+                <div className="ember-runtime-assessment__cell ember-runtime-assessment__nr">
+                  <div className="ember-runtime-assessment__mobile-label">{codeTitle}</div>
+                  <AssessmentReadonlyCell value={codeValue} />
                 </div>
 
-                <div className="ember-runtime-assessment__guidance">
+                <div className="ember-runtime-assessment__cell ember-runtime-assessment__guidance">
                   <QuestionGuidanceButton
                     items={guidanceItems}
                     onOpen={() =>
@@ -524,30 +783,42 @@ function MatrixAssessment({ question, canEdit, showErrors, validationSummary, gu
                   />
                 </div>
 
-                <div className="ember-runtime-assessment__topic">
-                  <div className="ember-runtime-readonly-cell ember-runtime-readonly-cell--topic">
-                    {getCurrentValue(topicQuestion) || rowData?.onderwerp || ""}
-                  </div>
+                <div className="ember-runtime-assessment__cell ember-runtime-assessment__topic">
+                  <div className="ember-runtime-assessment__mobile-label">{topicTitle}</div>
+                  <AssessmentTextCell
+                    cellQuestion={topicQuestion}
+                    rowData={rowData}
+                    column={topicColumn}
+                    canEdit={canEdit}
+                    fallback={topicValue}
+                  />
                 </div>
 
-                <div className="ember-runtime-assessment__answer">
+                <div className="ember-runtime-assessment__cell ember-runtime-assessment__answer">
+                  <div className="ember-runtime-assessment__mobile-label">{answerTitle} *</div>
                   <div className="ember-runtime-segment-row ember-runtime-segment-row--tight">
                     {choices.map((choice) => {
                       const choiceValue = choice.value == null ? "" : String(choice.value);
                       const selected = answerValue === normalizeText(choiceValue);
+                      const toneClass = getAnswerToneClass(choiceValue || choice.text);
 
                       return (
                         <button
                           key={`${questionName}-${rowIndex}-${choice.key}`}
                           type="button"
-                          className={`ember-runtime-segment ember-runtime-segment--touch ${
-                            selected ? "ember-runtime-segment--selected" : ""
-                          }`}
+                          className={[
+                            "ember-runtime-segment",
+                            "ember-runtime-segment--touch",
+                            toneClass,
+                            selected ? "ember-runtime-segment--selected" : "",
+                          ]
+                            .filter(Boolean)
+                            .join(" ")}
                           onClick={() => {
-                            if (readOnly) return;
+                            if (answerReadOnly) return;
                             setQuestionValue(answerQuestion, choice.value);
                           }}
-                          disabled={readOnly}
+                          disabled={answerReadOnly}
                           aria-pressed={selected}
                         >
                           {choice.text}
@@ -558,14 +829,15 @@ function MatrixAssessment({ question, canEdit, showErrors, validationSummary, gu
                   <FieldErrors errors={showErrors ? answerErrors : []} />
                 </div>
 
-                <div className="ember-runtime-assessment__comment">
+                <div className="ember-runtime-assessment__cell ember-runtime-assessment__comment">
+                  <div className="ember-runtime-assessment__mobile-label">{commentTitle}</div>
                   <textarea
                     className="ember-runtime-textarea ember-runtime-textarea--matrix"
                     value={commentQuestion?.value == null ? "" : String(commentQuestion.value)}
                     readOnly={commentReadOnly}
                     disabled={commentReadOnly}
-                    rows={3}
-                    placeholder={normalizeText(commentQuestion?.placeholder || commentQuestion?.placeHolder) || undefined}
+                    rows={Number(commentColumn?.rows) > 0 ? Number(commentColumn.rows) : 3}
+                    placeholder={normalizeText(commentColumn?.placeholder || commentColumn?.placeHolder) || undefined}
                     onChange={(event) => setQuestionValue(commentQuestion, event.target.value)}
                   />
                   <FieldErrors errors={showErrors ? commentErrors : []} />
@@ -580,10 +852,10 @@ function MatrixAssessment({ question, canEdit, showErrors, validationSummary, gu
 }
 
 function MatrixCardField({ cellQuestion, column, canEdit }) {
-  const type = String(cellQuestion?.getType?.() || column?.cellType || "text").trim();
-  const readOnly = isQuestionReadOnly(cellQuestion, canEdit);
+  const type = getColumnType(column, cellQuestion);
+  const readOnly = isQuestionReadOnly(cellQuestion, canEdit) || column?.readOnly === true;
   const value = cellQuestion?.value ?? "";
-  const title = normalizeText(column?.title || column?.name || "");
+  const title = getColumnTitle(column);
 
   if (type === "comment") {
     return (
@@ -624,6 +896,21 @@ function MatrixCardField({ cellQuestion, column, canEdit }) {
     );
   }
 
+  if (type === "radiogroup") {
+    const choices = getChoiceItems(cellQuestion || column);
+    return (
+      <div className="ember-runtime-card-field ember-runtime-card-field--full">
+        <span className="ember-runtime-card-field__label">{title}</span>
+        <SegmentButtons
+          choices={choices}
+          value={value == null ? "" : String(value)}
+          readOnly={readOnly}
+          onChange={(nextValue) => setQuestionValue(cellQuestion, nextValue)}
+        />
+      </div>
+    );
+  }
+
   const inputType = getInputType(cellQuestion || column);
 
   return (
@@ -644,20 +931,21 @@ function MatrixCardField({ cellQuestion, column, canEdit }) {
 
 function MatrixCardList({ question, canEdit }) {
   const rows = getMatrixVisibleRows(question);
-  const columns = Array.isArray(question?.columns) ? question.columns : [];
+  const columns = getMatrixColumns(question).filter((column) => column?.visible !== false && column?.isVisible !== false);
   const titleVisible = String(question?.titleLocation || "").trim().toLowerCase() !== "hidden";
+  const canAddRows = canEdit && question?.isReadOnly !== true && question?.readOnly !== true && question?.canAddRow !== false;
+  const canRemoveRows = canEdit && question?.isReadOnly !== true && question?.readOnly !== true && question?.canRemoveRows !== false;
 
   return (
     <div className="ember-runtime-matrix" data-name={question?.name || undefined}>
-      {(titleVisible && normalizeText(question?.title)) || question?.canAddRow ? (
+      {(titleVisible && normalizeText(question?.title)) || canAddRows ? (
         <div className="ember-runtime-matrix__head">
           <div className="ember-runtime-matrix__title">{normalizeText(question?.title)}</div>
-          {question?.canAddRow ? (
+          {canAddRows && typeof question.addRow === "function" ? (
             <button
               type="button"
               className="btn btn-secondary ember-runtime-add-btn"
               onClick={() => question.addRow()}
-              disabled={!canEdit}
             >
               <PlusIcon size={16} />
               <span>{normalizeText(question?.addRowText) || "Regel toevoegen"}</span>
@@ -680,12 +968,11 @@ function MatrixCardList({ question, canEdit }) {
                   {normalizeText(question?.title) || "Regel"} {rowIndex + 1}
                 </div>
 
-                {question?.canRemoveRows ? (
+                {canRemoveRows && typeof question.removeRow === "function" ? (
                   <button
                     type="button"
                     className="btn btn-secondary ember-runtime-remove-btn"
                     onClick={() => question.removeRow(rowIndex)}
-                    disabled={!canEdit}
                   >
                     <DeleteIcon size={16} />
                     <span>Verwijderen</span>
@@ -754,15 +1041,23 @@ function RuntimeReadonlyDynamicPanelChild({ childDef, value, parentKey }) {
               </tr>
             </thead>
             <tbody>
-              {rows.map((row, rowIndex) => (
-                <tr key={`${parentKey}-row-${rowIndex}`}>
-                  {columns.map((column, columnIndex) => (
-                    <td key={`${parentKey}-cell-${rowIndex}-${column?.name || columnIndex}`}>
-                      {getColumnCellDisplayValue(row, column?.name)}
-                    </td>
-                  ))}
+              {rows.length ? (
+                rows.map((row, rowIndex) => (
+                  <tr key={`${parentKey}-row-${rowIndex}`}>
+                    {columns.map((column, columnIndex) => (
+                      <td key={`${parentKey}-cell-${rowIndex}-${column?.name || columnIndex}`}>
+                        {getColumnCellDisplayValue(row, column?.name)}
+                      </td>
+                    ))}
+                  </tr>
+                ))
+              ) : (
+                <tr>
+                  <td colSpan={Math.max(1, columns.length)} className="muted">
+                    Geen gegevens beschikbaar.
+                  </td>
                 </tr>
-              ))}
+              )}
             </tbody>
           </table>
         </div>
@@ -825,7 +1120,7 @@ function RuntimeQuestion({
 }) {
   if (!isQuestionVisible(question)) return null;
 
-  const type = String(question?.getType?.() || question?.jsonObj?.type || "").trim();
+  const type = getQuestionType(question);
   const guidanceItems = getQuestionItemsMap(guidanceByQuestion, question?.name);
   const openGuidance = () =>
     onOpenGuidance?.({
@@ -911,50 +1206,80 @@ function RuntimeQuestion({
 }
 
 function RuntimePanel(props) {
-  const { panel } = props;
+  const { panel, element: _ignoredElement, ...runtimeProps } = props;
+  const initialCollapsed =
+    panel?.isCollapsed === true ||
+    normalizeLower(panel?.state || panel?.jsonObj?.state) === "collapsed";
+  const canCollapse = panel?.showCollapseButton === true || panel?.jsonObj?.showCollapseButton === true;
+  const [isOpen, setIsOpen] = useState(!initialCollapsed);
+
   if (!isQuestionVisible(panel)) return null;
 
   const elements = Array.isArray(panel?.elements) ? panel.elements : [];
   const title = getQuestionTitle(panel);
   const simpleOnly = elements.every((element) => {
-    const type = String(element?.getType?.() || element?.jsonObj?.type || "").trim();
+    const type = getQuestionType(element);
     return ["text", "comment", "dropdown", "radiogroup"].includes(type);
   });
 
   return (
     <section className="card ember-runtime-panel" data-name={panel?.name || undefined}>
-      {title ? <div className="ember-runtime-panel__title">{title}</div> : null}
-      <div className={`ember-runtime-panel__content ${simpleOnly ? "ember-runtime-panel__content--grid" : ""}`}>
-        {elements.map((element, index) => (
-          <RuntimeElement key={`${panel?.name || "panel"}-${element?.name || index}`} element={element} {...props} />
-        ))}
-      </div>
+      {title ? (
+        canCollapse ? (
+          <button
+            type="button"
+            className="ember-runtime-panel__toggle"
+            onClick={() => setIsOpen((prev) => !prev)}
+            aria-expanded={isOpen}
+          >
+            <span className="ember-runtime-panel__title">{title}</span>
+            <span className="ember-runtime-panel__toggle-icon" aria-hidden="true">
+              {isOpen ? <ChevronUpIcon size={18} /> : <ChevronDownIcon size={18} />}
+            </span>
+          </button>
+        ) : (
+          <div className="ember-runtime-panel__title">{title}</div>
+        )
+      ) : null}
+
+      {isOpen ? (
+        <div className={`ember-runtime-panel__content ${simpleOnly ? "ember-runtime-panel__content--grid" : ""}`}>
+          {elements.map((element, index) => (
+            <RuntimeElement
+              key={`${panel?.name || "panel"}-${element?.name || index}`}
+              {...runtimeProps}
+              element={element}
+            />
+          ))}
+        </div>
+      ) : null}
     </section>
   );
 }
 
 function RuntimeElement(props) {
-  const { element } = props;
+  const { element, panel: _ignoredPanel, ...runtimeProps } = props;
 
   if (isPanelLike(element)) {
-    return <RuntimePanel panel={element} {...props} />;
+    return <RuntimePanel {...runtimeProps} panel={element} />;
   }
 
   return (
     <RuntimeQuestion
       question={element}
-      canEdit={props.canEdit}
-      showErrors={props.showErrors}
-      validationSummary={props.validationSummary}
-      guidanceByQuestion={props.guidanceByQuestion}
-      guidanceByMatrixRow={props.guidanceByMatrixRow}
-      onOpenGuidance={props.onOpenGuidance}
+      canEdit={runtimeProps.canEdit}
+      showErrors={runtimeProps.showErrors}
+      validationSummary={runtimeProps.validationSummary}
+      guidanceByQuestion={runtimeProps.guidanceByQuestion}
+      guidanceByMatrixRow={runtimeProps.guidanceByMatrixRow}
+      onOpenGuidance={runtimeProps.onOpenGuidance}
     />
   );
 }
 
 export default function EmberRuntimeSurvey({
   model,
+  activePageIndex = 0,
   canEdit,
   hasValidatedOnce,
   validationSummary,
@@ -964,18 +1289,35 @@ export default function EmberRuntimeSurvey({
 }) {
   useRuntimeRenderVersion(model);
 
-  const currentPage = model?.currentPage || null;
   const visiblePages = Array.isArray(model?.visiblePages) ? model.visiblePages : [];
-  const pageIndex = Math.max(0, visiblePages.indexOf(currentPage));
+  const parsedPageIndex = Number(activePageIndex);
+  const safePageIndex =
+    Number.isInteger(parsedPageIndex) && parsedPageIndex >= 0 && parsedPageIndex < visiblePages.length
+      ? parsedPageIndex
+      : 0;
+
+  const currentPage = visiblePages[safePageIndex] || model?.currentPage || null;
+  const pageIndex = safePageIndex;
   const pageTitle = useMemo(() => getPageTitle(currentPage, pageIndex), [currentPage, pageIndex]);
   const elements = Array.isArray(currentPage?.elements) ? currentPage.elements.filter(isQuestionVisible) : [];
+
+  useEffect(() => {
+    if (!model || !currentPage) return;
+    if (model.currentPage === currentPage) return;
+
+    try {
+      model.currentPage = currentPage;
+    } catch {
+      // React rendering blijft leidend.
+    }
+  }, [model, currentPage]);
 
   if (!currentPage) {
     return <div className="muted">Geen formulierpagina beschikbaar.</div>;
   }
 
   return (
-    <div className="ember-runtime-page">
+    <div className="ember-runtime-page" data-page-name={currentPage?.name || undefined}>
       <div className="ember-runtime-page__head">
         <div className="ember-runtime-page__title">{pageTitle}</div>
       </div>

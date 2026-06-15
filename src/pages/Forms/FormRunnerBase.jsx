@@ -20,8 +20,6 @@ import { PartyPopperIcon } from "@/components/ui/party-popper";
 import { RotateCCWIcon } from "@/components/ui/rotate-ccw";
 import { ChevronUpIcon } from "@/components/ui/chevron-up";
 import { PlusIcon } from "@/components/ui/plus";
-import { ChevronsDownUpIcon } from "@/components/ui/chevrons-down-up";
-import { ChevronsUpDownIcon } from "@/components/ui/chevrons-up-down";
 import { AttachFileIcon } from "@/components/ui/attach-file";
 import { MicIcon } from "@/components/ui/mic";
 import { AirVentIcon } from "@/components/ui/air-vent";
@@ -291,6 +289,8 @@ function themedErrorStyle(extra = {}) {
   };
 }
 
+const EMBER_OWNED_RUNTIME_ENABLED = true;
+
 function walkSurveyElements(node, visit) {
   if (!node || typeof node !== "object") return;
 
@@ -346,16 +346,73 @@ function shouldUseEmberOwnedRuntime(instance, surveyParsed) {
   const capability = getEmberOwnedRuntimeCapabilityReport(surveyParsed);
   if (!capability.supported) return false;
 
-  if (typeof window === "undefined") return false;
-
-  const params = new URLSearchParams(window.location.search);
-  const runtimeMode = String(params.get("runtime") || "").trim().toLowerCase();
-  if (runtimeMode !== "ember") return false;
-
   const formCode = String(instance?.form_code || "").trim().toUpperCase();
   if (!formCode) return false;
 
-  return true;
+  return EMBER_OWNED_RUNTIME_ENABLED;
+}
+
+function readStoredPageIndex(pageStorageKey, pageCount = null) {
+  if (!pageStorageKey || typeof window === "undefined") return null;
+
+  const stores = [window.sessionStorage, window.localStorage].filter(Boolean);
+
+  for (const store of stores) {
+    try {
+      const raw = store.getItem(pageStorageKey);
+      const pageIndex = Number.parseInt(String(raw || ""), 10);
+
+      if (!Number.isFinite(pageIndex) || pageIndex < 0) continue;
+      if (Number.isInteger(Number(pageCount)) && Number(pageCount) > 0 && pageIndex >= Number(pageCount)) {
+        continue;
+      }
+
+      return pageIndex;
+    } catch {
+      // Storage kan door browserbeleid geblokkeerd zijn. Dan valt de runner terug naar pagina 1.
+    }
+  }
+
+  return null;
+}
+
+function writeStoredPageIndex(pageStorageKey, pageIndex) {
+  if (!pageStorageKey || typeof window === "undefined") return;
+
+  const normalized = String(Math.max(0, Number(pageIndex) || 0));
+  const stores = [window.sessionStorage, window.localStorage].filter(Boolean);
+
+  stores.forEach((store) => {
+    try {
+      store.setItem(pageStorageKey, normalized);
+    } catch {
+      // Bewaren van de paginastand is comfortgedrag en mag de runner nooit blokkeren.
+    }
+  });
+}
+
+function applyPageIndexToModel(model, pageIndex) {
+  const pages = Array.isArray(model?.visiblePages) ? model.visiblePages : [];
+  const safeIndex = Number.isInteger(Number(pageIndex)) ? Number(pageIndex) : 0;
+  const targetPage = pages[safeIndex] || null;
+
+  if (!model || !targetPage) return null;
+
+  try {
+    model.currentPage = targetPage;
+  } catch {
+    return null;
+  }
+
+  return safeIndex;
+}
+
+function restoreStoredPageIndexToModel(model, pageStorageKey) {
+  const pages = Array.isArray(model?.visiblePages) ? model.visiblePages : [];
+  const storedIndex = readStoredPageIndex(pageStorageKey, pages.length);
+
+  if (storedIndex === null) return null;
+  return applyPageIndexToModel(model, storedIndex);
 }
 
 function ToggleRow({ title, meta, isOpen, onToggle, iconRef, onIconEnter, onIconLeave }) {
@@ -474,14 +531,20 @@ export default function FormRunnerBase({ mode }) {
   const [showValidateCelebration, setShowValidateCelebration] = useState(false);
   const [prefillRefreshOk, setPrefillRefreshOk] = useState(false);
 
-  const [currentPageIndex, setCurrentPageIndex] = useState(0);
+  const [currentPageIndex, setCurrentPageIndex] = useState(() => {
+    const routePageStorageKey =
+      code && instanceId ? `ember-form-page::${String(code)}::${String(instanceId)}` : "";
+
+    return readStoredPageIndex(routePageStorageKey) ?? 0;
+  });
   const [bookmarksOpen, setBookmarksOpen] = useState(false);
   const [hasValidatedOnce, setHasValidatedOnce] = useState(false);
-  const [validationListOpen, setValidationListOpen] = useState(true);
+  const [validationListOpen, setValidationListOpen] = useState(false);
   const [instanceMetaOpen, setInstanceMetaOpen] = useState(false);
   const [contextPanelOpen, setContextPanelOpen] = useState(false);
   const [assistantPanelOpen, setAssistantPanelOpen] = useState(false);
   const [actionsMenuOpen, setActionsMenuOpen] = useState(false);
+  const [actionsDocked, setActionsDocked] = useState(false);
   const [guidanceDialog, setGuidanceDialog] = useState(null);
 
   const [debugCards, setDebugCards] = useState(defaultDebugCards);
@@ -491,6 +554,7 @@ export default function FormRunnerBase({ mode }) {
   const assistantToggleIconRef = useRef(null);
   const assistantHeaderIconRef = useRef(null);
   const actionsMenuRef = useRef(null);
+  const headerCardRef = useRef(null);
   const actionsMenuIconRef = useRef(null);
   const debugJsonIconRef = useRef(null);
 
@@ -508,7 +572,6 @@ export default function FormRunnerBase({ mode }) {
   const partyPopperRef = useRef(null);
   const validateCelebrationIconRef = useRef(null);
   const prefillRefreshIconRef = useRef(null);
-  const validationCollapseIconRef = useRef(null);
 
   const debugToggleIconRef = useRef({
     instance: null,
@@ -526,12 +589,15 @@ export default function FormRunnerBase({ mode }) {
   const validateCelebrationTimerRef = useRef(null);
   const prefillRefreshOkTimerRef = useRef(null);
   const postSubmitReloadTimerRef = useRef(null);
-  const validationCollapseAnimTimerRef = useRef(null);
   const autosaveTimerRef = useRef(null);
   const autosaveIdleTimerRef = useRef(null);
   const autosaveRunningRef = useRef(false);
 
   const lastLoadedKeyRef = useRef("");
+  const restoredPageStorageKeyRef = useRef("");
+  const pageRestoreAttemptedRef = useRef(false);
+  const pageRestoreInProgressRef = useRef(false);
+  const pageRestoreCompletedRef = useRef(false);
 
   const surveyModelRef = useRef(null);
   const suppressDirtyRef = useRef(false);
@@ -542,8 +608,15 @@ export default function FormRunnerBase({ mode }) {
   const availabilityAutoStateRef = useRef({});
   const validationActivatedRef = useRef(false);
 
+  const bootLoadKeyRef = useRef("");
+  const reloadSequenceRef = useRef(0);
+
   const status = useMemo(() => String(instance?.status || ""), [instance]);
   const statusLbl = useMemo(() => statusLabel(status), [status]);
+  const pageStorageKey = useMemo(() => {
+    if (!code || !instanceId) return "";
+    return `ember-form-page::${String(code)}::${String(instanceId)}`;
+  }, [code, instanceId]);
 
   const surveyParsed = useMemo(() => safeSurveyParse(instance?.survey_json), [instance]);
 
@@ -620,12 +693,10 @@ export default function FormRunnerBase({ mode }) {
   const hasUnsavedChanges = dirty || hasMetadataChanges;
 
   const hasValidationItems = !isDebug && validationSummary.length > 0;
-  const validationCollapseBtnTitle = validationListOpen
-    ? "Controlelijst inklappen"
-    : "Controlelijst uitklappen";
-  const ValidationCollapseIcon = validationListOpen
-    ? ChevronsDownUpIcon
-    : ChevronsUpDownIcon;
+  const visibleError =
+    error && !(hasValidationItems && error === "Controleer eerst de gemarkeerde velden.")
+      ? error
+      : null;
 
   const currentParentInstanceId = useMemo(() => {
     return normalizeMetadataParentId(instanceMetadata?.parent_instance_id);
@@ -662,9 +733,13 @@ export default function FormRunnerBase({ mode }) {
     if (!model || isDebug) return;
 
     const syncCurrentPage = () => {
+      if (pageRestoreInProgressRef.current) return;
+
       const pages = Array.isArray(model.visiblePages) ? model.visiblePages : [];
-      const idx = Math.max(0, pages.indexOf(model.currentPage));
-      setCurrentPageIndex(idx >= 0 ? idx : 0);
+      const idx = pages.indexOf(model.currentPage);
+      if (idx < 0) return;
+
+      setCurrentPageIndex(idx);
     };
 
     syncCurrentPage();
@@ -674,7 +749,78 @@ export default function FormRunnerBase({ mode }) {
     return () => {
       model.onCurrentPageChanged.remove(syncCurrentPage);
     };
-  }, [runtimeReady, isDebug, instanceId]);
+  }, [runtimeReady, isDebug, instanceId, surveyRenderKey]);
+
+  useEffect(() => {
+    if (isDebug || !runtimeReady || !pageStorageKey) return;
+
+    const model = surveyModelRef.current;
+    const pages = Array.isArray(model?.visiblePages) ? model.visiblePages : [];
+
+    if (!model || pages.length === 0) return;
+
+    if (restoredPageStorageKeyRef.current === pageStorageKey) {
+      pageRestoreAttemptedRef.current = true;
+      pageRestoreCompletedRef.current = true;
+      return;
+    }
+
+    restoredPageStorageKeyRef.current = pageStorageKey;
+    pageRestoreAttemptedRef.current = true;
+    pageRestoreCompletedRef.current = false;
+
+    const targetIndex = readStoredPageIndex(pageStorageKey, pages.length);
+
+    if (targetIndex === null) {
+      pageRestoreCompletedRef.current = true;
+      return;
+    }
+
+    const targetPage = pages[targetIndex] || null;
+    if (!targetPage) {
+      pageRestoreCompletedRef.current = true;
+      return;
+    }
+
+    pageRestoreInProgressRef.current = true;
+    setCurrentPageIndex(targetIndex);
+
+    try {
+      model.currentPage = targetPage;
+    } catch {
+      // React rendering gebruikt currentPageIndex als bron van waarheid.
+    }
+
+    requestAnimationFrame(() => {
+      const nextModel = surveyModelRef.current;
+      const nextPages = Array.isArray(nextModel?.visiblePages) ? nextModel.visiblePages : [];
+      const resolvedTargetPage = nextPages[targetIndex] || null;
+
+      if (nextModel && resolvedTargetPage) {
+        try {
+          nextModel.currentPage = resolvedTargetPage;
+          nextModel.render?.();
+        } catch {
+          try {
+            nextModel.currentPage = resolvedTargetPage;
+          } catch {
+            // React rendering blijft leidend.
+          }
+        }
+      }
+
+      pageRestoreInProgressRef.current = false;
+      pageRestoreCompletedRef.current = true;
+      setCurrentPageIndex(targetIndex);
+    });
+  }, [runtimeReady, isDebug, pageStorageKey, surveyRenderKey]);
+
+  useEffect(() => {
+    if (isDebug || !runtimeReady || !pageStorageKey || !pageRestoreAttemptedRef.current) return;
+    if (!pageRestoreCompletedRef.current || pageRestoreInProgressRef.current) return;
+
+    writeStoredPageIndex(pageStorageKey, currentPageIndex);
+  }, [currentPageIndex, runtimeReady, isDebug, pageStorageKey]);
 
   useEffect(() => {
     if (!showSubmitCelebration) return;
@@ -701,12 +847,6 @@ export default function FormRunnerBase({ mode }) {
       validateCelebrationIconRef.current?.stopAnimation?.();
     };
   }, [showValidateCelebration]);
-
-  useEffect(() => {
-    if (validationSummary.length > 0) {
-      setValidationListOpen(true);
-    }
-  }, [validationSummary]);
 
   useEffect(() => {
     if (isDebug) return undefined;
@@ -758,6 +898,42 @@ export default function FormRunnerBase({ mode }) {
       window.removeEventListener("keydown", onKeyDown);
     };
   }, [actionsMenuOpen]);
+
+
+  useEffect(() => {
+    if (typeof window === "undefined") return undefined;
+
+    let frame = 0;
+
+    function updateDockedState() {
+      frame = 0;
+
+      const headerNode = headerCardRef.current;
+      if (!headerNode) {
+        setActionsDocked(false);
+        return;
+      }
+
+      const rect = headerNode.getBoundingClientRect();
+      const shouldDock = window.innerWidth >= 980 && rect.bottom <= 118;
+      setActionsDocked((prev) => (prev === shouldDock ? prev : shouldDock));
+    }
+
+    function scheduleUpdate() {
+      if (frame) return;
+      frame = window.requestAnimationFrame(updateDockedState);
+    }
+
+    scheduleUpdate();
+    window.addEventListener("scroll", scheduleUpdate, { passive: true });
+    window.addEventListener("resize", scheduleUpdate);
+
+    return () => {
+      if (frame) window.cancelAnimationFrame(frame);
+      window.removeEventListener("scroll", scheduleUpdate);
+      window.removeEventListener("resize", scheduleUpdate);
+    };
+  }, [loading, runtimeReady, isDebug]);
 
   function animateDebugToggle(key) {
     debugToggleIconRef.current[key]?.startAnimation?.();
@@ -888,18 +1064,40 @@ export default function FormRunnerBase({ mode }) {
     return true;
   }
 
-  function openValidationItem(item) {
-    if (isDebug) return;
+  function setRuntimePageIndex(pageIndex, { closeBookmarks = true } = {}) {
+    if (isDebug) return false;
 
     const model = surveyModelRef.current;
-    if (!model || !item) return;
+    const pages = Array.isArray(model?.visiblePages) ? model.visiblePages : [];
+    const safeIndex = Number(pageIndex);
+    const targetPage = pages[safeIndex] || null;
 
-    const targetPage = Array.isArray(model.visiblePages) ? model.visiblePages[item.pageIndex] : null;
-    if (targetPage) {
+    if (!model || !targetPage) return false;
+
+    setCurrentPageIndex(safeIndex);
+
+    try {
       model.currentPage = targetPage;
-      setCurrentPageIndex(item.pageIndex);
+    } catch {
+      // EmberRuntimeSurvey gebruikt currentPageIndex als bron van waarheid.
+    }
+
+    if (pageStorageKey) {
+      writeStoredPageIndex(pageStorageKey, safeIndex);
+    }
+
+    if (closeBookmarks) {
       setBookmarksOpen(false);
     }
+
+    return true;
+  }
+
+  function openValidationItem(item) {
+    if (isDebug || !item) return;
+
+    setRuntimePageIndex(item.pageIndex, { closeBookmarks: true });
+    setValidationListOpen(false);
 
     requestAnimationFrame(() => {
       scrollToQuestionByName(item.questionName);
@@ -907,16 +1105,7 @@ export default function FormRunnerBase({ mode }) {
   }
 
   function goToPageIndex(pageIndex) {
-    if (isDebug) return;
-
-    const model = surveyModelRef.current;
-    const pages = Array.isArray(model?.visiblePages) ? model.visiblePages : [];
-    const targetPage = pages[pageIndex] || null;
-
-    if (!model || !targetPage) return;
-
-    model.currentPage = targetPage;
-    setCurrentPageIndex(pageIndex);
+    setRuntimePageIndex(pageIndex, { closeBookmarks: true });
   }
 
   function applyMetadataResultLocally(resultRow) {
@@ -1109,29 +1298,77 @@ export default function FormRunnerBase({ mode }) {
   }
 
   async function reload({ forceEditor } = {}) {
+    const reloadSeq = reloadSequenceRef.current + 1;
+    reloadSequenceRef.current = reloadSeq;
+
+    const reloadStartedAt = performance.now();
+    const reloadScope = `${String(code)}::${String(instanceId)}::${Date.now()}::${reloadSeq}`;
+
+    const isLatestReload = () => reloadSequenceRef.current === reloadSeq;
+    const safeSetLoading = (value) => {
+      if (isLatestReload()) setLoading(value);
+    };
+
+    const logReloadStep = () => {};
+
     setLoading(true);
     setError(null);
+
+    const preferredPageIndex = readStoredPageIndex(pageStorageKey);
+
+    logReloadStep("start", {
+      code,
+      instanceId,
+      mode,
+      forceEditor: Boolean(forceEditor),
+      pageStorageKey,
+      preferredPageIndex,
+    });
+
     setValidationSummary([]);
     setRuntimeReady(false);
-    setCurrentPageIndex(0);
+    setCurrentPageIndex(preferredPageIndex ?? 0);
     setHasValidatedOnce(false);
+    pageRestoreAttemptedRef.current = false;
+    restoredPageStorageKeyRef.current = "";
+    pageRestoreInProgressRef.current = false;
+    pageRestoreCompletedRef.current = false;
 
     try {
+      logReloadStep("instance-fetch-start");
       const res = await getFormInstance(code, instanceId);
+      logReloadStep("instance-fetch-done");
+      if (!isLatestReload()) {
+        logReloadStep("stale-after-instance-fetch");
+        return;
+      }
+
       const inst = normalizeInstanceResponse(res);
       setInstance(inst || null);
 
       const nextDraftRev = getDraftRev(inst);
       const answersObj = getAnswersObject(inst);
 
+      logReloadStep("instance-normalized", {
+        formCode: inst?.form_code || null,
+        status: inst?.status || null,
+        draftRev: nextDraftRev,
+        hasSurveyJson: Boolean(inst?.survey_json),
+      });
+
       const key = `${String(instanceId)}::${String(nextDraftRev)}`;
       const alreadyLoaded = lastLoadedKeyRef.current === key;
 
       const parsedSurvey = safeSurveyParse(inst?.survey_json);
-      const useEmberOwnedRuntime = shouldUseEmberOwnedRuntime(inst, parsedSurvey);
-
       const shouldOverwriteEditor = forceEditor || (!dirty && !alreadyLoaded);
       const shouldOverwriteMetadata = forceEditor || (!hasMetadataChanges && !alreadyLoaded);
+
+      logReloadStep("survey-parse-done", {
+        ok: parsedSurvey.ok,
+        shouldOverwriteEditor,
+        shouldOverwriteMetadata,
+        alreadyLoaded,
+      });
 
       if (shouldOverwriteMetadata) {
         const nextMetadata = buildInstanceMetadataState(inst);
@@ -1152,33 +1389,56 @@ export default function FormRunnerBase({ mode }) {
           lastLoadedKeyRef.current = key;
         }
 
-        setLoading(false);
+        logReloadStep("survey-parse-error", { error: parsedSurvey.error || null });
+        safeSetLoading(false);
         return;
       }
 
       if (!shouldOverwriteEditor && surveyModelRef.current) {
+        logReloadStep("reuse-existing-model");
         setRuntimeReady(true);
-        setLoading(false);
+        safeSetLoading(false);
         return;
       }
 
       if (runtimeDetachRef.current) {
+        logReloadStep("detach-previous-runtime-start");
         runtimeDetachRef.current();
         runtimeDetachRef.current = null;
+        logReloadStep("detach-previous-runtime-done");
       }
 
       energyAutoStateRef.current = {};
       availabilityAutoStateRef.current = {};
       validationActivatedRef.current = false;
 
-      const runtime = await buildRuntimeModelFromInstance({
-        instance: inst,
-        code,
-        onDirtyChange: setDirty,
-        canEditRef,
-        suppressDirtyRef,
-        lastAppliedMap,
-      });
+      logReloadStep("runtime-build-start");
+      let runtimeBuildTimedOut = false;
+      const runtime = await Promise.race([
+        buildRuntimeModelFromInstance({
+          instance: inst,
+          code,
+          onDirtyChange: setDirty,
+          canEditRef,
+          suppressDirtyRef,
+          lastAppliedMap,
+        }),
+        new Promise((resolve) => {
+          window.setTimeout(() => {
+            runtimeBuildTimedOut = true;
+            resolve({
+              ok: false,
+              error:
+                "Runtime model kon niet tijdig worden opgebouwd. De instance is geladen, maar buildRuntimeModelFromInstance bleef hangen.",
+            });
+          }, 12000);
+        }),
+      ]);
+      logReloadStep("runtime-build-done", { ok: runtime?.ok, timedOut: runtimeBuildTimedOut });
+      if (!isLatestReload()) {
+        logReloadStep("stale-after-runtime-build");
+        return;
+      }
 
       if (!runtime.ok) {
         surveyModelRef.current = null;
@@ -1187,30 +1447,67 @@ export default function FormRunnerBase({ mode }) {
         setLastAppliedMap({});
         setRuntimeReady(false);
         setError(runtime.error || "Runtime model kon niet worden opgebouwd.");
-        setLoading(false);
+        safeSetLoading(false);
         return;
       }
 
+      logReloadStep("page-restore-start");
+      const restoredPageIndex = restoreStoredPageIndexToModel(runtime.model, pageStorageKey);
+      const visiblePages = Array.isArray(runtime.model?.visiblePages) ? runtime.model.visiblePages : [];
+      const currentRuntimePageIndex = visiblePages.indexOf(runtime.model.currentPage);
+      const nextPageIndex = restoredPageIndex ?? (currentRuntimePageIndex >= 0 ? currentRuntimePageIndex : 0);
+      logReloadStep("page-restore-done", {
+        restoredPageIndex,
+        currentRuntimePageIndex,
+        nextPageIndex,
+        visiblePageCount: visiblePages.length,
+      });
+
       surveyModelRef.current = runtime.model;
+      setCurrentPageIndex(nextPageIndex);
+      pageRestoreAttemptedRef.current = true;
+      pageRestoreCompletedRef.current = true;
+      restoredPageStorageKeyRef.current = pageStorageKey;
       setPrefillPayload(runtime.prefillPayload || null);
       setLastAppliedMap(runtime.lastAppliedMap || {});
       setAnswersPreview({ ...(runtime.model.data || {}) });
 
-      runtimeDetachRef.current = useEmberOwnedRuntime
-        ? () => {}
-        : attachRuntimeBehaviors({
-            model: runtime.model,
-            prefillPayload: runtime.prefillPayload,
-            energyAutoStateRef,
-            availabilityAutoStateRef,
-            validationActivatedRef,
-            suppressDirtyRef,
-            onAnswersSnapshotChange: setAnswersPreview,
-            onValidationSummaryChange: setValidationSummary,
-            guidanceByQuestion: inst?.guidance_by_question || null,
-            guidanceByMatrixRow: inst?.guidance_by_matrix_row || null,
-            onOpenQuestionGuidance: setGuidanceDialog,
-          });
+      logReloadStep("runtime-attach-start");
+      let runtimeAttachTimedOut = false;
+      const attachResult = await Promise.race([
+        Promise.resolve().then(() => attachRuntimeBehaviors({
+          model: runtime.model,
+          prefillPayload: runtime.prefillPayload,
+          energyAutoStateRef,
+          availabilityAutoStateRef,
+          validationActivatedRef,
+          suppressDirtyRef,
+          onAnswersSnapshotChange: setAnswersPreview,
+          onValidationSummaryChange: setValidationSummary,
+          guidanceByQuestion: inst?.guidance_by_question || null,
+          guidanceByMatrixRow: inst?.guidance_by_matrix_row || null,
+          onOpenQuestionGuidance: setGuidanceDialog,
+        })),
+        new Promise((resolve) => {
+          window.setTimeout(() => {
+            runtimeAttachTimedOut = true;
+            resolve(null);
+          }, 8000);
+        }),
+      ]);
+      runtimeDetachRef.current = typeof attachResult === "function" ? attachResult : null;
+      logReloadStep("runtime-attach-done", { timedOut: runtimeAttachTimedOut });
+      if (!isLatestReload()) {
+        logReloadStep("stale-after-runtime-attach");
+        return;
+      }
+
+      if (runtimeAttachTimedOut) {
+        setError("Runtime behaviors konden niet tijdig worden gekoppeld. De formulierdata is geladen, maar de gedraglaag bleef hangen.");
+        setRuntimeReady(false);
+        safeSetLoading(false);
+        return;
+      }
 
       if (isDebug && shouldOverwriteEditor) {
         setDebugAnswersText(JSON.stringify(answersObj || {}, null, 2));
@@ -1220,7 +1517,14 @@ export default function FormRunnerBase({ mode }) {
       setRuntimeReady(true);
       setSurveyRenderKey((prev) => prev + 1);
       lastLoadedKeyRef.current = key;
+      logReloadStep("done", { nextPageIndex });
     } catch (e) {
+      if (!isLatestReload()) {
+        logReloadStep("stale-error", { error: String(e?.message || e || "") });
+        return;
+      }
+
+      logReloadStep("error", { error: String(e?.message || e || "") });
       setError(translateApiError(e, status));
       setInstance(null);
       surveyModelRef.current = null;
@@ -1229,23 +1533,32 @@ export default function FormRunnerBase({ mode }) {
       setLastAppliedMap({});
       setRuntimeReady(false);
     } finally {
-      setLoading(false);
+      safeSetLoading(false);
     }
   }
 
   useEffect(() => {
+    if (!code || !instanceId) return undefined;
+
+    const bootKey = `${String(code)}::${String(instanceId)}::${String(mode || "normal")}`;
     let cancelled = false;
 
-    async function boot() {
-      if (!code || !instanceId) return;
-      await reload({ forceEditor: true });
-      if (cancelled) return;
-    }
+    const bootTimer = window.setTimeout(() => {
+      if (cancelled) {
+        return;
+      }
 
-    boot();
+      if (bootLoadKeyRef.current === bootKey) {
+        return;
+      }
+
+      bootLoadKeyRef.current = bootKey;
+      reload({ forceEditor: true });
+    }, 0);
 
     return () => {
       cancelled = true;
+      window.clearTimeout(bootTimer);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [code, instanceId, mode]);
@@ -1264,7 +1577,6 @@ export default function FormRunnerBase({ mode }) {
       if (validateCelebrationTimerRef.current) clearTimeout(validateCelebrationTimerRef.current);
       if (prefillRefreshOkTimerRef.current) clearTimeout(prefillRefreshOkTimerRef.current);
       if (postSubmitReloadTimerRef.current) clearTimeout(postSubmitReloadTimerRef.current);
-      if (validationCollapseAnimTimerRef.current) clearTimeout(validationCollapseAnimTimerRef.current);
       if (autosaveIdleTimerRef.current) clearTimeout(autosaveIdleTimerRef.current);
       if (autosaveTimerRef.current) clearInterval(autosaveTimerRef.current);
     };
@@ -1301,15 +1613,6 @@ export default function FormRunnerBase({ mode }) {
         e.preventDefault();
         setValidationListOpen((prev) => !prev);
 
-        validationCollapseIconRef.current?.startAnimation?.();
-
-        if (validationCollapseAnimTimerRef.current) {
-          clearTimeout(validationCollapseAnimTimerRef.current);
-        }
-
-        validationCollapseAnimTimerRef.current = window.setTimeout(() => {
-          validationCollapseIconRef.current?.stopAnimation?.();
-        }, 650);
       }
     }
 
@@ -1444,7 +1747,12 @@ export default function FormRunnerBase({ mode }) {
 
     try {
       const result = runLocalValidation();
-      applyValidationResult(result, { showSuccess: true });
+      const valid = applyValidationResult(result, { showSuccess: true });
+
+      if (!valid && Array.isArray(result?.summary) && result.summary.length > 0) {
+        setValidationListOpen(true);
+        setBookmarksOpen(false);
+      }
     } finally {
       setBusy(false);
     }
@@ -1491,7 +1799,6 @@ export default function FormRunnerBase({ mode }) {
     setBusy(true);
     clearTransientSuccess();
     setError(null);
-    setValidationSummary([]);
     validationActivatedRef.current = true;
     setHasValidatedOnce(true);
 
@@ -1504,7 +1811,13 @@ export default function FormRunnerBase({ mode }) {
 
       const validation = runLocalValidation();
       const valid = applyValidationResult(validation, { showSuccess: false });
-      if (!valid) return;
+      if (!valid) {
+        if (Array.isArray(validation?.summary) && validation.summary.length > 0) {
+          setValidationListOpen(true);
+          setBookmarksOpen(false);
+        }
+        return;
+      }
 
       const preview = await previewSubmitFormInstance(code, instanceId, {
         answers_json: cur.value,
@@ -1664,12 +1977,14 @@ export default function FormRunnerBase({ mode }) {
 
   const model = !isDebug ? surveyModelRef.current : null;
   const useEmberRuntime = !isDebug && shouldUseEmberOwnedRuntime(instance, surveyParsed);
+  const canRenderRuntimeWhileLoading = !isDebug && runtimeReady && Boolean(model);
 
-  if (loading) return <div className="muted">Laden...</div>;
+
+  if (loading && !canRenderRuntimeWhileLoading) return <div className="muted">Laden...</div>;
 
   return (
     <div
-      className="form-runner-page ember-page-stack"
+      className={`form-runner-page ember-page-stack form-runner-page--with-sticky-actions${actionsDocked ? " form-runner-page--actions-docked" : ""}`} 
       style={{
         display: "grid",
         gap: 12,
@@ -1767,7 +2082,8 @@ export default function FormRunnerBase({ mode }) {
       )}
 
       <div
-        className="card"
+        ref={headerCardRef}
+        className="card form-runner-header-card"
         style={{
           padding: 12,
           display: "grid",
@@ -1775,6 +2091,7 @@ export default function FormRunnerBase({ mode }) {
         }}
       >
         <div
+          className="form-runner-header-row"
           style={{
             display: "flex",
             alignItems: "flex-start",
@@ -1782,7 +2099,7 @@ export default function FormRunnerBase({ mode }) {
             gap: 10,
           }}
         >
-          <div style={{ display: "flex", alignItems: "flex-start", gap: 10, minWidth: 0, flex: 1 }}>
+          <div className="form-runner-header-main" style={{ display: "flex", alignItems: "flex-start", gap: 10, minWidth: 0, flex: 1 }}>
             <button
               type="button"
               className="icon-btn"
@@ -1866,7 +2183,7 @@ export default function FormRunnerBase({ mode }) {
             </button>
           </div>
 
-          <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+          <div className="form-runner-header-actions" style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
             {!isDebug && (
               <div ref={actionsMenuRef} style={{ position: "relative" }}>
                 <button
@@ -2174,7 +2491,7 @@ export default function FormRunnerBase({ mode }) {
         )}
       </div>
 
-      {error && <div style={themedErrorStyle()}>{error}</div>}
+      {visibleError && <div style={themedErrorStyle()}>{visibleError}</div>}
 
       {!isDebug && submitSummary && status === "INGEDIEND" && (
         <div
@@ -2301,92 +2618,24 @@ export default function FormRunnerBase({ mode }) {
           validationSummary={validationSummary}
           hasValidatedOnce={hasValidatedOnce}
           bookmarksOpen={bookmarksOpen}
+          validationOpen={validationListOpen}
           onToggleBookmarks={(next) => {
-            if (typeof next === "boolean") {
-              setBookmarksOpen(next);
-              return;
-            }
-            setBookmarksOpen((prev) => !prev);
+            const shouldOpen = typeof next === "boolean" ? next : !bookmarksOpen;
+            setBookmarksOpen(shouldOpen);
+            if (shouldOpen) setValidationListOpen(false);
+          }}
+          onToggleValidation={(next) => {
+            const shouldOpen = typeof next === "boolean" ? next : !validationListOpen;
+            setValidationListOpen(shouldOpen);
+            if (shouldOpen) setBookmarksOpen(false);
           }}
           onNavigateToPage={(pageIndex) => {
             goToPageIndex(pageIndex);
             setBookmarksOpen(false);
+            setValidationListOpen(false);
           }}
+          onOpenValidationItem={openValidationItem}
         />
-      )}
-
-      {!isDebug && validationSummary.length > 0 && (
-        <div
-          className="card"
-          style={{
-            padding: 12,
-            display: "grid",
-            gap: 8,
-            border: "1px solid color-mix(in srgb, var(--danger, salmon) 45%, var(--border))",
-          }}
-        >
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "space-between",
-              gap: 10,
-            }}
-          >
-            <div>
-              <div style={{ fontWeight: 800 }}>
-                Controleer eerst de volgende velden
-              </div>
-
-              <div className="muted" style={{ fontSize: 12, marginTop: 4 }}>
-                Klik op een regel om naar het betreffende onderdeel te gaan.
-              </div>
-            </div>
-
-            <button
-              type="button"
-              className="icon-btn"
-              title={validationCollapseBtnTitle}
-              onClick={() => setValidationListOpen((prev) => !prev)}
-              onMouseEnter={() => validationCollapseIconRef.current?.startAnimation?.()}
-              onMouseLeave={() => validationCollapseIconRef.current?.stopAnimation?.()}
-            >
-              <ValidationCollapseIcon
-                ref={validationCollapseIconRef}
-                size={18}
-                className="nav-anim-icon"
-              />
-            </button>
-          </div>
-
-          {validationListOpen && (
-            <div style={{ display: "grid", gap: 6 }}>
-              {validationSummary.map((item) => (
-                <button
-                  key={item.id}
-                  type="button"
-                  className="btn btn-secondary"
-                  onClick={() => openValidationItem(item)}
-                  style={{
-                    textAlign: "left",
-                    justifyContent: "flex-start",
-                    whiteSpace: "normal",
-                    lineHeight: 1.35,
-                  }}
-                  title={`${item.pageTitle} · ${item.questionTitle}`}
-                >
-                  <span>
-                    <strong>{item.pageTitle}</strong>
-                    {" · "}
-                    {item.questionTitle}
-                    {" ; "}
-                    {item.message}
-                  </span>
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
       )}
 
       {!isDebug && (
@@ -2406,7 +2655,9 @@ export default function FormRunnerBase({ mode }) {
             </div>
           ) : (
             <div
-              className="form-runner-survey-shell"
+              className={`form-runner-survey-shell ${
+                hasValidatedOnce ? "form-runner-survey-shell--validated" : ""
+              }`}
               style={{
                 opacity: canEditAnswers ? 1 : 0.82,
                 color: "var(--text)",
@@ -2416,6 +2667,7 @@ export default function FormRunnerBase({ mode }) {
                 <EmberRuntimeSurvey
                   key={surveyRenderKey}
                   model={model}
+                  activePageIndex={currentPageIndex}
                   canEdit={canEditAnswers}
                   hasValidatedOnce={hasValidatedOnce}
                   validationSummary={validationSummary}

@@ -398,33 +398,66 @@ function ensureMatrixDisplayText(cell, text, className = "ember-matrix-readonly-
   const normalized = String(text || "").trim();
   if (!normalized) return;
 
-  const control =
-    cell.querySelector("input") ||
-    cell.querySelector("textarea") ||
-    cell.querySelector(".sd-input");
+  const classNames = String(className || "ember-matrix-readonly-text")
+    .split(/\s+/)
+    .map((part) => part.trim())
+    .filter(Boolean);
 
-  if (control) {
-    control.classList.add("ember-matrix-hidden-readonly-control");
+  if (!classNames.length) {
+    classNames.push("ember-matrix-readonly-text");
   }
 
-  let display = cell.querySelector(`:scope > .${className}`);
+  const baseClass = classNames[0];
+
+  const controls = cell.querySelectorAll("input, textarea, .sd-input");
+  controls.forEach((control) => {
+    control.classList.add("ember-matrix-hidden-readonly-control");
+  });
+
+  const directDisplays = Array.from(cell.children).filter((child) =>
+    child.classList?.contains(baseClass)
+  );
+
+  let display = directDisplays[0] || null;
+
   if (!display) {
     display = document.createElement("div");
-    display.className = className;
     cell.appendChild(display);
   }
 
-  let label = display.querySelector(":scope > .ember-matrix-readonly-text__label");
-  if (!label) {
-    const existingButton = display.querySelector(":scope > .ember-matrix-row-guidance-btn");
-    display.textContent = "";
-    if (existingButton) display.appendChild(existingButton);
-    label = document.createElement("span");
-    label.className = "ember-matrix-readonly-text__label";
-    display.appendChild(label);
+  directDisplays.slice(1).forEach((duplicate) => {
+    duplicate
+      .querySelectorAll(".ember-matrix-row-guidance-btn")
+      .forEach((button) => {
+        if (button?._emberReactRoot) {
+          button._emberReactRoot.unmount();
+        }
+      });
+
+    duplicate.remove();
+  });
+
+  const keepWithGuidance = display.classList.contains("ember-matrix-readonly-text--with-guidance");
+
+  display.className = classNames.join(" ");
+
+  if (keepWithGuidance) {
+    display.classList.add("ember-matrix-readonly-text--with-guidance");
   }
 
+  const existingButton = display.querySelector(":scope > .ember-matrix-row-guidance-btn");
+
+  display.textContent = "";
+
+  if (existingButton) {
+    display.appendChild(existingButton);
+  }
+
+  const label = document.createElement("span");
+  label.className = "ember-matrix-readonly-text__label";
   label.textContent = normalized;
+
+  display.appendChild(label);
   display.title = normalized;
 }
 
@@ -456,6 +489,36 @@ function ensureFixedTopicText(cell, rowData, defaultRowData, col) {
   ensureReadonlyTopicText(cell);
 }
 
+function ensureFixedNumberText(cell, rowData, defaultRowData, col) {
+  const name = String(col?.name || "").trim().toLowerCase();
+  if (!cell || (name !== "item_code" && name !== "nr")) return;
+
+  const candidates = [
+    rowData?.[col.name],
+    defaultRowData?.[col.name],
+    rowData?.item_code,
+    defaultRowData?.item_code,
+    rowData?.itemCode,
+    defaultRowData?.itemCode,
+    rowData?.nr,
+    defaultRowData?.nr,
+    rowData?.code,
+    defaultRowData?.code,
+  ];
+
+  const resolved = candidates
+    .map((candidate) => String(candidate ?? "").trim())
+    .find(Boolean);
+
+  if (!resolved) return;
+
+  ensureMatrixDisplayText(
+    cell,
+    resolved,
+    "ember-matrix-readonly-text ember-matrix-readonly-text--nr"
+  );
+}
+
 function ensureMatrixHeaderCellContent(cell) {
   if (!cell) return;
   const isHeaderCell = cell.tagName === "TH" || cell.classList.contains("sd-table__cell--header");
@@ -475,10 +538,44 @@ function ensureMatrixHeaderCellContent(cell) {
   cell.appendChild(label);
 }
 
-function classifyMatrixCell(cell, col, rowData, defaultRowData) {
+function isAssessmentMatrixColumns(columns) {
+  const names = new Set(
+    (Array.isArray(columns) ? columns : []).map((col) =>
+      String(col?.name || "")
+        .trim()
+        .toLowerCase()
+    )
+  );
+
+  const hasNr = names.has("item_code") || names.has("nr");
+  return hasNr && names.has("onderwerp") && names.has("voldoet");
+}
+
+function getMatrixColumnLabel(col) {
+  const candidates = [
+    col?.title,
+    col?.locTitle?.renderedHtml,
+    col?.locTitle?.textOrHtml,
+    col?.locTitle?.text,
+    col?.name,
+  ];
+
+  for (const candidate of candidates) {
+    const normalized = String(candidate || "")
+      .replace(/<[^>]+>/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+    if (normalized) return normalized;
+  }
+
+  return "";
+}
+
+function classifyMatrixCell(cell, col, rowData, defaultRowData, { useGridLayout = false } = {}) {
   if (!cell || !col?.name) return;
 
   cell.dataset.emberMatrixCol = col.name;
+  cell.dataset.emberMatrixLabel = getMatrixColumnLabel(col);
   cell.classList.add("ember-matrix-col", `ember-matrix-col--${col.name}`);
 
   if (col.cellType) {
@@ -486,11 +583,17 @@ function classifyMatrixCell(cell, col, rowData, defaultRowData) {
     cell.classList.add(`ember-matrix-type--${col.cellType}`);
   }
 
-  if (col.name === "onderwerp") {
+  if (useGridLayout && col.name === "onderwerp") {
     ensureFixedTopicText(cell, rowData, defaultRowData, col);
   }
 
-  ensureMatrixHeaderCellContent(cell);
+  if (useGridLayout) {
+    ensureFixedNumberText(cell, rowData, defaultRowData, col);
+  }
+
+  if (useGridLayout) {
+    ensureMatrixHeaderCellContent(cell);
+  }
 }
 
 function getMatrixDataCells(row) {
@@ -679,11 +782,19 @@ function applyMatrixColumnAttributes(
   const rowsValue = getMatrixQuestionRows(question);
   const defaultRows = getMatrixQuestionDefaultRows(question);
   const hasGuidanceColumn = hasMatrixRowGuidanceForQuestion(guidanceByMatrixRow, question?.name);
+  const useGridLayout = isAssessmentMatrixColumns(columns);
 
   root.classList.add("ember-matrix-runtime");
   root.classList.toggle("ember-matrix-runtime--has-guidance", hasGuidanceColumn);
+  root.classList.toggle("ember-matrix-runtime--grid", useGridLayout);
 
-  applyMatrixGridTemplate(root, columns);
+  if (useGridLayout) {
+    applyMatrixGridTemplate(root, columns);
+  } else {
+    root.style.removeProperty("--ember-matrix-grid-template");
+    root.style.removeProperty("--ember-matrix-col-count");
+  }
+
   removeMatrixColGroup(root);
 
   if (isEmptyMatrixWithoutAdd(question, rowsValue)) {
@@ -716,7 +827,9 @@ function applyMatrixColumnAttributes(
     const rowData = isHeaderRow ? null : rowsValue[bodyRowIndex] || null;
     const defaultRowData = isHeaderRow ? null : defaultRows[bodyRowIndex] || null;
 
-    columns.forEach((col, index) => classifyMatrixCell(cells[index], col, rowData, defaultRowData));
+    columns.forEach((col, index) =>
+      classifyMatrixCell(cells[index], col, rowData, defaultRowData, { useGridLayout })
+    );
 
     if (!isHeaderRow) {
       ensureMatrixRowGuidanceButton({
@@ -1042,8 +1155,6 @@ export function attachRuntimeBehaviors({
         table.style.transform = "";
       }
     });
-
-    window.dispatchEvent(new Event("resize"));
   }
 
   function refreshAllMatrixLayouts() {
@@ -1350,6 +1461,12 @@ export function attachRuntimeBehaviors({
     attributeFilter: ["class", "style"],
   });
 
+  const handleWindowResize = () => {
+    scheduleMatrixLayoutStabilization();
+  };
+
+  window.addEventListener("resize", handleWindowResize);
+
   requestAnimationFrame(() => {
     normalizeEnergyRows(model, prefillPayload, energyAutoStateRef);
     normalizeAvailabilityRows(model, availabilityAutoStateRef);
@@ -1383,6 +1500,7 @@ export function attachRuntimeBehaviors({
       popupObserver = null;
     }
 
+    window.removeEventListener("resize", handleWindowResize);
     detachDomListeners.forEach((fn) => fn());
     detachDomListeners.length = 0;
     guidanceReactRoots.forEach((root) => root.unmount());

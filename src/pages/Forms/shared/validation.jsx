@@ -119,20 +119,7 @@ export function buildMatrixRowValidationItems(question, pageIndex, pageTitle) {
 export function syncMatrixQuestionVisualError(question, showErrors = false) {
   if (!question || question?.getType?.() !== "matrixdynamic") return;
 
-  const page = question.page;
-  const visiblePages = Array.isArray(question?.survey?.visiblePages)
-    ? question.survey.visiblePages
-    : [];
-  const pageIndex = Math.max(0, visiblePages.indexOf(page));
-  const pageTitle = getPageTitle(page, pageIndex);
-
-  const rowItems = buildMatrixRowValidationItems(question, pageIndex, pageTitle);
-
   question.clearErrors();
-
-  if (showErrors && rowItems.length > 0) {
-    question.addError(new CustomError(rowItems[0].message));
-  }
 }
 
 export function syncAllMatrixQuestionVisualErrors(model, showErrors = false) {
