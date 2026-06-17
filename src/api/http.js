@@ -4,6 +4,8 @@ import { getApiAccessToken } from "../auth/msal";
 const RAW_BASE = import.meta.env.VITE_API_BASE || "";
 const API_BASE = RAW_BASE.replace(/\/+$/, "");
 console.log("api base", import.meta.env.VITE_API_BASE);
+const protectedObjectFailureCache = new Map();
+const PROTECTED_OBJECT_FAILURE_TTL_MS = 30000;
 
 function buildUrl(path) {
   if (/^https?:\/\//i.test(path)) return path;
@@ -159,6 +161,22 @@ export async function httpDownload(path, options = {}) {
 }
 
 export async function fetchProtectedObjectUrl(path, options = {}) {
-  const { blob } = await httpDownload(path, options);
-  return URL.createObjectURL(blob);
+  const key = String(path || "").trim();
+  const cachedFailure = protectedObjectFailureCache.get(key);
+
+  if (cachedFailure && cachedFailure.expiresAt > Date.now()) {
+    throw cachedFailure.error;
+  }
+
+  try {
+    const { blob } = await httpDownload(path, options);
+    protectedObjectFailureCache.delete(key);
+    return URL.createObjectURL(blob);
+  } catch (err) {
+    protectedObjectFailureCache.set(key, {
+      error: err instanceof Error ? err : new Error(String(err)),
+      expiresAt: Date.now() + PROTECTED_OBJECT_FAILURE_TTL_MS,
+    });
+    throw err;
+  }
 }

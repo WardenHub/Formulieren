@@ -16,6 +16,23 @@ import { DefaultAzureCredential } from "@azure/identity";
 
 const graphCredential = new DefaultAzureCredential();
 
+function safeDecodeJwtPayload(token: string | null | undefined) {
+  const raw = String(token || "").trim();
+  if (!raw) return null;
+
+  try {
+    const parts = raw.split(".");
+    if (parts.length < 2) return null;
+    const normalized = parts[1]
+      .replace(/-/g, "+")
+      .replace(/_/g, "/")
+      .padEnd(Math.ceil(parts[1].length / 4) * 4, "=");
+    return JSON.parse(Buffer.from(normalized, "base64").toString("utf-8"));
+  } catch {
+    return null;
+  }
+}
+
 function looksLikeGuid(value: string) {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
     String(value || "").trim()
@@ -51,6 +68,17 @@ async function tryDownloadMicrosoftUserPhoto(identifier: string | null | undefin
     return null;
   }
 
+  const tokenPayload = safeDecodeJwtPayload(token.token);
+  console.log("[profile microsoft photo] graph token acquired", {
+    identifier: clean,
+    aud: tokenPayload?.aud || null,
+    appid: tokenPayload?.appid || tokenPayload?.azp || null,
+    oid: tokenPayload?.oid || tokenPayload?.sub || null,
+    tid: tokenPayload?.tid || null,
+    roles: Array.isArray(tokenPayload?.roles) ? tokenPayload.roles : [],
+    scp: tokenPayload?.scp || null,
+  });
+
   const url = `https://graph.microsoft.com/v1.0/users/${encodeURIComponent(clean)}/photo/$value`;
 
   const res = await fetch(url, {
@@ -81,6 +109,7 @@ async function tryDownloadMicrosoftUserPhoto(identifier: string | null | undefin
     console.error("[profile microsoft photo] graph failed", {
       identifier: clean,
       status: res.status,
+      wwwAuthenticate: res.headers.get("www-authenticate") || null,
       body: text,
     });
     return null;
