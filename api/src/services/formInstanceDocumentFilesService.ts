@@ -6,6 +6,7 @@ import {
   getFormInstanceDocumentsSql,
   upsertFormInstanceDocumentsSql,
   setFormInstanceDocumentFileSql,
+  renameFormInstanceDocumentFileSql,
   createFormInstanceDocumentReplacementSql,
   createFormInstanceDocumentAttachmentSql,
   replaceFormInstanceDocumentLabelsSql,
@@ -17,6 +18,7 @@ import {
   deleteFormInstanceDocumentBlob,
   createFormInstanceDocumentDownloadUrl,
   downloadFormInstanceDocumentBlob,
+  renameFormInstanceDocumentBlob,
 } from "./blobStorageService.js";
 import { assertInstallationWritable } from "./installationsService.js";
 
@@ -28,6 +30,30 @@ function toNullableString(v: any) {
   if (v === null || v === undefined) return null;
   const s = String(v).trim();
   return s.length ? s : null;
+}
+
+function getFileExtension(fileName: string | null | undefined) {
+  const raw = String(fileName || "").trim();
+  const idx = raw.lastIndexOf(".");
+  if (idx <= 0 || idx === raw.length - 1) return "";
+  return raw.slice(idx + 1);
+}
+
+function sanitizeFileName(value: string | null | undefined, fallback = "bijlage") {
+  const raw = String(value || "").trim() || fallback;
+  return raw.replace(/[\\/:*?"<>|]/g, "-").replace(/\s+/g, " ").trim() || fallback;
+}
+
+function buildRenamedFileName(currentFileName: string | null | undefined, requestedFileName: string) {
+  const safeRequested = sanitizeFileName(requestedFileName, currentFileName || "bijlage");
+  const currentExt = getFileExtension(currentFileName);
+  const requestedExt = getFileExtension(safeRequested);
+
+  if (!currentExt || requestedExt) {
+    return safeRequested;
+  }
+
+  return `${safeRequested}.${currentExt}`;
 }
 
 function sha256Hex(buffer: Buffer) {
@@ -334,6 +360,71 @@ export async function uploadDocumentFile(
         await deleteFormInstanceDocumentBlob(uploaded.storageKey);
       } catch (cleanupErr) {
         console.error("[form instance document upload] blob cleanup failed", cleanupErr);
+      }
+    }
+    throw err;
+  }
+}
+
+export async function renameDocumentFile(
+  code: string,
+  instanceId: string | number,
+  documentId: string,
+  requestedFileName: string,
+  user: any
+) {
+  await assertInstallationWritable(code);
+
+  const document = await getFormInstanceDocumentContext(code, instanceId, documentId);
+  if (!document) {
+    throw new Error("document not found");
+  }
+
+  if (!document.storage_key) {
+    throw new Error("document has no file");
+  }
+
+  const nextFileName = buildRenamedFileName(document.file_name, requestedFileName);
+  if (!nextFileName) {
+    throw new Error("invalid file name");
+  }
+
+  const currentStorageKey = String(document.storage_key);
+  const uploaded = await renameFormInstanceDocumentBlob({
+    installationCode: code,
+    formInstanceId: String(instanceId),
+    documentId,
+    currentStorageKey,
+    nextFileName,
+    contentType: document.mime_type || "application/octet-stream",
+  });
+
+  try {
+    const rows = await sqlQuery(renameFormInstanceDocumentFileSql, {
+      code,
+      instanceId,
+      documentId,
+      fileName: nextFileName,
+      storageProvider: uploaded.storageProvider,
+      storageKey: uploaded.storageKey,
+      storageUrl: uploaded.storageUrl,
+      updatedBy: actorName(user),
+    });
+
+    if (uploaded.storageKey !== currentStorageKey) {
+      await deleteFormInstanceDocumentBlob(currentStorageKey);
+    }
+
+    return {
+      ok: true,
+      document: rows?.[0] ?? null,
+    };
+  } catch (err) {
+    if (uploaded.storageKey && uploaded.storageKey !== currentStorageKey) {
+      try {
+        await deleteFormInstanceDocumentBlob(uploaded.storageKey);
+      } catch (cleanupErr) {
+        console.error("[form instance document rename] blob cleanup failed", cleanupErr);
       }
     }
     throw err;

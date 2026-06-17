@@ -366,6 +366,13 @@ export function uploadFormInstanceDocumentFile(code, formInstanceId, documentId,
   );
 }
 
+export function putFormInstanceDocumentFileName(code, formInstanceId, documentId, fileName) {
+  return apiPut(
+    `/installations/${encodeURIComponent(code)}/forms/instances/${encodeURIComponent(formInstanceId)}/documents/${encodeURIComponent(documentId)}/file-name`,
+    { file_name: fileName }
+  );
+}
+
 export function getFormInstanceDocumentDownloadUrl(code, formInstanceId, documentId) {
   return apiGet(
     `/installations/${encodeURIComponent(code)}/forms/instances/${encodeURIComponent(formInstanceId)}/documents/${encodeURIComponent(documentId)}/download-url`

@@ -350,6 +350,11 @@ export default function FormsTab({
   const [selectedFormTypes, setSelectedFormTypes] = useState(
     Array.isArray(storedState?.selectedFormTypes) ? storedState.selectedFormTypes : []
   );
+  const [filtersOpen, setFiltersOpen] = useState(() => {
+    if (typeof storedState?.filtersOpen === "boolean") return storedState.filtersOpen;
+    if (String(storedState?.appliedSearch || "").trim()) return true;
+    return false;
+  });
 
   const [expandedFollowUpForId, setExpandedFollowUpForId] = useState(
     storedState?.expandedFollowUpForId ?? null
@@ -381,6 +386,7 @@ export default function FormsTab({
       appliedSearch,
       selectedStatuses,
       selectedFormTypes,
+      filtersOpen,
       expandedFollowUpForId,
     });
   }, [
@@ -389,6 +395,7 @@ export default function FormsTab({
     appliedSearch,
     selectedStatuses,
     selectedFormTypes,
+    filtersOpen,
     expandedFollowUpForId,
   ]);
 
@@ -892,70 +899,82 @@ export default function FormsTab({
         <div className={`forms-existing-content ${instancesLoading ? "is-loading" : ""}`}>
           <div className="forms-existing-head">
             <div className="forms-card-title">Bestaande formulieren</div>
-            <div className="muted ember-xs-text">
-              {instancesLoading ? "laden..." : `${filteredInstances.length} formulier(en)`}
+            <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+              <div className="muted ember-xs-text">
+                {instancesLoading ? "laden..." : `${filteredInstances.length} formulier(en)`}
+              </div>
+              <button
+                type="button"
+                className="btn btn-secondary"
+                onClick={() => setFiltersOpen((prev) => !prev)}
+              >
+                {filtersOpen ? <ChevronUpIcon size={16} /> : <PlusIcon size={16} />}
+                {filtersOpen ? "Zoekfilters verbergen" : "Zoekfilters tonen"}
+              </button>
             </div>
           </div>
 
-          <div className="forms-filter-stack">
-            <div className="forms-chip-row">
-              {STATUS_FILTER_OPTIONS.map((opt) => (
-                <StatusFilterChip
-                  key={opt.key}
-                  status={opt.key}
-                  active={selectedStatuses.includes(opt.key)}
-                  onClick={() => toggleStatusFilter(opt.key)}
-                />
-              ))}
-            </div>
-
-            {formTypeOptions.length > 0 && (
+          {filtersOpen ? (
+            <div className="forms-filter-stack">
               <div className="forms-chip-row">
-                {formTypeOptions.map((opt) => (
-                  <TypeFilterChip
+                {STATUS_FILTER_OPTIONS.map((opt) => (
+                  <StatusFilterChip
                     key={opt.key}
-                    label={opt.label}
-                    active={selectedFormTypes.includes(opt.key)}
-                    onClick={() => toggleFormTypeFilter(opt.key)}
+                    status={opt.key}
+                    active={selectedStatuses.includes(opt.key)}
+                    onClick={() => toggleStatusFilter(opt.key)}
                   />
                 ))}
               </div>
-            )}
 
-            <div className="forms-search-row">
-              <input
-                className="input forms-search-input"
-                placeholder="Zoek op formulier, titel, opmerking, opsteller of wijziger"
-                value={searchInput}
-                onChange={(e) => setSearchInput(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") applySearch();
-                }}
-              />
+              {formTypeOptions.length > 0 && (
+                <div className="forms-chip-row">
+                  {formTypeOptions.map((opt) => (
+                    <TypeFilterChip
+                      key={opt.key}
+                      label={opt.label}
+                      active={selectedFormTypes.includes(opt.key)}
+                      onClick={() => toggleFormTypeFilter(opt.key)}
+                    />
+                  ))}
+                </div>
+              )}
 
-              <button
-                type="button"
-                className="btn btn-secondary"
-                onClick={applySearch}
-                onMouseEnter={() => searchIconRef.current?.startAnimation?.()}
-                onMouseLeave={() => searchIconRef.current?.stopAnimation?.()}
-              >
-                <SearchIcon ref={searchIconRef} size={18} />
-                Zoeken
-              </button>
+              <div className="forms-search-row">
+                <input
+                  className="input forms-search-input"
+                  placeholder="Zoek op formulier, titel, opmerking, opsteller of wijziger"
+                  value={searchInput}
+                  onChange={(e) => setSearchInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") applySearch();
+                  }}
+                />
 
-              <button
-                type="button"
-                className="btn btn-secondary"
-                onClick={refreshList}
-                onMouseEnter={() => refreshIconRef.current?.startAnimation?.()}
-                onMouseLeave={() => refreshIconRef.current?.stopAnimation?.()}
-              >
-                <RefreshCWIcon ref={refreshIconRef} size={18} />
-                Verversen
-              </button>
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  onClick={applySearch}
+                  onMouseEnter={() => searchIconRef.current?.startAnimation?.()}
+                  onMouseLeave={() => searchIconRef.current?.stopAnimation?.()}
+                >
+                  <SearchIcon ref={searchIconRef} size={18} />
+                  Zoeken
+                </button>
+
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  onClick={refreshList}
+                  onMouseEnter={() => refreshIconRef.current?.startAnimation?.()}
+                  onMouseLeave={() => refreshIconRef.current?.stopAnimation?.()}
+                >
+                  <RefreshCWIcon ref={refreshIconRef} size={18} />
+                  Verversen
+                </button>
+              </div>
             </div>
-          </div>
+          ) : null}
 
           <div className="forms-instance-list-wrap">
             {instancesError && <div className="ember-error-text">{instancesError}</div>}

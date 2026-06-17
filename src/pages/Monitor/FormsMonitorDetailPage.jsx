@@ -1,6 +1,6 @@
 // src/pages/Monitor/FormsMonitorDetailPage.jsx
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 
 import {
   getFormsMonitorDetail,
@@ -38,9 +38,11 @@ import { ArchiveIcon } from "@/components/ui/archive";
 import { ChevronLeftIcon } from "@/components/ui/chevron-left";
 import { BadgeAlertIcon } from "@/components/ui/badge-alert";
 import { PartyPopperIcon } from "@/components/ui/party-popper";
-import { ChevronsDownUpIcon } from "@/components/ui/chevrons-down-up";
 import { ChevronsUpDownIcon } from "@/components/ui/chevrons-up-down";
+import { GavelIcon } from "@/components/ui/gavel";
 import { pushRecentHomeItem } from "../../lib/recentHomeItems.js";
+import Tabs from "../../components/Tabs.jsx";
+import teamsLogo from "../../assets/teams-logo.png";
 
 import {
   DETAIL_UI_LS_KEY,
@@ -98,8 +100,7 @@ function buildTeamsChatUrl(email, formInstanceId) {
   if (!cleanEmail) return null;
   const monitorUrl = `${window.location.origin}/monitor/formulieren/${encodeURIComponent(formInstanceId)}`;
   const message =
-    `Hallo; ik wil het hebben over formulier ${formInstanceId}. ` +
-    `Je vindt het formulier hier: ${monitorUrl}`;
+    `Hallo; ik wil het hebben over formulier ${formInstanceId}.\n\n${monitorUrl}`;
   const topic = `Formulier ${formInstanceId}`;
   return `https://teams.microsoft.com/l/chat/0/0?users=${encodeURIComponent(cleanEmail)}&topicname=${encodeURIComponent(topic)}&message=${encodeURIComponent(message)}`;
 }
@@ -164,40 +165,6 @@ function ActionFooter({
     </div>
   );
 }
-
-function CollapseSection({
-  open,
-  title,
-  onToggle,
-  iconRef,
-  children,
-}) {
-  return (
-    <div className={`monitor-detail-section ${open ? "is-open" : ""}`}>
-      <button
-        type="button"
-        className="monitor-detail-section__toggle"
-        onClick={onToggle}
-        onMouseEnter={() => iconRef.current?.startAnimation?.()}
-        onMouseLeave={() => iconRef.current?.stopAnimation?.()}
-        title={open ? "Inklappen" : "Uitklappen"}
-      >
-        <div className="monitor-detail-section__title">{title}</div>
-
-        <div className="monitor-detail-section__icon">
-          {!open ? (
-            <PlusIcon ref={iconRef} size={18} className="nav-anim-icon" />
-          ) : (
-            <ChevronUpIcon ref={iconRef} size={18} className="nav-anim-icon" />
-          )}
-        </div>
-      </button>
-
-      {open && <div className="monitor-detail-section__body">{children}</div>}
-    </div>
-  );
-}
-
 
 const FORM_DOCUMENT_LABEL_OPTIONS = [
   { key: "INSTALLATIEFOTO", label: "Installatiefoto" },
@@ -1203,6 +1170,7 @@ function FollowUpLinkedDocuments({ code, instanceId, row, documents }) {
 export default function FormsMonitorDetailPage() {
   const { instanceId } = useParams();
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
 
   const storedUiState = useMemo(() => readStateFromStorage(DETAIL_UI_LS_KEY), []);
   const storedNotesState = useMemo(() => readStateFromStorage(DETAIL_NOTES_LS_KEY), []);
@@ -1216,15 +1184,14 @@ export default function FormsMonitorDetailPage() {
   const footerFinishIconRef = useRef(null);
   const setIngediendIconRef = useRef(null);
   const setConceptIconRef = useRef(null);
-  const propsToggleIconRef = useRef(null);
-  const relationToggleIconRef = useRef(null);
-  const assignmentToggleIconRef = useRef(null);
-  const evidenceToggleIconRef = useRef(null);
   const filterInfoIconRef = useRef(null);
   const filterInfoBtnRef = useRef(null);
   const filterInfoPopupRef = useRef(null);
-  const collapseAllIconRef = useRef(null);
   const successPartyRef = useRef(null);
+  const actionMenuBtnRef = useRef(null);
+  const actionMenuPopupRef = useRef(null);
+  const ownerBtnRef = useRef(null);
+  const ownerPopupRef = useRef(null);
 
   const noteSaveTimersRef = useRef({});
   const copyResetTimersRef = useRef({});
@@ -1234,10 +1201,8 @@ export default function FormsMonitorDetailPage() {
   const [followUpsLoading, setFollowUpsLoading] = useState(true);
   const [error, setError] = useState(null);
 
-  const [propertiesOpen, setPropertiesOpen] = useState(storedUiState?.propertiesOpen ?? false);
-  const [relationsOpen, setRelationsOpen] = useState(storedUiState?.relationsOpen ?? false);
-  const [assignmentOpen, setAssignmentOpen] = useState(storedUiState?.assignmentOpen ?? true);
-  const [evidenceOpen, setEvidenceOpen] = useState(storedUiState?.evidenceOpen ?? true);
+  const initialSectionKey = String(searchParams.get("section") || storedUiState?.activeSectionKey || "action_points");
+  const [activeSectionKey, setActiveSectionKey] = useState(initialSectionKey);
   const [statusOpenMap, setStatusOpenMap] = useState(
     storedUiState?.statusOpenMap ?? {
       OPEN: true,
@@ -1255,6 +1220,8 @@ export default function FormsMonitorDetailPage() {
   );
   const [filterInfoOpen, setFilterInfoOpen] = useState(false);
   const [filterInfoPopupStyle, setFilterInfoPopupStyle] = useState(null);
+  const [actionMenuOpen, setActionMenuOpen] = useState(false);
+  const [ownerPopupOpen, setOwnerPopupOpen] = useState(false);
 
   const [detail, setDetail] = useState(null);
   const [followUps, setFollowUps] = useState([]);
@@ -1314,15 +1281,25 @@ export default function FormsMonitorDetailPage() {
 
   const totalFilterActive = activeStatusFilters.length === 0;
 
-  const anyOpenInDetail =
-    propertiesOpen ||
-    relationsOpen ||
-    assignmentOpen ||
-    evidenceOpen ||
-    Object.values(statusOpenMap || {}).some(Boolean);
+  const hasStatusMenuActions = Boolean(allowedActions.set_ingediend || allowedActions.set_concept);
+  const ownerDisplayLabel = String(
+    item?.assigned_display_name_snapshot || item?.assigned_email_snapshot || ""
+  ).trim();
+  const hasFollowFormRelations = Boolean(detail?.parent || (Array.isArray(detail?.children) && detail.children.length > 0));
+  const detailSectionTabs = [
+    { key: "action_points", label: "Actiepunten", Icon: ClipboardCheckIcon },
+    { key: "evidence", label: "Bijlagen en bewijs", Icon: FolderInputIcon },
+    { key: "feedback", label: "Feedback", Icon: GavelIcon },
+    { key: "relations", label: "Relatiedata", Icon: ArchiveIcon },
+    ...(hasFollowFormRelations ? [{ key: "follow_forms", label: "Vervolgformulieren", Icon: ArrowBigRightIcon }] : []),
+  ];
 
-  const CollapseIcon = anyOpenInDetail ? ChevronsDownUpIcon : ChevronsUpDownIcon;
-  const collapseBtnTitle = anyOpenInDetail ? "Alles inklappen" : "Alles uitklappen";
+  function openSection(nextKey) {
+    setActiveSectionKey(nextKey);
+    const next = new URLSearchParams(searchParams);
+    next.set("section", nextKey);
+    setSearchParams(next, { replace: true });
+  }
 
   function handleDownloadPdf() {
     if (!item?.form_instance_id) return;
@@ -1331,14 +1308,17 @@ export default function FormsMonitorDetailPage() {
 
   useEffect(() => {
     saveStateToStorage(DETAIL_UI_LS_KEY, {
-    propertiesOpen,
-    relationsOpen,
-    assignmentOpen,
-    evidenceOpen,
-    statusOpenMap,
-    activeStatusFilters,
-  });
-  }, [propertiesOpen, relationsOpen, assignmentOpen, evidenceOpen, statusOpenMap, activeStatusFilters]);
+      activeSectionKey,
+      statusOpenMap,
+      activeStatusFilters,
+    });
+  }, [activeSectionKey, statusOpenMap, activeStatusFilters]);
+
+  useEffect(() => {
+    if (!hasFollowFormRelations && activeSectionKey === "follow_forms") {
+      setActiveSectionKey("relations");
+    }
+  }, [hasFollowFormRelations, activeSectionKey]);
 
   useEffect(() => {
     saveStateToStorage(DETAIL_NOTES_LS_KEY, {
@@ -1364,20 +1344,41 @@ export default function FormsMonitorDetailPage() {
 
   useEffect(() => {
     function onDocMouseDown(e) {
-      const btn = filterInfoBtnRef.current;
-      const popup = filterInfoPopupRef.current;
+      const target = e.target;
 
-      if (btn?.contains(e.target)) return;
-      if (popup?.contains(e.target)) return;
+      if (
+        filterInfoOpen &&
+        !filterInfoBtnRef.current?.contains(target) &&
+        !filterInfoPopupRef.current?.contains(target)
+      ) {
+        setFilterInfoOpen(false);
+      }
 
-      setFilterInfoOpen(false);
+      if (
+        actionMenuOpen &&
+        !actionMenuBtnRef.current?.contains(target) &&
+        !actionMenuPopupRef.current?.contains(target)
+      ) {
+        setActionMenuOpen(false);
+      }
+
+      if (
+        ownerPopupOpen &&
+        !ownerBtnRef.current?.contains(target) &&
+        !ownerPopupRef.current?.contains(target)
+      ) {
+        setOwnerPopupOpen(false);
+      }
     }
 
     function onKeyDown(e) {
-      if (e.key === "Escape") setFilterInfoOpen(false);
+      if (e.key !== "Escape") return;
+      setFilterInfoOpen(false);
+      setActionMenuOpen(false);
+      setOwnerPopupOpen(false);
     }
 
-    if (filterInfoOpen) {
+    if (filterInfoOpen || actionMenuOpen || ownerPopupOpen) {
       document.addEventListener("mousedown", onDocMouseDown);
       document.addEventListener("keydown", onKeyDown);
 
@@ -1388,7 +1389,7 @@ export default function FormsMonitorDetailPage() {
     }
 
     return undefined;
-  }, [filterInfoOpen]);
+  }, [filterInfoOpen, actionMenuOpen, ownerPopupOpen]);
 
   useEffect(() => {
     if (!showFinishCelebration) return;
@@ -1539,7 +1540,7 @@ export default function FormsMonitorDetailPage() {
   async function handleComplimentSave(nextPointValue) {
     if (!item?.form_instance_id || complimentSaving) return;
     if (nextPointValue === -1 && !String(complimentReason || "").trim()) {
-      window.alert("Geef bij een minpunt eerst kort aan waarom dit minpunt wordt toegekend.");
+      window.alert("Geef bij een minpunt kort aan waarom dit minpunt wordt toegekend.");
       return;
     }
 
@@ -1764,34 +1765,6 @@ export default function FormsMonitorDetailPage() {
     setFilterInfoOpen(true);
   }
 
-  function expandAllSections() {
-    setPropertiesOpen(true);
-    setRelationsOpen(true);
-    setEvidenceOpen(true);
-    setStatusOpenMap({
-      OPEN: true,
-      WACHTENOPDERDEN: true,
-      AFGEHANDELD: true,
-      AFGEWEZEN: true,
-      VERVALLEN: true,
-      INFORMATIEF: true,
-    });
-  }
-
-  function collapseAllSections() {
-    setPropertiesOpen(false);
-    setRelationsOpen(false);
-    setEvidenceOpen(false);
-    setStatusOpenMap({
-      OPEN: false,
-      WACHTENOPDERDEN: false,
-      AFGEHANDELD: false,
-      AFGEWEZEN: false,
-      VERVALLEN: false,
-      INFORMATIEF: false,
-    });
-  }
-
   useEffect(() => {
     if (!item?.form_instance_id) return;
 
@@ -1846,26 +1819,42 @@ export default function FormsMonitorDetailPage() {
                   <span className="ember-page-subtitle">{item.form_name || item.form_code}</span>
                   <SummaryTag title="Documentnummer" tone="muted">#{item.form_instance_id}</SummaryTag>
                   <StatusTag status={item.status} />
+                  {ownerDisplayLabel ? (
+                    <button
+                      type="button"
+                      className="ember-label ember-label--info"
+                      title="Open eigenaar"
+                      onClick={() => setOwnerPopupOpen((prev) => !prev)}
+                    >
+                      Toegewezen aan {ownerDisplayLabel}
+                    </button>
+                  ) : null}
+                  {item.parent_instance_id ? (
+                    <button
+                      type="button"
+                      className="ember-label ember-label--info"
+                      title="Open vervolgformulieren"
+                      onClick={() => openSection("follow_forms")}
+                    >
+                      vervolg op formulier #{item.parent_instance_id}
+                    </button>
+                  ) : null}
+                  {Array.isArray(detail?.children) && detail.children.length > 0 ? (
+                    <button
+                      type="button"
+                      className="ember-label ember-label--info"
+                      title="Open vervolgformulieren"
+                      onClick={() => openSection("follow_forms")}
+                    >
+                      opgevolgd door formulier{detail.children.length > 1 ? "en" : ""} {detail.children.map((child) => `#${child.form_instance_id}`).join(", ")}
+                    </button>
+                  ) : null}
                 </div>
               ) : null}
             </div>
           </div>
 
           <div className="ember-toolbar">
-            <button
-              type="button"
-              className="icon-btn"
-              title={collapseBtnTitle}
-              onClick={() => {
-                if (anyOpenInDetail) collapseAllSections();
-                else expandAllSections();
-              }}
-              onMouseEnter={() => collapseAllIconRef.current?.startAnimation?.()}
-              onMouseLeave={() => collapseAllIconRef.current?.stopAnimation?.()}
-            >
-              <CollapseIcon ref={collapseAllIconRef} size={18} className="nav-anim-icon" />
-            </button>
-
             <button
               type="button"
               className="btn btn-secondary monitor-form-status-btn"
@@ -1898,6 +1887,17 @@ export default function FormsMonitorDetailPage() {
 
                     <StatusTag status={item.status} />
 
+                    {ownerDisplayLabel ? (
+                      <button
+                        type="button"
+                        className="ember-label ember-label--info"
+                        title="Open eigenaar"
+                        onClick={() => setOwnerPopupOpen((prev) => !prev)}
+                      >
+                        Toegewezen aan {ownerDisplayLabel}
+                      </button>
+                    ) : null}
+
                     <SummaryTag title="Documentnummer" tone="muted">
                       {item.form_instance_id ?? "-"}
                     </SummaryTag>
@@ -1910,28 +1910,28 @@ export default function FormsMonitorDetailPage() {
                       {openLikeCount} open
                     </SummaryTag>
 
-                    {item.assigned_display_name_snapshot || item.assigned_email_snapshot ? (
+                    {item.parent_instance_id ? (
                       <button
                         type="button"
                         className="ember-label ember-label--info"
-                        title={
-                          item.assigned_email_snapshot
-                            ? `Stuur Teams-bericht naar ${item.assigned_display_name_snapshot || item.assigned_email_snapshot}`
-                            : "Toegewezen behandelaar"
-                        }
-                        onClick={() => {
-                          const teamsUrl = buildTeamsChatUrl(
-                            item.assigned_email_snapshot,
-                            item.form_instance_id
-                          );
-                          if (teamsUrl) {
-                            window.open(teamsUrl, "_blank", "noopener,noreferrer");
-                          }
-                        }}
+                        title="Open vervolgformulieren"
+                        onClick={() => openSection("follow_forms")}
                       >
-                        Toegewezen aan {item.assigned_display_name_snapshot || item.assigned_email_snapshot}
+                        vervolg op formulier #{item.parent_instance_id}
                       </button>
                     ) : null}
+
+                    {Array.isArray(detail?.children) && detail.children.length > 0 ? (
+                      <button
+                        type="button"
+                        className="ember-label ember-label--info"
+                        title="Open vervolgformulieren"
+                        onClick={() => openSection("follow_forms")}
+                      >
+                        opgevolgd door formulier{detail.children.length > 1 ? "en" : ""} {detail.children.map((child) => `#${child.form_instance_id}`).join(", ")}
+                      </button>
+                    ) : null}
+
                   </div>
 
                   {item.instance_title ? (
@@ -1939,78 +1939,202 @@ export default function FormsMonitorDetailPage() {
                   ) : null}
                 </div>
 
-                <div className="monitor-form-actions">
-                  {allowedActions.set_ingediend && (
+                <div className="monitor-form-actions monitor-form-actions--detail">
+                  <div className="monitor-form-actions__group">
+                    <button
+                      ref={ownerBtnRef}
+                      type="button"
+                      className="btn btn-secondary monitor-form-status-btn"
+                      onClick={() => {
+                        setOwnerPopupOpen((prev) => !prev);
+                        setActionMenuOpen(false);
+                      }}
+                    >
+                      <SquarePenIcon size={18} className="nav-anim-icon" />
+                      Eigenaar
+                    </button>
+
                     <button
                       type="button"
                       className="btn btn-secondary monitor-form-status-btn"
-                      disabled={formActionBusy}
-                      onClick={() => handleFormAction("set_ingediend")}
-                      onMouseEnter={() => setIngediendIconRef.current?.startAnimation?.()}
-                      onMouseLeave={() => setIngediendIconRef.current?.stopAnimation?.()}
+                      onClick={() => {
+                        const url = `/installaties/${encodeURIComponent(item.atrium_installation_code)}/formulieren/${encodeURIComponent(item.form_instance_id)}`;
+                        window.open(url, "_blank", "noopener");
+                      }}
+                      onMouseEnter={() => openIconRef.current?.startAnimation?.()}
+                      onMouseLeave={() => openIconRef.current?.stopAnimation?.()}
                     >
-                      <FolderInputIcon ref={setIngediendIconRef} size={18} className="nav-anim-icon" />
-                      Terug naar ingediend
+                      <ArrowBigRightIcon ref={openIconRef} size={18} className="nav-anim-icon" />
+                      Open formulier
                     </button>
-                  )}
 
-                  {allowedActions.set_concept && (
                     <button
                       type="button"
                       className="btn btn-secondary monitor-form-status-btn"
-                      disabled={formActionBusy}
-                      onClick={() => handleFormAction("set_concept")}
-                      onMouseEnter={() => setConceptIconRef.current?.startAnimation?.()}
-                      onMouseLeave={() => setConceptIconRef.current?.stopAnimation?.()}
+                      onClick={handleDownloadPdf}
+                      onMouseEnter={() => pdfIconRef.current?.startAnimation?.()}
+                      onMouseLeave={() => pdfIconRef.current?.stopAnimation?.()}
                     >
-                      <HistoryIcon ref={setConceptIconRef} size={18} className="nav-anim-icon" />
-                      Terug naar concept
+                      <DownloadIcon ref={pdfIconRef} size={18} className="nav-anim-icon" />
+                      PDF
                     </button>
-                  )}
 
-                  <button
-                    type="button"
-                    className="btn btn-secondary monitor-form-status-btn"
-                    onClick={() => {
-                      const url = `/installaties/${encodeURIComponent(item.atrium_installation_code)}/formulieren/${encodeURIComponent(item.form_instance_id)}`;
-                      window.open(url, "_blank", "noopener");
-                    }}
-                    onMouseEnter={() => openIconRef.current?.startAnimation?.()}
-                    onMouseLeave={() => openIconRef.current?.stopAnimation?.()}
-                  >
-                    <ArrowBigRightIcon ref={openIconRef} size={18} className="nav-anim-icon" />
-                    Open formulier
-                  </button>
+                    {allowedActions.set_afgehandeld && (
+                      <button
+                        type="button"
+                        className="btn btn-primary monitor-form-status-btn"
+                        disabled={formActionBusy}
+                        onClick={() => handleFormAction("set_afgehandeld")}
+                        onMouseEnter={() => finishIconRef.current?.startAnimation?.()}
+                        onMouseLeave={() => finishIconRef.current?.stopAnimation?.()}
+                      >
+                        <ClipboardCheckIcon ref={finishIconRef} size={18} className="nav-anim-icon" />
+                        Formulier definitief maken
+                      </button>
+                    )}
+                  </div>
 
-                  <button
-                    type="button"
-                    className="btn btn-secondary monitor-form-status-btn"
-                    onClick={handleDownloadPdf}
-                    onMouseEnter={() => pdfIconRef.current?.startAnimation?.()}
-                    onMouseLeave={() => pdfIconRef.current?.stopAnimation?.()}
-                  >
-                    <DownloadIcon ref={pdfIconRef} size={18} className="nav-anim-icon" />
-                    PDF
-                  </button>
+                  {hasStatusMenuActions ? (
+                    <div className="monitor-form-actions__menu-wrap">
+                      <button
+                        ref={actionMenuBtnRef}
+                        type="button"
+                        className="icon-btn"
+                        title="Meer acties"
+                        onClick={() => {
+                          setActionMenuOpen((prev) => !prev);
+                          setOwnerPopupOpen(false);
+                        }}
+                      >
+                        <ChevronsUpDownIcon size={18} className="nav-anim-icon" />
+                      </button>
 
-                  {allowedActions.set_afgehandeld && (
-                    <button
-                      type="button"
-                      className="btn btn-primary monitor-form-status-btn"
-                      disabled={formActionBusy}
-                      onClick={() => handleFormAction("set_afgehandeld")}
-                      onMouseEnter={() => finishIconRef.current?.startAnimation?.()}
-                      onMouseLeave={() => finishIconRef.current?.stopAnimation?.()}
-                    >
-                      <ClipboardCheckIcon ref={finishIconRef} size={18} className="nav-anim-icon" />
-                      Formulier definitief maken
-                    </button>
-                  )}
+                      {actionMenuOpen ? (
+                        <div ref={actionMenuPopupRef} className="card monitor-detail-popup-menu">
+                          {allowedActions.set_ingediend ? (
+                            <button
+                              type="button"
+                              className="menu-item"
+                              disabled={formActionBusy}
+                              onClick={() => {
+                                setActionMenuOpen(false);
+                                handleFormAction("set_ingediend");
+                              }}
+                            >
+                              <FolderInputIcon ref={setIngediendIconRef} size={18} className="nav-anim-icon" />
+                              <span>Terug naar ingediend</span>
+                            </button>
+                          ) : null}
+
+                          {allowedActions.set_concept ? (
+                            <button
+                              type="button"
+                              className="menu-item"
+                              disabled={formActionBusy}
+                              onClick={() => {
+                                setActionMenuOpen(false);
+                                handleFormAction("set_concept");
+                              }}
+                            >
+                              <HistoryIcon ref={setConceptIconRef} size={18} className="nav-anim-icon" />
+                              <span>Terug naar concept</span>
+                            </button>
+                          ) : null}
+                        </div>
+                      ) : null}
+                    </div>
+                  ) : null}
+
+                  {ownerPopupOpen ? (
+                    <div ref={ownerPopupRef} className="card monitor-detail-owner-popup">
+                      <div className="ui-stack-sm">
+                        <div className="monitor-detail-section__title">Eigenaar</div>
+
+                        <input
+                          className="input"
+                          list="monitor-assignment-directory"
+                          value={assignmentSearch}
+                          onChange={(e) => setAssignmentSearch(e.target.value)}
+                          placeholder="Kies een Ember-gebruiker"
+                          readOnly={!permissions.can_assign_form}
+                        />
+                        <datalist id="monitor-assignment-directory">
+                          {directoryItems.map((entry) => {
+                            const label = getDirectoryDisplayName(entry);
+                            if (!label) return null;
+                            return <option key={entry.user_object_id || label} value={label} />;
+                          })}
+                        </datalist>
+
+                        <div className="ember-label-row">
+                          {ownerDisplayLabel ? (
+                            <SummaryTag title="Huidige toewijzing" tone="info">
+                              {ownerDisplayLabel}
+                            </SummaryTag>
+                          ) : (
+                            <SummaryTag title="Huidige toewijzing" tone="muted">
+                              Niet toegewezen
+                            </SummaryTag>
+                          )}
+
+                          {item.assigned_email_snapshot ? (
+                            <button
+                              type="button"
+                              className="btn btn-secondary monitor-owner-teams-btn"
+                              title={`Stuur Teams-bericht naar ${ownerDisplayLabel || item.assigned_email_snapshot}`}
+                              onClick={() => {
+                                const teamsUrl = buildTeamsChatUrl(
+                                  item.assigned_email_snapshot,
+                                  item.form_instance_id
+                                );
+                                if (teamsUrl) {
+                                  window.open(teamsUrl, "_blank", "noopener,noreferrer");
+                                }
+                              }}
+                            >
+                              <img src={teamsLogo} alt="Teams" className="directory-card-teams-logo" />
+                            </button>
+                          ) : null}
+                        </div>
+
+                        {permissions.can_assign_form ? (
+                          <div className="ember-toolbar">
+                            <button
+                              type="button"
+                              className="btn btn-secondary"
+                              disabled={assignmentSaving}
+                              onClick={() => handleAssignmentSave(false)}
+                            >
+                              Toewijzen
+                            </button>
+                            <button
+                              type="button"
+                              className="btn btn-secondary"
+                              disabled={assignmentSaving}
+                              onClick={() => handleAssignmentSave(true)}
+                            >
+                              Toewijzing opheffen
+                            </button>
+                          </div>
+                        ) : null}
+
+                        <div className="ember-page-subtitle">
+                          {item.assigned_at
+                            ? `Bijgewerkt op ${formatDateTime(item.assigned_at)}${item.assigned_by ? ` door ${item.assigned_by}` : ""}`
+                            : "Nog geen behandelaar toegewezen."}
+                        </div>
+                      </div>
+                    </div>
+                  ) : null}
                 </div>
               </div>
             </div>
 
-            <div className="monitor-detail-filter-panel">
+            <Tabs tabs={detailSectionTabs} activeKey={activeSectionKey} onChange={openSection} />
+
+            {activeSectionKey === "action_points" ? (
+              <>
+                <div className="monitor-detail-filter-panel">
               <div className="monitor-detail-filter-head">
                 <div className="monitor-detail-section__title">Statusoverzicht actiepunten</div>
 
@@ -2091,285 +2215,109 @@ export default function FormsMonitorDetailPage() {
                   Totaal {followUpCounts.total}
                 </SummaryTag>
               </div>
-            </div>
-
-            {filterInfoOpen && filterInfoPopupStyle && (
-              <div ref={filterInfoPopupRef} className="monitor-info-popup" style={filterInfoPopupStyle}>
-                Klik op Totaal om alle actieregels te tonen. Klik op één of meer andere statusknoppen om de actiepuntenlijst daarop te filteren.
-              </div>
-            )}
-
-            <CollapseSection
-              open={propertiesOpen}
-              title="Formuliereigenschappen"
-              onToggle={() => setPropertiesOpen((prev) => !prev)}
-              iconRef={propsToggleIconRef}
-            >
-              <div className="cf-grid">
-                <div className="cf-row">
-                  <div className="cf-label">
-                    <div className="cf-label-text cf-label-text--accent">Aangemaakt op</div>
-                  </div>
-                  <div className="cf-control">
-                    <input className="input" readOnly value={formatDateTime(item.created_at)} />
-                  </div>
                 </div>
 
-                <div className="cf-row">
-                  <div className="cf-label">
-                    <div className="cf-label-text cf-label-text--accent">Aangemaakt door</div>
+                {filterInfoOpen && filterInfoPopupStyle ? (
+                  <div ref={filterInfoPopupRef} className="monitor-info-popup" style={filterInfoPopupStyle}>
+                    Klik op Totaal om alle actieregels te tonen. Klik op één of meer andere statusknoppen om de actiepuntenlijst daarop te filteren.
                   </div>
-                  <div className="cf-control">
-                    <input className="input" readOnly value={item.created_by ?? ""} />
-                  </div>
-                </div>
+                ) : null}
+              </>
+            ) : null}
 
-                <div className="cf-row">
-                  <div className="cf-label">
-                    <div className="cf-label-text cf-label-text--accent">Laatste wijziging</div>
-                  </div>
-                  <div className="cf-control">
-                    <input className="input" readOnly value={formatDateTime(item.updated_at || item.created_at)} />
-                  </div>
-                </div>
-
-                <div className="cf-row">
-                  <div className="cf-label">
-                    <div className="cf-label-text cf-label-text--accent">Gewijzigd door</div>
-                  </div>
-                  <div className="cf-control">
-                    <input className="input" readOnly value={getLastModifiedBy(item)} />
-                  </div>
-                </div>
-
-                <div className="cf-row wide">
-                  <div className="cf-label">
-                    <div className="cf-label-text cf-label-text--accent">Documentnummer</div>
-                  </div>
-                  <div className="cf-control">
-                    <input className="input" readOnly value={item.form_instance_id ?? ""} />
-                  </div>
-                </div>
-              </div>
-            </CollapseSection>
-
-            <CollapseSection
-              open={relationsOpen}
-              title="Relatiedata"
-              onToggle={() => setRelationsOpen((prev) => !prev)}
-              iconRef={relationToggleIconRef}
-            >
-              <div className="cf-grid">
-                {relationRows.map((row) => (
-                  <div className="cf-row" key={row.label}>
-                    <div className="cf-label">
-                      <div className="cf-label-text cf-label-text--accent">{row.label}</div>
-                    </div>
-                    <div className="cf-control">
-                      <input className="input" readOnly value={row.value} />
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </CollapseSection>
-
-            <CollapseSection
-              open={assignmentOpen}
-              title="Toewijzing en complimentpunten"
-              onToggle={() => setAssignmentOpen((prev) => !prev)}
-              iconRef={assignmentToggleIconRef}
-            >
-              <div className="ui-stack">
-                <div className="cf-grid">
-                  <div className="cf-row wide">
-                    <div className="cf-label">
-                      <div className="cf-label-text cf-label-text--accent">Toegewezen aan</div>
-                    </div>
-                    <div className="cf-control ui-stack-sm">
-                      <input
-                        className="input"
-                        list="monitor-assignment-directory"
-                        value={assignmentSearch}
-                        onChange={(e) => setAssignmentSearch(e.target.value)}
-                        placeholder="Kies een Ember-gebruiker"
-                        readOnly={!permissions.can_assign_form}
-                      />
-                      <datalist id="monitor-assignment-directory">
-                        {directoryItems.map((entry) => {
-                          const label = getDirectoryDisplayName(entry);
-                          if (!label) return null;
-                          return <option key={entry.user_object_id || label} value={label} />;
-                        })}
-                      </datalist>
-
-                      <div className="ember-label-row">
-                        {item.assigned_display_name_snapshot || item.assigned_email_snapshot ? (
-                          <SummaryTag title="Huidige toewijzing" tone="info">
-                            {item.assigned_display_name_snapshot || item.assigned_email_snapshot}
-                          </SummaryTag>
-                        ) : (
-                          <SummaryTag title="Huidige toewijzing" tone="muted">
-                            Niet toegewezen
-                          </SummaryTag>
-                        )}
-
-                        {item.assigned_email_snapshot ? (
-                          <button
-                            type="button"
-                            className="btn btn-secondary"
-                            onClick={() => {
-                              const teamsUrl = buildTeamsChatUrl(
-                                item.assigned_email_snapshot,
-                                item.form_instance_id
-                              );
-                              if (teamsUrl) {
-                                window.open(teamsUrl, "_blank", "noopener,noreferrer");
-                              }
-                            }}
-                          >
-                            Teams-bericht
-                          </button>
-                        ) : null}
-                      </div>
-
-                      {permissions.can_assign_form ? (
-                        <div className="ember-toolbar">
-                          <button
-                            type="button"
-                            className="btn btn-secondary"
-                            disabled={assignmentSaving}
-                            onClick={() => handleAssignmentSave(false)}
-                          >
-                            Toewijzen
-                          </button>
-                          <button
-                            type="button"
-                            className="btn btn-secondary"
-                            disabled={assignmentSaving}
-                            onClick={() => handleAssignmentSave(true)}
-                          >
-                            Toewijzing opheffen
-                          </button>
-                        </div>
-                      ) : null}
-
-                      <div className="ember-page-subtitle">
-                        {item.assigned_at
-                          ? `Bijgewerkt op ${formatDateTime(item.assigned_at)}${item.assigned_by ? ` door ${item.assigned_by}` : ""}`
-                          : "Nog geen behandelaar toegewezen."}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="cf-grid">
-                  <div className="cf-row wide">
-                    <div className="cf-label">
-                      <div className="cf-label-text cf-label-text--accent">Complimentpunten</div>
-                    </div>
-                    <div className="cf-control ui-stack-sm">
-                      <div className="ember-label-row">
-                        <button
-                          type="button"
-                          className={
-                            complimentPointValue === 1
-                              ? "ember-label ember-label--success ember-label--button"
-                              : "ember-label ember-label--muted ember-label--button"
-                          }
-                          disabled={!permissions.can_set_compliment_points || complimentSaving}
-                          onClick={() => setComplimentPointValue((prev) => (prev === 1 ? 0 : 1))}
-                        >
-                          +1 complimentpunt
-                        </button>
-                        <button
-                          type="button"
-                          className={
-                            complimentPointValue === -1
-                              ? "ember-label ember-label--danger ember-label--button"
-                              : "ember-label ember-label--muted ember-label--button"
-                          }
-                          disabled={!permissions.can_set_compliment_points || complimentSaving}
-                          onClick={() => setComplimentPointValue((prev) => (prev === -1 ? 0 : -1))}
-                        >
-                          -1 complimentpunt
-                        </button>
-                        <SummaryTag title="Totaal actieve beoordelingen" tone="muted">
-                          {complimentPoints.length} beoordeling(en)
-                        </SummaryTag>
-                      </div>
-
-                      <textarea
-                        className="cf-textarea"
-                        rows={3}
-                        placeholder="Waarom geef je dit complimentpunt?"
-                        value={complimentReason}
-                        onChange={(e) => setComplimentReason(e.target.value)}
-                        readOnly={!permissions.can_set_compliment_points}
-                      />
-
-                      {permissions.can_set_compliment_points ? (
-                        <div className="ember-toolbar">
-                          <button
-                            type="button"
-                            className="btn btn-secondary"
-                            disabled={complimentSaving}
-                            onClick={() => handleComplimentSave(complimentPointValue)}
-                          >
-                            Opslaan
-                          </button>
-                          <button
-                            type="button"
-                            className="btn btn-secondary"
-                            disabled={complimentSaving}
-                            onClick={() => handleComplimentSave(0)}
-                          >
-                            Wissen
-                          </button>
-                        </div>
-                      ) : null}
-
-                      <div className="ui-stack-sm">
-                        {complimentPoints.length === 0 ? (
-                          <div className="ember-page-subtitle">Nog geen complimentpunten vastgelegd.</div>
-                        ) : (
-                          complimentPoints.map((point) => (
-                            <div key={point.compliment_point_id || `${point.reviewer_user_object_id}-${point.point_value}`} className="ember-label-row">
-                              <SummaryTag
-                                title="Beoordelaar"
-                                tone={Number(point.point_value) === 1 ? "success" : "danger"}
-                              >
-                                {Number(point.point_value) === 1 ? "+1" : "-1"} {point.reviewer_display_name_snapshot || point.reviewer_email_snapshot || "Beoordelaar"}
-                              </SummaryTag>
-                              {point.reason ? (
-                                <span className="ember-page-subtitle">{point.reason}</span>
-                              ) : null}
-                            </div>
-                          ))
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </CollapseSection>
-
-            {item.instance_note ? (
+            {activeSectionKey === "feedback" ? (
               <div className="monitor-detail-section is-open">
                 <div className="monitor-detail-section__body">
-                  <div className="monitor-detail-section__title">Formulieropmerking</div>
-                  <div className="monitor-detail-note">{item.instance_note}</div>
+                  <div className="ui-row-between">
+                    <div className="monitor-detail-section__title">Feedback</div>
+                    <div className="ember-page-subtitle">{complimentPoints.length} beoordeling(en)</div>
+                  </div>
+
+                  <div className="ember-label-row">
+                    <button
+                      type="button"
+                      className={
+                        complimentPointValue === 1
+                          ? "ember-label ember-label--success ember-label--button"
+                          : "ember-label ember-label--muted ember-label--button"
+                      }
+                      disabled={!permissions.can_set_compliment_points || complimentSaving}
+                      onClick={() => setComplimentPointValue((prev) => (prev === 1 ? 0 : 1))}
+                        >
+                          +1
+                        </button>
+                    <button
+                      type="button"
+                      className={
+                        complimentPointValue === -1
+                          ? "ember-label ember-label--danger ember-label--button"
+                          : "ember-label ember-label--muted ember-label--button"
+                      }
+                      disabled={!permissions.can_set_compliment_points || complimentSaving}
+                      onClick={() => setComplimentPointValue((prev) => (prev === -1 ? 0 : -1))}
+                        >
+                          -1
+                        </button>
+                  </div>
+
+                  <textarea
+                    className="cf-textarea"
+                    rows={3}
+                        placeholder="Voeg een opmerking toe."
+                    value={complimentReason}
+                    onChange={(e) => setComplimentReason(e.target.value)}
+                    readOnly={!permissions.can_set_compliment_points}
+                  />
+
+                  {permissions.can_set_compliment_points ? (
+                    <div className="ember-toolbar">
+                      <button
+                        type="button"
+                        className="btn btn-secondary"
+                        disabled={complimentSaving}
+                        onClick={() => handleComplimentSave(complimentPointValue)}
+                      >
+                        Opslaan
+                      </button>
+                      <button
+                        type="button"
+                        className="btn btn-secondary"
+                        disabled={complimentSaving}
+                        onClick={() => handleComplimentSave(0)}
+                      >
+                        Wissen
+                      </button>
+                    </div>
+                  ) : null}
+
+                  <div className="ui-stack-sm">
+                    {complimentPoints.length === 0 ? (
+                      <div className="ember-page-subtitle">Nog geen complimentpunten vastgelegd.</div>
+                    ) : (
+                      complimentPoints.map((point) => (
+                        <div
+                          key={point.compliment_point_id || `${point.reviewer_user_object_id}-${point.point_value}`}
+                          className="ember-label-row"
+                        >
+                          <SummaryTag
+                            title="Beoordelaar"
+                            tone={Number(point.point_value) === 1 ? "success" : "danger"}
+                          >
+                            {Number(point.point_value) === 1 ? "+1" : "-1"} {point.reviewer_display_name_snapshot || point.reviewer_email_snapshot || "Beoordelaar"}
+                          </SummaryTag>
+                          {point.reason ? <span className="ember-page-subtitle">{point.reason}</span> : null}
+                        </div>
+                      ))
+                    )}
+                  </div>
                 </div>
               </div>
             ) : null}
 
-            {item ? (
-              <CollapseSection
-                open={evidenceOpen}
-                title="Bijlagen en bewijs"
-                onToggle={() => setEvidenceOpen((prev) => !prev)}
-                iconRef={evidenceToggleIconRef}
-              >
-                <div className="ui-stack-sm">
+            {activeSectionKey === "evidence" && item ? (
+              <div className="monitor-detail-section is-open">
+                <div className="monitor-detail-section__body">
+                  <div className="monitor-detail-section__title">Bijlagen en bewijs</div>
                   <div className="ember-page-subtitle">
                     Voeg formulierbijlagen toe en koppel ze direct aan actiepunten. Installatiebestanden worden hier bewust niet getoond.
                   </div>
@@ -2383,46 +2331,125 @@ export default function FormsMonitorDetailPage() {
                     onDocumentsChange={setEvidenceDocuments}
                   />
                 </div>
-              </CollapseSection>
+              </div>
             ) : null}
 
+            {activeSectionKey === "relations" ? (
+              <div className="ui-stack">
+                <div className="monitor-detail-section is-open">
+                  <div className="monitor-detail-section__body">
+                    <div className="monitor-detail-section__title">Relatiedata</div>
+                    <div className="cf-grid">
+                      {relationRows.map((row) => (
+                        <div className="cf-row" key={row.label}>
+                          <div className="cf-label">
+                            <div className="cf-label-text cf-label-text--accent">{row.label}</div>
+                          </div>
+                          <div className="cf-control">
+                            <input className="input" readOnly value={row.value} />
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
 
-            {(detail.parent || (Array.isArray(detail.children) && detail.children.length > 0)) && (
+                <div className="monitor-detail-section is-open">
+                  <div className="monitor-detail-section__body">
+                    <div className="monitor-detail-section__title">Formuliereigenschappen</div>
+                    <div className="cf-grid">
+                      <div className="cf-row">
+                        <div className="cf-label">
+                          <div className="cf-label-text cf-label-text--accent">Aangemaakt op</div>
+                        </div>
+                        <div className="cf-control">
+                          <input className="input" readOnly value={formatDateTime(item.created_at)} />
+                        </div>
+                      </div>
+
+                      <div className="cf-row">
+                        <div className="cf-label">
+                          <div className="cf-label-text cf-label-text--accent">Aangemaakt door</div>
+                        </div>
+                        <div className="cf-control">
+                          <input className="input" readOnly value={item.created_by ?? ""} />
+                        </div>
+                      </div>
+
+                      <div className="cf-row">
+                        <div className="cf-label">
+                          <div className="cf-label-text cf-label-text--accent">Laatste wijziging</div>
+                        </div>
+                        <div className="cf-control">
+                          <input className="input" readOnly value={formatDateTime(item.updated_at || item.created_at)} />
+                        </div>
+                      </div>
+
+                      <div className="cf-row">
+                        <div className="cf-label">
+                          <div className="cf-label-text cf-label-text--accent">Gewijzigd door</div>
+                        </div>
+                        <div className="cf-control">
+                          <input className="input" readOnly value={getLastModifiedBy(item)} />
+                        </div>
+                      </div>
+
+                      <div className="cf-row wide">
+                        <div className="cf-label">
+                          <div className="cf-label-text cf-label-text--accent">Documentnummer</div>
+                        </div>
+                        <div className="cf-control">
+                          <input className="input" readOnly value={item.form_instance_id ?? ""} />
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {item.instance_note ? (
+                  <div className="monitor-detail-section is-open">
+                    <div className="monitor-detail-section__body">
+                      <div className="monitor-detail-section__title">Formulieropmerking</div>
+                      <div className="monitor-detail-note">{item.instance_note}</div>
+                    </div>
+                  </div>
+                ) : null}
+
+              </div>
+            ) : null}
+
+            {activeSectionKey === "follow_forms" && hasFollowFormRelations ? (
               <div className="monitor-detail-section is-open">
                 <div className="monitor-detail-section__body">
-                  <div className="monitor-detail-section__title">Keten</div>
+                  <div className="monitor-detail-section__title">Vervolgformulieren</div>
 
-                  {detail.parent && (
+                  {detail.parent ? (
                     <button
                       type="button"
                       className="monitor-chain-card"
-                      onClick={() => navigate(`/monitor/formulieren/${detail.parent.form_instance_id}`)}
+                      onClick={() => navigate(`/monitor/formulieren/${detail.parent.form_instance_id}?section=follow_forms`)}
                     >
                       <div className="ui-stack-sm">
-                        <div className="monitor-dossier-row__title">
-                          Parent #{detail.parent.form_instance_id}
-                        </div>
+                        <div className="monitor-dossier-row__title">Vervolg op formulier #{detail.parent.form_instance_id}</div>
                         <div className="ember-page-subtitle">
                           {detail.parent.form_name || detail.parent.form_code || "-"}
                         </div>
                       </div>
                       <StatusTag status={detail.parent.status} />
                     </button>
-                  )}
+                  ) : null}
 
-                  {Array.isArray(detail.children) && detail.children.length > 0 && (
+                  {Array.isArray(detail.children) && detail.children.length > 0 ? (
                     <div className="ui-stack-sm">
                       {detail.children.map((child) => (
                         <button
                           key={child.form_instance_id}
                           type="button"
                           className="monitor-chain-card"
-                          onClick={() => navigate(`/monitor/formulieren/${child.form_instance_id}`)}
+                          onClick={() => navigate(`/monitor/formulieren/${child.form_instance_id}?section=follow_forms`)}
                         >
                           <div className="ui-stack-sm">
-                            <div className="monitor-dossier-row__title">
-                              Child #{child.form_instance_id}
-                            </div>
+                            <div className="monitor-dossier-row__title">Opgevolgd door formulier #{child.form_instance_id}</div>
                             <div className="ember-page-subtitle">
                               {child.form_name || child.form_code || "-"}
                             </div>
@@ -2432,221 +2459,223 @@ export default function FormsMonitorDetailPage() {
                         </button>
                       ))}
                     </div>
+                  ) : null}
+                </div>
+              </div>
+            ) : null}
+
+            {activeSectionKey === "action_points" ? (
+              <div className="monitor-detail-section is-open">
+                <div className="monitor-detail-section__body">
+                  <div className="ui-row-between">
+                    <div className="monitor-detail-section__title">Actiepunten</div>
+                    <div className="ember-page-subtitle">
+                      {followUpsLoading ? "laden..." : `${followUps.length} regel(s)`}
+                    </div>
+                  </div>
+
+                  {followUpsLoading ? (
+                    <div className="muted">laden; actiepunten</div>
+                  ) : followUps.length === 0 ? (
+                    <div className="monitor-detail-empty-state">
+                      <div className="monitor-detail-section__title">Geen actiepunten</div>
+                      <div className="ember-page-subtitle">
+                        Voor deze formulierafhandeling zijn momenteel geen actiepunten aanwezig.
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="ui-stack">
+                      {groupedFollowUps
+                        .filter((group) => group.count > 0)
+                        .map((group) => {
+                          const open = Boolean(statusOpenMap[group.status]);
+
+                          return (
+                            <div
+                              key={group.status}
+                              className={`${getCardToneClass(group.status)} monitor-detail-status-block`}
+                            >
+                              <button
+                                type="button"
+                                className="monitor-section-toggle"
+                                onClick={() => toggleStatusSection(group.status)}
+                                title={open ? "Inklappen" : "Uitklappen"}
+                              >
+                                <div className="ember-label-row">
+                                  <div className="monitor-detail-section__title">{group.label}</div>
+                                  <StatusTag status={group.status} />
+                                  <SummaryTag title="Aantal actiepunten" tone="muted">
+                                    {group.count} regel(s)
+                                  </SummaryTag>
+                                </div>
+
+                                <div className="monitor-detail-section__icon">
+                                  {!open ? (
+                                    <PlusIcon size={18} className="nav-anim-icon" />
+                                  ) : (
+                                    <ChevronUpIcon size={18} className="nav-anim-icon" />
+                                  )}
+                                </div>
+                              </button>
+
+                              {open ? (
+                                <div className="monitor-detail-status-block__body">
+                                  {group.items.map((row) => {
+                                    const noteKey = String(row.follow_up_action_id);
+                                    const noteValue = noteDrafts[noteKey] ?? normalizeNoteValue(row.note);
+                                    const noteSaving = Boolean(noteSavingById[noteKey]);
+                                    const noteSaved = Boolean(noteSavedById[noteKey]);
+                                    const copied = Boolean(copiedById[noteKey]);
+
+                                    return (
+                                      <div key={row.follow_up_action_id} className={getFollowUpCardClass(row.status)}>
+                                        <div className="ui-row-between">
+                                          <div className="ui-stack-sm ui-min-0">
+                                            <div className="ember-label-row">
+                                              <div className="monitor-dossier-row__title">
+                                                {row.workflow_title || "Actiepunt"}
+                                              </div>
+                                              <StatusTag status={row.status} />
+                                            </div>
+
+                                            {row.workflow_description ? (
+                                              <div className="ember-page-subtitle">
+                                                {row.workflow_description}
+                                              </div>
+                                            ) : null}
+                                          </div>
+
+                                          <div className="ember-label-row">
+                                            {row.category ? (
+                                              <SummaryTag title="Categorie" tone="muted">
+                                                {row.category}
+                                              </SummaryTag>
+                                            ) : null}
+
+                                            {String(row.certificate_impact || "").toLowerCase() === "yes" ? (
+                                              <SummaryTag title="Dit actiepunt blokkeert het certificaat" tone="warning">
+                                                Blokkeert certificaat
+                                              </SummaryTag>
+                                            ) : null}
+
+                                            {row.source_item_code || row.source_row_index != null ? (
+                                              <SummaryTag title="Vraagnummer" tone="muted">
+                                                vraag {row.source_item_code || row.source_row_index}
+                                              </SummaryTag>
+                                            ) : null}
+                                          </div>
+                                        </div>
+
+                                        <div className="ember-page-subtitle">
+                                          Laatste wijziging; {formatDateTime(row.updated_at || row.created_at)}
+                                        </div>
+
+                                        <FollowUpLinkedDocuments
+                                          code={item.atrium_installation_code}
+                                          instanceId={item.form_instance_id}
+                                          row={row}
+                                          documents={evidenceDocuments}
+                                        />
+
+                                        <div className="monitor-followup-note-box">
+                                          <div className="ui-row">
+                                            <MessageCircleMoreIcon size={16} />
+                                            <strong>Notitie</strong>
+                                          </div>
+
+                                          <textarea
+                                            className="cf-textarea"
+                                            rows={3}
+                                            data-note-id={noteKey}
+                                            placeholder="Werknotitie of interne toelichting"
+                                            value={noteValue}
+                                            onChange={(e) => handleNoteChange(noteKey, e.target.value)}
+                                          />
+
+                                          <div className="ember-page-subtitle">
+                                            {noteSaving
+                                              ? "opslaan..."
+                                              : noteSaved
+                                                ? "opgeslagen"
+                                                : "wijzigingen worden automatisch opgeslagen"}
+                                          </div>
+                                        </div>
+
+                                        <div className="ui-row-between">
+                                          <button
+                                            type="button"
+                                            className="btn btn-secondary"
+                                            onClick={() => handleCopyClipboard(row)}
+                                          >
+                                            {copied ? (
+                                              <CheckIcon size={18} className="nav-anim-icon" />
+                                            ) : (
+                                              <ArchiveIcon size={18} />
+                                            )}
+                                            {copied ? "Actietekst gekopieerd" : "Kopieer actietekst"}
+                                          </button>
+
+                                          <div className="ember-toolbar">
+                                            <button
+                                              type="button"
+                                              className="btn btn-secondary"
+                                              disabled={followUpBusyId === row.follow_up_action_id}
+                                              onClick={() => handleFollowUpAction(row.follow_up_action_id, "set_open")}
+                                            >
+                                              Open
+                                            </button>
+
+                                            <button
+                                              type="button"
+                                              className="btn btn-secondary"
+                                              disabled={followUpBusyId === row.follow_up_action_id}
+                                              onClick={() => handleFollowUpAction(row.follow_up_action_id, "set_waiting_third_party")}
+                                            >
+                                              Wachten op derden
+                                            </button>
+
+                                            <button
+                                              type="button"
+                                              className="btn btn-secondary"
+                                              disabled={followUpBusyId === row.follow_up_action_id}
+                                              onClick={() => handleFollowUpAction(row.follow_up_action_id, "set_rejected")}
+                                            >
+                                              Afgewezen
+                                            </button>
+
+                                            <button
+                                              type="button"
+                                              className="btn btn-secondary"
+                                              disabled={followUpBusyId === row.follow_up_action_id}
+                                              onClick={() => handleFollowUpAction(row.follow_up_action_id, "set_vervallen")}
+                                            >
+                                              Vervallen
+                                            </button>
+
+                                            <button
+                                              type="button"
+                                              className="btn btn-primary"
+                                              disabled={followUpBusyId === row.follow_up_action_id}
+                                              onClick={() => handleFollowUpAction(row.follow_up_action_id, "mark_done")}
+                                            >
+                                              <CheckIcon size={18} className="nav-anim-icon" />
+                                              Actiepunt afronden
+                                            </button>
+                                          </div>
+                                        </div>
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              ) : null}
+                            </div>
+                          );
+                        })}
+                    </div>
                   )}
                 </div>
               </div>
-            )}
-
-            <div className="monitor-detail-section is-open">
-              <div className="monitor-detail-section__body">
-                <div className="ui-row-between">
-                  <div className="monitor-detail-section__title">Actiepunten</div>
-                  <div className="ember-page-subtitle">
-                    {followUpsLoading ? "laden..." : `${followUps.length} regel(s)`}
-                  </div>
-                </div>
-
-                {followUpsLoading ? (
-                  <div className="muted">laden; actiepunten</div>
-                ) : followUps.length === 0 ? (
-                  <div className="monitor-detail-empty-state">
-                    <div className="monitor-detail-section__title">Geen actiepunten</div>
-                    <div className="ember-page-subtitle">
-                      Voor deze formulierafhandeling zijn momenteel geen actiepunten aanwezig.
-                    </div>
-                  </div>
-                ) : (
-                  <div className="ui-stack">
-                    {groupedFollowUps
-                      .filter((group) => group.count > 0)
-                      .map((group) => {
-                        const open = Boolean(statusOpenMap[group.status]);
-
-                        return (
-                          <div
-                            key={group.status}
-                            className={`${getCardToneClass(group.status)} monitor-detail-status-block`}
-                          >
-                            <button
-                              type="button"
-                              className="monitor-section-toggle"
-                              onClick={() => toggleStatusSection(group.status)}
-                              title={open ? "Inklappen" : "Uitklappen"}
-                            >
-                              <div className="ember-label-row">
-                                <div className="monitor-detail-section__title">{group.label}</div>
-                                <StatusTag status={group.status} />
-                                <SummaryTag title="Aantal actiepunten" tone="muted">
-                                  {group.count} regel(s)
-                                </SummaryTag>
-                              </div>
-
-                              <div className="monitor-detail-section__icon">
-                                {!open ? (
-                                  <PlusIcon size={18} className="nav-anim-icon" />
-                                ) : (
-                                  <ChevronUpIcon size={18} className="nav-anim-icon" />
-                                )}
-                              </div>
-                            </button>
-
-                            {open && (
-                              <div className="monitor-detail-status-block__body">
-                                {group.items.map((row) => {
-                                  const noteKey = String(row.follow_up_action_id);
-                                  const noteValue = noteDrafts[noteKey] ?? normalizeNoteValue(row.note);
-                                  const noteSaving = Boolean(noteSavingById[noteKey]);
-                                  const noteSaved = Boolean(noteSavedById[noteKey]);
-                                  const copied = Boolean(copiedById[noteKey]);
-
-                                  return (
-                                    <div key={row.follow_up_action_id} className={getFollowUpCardClass(row.status)}>
-                                      <div className="ui-row-between">
-                                        <div className="ui-stack-sm ui-min-0">
-                                          <div className="ember-label-row">
-                                            <div className="monitor-dossier-row__title">
-                                              {row.workflow_title || "Actiepunt"}
-                                            </div>
-                                            <StatusTag status={row.status} />
-                                          </div>
-
-                                          {row.workflow_description ? (
-                                            <div className="ember-page-subtitle">
-                                              {row.workflow_description}
-                                            </div>
-                                          ) : null}
-                                        </div>
-
-                                        <div className="ember-label-row">
-                                          {row.category ? (
-                                            <SummaryTag title="Categorie" tone="muted">
-                                              {row.category}
-                                            </SummaryTag>
-                                          ) : null}
-
-                                          {String(row.certificate_impact || "").toLowerCase() === "yes" ? (
-                                            <SummaryTag title="Dit actiepunt blokkeert het certificaat" tone="warning">
-                                              Blokkeert certificaat
-                                            </SummaryTag>
-                                          ) : null}
-
-                                          {row.source_item_code || row.source_row_index != null ? (
-                                            <SummaryTag title="Vraagnummer" tone="muted">
-                                              vraag {row.source_item_code || row.source_row_index}
-                                            </SummaryTag>
-                                          ) : null}
-                                        </div>
-                                      </div>
-
-                                      <div className="ember-page-subtitle">
-                                        Laatste wijziging; {formatDateTime(row.updated_at || row.created_at)}
-                                      </div>
-
-                                      <FollowUpLinkedDocuments
-                                        code={item.atrium_installation_code}
-                                        instanceId={item.form_instance_id}
-                                        row={row}
-                                        documents={evidenceDocuments}
-                                      />
-
-                                      <div className="monitor-followup-note-box">
-                                        <div className="ui-row">
-                                          <MessageCircleMoreIcon size={16} />
-                                          <strong>Notitie</strong>
-                                        </div>
-
-                                        <textarea
-                                          className="cf-textarea"
-                                          rows={3}
-                                          data-note-id={noteKey}
-                                          placeholder="Werknotitie of interne toelichting"
-                                          value={noteValue}
-                                          onChange={(e) => handleNoteChange(noteKey, e.target.value)}
-                                        />
-
-                                        <div className="ember-page-subtitle">
-                                          {noteSaving
-                                            ? "opslaan..."
-                                            : noteSaved
-                                              ? "opgeslagen"
-                                              : "wijzigingen worden automatisch opgeslagen"}
-                                        </div>
-                                      </div>
-
-                                      <div className="ui-row-between">
-                                        <button
-                                          type="button"
-                                          className="btn btn-secondary"
-                                          onClick={() => handleCopyClipboard(row)}
-                                        >
-                                          {copied ? (
-                                            <CheckIcon size={18} className="nav-anim-icon" />
-                                          ) : (
-                                            <ArchiveIcon size={18} />
-                                          )}
-                                          {copied ? "Actietekst gekopieerd" : "Kopieer actietekst"}
-                                        </button>
-
-                                        <div className="ember-toolbar">
-                                          <button
-                                            type="button"
-                                            className="btn btn-secondary"
-                                            disabled={followUpBusyId === row.follow_up_action_id}
-                                            onClick={() => handleFollowUpAction(row.follow_up_action_id, "set_open")}
-                                          >
-                                            Open
-                                          </button>
-
-                                          <button
-                                            type="button"
-                                            className="btn btn-secondary"
-                                            disabled={followUpBusyId === row.follow_up_action_id}
-                                            onClick={() => handleFollowUpAction(row.follow_up_action_id, "set_waiting_third_party")}
-                                          >
-                                            Wachten op derden
-                                          </button>
-
-                                          <button
-                                            type="button"
-                                            className="btn btn-secondary"
-                                            disabled={followUpBusyId === row.follow_up_action_id}
-                                            onClick={() => handleFollowUpAction(row.follow_up_action_id, "set_rejected")}
-                                          >
-                                            Afgewezen
-                                          </button>
-
-                                          <button
-                                            type="button"
-                                            className="btn btn-secondary"
-                                            disabled={followUpBusyId === row.follow_up_action_id}
-                                            onClick={() => handleFollowUpAction(row.follow_up_action_id, "set_vervallen")}
-                                          >
-                                            Vervallen
-                                          </button>
-
-                                          <button
-                                            type="button"
-                                            className="btn btn-primary"
-                                            disabled={followUpBusyId === row.follow_up_action_id}
-                                            onClick={() => handleFollowUpAction(row.follow_up_action_id, "mark_done")}
-                                          >
-                                            <CheckIcon size={18} className="nav-anim-icon" />
-                                            Actiepunt afronden
-                                          </button>
-                                        </div>
-                                      </div>
-                                    </div>
-                                  );
-                                })}
-                              </div>
-                            )}
-                          </div>
-                        );
-                      })}
-                  </div>
-                )}
-              </div>
-            </div>
+            ) : null}
 
             <ActionFooter
               canFinish={allowedActions.set_afgehandeld}

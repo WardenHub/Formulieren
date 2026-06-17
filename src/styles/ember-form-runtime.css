@@ -332,6 +332,14 @@
   min-width: 0;
 }
 
+.ember-runtime-panel--meta-header {
+  gap: 12px;
+  padding: 14px 16px;
+  background:
+    linear-gradient(90deg, color-mix(in srgb, var(--accent-border, #e11d48) 10%, transparent), transparent 24%),
+    var(--card-bg, var(--surface));
+}
+
 .ember-runtime-panel__title {
   font-size: 1.15rem;
   font-weight: 900;
@@ -371,6 +379,10 @@
 
 .ember-runtime-panel__content--grid {
   grid-template-columns: repeat(auto-fit, minmax(min(220px, 100%), 1fr));
+}
+
+.ember-runtime-panel--meta-header .ember-runtime-panel__content--grid {
+  grid-template-columns: minmax(220px, 340px);
 }
 
 .ember-runtime-field {
@@ -575,6 +587,71 @@
   color: var(--text-strong, var(--text));
 }
 
+.ember-runtime-matrix__head-actions {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.ember-runtime-hint-disclosure {
+  display: inline-grid;
+  gap: 8px;
+  justify-items: end;
+}
+
+.ember-runtime-hint-disclosure__toggle {
+  width: 36px;
+  min-width: 36px;
+  height: 36px;
+}
+
+.ember-runtime-inline-hint {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 10px;
+  align-items: start;
+  padding: 12px 14px;
+  border: 1px solid var(--border-soft, var(--border));
+  border-radius: 16px;
+  background: var(--surface-2);
+  min-width: 0;
+}
+
+.ember-runtime-inline-hint__icon {
+  width: 32px;
+  height: 32px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--card-bg, var(--surface));
+  border: 1px solid var(--border-soft, var(--border));
+  color: var(--muted);
+}
+
+.ember-runtime-inline-hint__body {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.ember-runtime-inline-hint__text {
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+.ember-runtime-inline-hint__link {
+  color: var(--text-strong, var(--text));
+  font-weight: 800;
+  text-decoration: none;
+}
+
+.ember-runtime-inline-hint__link:hover {
+  text-decoration: underline;
+}
+
 .ember-runtime-add-btn,
 .ember-runtime-remove-btn {
   display: inline-flex;
@@ -609,6 +686,18 @@
   color: var(--text-strong, var(--text));
 }
 
+.ember-runtime-row-card--additional-remarks .ember-runtime-row-card__title {
+  min-width: 34px;
+  height: 34px;
+  padding: 0 12px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--surface-2);
+  border: 1px solid var(--border-soft, var(--border));
+}
+
 .ember-runtime-row-card__grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(190px, 100%), 1fr));
@@ -616,9 +705,25 @@
   min-width: 0;
 }
 
+.ember-runtime-row-card__grid--additional-remarks {
+  grid-template-columns: minmax(0, 1fr) minmax(220px, 320px);
+  align-items: start;
+}
+
+.ember-runtime-row-card__grid--energy-supply,
+.ember-runtime-row-card__grid--availability-periods {
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+  align-items: start;
+}
+
 .ember-runtime-card-field {
   display: grid;
   gap: 6px;
+  min-width: 0;
+}
+
+.ember-runtime-card-field--additional-main,
+.ember-runtime-card-field--additional-side {
   min-width: 0;
 }
 
@@ -632,8 +737,40 @@
   color: var(--muted);
 }
 
+.ember-runtime-card-field--energy,
+.ember-runtime-card-field--energy-primary,
+.ember-runtime-card-field--availability-primary,
+.ember-runtime-card-field--availability-secondary {
+  grid-column: span 3;
+}
+
+.ember-runtime-card-field--energy-secondary {
+  grid-column: span 4;
+}
+
+.ember-runtime-card-field--energy-note {
+  grid-column: span 6;
+}
+
+.ember-runtime-card-field--availability-note {
+  grid-column: 10 / span 3;
+  grid-row: 1 / span 2;
+}
+
+.ember-runtime-card-field--energy-primary .ember-runtime-card-field__label,
+.ember-runtime-card-field--energy-note .ember-runtime-card-field__label,
+.ember-runtime-card-field--availability-primary .ember-runtime-card-field__label,
+.ember-runtime-card-field--availability-note .ember-runtime-card-field__label {
+  color: var(--text-strong, var(--text));
+}
+
 .ember-runtime-textarea--card {
   min-height: 108px;
+}
+
+.ember-runtime-card-field--energy-note .ember-runtime-textarea--card,
+.ember-runtime-card-field--availability-note .ember-runtime-textarea--card {
+  min-height: 112px;
 }
 
 .ember-runtime-textarea--matrix {
@@ -715,6 +852,10 @@
   word-break: normal;
 }
 
+.ember-runtime-table-heading--nowrap {
+  white-space: nowrap;
+}
+
 .ember-runtime-table-cell {
   display: block;
   width: 100%;
@@ -731,6 +872,12 @@
   color: var(--muted);
 }
 
+.ember-runtime-table-cell--nowrap {
+  white-space: nowrap;
+  overflow-wrap: normal;
+  word-break: normal;
+}
+
 .ember-runtime-assessment {
   display: grid;
   gap: 10px;
@@ -740,13 +887,14 @@
 .ember-runtime-assessment__grid {
   display: grid;
   grid-template-columns:
-    minmax(72px, 0.22fr)
-    42px
-    minmax(220px, 1.05fr)
-    minmax(300px, 0.95fr)
-    minmax(260px, 1fr);
-  gap: 12px;
-  align-items: start;
+    minmax(72px, 96px)
+    32px
+    minmax(260px, 1.45fr)
+    minmax(240px, 0.82fr)
+    minmax(280px, 1.05fr);
+  column-gap: 10px;
+  row-gap: 12px;
+  align-items: center;
   min-width: 0;
 }
 
@@ -754,6 +902,13 @@
   padding: 0 2px;
   color: var(--text-strong, var(--text));
   font-weight: 900;
+}
+
+.ember-runtime-assessment__header > :nth-child(1),
+.ember-runtime-assessment__header > :nth-child(3),
+.ember-runtime-assessment__header > :nth-child(4) {
+  text-align: center;
+  align-self: center;
 }
 
 .ember-runtime-assessment__rows {
@@ -777,6 +932,22 @@
 .ember-runtime-assessment__answer,
 .ember-runtime-assessment__comment {
   min-width: 0;
+}
+
+.ember-runtime-assessment__nr,
+.ember-runtime-assessment__topic,
+.ember-runtime-assessment__answer {
+  display: flex;
+  align-items: center;
+}
+
+.ember-runtime-assessment__answer,
+.ember-runtime-assessment__comment {
+  align-self: stretch;
+}
+
+.ember-runtime-assessment__nr {
+  justify-content: center;
 }
 
 .ember-runtime-assessment__mobile-label {
@@ -810,8 +981,115 @@
   overflow-wrap: anywhere;
 }
 
+.ember-runtime-assessment__nr .ember-runtime-readonly-cell {
+  justify-content: center;
+  text-align: center;
+}
+
 .ember-runtime-readonly-cell--topic {
   font-weight: 700;
+  background:
+    linear-gradient(90deg, color-mix(in srgb, var(--accent-border, #e11d48) 10%, transparent), transparent 22%),
+    var(--input-bg, var(--surface-2));
+  border-color: color-mix(in srgb, var(--accent-border, #e11d48) 28%, var(--input-border, var(--border)));
+}
+
+.ember-runtime-document-list {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+}
+
+.ember-runtime-document-sections {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+}
+
+.ember-runtime-document-section {
+  padding: 14px;
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+}
+
+.ember-runtime-document-section__title {
+  font-size: 1.05rem;
+  font-weight: 900;
+  color: var(--text-strong, var(--text));
+}
+
+.ember-runtime-document-type-list {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+}
+
+.ember-runtime-document-type-group {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.ember-runtime-document-type-group__title {
+  font-size: 0.9rem;
+  font-weight: 800;
+  color: var(--muted);
+}
+
+.ember-runtime-document-card {
+  padding: 10px 12px;
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  background: rgba(255,255,255,0.03);
+}
+
+.ember-runtime-document-card__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
+}
+
+.ember-runtime-document-card__title-wrap {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.ember-runtime-document-card__title {
+  font-weight: 800;
+  color: var(--text-strong, var(--text));
+  word-break: break-word;
+}
+
+.ember-runtime-document-card__meta {
+  color: var(--muted);
+  font-size: 0.82rem;
+  line-height: 1.35;
+}
+
+.ember-runtime-document-card__actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex: 0 0 auto;
+}
+
+.ember-runtime-document-card__actions .icon-btn,
+.ember-runtime-document-card__actions .btn {
+  width: 38px;
+  min-width: 38px;
+  height: 38px;
+  padding: 0;
+}
+
+.ember-runtime-assessment__topic .ember-runtime-readonly-cell,
+.ember-runtime-assessment__answer .ember-runtime-segment-row,
+.ember-runtime-assessment__comment .ember-runtime-textarea {
+  width: 100%;
 }
 
 .ember-runtime-dynamic-list {
@@ -848,10 +1126,10 @@
 @media (max-width: 1180px) {
   .ember-runtime-assessment__grid {
     grid-template-columns:
-      72px
-      38px
-      minmax(180px, 1fr)
-      minmax(260px, 1fr);
+      minmax(72px, 90px)
+      30px
+      minmax(220px, 1.2fr)
+      minmax(250px, 0.9fr);
   }
 
   .ember-runtime-assessment__header > :last-child {
@@ -868,7 +1146,7 @@
   }
 }
 
-@media (max-width: 900px) {
+@media (max-width: 980px) {
   .ember-page-nav-shell {
     --ember-form-nav-top: 52px;
   }
@@ -887,8 +1165,9 @@
   }
 
   .ember-runtime-assessment__grid {
-    grid-template-columns: 84px minmax(0, 1fr) 42px;
-    gap: 10px 12px;
+    grid-template-columns: minmax(78px, 96px) minmax(0, 1fr) 36px;
+    gap: 10px;
+    align-items: start;
   }
 
   .ember-runtime-assessment__header {
@@ -914,6 +1193,21 @@
     grid-column: 1 / -1;
   }
 
+  .ember-runtime-assessment__nr,
+  .ember-runtime-assessment__topic,
+  .ember-runtime-assessment__answer,
+  .ember-runtime-assessment__comment {
+    display: grid;
+    gap: 6px;
+    align-items: start;
+    justify-content: stretch;
+  }
+
+  .ember-runtime-assessment__guidance {
+    align-self: start;
+    margin-top: 28px;
+  }
+
   .ember-runtime-assessment__nr .ember-runtime-assessment__mobile-label,
   .ember-runtime-assessment__topic .ember-runtime-assessment__mobile-label,
   .ember-runtime-assessment__answer .ember-runtime-assessment__mobile-label,
@@ -924,6 +1218,30 @@
 
   .ember-runtime-row-card__grid {
     grid-template-columns: 1fr;
+  }
+
+  .ember-runtime-row-card__grid--additional-remarks {
+    grid-template-columns: 1fr;
+  }
+
+  .ember-runtime-row-card__grid--energy-supply,
+  .ember-runtime-row-card__grid--availability-periods {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .ember-runtime-inline-hint {
+    grid-template-columns: 1fr;
+  }
+
+  .ember-runtime-card-field--energy,
+  .ember-runtime-card-field--energy-primary,
+  .ember-runtime-card-field--energy-secondary,
+  .ember-runtime-card-field--energy-note,
+  .ember-runtime-card-field--availability-primary,
+  .ember-runtime-card-field--availability-secondary,
+  .ember-runtime-card-field--availability-note {
+    grid-column: auto;
+    grid-row: auto;
   }
 }
 
@@ -978,6 +1296,10 @@
     grid-template-columns: 1fr;
   }
 
+  .ember-runtime-assessment__row {
+    padding: 12px;
+  }
+
   .ember-runtime-assessment__guidance,
   .ember-runtime-assessment__answer,
   .ember-runtime-assessment__comment,
@@ -989,6 +1311,19 @@
   .ember-runtime-assessment__guidance {
     justify-content: flex-start;
     min-height: 0;
+    margin-top: 0;
+  }
+
+  .ember-runtime-row-card__grid--energy-supply,
+  .ember-runtime-row-card__grid--availability-periods,
+  .ember-runtime-panel--meta-header .ember-runtime-panel__content--grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media print {
+  .ember-runtime-document-card__actions {
+    display: none !important;
   }
 }
 
@@ -1109,6 +1444,34 @@
 .form-runner-header-main,
 .form-runner-header-actions {
   min-width: 0;
+}
+
+@keyframes form-runner-readonly-banner-intro {
+  0% {
+    transform: translateY(-8px) scale(0.985);
+    box-shadow: 0 0 0 0 rgba(239, 68, 68, 0);
+    border-color: color-mix(in srgb, var(--danger, #ef4444) 24%, var(--border));
+  }
+  35% {
+    transform: translateY(0) scale(1);
+    box-shadow: 0 0 0 4px color-mix(in srgb, var(--danger, #ef4444) 16%, transparent);
+    border-color: color-mix(in srgb, var(--danger, #ef4444) 55%, var(--border));
+  }
+  100% {
+    transform: translateY(0) scale(1);
+    box-shadow: 0 0 0 0 rgba(239, 68, 68, 0);
+    border-color: color-mix(in srgb, var(--danger, #ef4444) 22%, var(--border));
+  }
+}
+
+.form-runner-readonly-banner {
+  animation: form-runner-readonly-banner-intro 1.2s ease-out 0s 1;
+}
+
+.form-runner-actions-menu {
+  background: color-mix(in srgb, var(--card-bg, var(--surface)) 94%, black 6%);
+  border: 1px solid var(--border-soft, var(--border));
+  backdrop-filter: blur(16px);
 }
 
 .form-runner-header-row {

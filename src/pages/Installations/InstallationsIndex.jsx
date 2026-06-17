@@ -17,7 +17,7 @@ export default function InstallationsIndex() {
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState(null);
-  const [showHistorical, setShowHistorical] = useState(false);
+  const [onlyCurrent, setOnlyCurrent] = useState(true);
 
   const loaderRef = useRef(null);
 
@@ -52,9 +52,9 @@ export default function InstallationsIndex() {
 
   const hasQuery = useMemo(() => q.trim().length > 0, [q]);
   const visibleItems = useMemo(() => {
-    if (showHistorical) return items;
+    if (!onlyCurrent) return items;
     return items.filter((item) => String(item.installation_status || "").toUpperCase() !== "J");
-  }, [items, showHistorical]);
+  }, [items, onlyCurrent]);
 
   return (
     <div className="installations-index">
@@ -67,14 +67,20 @@ export default function InstallationsIndex() {
         </div>
 
         <div className="installations-index__hero-actions">
-          <label className="form-assistant-toggle">
-            <input
-              type="checkbox"
-              checked={showHistorical}
-              onChange={(e) => setShowHistorical(e.target.checked)}
-            />
-            <span>toon historische installaties</span>
-          </label>
+          <button
+            type="button"
+            role="switch"
+            aria-checked={onlyCurrent ? "true" : "false"}
+            className={`ember-toggle${onlyCurrent ? " is-on" : " is-off"}`}
+            onClick={() => setOnlyCurrent((prev) => !prev)}
+          >
+            <span className="ember-toggle__track">
+              <span className="ember-toggle__thumb" />
+            </span>
+            <span className="ember-toggle__label">
+              {onlyCurrent ? "Alleen actuele installaties" : "Historische installaties tonen"}
+            </span>
+          </button>
         </div>
       </div>
 
@@ -84,7 +90,7 @@ export default function InstallationsIndex() {
           className="searchbar-input"
           value={q}
           onChange={(e) => setQ(e.target.value)}
-          placeholder="zoek op code of naam; bv; 1 of Eigenaar"
+          placeholder="zoek op installatiecode of naam"
           autoComplete="off"
         />
       </div>
@@ -106,9 +112,9 @@ export default function InstallationsIndex() {
         <div className="ui-empty">geen resultaten</div>
       )}
 
-      {!loading && hasQuery && visibleItems.length === 0 && items.length > 0 && !showHistorical && (
+      {!loading && hasQuery && visibleItems.length === 0 && items.length > 0 && onlyCurrent && (
         <div className="ui-empty">
-          geen actuele resultaten; zet 'toon historische installaties' aan om het archief mee te nemen
+          geen actuele resultaten; zet 'alleen actuele installaties' uit om het archief mee te nemen
         </div>
       )}
 
@@ -147,6 +153,30 @@ export default function InstallationsIndex() {
                 <div className="installations-row__name">
                   {i.installation_name || "geen naam"}
                 </div>
+
+                {(i.management_portal_name || Number(i.required_document_count || 0) > 0) ? (
+                  <div className="installations-row__meta">
+                    {i.management_portal_name ? (
+                      <span className="ember-label ember-label--info">
+                        Beheerportaal; {i.management_portal_name}
+                      </span>
+                    ) : null}
+
+                    {Number(i.required_document_count || 0) > 0 ? (
+                      Number(i.missing_required_document_count || 0) > 0 ? (
+                        <span className="ember-label ember-label--danger">
+                          {Number(i.missing_required_document_count) === 1
+                            ? "1 verplicht document ontbreekt"
+                            : `${Number(i.missing_required_document_count)} verplichte documenten ontbreken`}
+                        </span>
+                      ) : (
+                        <span className="ember-label ember-label--success">
+                          Verplichte documenten compleet
+                        </span>
+                      )
+                    ) : null}
+                  </div>
+                ) : null}
               </div>
             </Link>
           ))}

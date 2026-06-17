@@ -4,7 +4,9 @@ import { ChevronDownIcon } from "@/components/ui/chevron-down";
 import { ChevronUpIcon } from "@/components/ui/chevron-up";
 import { CircleHelpIcon } from "@/components/ui/circle-help";
 import { DeleteIcon } from "@/components/ui/delete";
+import { DownloadIcon } from "@/components/ui/download";
 import { PlusIcon } from "@/components/ui/plus";
+import { ArrowBigRightIcon } from "@/components/ui/arrow-big-right";
 
 import { getMatrixCellQuestion, getMatrixVisibleRows } from "./validation.jsx";
 import { getPageTitle, getQuestionTitle } from "./surveyCore.jsx";
@@ -20,6 +22,10 @@ function normalizeName(value) {
 
 function normalizeLower(value) {
   return normalizeText(value).toLowerCase();
+}
+
+function normalizeLooseKey(value) {
+  return normalizeLower(value).replace(/[^a-z0-9]+/g, "");
 }
 
 function getChoiceItems(questionOrColumn) {
@@ -103,6 +109,10 @@ function getCurrentValue(question) {
   return question?.value ?? "";
 }
 
+function getExplicitQuestionTitle(question) {
+  return normalizeText(question?.fullTitle || question?.title || question?.locTitle?.renderedHtml || "");
+}
+
 function getInputType(question) {
   const inputType = String(question?.inputType || question?.jsonObj?.inputType || "").trim();
   if (inputType === "date" || inputType === "time" || inputType === "number" || inputType === "tel") {
@@ -179,6 +189,124 @@ function isAssessmentMatrix(question) {
   );
 }
 
+function getMatrixColumnKeys(question) {
+  return new Set(
+    getMatrixColumns(question).flatMap((column) => {
+      const names = [column?.name, column?.title]
+        .map((value) => normalizeLooseKey(value))
+        .filter(Boolean);
+      return names;
+    })
+  );
+}
+
+function isEnergySupplyMatrix(question) {
+  const questionName = normalizeLooseKey(question?.name);
+  if (questionName === "esregels") return true;
+
+  const keys = getMatrixColumnKeys(question);
+  return (
+    keys.has("plaatsingsdatum") &&
+    keys.has("schakeling") &&
+    (keys.has("merktype") || keys.has("merk")) &&
+    (keys.has("overbrugginguren") || keys.has("overbrugging")) &&
+    (keys.has("laadspanningv") || keys.has("laadspanning"))
+  );
+}
+
+function isAvailabilityPeriodsMatrix(question) {
+  const questionName = normalizeLooseKey(question?.name);
+  if (questionName.includes("buitenbedrijfstelling")) return true;
+
+  const keys = getMatrixColumnKeys(question);
+  return (
+    keys.has("datum") &&
+    (keys.has("tijdbegin") || keys.has("begin")) &&
+    (keys.has("tijdeinde") || keys.has("einde")) &&
+    (keys.has("tijdsduurdagen") || keys.has("tijdsduur")) &&
+    (keys.has("omschrijving") || keys.has("toelichting"))
+  );
+}
+
+function isPerformanceReadonlyMatrix(question) {
+  const questionName = normalizeLooseKey(question?.name);
+  if (questionName === "performancedata") return true;
+
+  const keys = getMatrixColumnKeys(question);
+  return (
+    keys.has("prgebruikersfunctiekey") ||
+    keys.has("prgebruikersfunctie") ||
+    (keys.has("prlabel") && keys.has("prdoormelding")) ||
+    (keys.has("gebruikersfunctie") && keys.has("doormelding"))
+  );
+}
+
+function getMatrixLayoutVariant(question) {
+  if (isAdditionalRemarksMatrix(question)) return "additional-remarks";
+  if (isEnergySupplyMatrix(question)) return "energy-supply";
+  if (isAvailabilityPeriodsMatrix(question)) return "availability-periods";
+  return "default";
+}
+
+function getMatrixFieldLayoutClass(layoutVariant, column) {
+  const key = normalizeLooseKey(column?.name || column?.title);
+
+  if (layoutVariant === "additional-remarks") {
+    if (key === "omschrijving") return "ember-runtime-card-field--additional-main";
+    if (key === "gevolgcertificaat") return "ember-runtime-card-field--additional-side";
+    return "";
+  }
+
+  if (layoutVariant === "energy-supply") {
+    if (key === "plaatsingsdatum") return "ember-runtime-card-field--energy ember-runtime-card-field--energy-primary";
+    if (key === "aantal") return "ember-runtime-card-field--energy ember-runtime-card-field--energy-primary";
+    if (key === "capperaccuah" || key === "capperaccu") return "ember-runtime-card-field--energy ember-runtime-card-field--energy-primary";
+    if (key === "schakeling") return "ember-runtime-card-field--energy ember-runtime-card-field--energy-primary";
+    if (key === "merktype" || key === "merk") return "ember-runtime-card-field--energy ember-runtime-card-field--energy-primary";
+    if (key === "aanwezigecapah" || key === "aanwezigecap") return "ember-runtime-card-field--energy";
+    if (key === "alarmma" || key === "alarm") return "ember-runtime-card-field--energy";
+    if (key === "rustma" || key === "rust") return "ember-runtime-card-field--energy";
+    if (key === "benodigdah" || key === "benodigd") return "ember-runtime-card-field--energy";
+    if (key === "overbrugginguren" || key === "overbrugging") return "ember-runtime-card-field--energy";
+    if (key === "opmerking") return "ember-runtime-card-field--energy-note";
+    if (
+      key === "accu1v" ||
+      key === "accu2v" ||
+      key === "vt0" ||
+      key === "vt1" ||
+      key === "laadspanningv" ||
+      key === "laadspanning"
+    ) {
+      return "ember-runtime-card-field--energy-secondary";
+    }
+    return "ember-runtime-card-field--energy";
+  }
+
+  if (layoutVariant === "availability-periods") {
+    if (key === "omschrijving" || key === "toelichting") {
+      return "ember-runtime-card-field--availability-note";
+    }
+    if (
+      key === "datum" ||
+      key === "tijdbegin" ||
+      key === "tijdeinde" ||
+      key === "tijdsduurdagen" ||
+      key === "tijdsduur"
+    ) {
+      return "ember-runtime-card-field--availability-primary";
+    }
+    return "ember-runtime-card-field--availability-secondary";
+  }
+
+  return "";
+}
+
+function isAutoHeaderPanel(panel) {
+  const explicitTitle = getExplicitQuestionTitle(panel);
+  const panelName = normalizeLower(panel?.name);
+  return !explicitTitle && panelName.endsWith("_header");
+}
+
 function isReadonlyMatrix(question) {
   if (question?.canAddRow || question?.canRemoveRows) return false;
   if (question?.isReadOnly === true || question?.readOnly === true) return true;
@@ -240,15 +368,15 @@ function getReadonlyColumnMinWidth(column) {
   }
 
   if (key.includes("gebruikersfunctie") || title.includes("gebruikersfunctie")) {
-    return 190;
+    return 220;
   }
 
   if (key.includes("doormelding") || title.includes("doormelding")) {
-    return 180;
+    return 190;
   }
 
   if (key.includes("label") || key.includes("ruimte") || key.includes("locatie")) {
-    return 170;
+    return 190;
   }
 
   if (key.includes("max_") || title.startsWith("max") || key.includes("risico")) {
@@ -287,6 +415,77 @@ function isWideReadonlyMatrix(columns) {
   });
 }
 
+function isAdditionalRemarksMatrix(question) {
+  const questionName = normalizeLower(question?.name);
+  if (questionName.includes("aanvullende_opmerkingen")) return true;
+
+  const columnNames = new Set(
+    getMatrixColumns(question).map((column) => normalizeLower(column?.name))
+  );
+
+  return columnNames.has("omschrijving") && columnNames.has("gevolg_certificaat");
+}
+
+function isDocumentMatrixColumns(columns) {
+  const names = new Set((Array.isArray(columns) ? columns : []).map((column) => normalizeLower(column?.key || column?.name)));
+  return (
+    names.has("doc_titel") ||
+    names.has("doc_nummer") ||
+    names.has("doc_revisie") ||
+    names.has("doc_datum")
+  );
+}
+
+function formatDocumentDate(value) {
+  const raw = normalizeText(value);
+  if (!raw) return "";
+  const d = new Date(raw);
+  if (Number.isNaN(d.getTime())) return raw;
+  return d.toLocaleDateString("nl-NL");
+}
+
+function openDocumentUrl(url) {
+  const href = normalizeText(url);
+  if (!href || typeof window === "undefined") return;
+  window.open(href, "_blank", "noopener,noreferrer");
+}
+
+function downloadDocumentUrl(url, fileName) {
+  const href = normalizeText(url);
+  if (!href || typeof document === "undefined") return;
+  const anchor = document.createElement("a");
+  anchor.href = href;
+  anchor.download = normalizeText(fileName) || "document";
+  anchor.rel = "noreferrer";
+  document.body.appendChild(anchor);
+  anchor.click();
+  document.body.removeChild(anchor);
+}
+
+function getReadonlyTableCellClass(column) {
+  const key = normalizeLower(column?.key || column?.name);
+  const title = normalizeLower(column?.title || column?.name);
+
+  if (
+    key.includes("gebruikersfunctie") ||
+    title.includes("gebruikersfunctie") ||
+    key.includes("doormelding") ||
+    title.includes("doormelding") ||
+    key === "pr_label" ||
+    title === "label"
+  ) {
+    return "ember-runtime-table-cell--nowrap";
+  }
+
+  return "";
+}
+
+function isDocumentGroupValue(items) {
+  const rows = Array.isArray(items) ? items : [];
+  if (!rows.length) return false;
+  return rows.every((item) => Array.isArray(item?.types));
+}
+
 function buildReadonlyMatrixRows(question) {
   const value = Array.isArray(question?.value) ? question.value : [];
   return value.map((row, rowIndex) => ({
@@ -311,6 +510,20 @@ function getColumnCellDisplayValue(rowData, columnName) {
   const value = rowData?.[columnName];
   if (value == null) return "";
   return String(value);
+}
+
+function isBlankMatrixRowData(rowData, columns) {
+  const data = rowData && typeof rowData === "object" ? rowData : {};
+  const visibleColumns = Array.isArray(columns) ? columns : [];
+
+  return visibleColumns.every((column) => {
+    const key = String(column?.name || "").trim();
+    if (!key) return true;
+    const value = data?.[key];
+    if (Array.isArray(value)) return value.length === 0;
+    if (value && typeof value === "object") return Object.keys(value).length === 0;
+    return String(value ?? "").trim() === "";
+  });
 }
 
 function setQuestionValue(question, nextValue) {
@@ -362,6 +575,52 @@ function QuestionGuidanceButton({ items, onOpen }) {
     >
       <CircleHelpIcon size={16} />
     </button>
+  );
+}
+
+function RuntimeHintDisclosure({
+  title = "Toon uitleg",
+  text,
+  href = "",
+  linkLabel = "",
+}) {
+  const [open, setOpen] = useState(false);
+  if (!normalizeText(text)) return null;
+
+  return (
+    <div className="ember-runtime-hint-disclosure">
+      <button
+        type="button"
+        className="icon-btn ember-runtime-hint-disclosure__toggle"
+        title={title}
+        aria-label={title}
+        aria-expanded={open}
+        onClick={() => setOpen((prev) => !prev)}
+      >
+        <CircleHelpIcon size={16} />
+      </button>
+
+      {open ? (
+        <div className="ember-runtime-inline-hint" role="note">
+          <div className="ember-runtime-inline-hint__icon" aria-hidden="true">
+            <CircleHelpIcon size={16} />
+          </div>
+          <div className="ember-runtime-inline-hint__body">
+            <div className="ember-runtime-inline-hint__text">{text}</div>
+            {href ? (
+              <a
+                className="ember-runtime-inline-hint__link"
+                href={href}
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                {linkLabel || "Open"}
+              </a>
+            ) : null}
+          </div>
+        </div>
+      ) : null}
+    </div>
   );
 }
 
@@ -580,12 +839,32 @@ function MatrixReadonlyTable({ question }) {
   const titleVisible = String(question?.titleLocation || "").trim().toLowerCase() !== "hidden";
   const isWide = isWideReadonlyMatrix(columns);
   const minWidth = getReadonlyTableMinWidth(columns);
+  const performanceHintHref = question?.survey?.installationCode
+    ? `/installaties/${encodeURIComponent(question.survey.installationCode)}?tab=performance`
+    : "";
+
+  if (isDocumentMatrixColumns(columns)) {
+    return (
+      <ReadonlyDocumentMatrix
+        title={titleVisible ? normalizeText(question?.title) : ""}
+        rows={rows.map((row) => row.data)}
+      />
+    );
+  }
 
   return (
     <div className="ember-runtime-matrix" data-name={question?.name || undefined}>
       {titleVisible && normalizeText(question?.title) ? (
         <div className="ember-runtime-matrix__head">
           <div className="ember-runtime-matrix__title">{normalizeText(question?.title)}</div>
+          {isPerformanceReadonlyMatrix(question) ? (
+            <RuntimeHintDisclosure
+              title="Toon uitleg over prestatie-eisen"
+              text="Prestatie-eisen beheer je bij de installatie onder Prestatie-eisen. Werk daar de brongegevens bij en gebruik daarna in het formulier bovenaan Voorinvulling vernieuwen om de nieuwste Ember-data opnieuw op te halen."
+              href={performanceHintHref}
+              linkLabel="Open installatie ; Prestatie-eisen"
+            />
+          ) : null}
         </div>
       ) : null}
 
@@ -619,7 +898,16 @@ function MatrixReadonlyTable({ question }) {
                         : undefined
                   }
                 >
-                  <span className="ember-runtime-table-heading">{column.title}</span>
+                  <span
+                    className={[
+                      "ember-runtime-table-heading",
+                      getReadonlyTableCellClass(column) ? "ember-runtime-table-heading--nowrap" : "",
+                    ]
+                      .filter(Boolean)
+                      .join(" ")}
+                  >
+                    {column.title}
+                  </span>
                 </th>
               ))}
             </tr>
@@ -634,10 +922,11 @@ function MatrixReadonlyTable({ question }) {
                     return (
                       <td key={`${row.key}-${column.key}`} data-label={column.title}>
                         <span
-                          className={[
-                            "ember-runtime-table-cell",
-                            cellValue ? "" : "ember-runtime-table-cell--empty",
-                          ]
+                        className={[
+                          "ember-runtime-table-cell",
+                          getReadonlyTableCellClass(column),
+                          cellValue ? "" : "ember-runtime-table-cell--empty",
+                        ]
                             .filter(Boolean)
                             .join(" ")}
                         >
@@ -657,6 +946,190 @@ function MatrixReadonlyTable({ question }) {
             )}
           </tbody>
         </table>
+      </div>
+    </div>
+  );
+}
+
+function ReadonlyDocumentMatrix({ title, rows }) {
+  const items = Array.isArray(rows) ? rows : [];
+
+  return (
+    <div className="ember-runtime-matrix">
+      {title ? (
+        <div className="ember-runtime-matrix__head">
+          <div className="ember-runtime-matrix__title">{title}</div>
+        </div>
+      ) : null}
+
+      <div className="ember-runtime-document-list">
+        {items.length ? (
+          items.map((row, rowIndex) => {
+            const titleText =
+              normalizeText(row?.doc_titel) ||
+              normalizeText(row?.doc_bestandsnaam) ||
+              normalizeText(row?.doc_nummer) ||
+              `Document ${rowIndex + 1}`;
+            const metaParts = [
+              normalizeText(row?.doc_nummer),
+              formatDocumentDate(row?.doc_datum),
+              normalizeText(row?.doc_revisie),
+            ].filter(Boolean);
+            const fileUrl = normalizeText(row?.doc_storage_url);
+            const fileName = normalizeText(row?.doc_bestandsnaam) || titleText;
+
+            return (
+              <div key={`doc-row-${rowIndex}-${titleText}`} className="card ember-runtime-document-card">
+                <div className="ember-runtime-document-card__head">
+                  <div className="ember-runtime-document-card__title-wrap">
+                    <div className="ember-runtime-document-card__title">{titleText}</div>
+                    {metaParts.length ? (
+                      <div className="ember-runtime-document-card__meta">{metaParts.join(" ; ")}</div>
+                    ) : null}
+                  </div>
+
+                  {fileUrl ? (
+                    <div className="ember-runtime-document-card__actions">
+                      <button
+                        type="button"
+                        className="btn btn-secondary icon-btn"
+                        title="Open document"
+                        aria-label="Open document"
+                        onClick={() => openDocumentUrl(fileUrl)}
+                      >
+                        <ArrowBigRightIcon size={16} />
+                      </button>
+                      <button
+                        type="button"
+                        className="btn btn-secondary icon-btn"
+                        title="Download document"
+                        aria-label="Download document"
+                        onClick={() => downloadDocumentUrl(fileUrl, fileName)}
+                      >
+                        <DownloadIcon size={16} />
+                      </button>
+                    </div>
+                  ) : null}
+                </div>
+              </div>
+            );
+          })
+        ) : (
+          <div className="ember-runtime-empty">Geen documenten beschikbaar.</div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function ReadonlyDocumentGroups({ title, items }) {
+  const groups = Array.isArray(items) ? items : [];
+
+  return (
+    <div className="ember-runtime-matrix">
+      {title ? (
+        <div className="ember-runtime-matrix__head">
+          <div className="ember-runtime-matrix__title">{title}</div>
+        </div>
+      ) : null}
+
+      <div className="ember-runtime-document-sections">
+        {groups.map((group, groupIndex) => {
+          const typeItems = Array.isArray(group?.types) ? group.types : [];
+          const visibleTypes = typeItems.filter((typeRow) => Array.isArray(typeRow?.documents) && typeRow.documents.length > 0);
+          if (!visibleTypes.length) return null;
+
+          return (
+            <section
+              key={`doc-group-${group?.groep_key || groupIndex}`}
+              className="card ember-runtime-document-section"
+            >
+              <div className="ember-runtime-document-section__title">
+                {normalizeText(group?.groep_naam) || "Documenten"}
+              </div>
+
+              <div className="ember-runtime-document-type-list">
+                {visibleTypes.map((typeRow, typeIndex) => {
+                  const docs = Array.isArray(typeRow?.documents) ? typeRow.documents : [];
+                  const showTypeLabel =
+                    visibleTypes.length > 1 ||
+                    normalizeLower(typeRow?.doc_type_naam) !== normalizeLower(group?.groep_naam);
+
+                  return (
+                    <div
+                      key={`doc-type-${typeRow?.doc_type || typeIndex}`}
+                      className="ember-runtime-document-type-group"
+                    >
+                      {showTypeLabel ? (
+                        <div className="ember-runtime-document-type-group__title">
+                          {normalizeText(typeRow?.doc_type_naam) || "Bestanden"}
+                        </div>
+                      ) : null}
+
+                      <div className="ember-runtime-document-list">
+                        {docs.map((doc, docIndex) => {
+                          const titleText =
+                            normalizeText(doc?.doc_titel) ||
+                            normalizeText(doc?.doc_bestandsnaam) ||
+                            normalizeText(doc?.doc_nummer) ||
+                            `Document ${docIndex + 1}`;
+                          const metaParts = [
+                            normalizeText(doc?.doc_nummer),
+                            formatDocumentDate(doc?.doc_datum),
+                            normalizeText(doc?.doc_revisie),
+                          ].filter(Boolean);
+                          const fileUrl = normalizeText(doc?.doc_storage_url);
+                          const fileName = normalizeText(doc?.doc_bestandsnaam) || titleText;
+
+                          return (
+                            <div
+                              key={`doc-${typeRow?.doc_type || typeIndex}-${doc?.doc_nummer || docIndex}`}
+                              className="card ember-runtime-document-card"
+                            >
+                              <div className="ember-runtime-document-card__head">
+                                <div className="ember-runtime-document-card__title-wrap">
+                                  <div className="ember-runtime-document-card__title">{titleText}</div>
+                                  {metaParts.length ? (
+                                    <div className="ember-runtime-document-card__meta">
+                                      {metaParts.join(" ; ")}
+                                    </div>
+                                  ) : null}
+                                </div>
+
+                                {fileUrl ? (
+                                  <div className="ember-runtime-document-card__actions">
+                                    <button
+                                      type="button"
+                                      className="btn btn-secondary icon-btn"
+                                      title="Open document"
+                                      aria-label="Open document"
+                                      onClick={() => openDocumentUrl(fileUrl)}
+                                    >
+                                      <ArrowBigRightIcon size={16} />
+                                    </button>
+                                    <button
+                                      type="button"
+                                      className="btn btn-secondary icon-btn"
+                                      title="Download document"
+                                      aria-label="Download document"
+                                      onClick={() => downloadDocumentUrl(fileUrl, fileName)}
+                                    >
+                                      <DownloadIcon size={16} />
+                                    </button>
+                                  </div>
+                                ) : null}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </section>
+          );
+        })}
       </div>
     </div>
   );
@@ -929,28 +1402,71 @@ function MatrixCardField({ cellQuestion, column, canEdit }) {
   );
 }
 
-function MatrixCardList({ question, canEdit }) {
+function EnergySupplyMatrixHint({ installationCode }) {
+  const href = installationCode
+    ? `/installaties/${encodeURIComponent(installationCode)}?tab=energy`
+    : "";
+
+  return (
+    <RuntimeHintDisclosure
+      title="Toon uitleg over energievoorzieningen"
+      text="Nieuwe energievoorzieningen voeg je toe bij de installatie onder Energievoorziening. Gebruik daarna bovenaan Voorinvulling vernieuwen om de nieuwste Ember-data opnieuw in dit formulier te laden."
+      href={href}
+      linkLabel="Open installatie ; Energievoorziening"
+    />
+  );
+}
+
+function MatrixCardList({ question, canEdit, installationCode = "" }) {
   const rows = getMatrixVisibleRows(question);
   const columns = getMatrixColumns(question).filter((column) => column?.visible !== false && column?.isVisible !== false);
   const titleVisible = String(question?.titleLocation || "").trim().toLowerCase() !== "hidden";
   const canAddRows = canEdit && question?.isReadOnly !== true && question?.readOnly !== true && question?.canAddRow !== false;
   const canRemoveRows = canEdit && question?.isReadOnly !== true && question?.readOnly !== true && question?.canRemoveRows !== false;
+  const layoutVariant = getMatrixLayoutVariant(question);
+  const additionalRemarks = layoutVariant === "additional-remarks";
+  const explicitTitle = normalizeText(question?.title);
+  const questionName = normalizeText(question?.name);
+  const titleMatchesName =
+    explicitTitle &&
+    questionName &&
+    normalizeLooseKey(explicitTitle) === normalizeLooseKey(questionName);
+  const matrixTitle = titleMatchesName ? "" : explicitTitle;
+
+  useEffect(() => {
+    if (layoutVariant !== "additional-remarks") return;
+    if (!canAddRows) return;
+    if (question?.__emberInitialBlankRowCleared) return;
+    if (rows.length !== 1) return;
+
+    const rowData = getMatrixRowData(question, rows[0], 0);
+    if (!isBlankMatrixRowData(rowData, columns)) return;
+
+    question.__emberInitialBlankRowCleared = true;
+    question.value = [];
+  }, [canAddRows, columns, layoutVariant, question, rows]);
 
   return (
     <div className="ember-runtime-matrix" data-name={question?.name || undefined}>
-      {(titleVisible && normalizeText(question?.title)) || canAddRows ? (
+      {(titleVisible && matrixTitle) || canAddRows ? (
         <div className="ember-runtime-matrix__head">
-          <div className="ember-runtime-matrix__title">{normalizeText(question?.title)}</div>
-          {canAddRows && typeof question.addRow === "function" ? (
-            <button
-              type="button"
-              className="btn btn-secondary ember-runtime-add-btn"
-              onClick={() => question.addRow()}
-            >
-              <PlusIcon size={16} />
-              <span>{normalizeText(question?.addRowText) || "Regel toevoegen"}</span>
-            </button>
-          ) : null}
+          <div className="ember-runtime-matrix__title">{matrixTitle}</div>
+          <div className="ember-runtime-matrix__head-actions">
+            {layoutVariant === "energy-supply" ? (
+              <EnergySupplyMatrixHint installationCode={installationCode} />
+            ) : null}
+
+            {canAddRows && typeof question.addRow === "function" ? (
+              <button
+                type="button"
+                className="btn btn-secondary ember-runtime-add-btn"
+                onClick={() => question.addRow()}
+              >
+                <PlusIcon size={16} />
+                <span>{normalizeText(question?.addRowText) || "Regel toevoegen"}</span>
+              </button>
+            ) : null}
+          </div>
         </div>
       ) : null}
 
@@ -962,10 +1478,19 @@ function MatrixCardList({ question, canEdit }) {
           }));
 
           return (
-            <div key={`${question?.name || "matrix"}-row-${rowIndex}`} className="card ember-runtime-row-card">
+            <div
+              key={`${question?.name || "matrix"}-row-${rowIndex}`}
+              className={[
+                "card",
+                "ember-runtime-row-card",
+                additionalRemarks ? "ember-runtime-row-card--additional-remarks" : "",
+              ]
+                .filter(Boolean)
+                .join(" ")}
+            >
               <div className="ember-runtime-row-card__head">
                 <div className="ember-runtime-row-card__title">
-                  {normalizeText(question?.title) || "Regel"} {rowIndex + 1}
+                  {additionalRemarks ? `${rowIndex + 1}` : `${normalizeText(question?.title) || "Regel"} ${rowIndex + 1}`}
                 </div>
 
                 {canRemoveRows && typeof question.removeRow === "function" ? (
@@ -980,15 +1505,32 @@ function MatrixCardList({ question, canEdit }) {
                 ) : null}
               </div>
 
-              <div className="ember-runtime-row-card__grid">
-                {rowQuestions.map(({ column, cellQuestion }) => (
-                  <MatrixCardField
-                    key={`${question?.name || "matrix"}-${rowIndex}-${column?.name || "col"}`}
-                    column={column}
-                    cellQuestion={cellQuestion}
-                    canEdit={canEdit}
-                  />
-                ))}
+              <div
+                className={[
+                  "ember-runtime-row-card__grid",
+                  additionalRemarks ? "ember-runtime-row-card__grid--additional-remarks" : "",
+                  layoutVariant === "energy-supply" ? "ember-runtime-row-card__grid--energy-supply" : "",
+                  layoutVariant === "availability-periods" ? "ember-runtime-row-card__grid--availability-periods" : "",
+                ]
+                  .filter(Boolean)
+                  .join(" ")}
+              >
+                {rowQuestions.map(({ column, cellQuestion }) => {
+                  const extraClass = getMatrixFieldLayoutClass(layoutVariant, column);
+
+                  return (
+                    <div
+                      key={`${question?.name || "matrix"}-${rowIndex}-${column?.name || "col"}`}
+                      className={extraClass}
+                    >
+                      <MatrixCardField
+                        column={column}
+                        cellQuestion={cellQuestion}
+                        canEdit={canEdit}
+                      />
+                    </div>
+                  );
+                })}
               </div>
             </div>
           );
@@ -1009,7 +1551,7 @@ function RuntimeMatrixQuestion(props) {
     return <MatrixReadonlyTable question={question} />;
   }
 
-  return <MatrixCardList question={question} canEdit={props.canEdit} />;
+  return <MatrixCardList question={question} canEdit={props.canEdit} installationCode={props.installationCode} />;
 }
 
 function RuntimeReadonlyDynamicPanelChild({ childDef, value, parentKey }) {
@@ -1028,6 +1570,16 @@ function RuntimeReadonlyDynamicPanelChild({ childDef, value, parentKey }) {
   if (type === "matrixdynamic") {
     const rows = Array.isArray(value) ? value : [];
     const columns = Array.isArray(childDef?.columns) ? childDef.columns : [];
+
+    if (isDocumentMatrixColumns(columns)) {
+      return (
+        <ReadonlyDocumentMatrix
+          key={`${parentKey}-${childDef?.name || "documents"}`}
+          title={normalizeText(childDef?.title)}
+          rows={rows}
+        />
+      );
+    }
 
     return (
       <div key={`${parentKey}-${childDef?.name || "matrix"}`} className="ember-runtime-matrix">
@@ -1077,6 +1629,15 @@ function RuntimeReadonlyDynamicPanel({ definition, value }) {
     return <div className="ember-runtime-empty">Nog geen gegevens beschikbaar.</div>;
   }
 
+  if (isDocumentGroupValue(items)) {
+    return (
+      <ReadonlyDocumentGroups
+        title={normalizeText(definition?.title)}
+        items={items}
+      />
+    );
+  }
+
   return (
     <div className="ember-runtime-dynamic-list">
       {items.map((item, itemIndex) => {
@@ -1112,6 +1673,7 @@ function RuntimeReadonlyDynamicPanel({ definition, value }) {
 function RuntimeQuestion({
   question,
   canEdit,
+  installationCode,
   showErrors,
   validationSummary,
   guidanceByQuestion,
@@ -1186,6 +1748,7 @@ function RuntimeQuestion({
       <RuntimeMatrixQuestion
         question={question}
         canEdit={canEdit}
+        installationCode={installationCode}
         showErrors={showErrors}
         validationSummary={validationSummary}
         guidanceByMatrixRow={guidanceByMatrixRow}
@@ -1216,14 +1779,24 @@ function RuntimePanel(props) {
   if (!isQuestionVisible(panel)) return null;
 
   const elements = Array.isArray(panel?.elements) ? panel.elements : [];
-  const title = getQuestionTitle(panel);
+  const autoHeaderPanel = isAutoHeaderPanel(panel);
+  const title = autoHeaderPanel ? "" : getQuestionTitle(panel);
   const simpleOnly = elements.every((element) => {
     const type = getQuestionType(element);
     return ["text", "comment", "dropdown", "radiogroup"].includes(type);
   });
 
   return (
-    <section className="card ember-runtime-panel" data-name={panel?.name || undefined}>
+    <section
+      className={[
+        "card",
+        "ember-runtime-panel",
+        autoHeaderPanel ? "ember-runtime-panel--meta-header" : "",
+      ]
+        .filter(Boolean)
+        .join(" ")}
+      data-name={panel?.name || undefined}
+    >
       {title ? (
         canCollapse ? (
           <button
@@ -1268,6 +1841,7 @@ function RuntimeElement(props) {
     <RuntimeQuestion
       question={element}
       canEdit={runtimeProps.canEdit}
+      installationCode={runtimeProps.installationCode}
       showErrors={runtimeProps.showErrors}
       validationSummary={runtimeProps.validationSummary}
       guidanceByQuestion={runtimeProps.guidanceByQuestion}
@@ -1280,6 +1854,7 @@ function RuntimeElement(props) {
 export default function EmberRuntimeSurvey({
   model,
   activePageIndex = 0,
+  installationCode = "",
   canEdit,
   hasValidatedOnce,
   validationSummary,
@@ -1288,6 +1863,11 @@ export default function EmberRuntimeSurvey({
   onOpenGuidance,
 }) {
   useRuntimeRenderVersion(model);
+
+  useEffect(() => {
+    if (!model) return;
+    model.installationCode = installationCode || "";
+  }, [model, installationCode]);
 
   const visiblePages = Array.isArray(model?.visiblePages) ? model.visiblePages : [];
   const parsedPageIndex = Number(activePageIndex);
@@ -1328,6 +1908,7 @@ export default function EmberRuntimeSurvey({
             key={`${currentPage?.name || "page"}-${element?.name || index}`}
             element={element}
             canEdit={canEdit}
+            installationCode={installationCode}
             showErrors={hasValidatedOnce}
             validationSummary={validationSummary}
             guidanceByQuestion={guidanceByQuestion}

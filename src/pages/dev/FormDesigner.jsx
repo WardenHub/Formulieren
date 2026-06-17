@@ -2,7 +2,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLocation } from "react-router-dom";
 
-import { Survey } from "survey-react-ui";
 import "survey-core/survey-core.min.css";
 import "survey-core/i18n/dutch";
 
@@ -20,6 +19,7 @@ import { ChevronsDownUpIcon } from "@/components/ui/chevrons-down-up";
 import { ChevronsUpDownIcon } from "@/components/ui/chevrons-up-down";
 
 import FormPageNavigator from "@/pages/Forms/shared/FormPageNavigator.jsx";
+import EmberRuntimeSurvey from "@/pages/Forms/shared/EmberRuntimeSurvey.jsx";
 
 import {
   safeJsonParse,
@@ -2085,7 +2085,16 @@ export default function FormDesigner() {
               {!runtimeModel ? (
                 <div className="muted">Geen preview geladen.</div>
               ) : (
-                <Survey model={runtimeModel} />
+                <EmberRuntimeSurvey
+                  model={runtimeModel}
+                  activePageIndex={currentPageIndex}
+                  canEdit={true}
+                  hasValidatedOnce={validationActivated}
+                  validationSummary={validationSummary}
+                  guidanceByQuestion={null}
+                  guidanceByMatrixRow={null}
+                  onOpenGuidance={null}
+                />
               )}
             </div>
           )}

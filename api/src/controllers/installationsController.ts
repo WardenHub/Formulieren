@@ -997,6 +997,47 @@ export async function uploadFormInstanceDocumentFile(req: any, res: any) {
   }
 }
 
+export async function putFormInstanceDocumentFileName(req: any, res: any) {
+  try {
+    const code = String(req.params.code || "");
+    const instanceId = String(req.params.instanceId || "");
+    const documentId = String(req.params.documentId || "");
+    const fileName = String(req.body?.file_name || "");
+
+    const result = await formDocumentFilesService.renameDocumentFile(
+      code,
+      instanceId,
+      documentId,
+      fileName,
+      req.user
+    );
+
+    return res.json(result);
+  } catch (err: any) {
+    const msg = String(err?.message || err).toLowerCase();
+
+    if (isHistoricalReadOnlyMessage(msg)) {
+      return res.status(409).json({ error: "historical installation read-only" });
+    }
+
+    if (msg.includes("document not found")) {
+      return res.status(404).json({ error: "document not found" });
+    }
+    if (msg.includes("document has no file")) {
+      return res.status(409).json({ error: "document has no file" });
+    }
+    if (msg.includes("form instance not editable")) {
+      return res.status(409).json({ error: "form instance not editable" });
+    }
+    if (msg.includes("invalid file name")) {
+      return res.status(400).json({ error: "invalid file name" });
+    }
+
+    console.error(err);
+    return res.status(500).json({ error: "putFormInstanceDocumentFileName failed" });
+  }
+}
+
 export async function getFormInstanceDocumentDownloadUrl(req: any, res: any) {
   try {
     const code = String(req.params.code || "");

@@ -335,6 +335,44 @@ export async function downloadFormInstanceDocumentBlob(storageKey: string) {
   return downloadBlob(storageKey);
 }
 
+export async function renameFormInstanceDocumentBlob(args: {
+  installationCode: string;
+  formInstanceId: string;
+  documentId: string;
+  currentStorageKey: string;
+  nextFileName: string;
+  contentType?: string | null;
+}) {
+  const nextStorageKey = buildFormInstanceDocumentStorageKey(
+    args.installationCode,
+    args.formInstanceId,
+    args.nextFileName,
+    args.documentId
+  );
+
+  if (String(args.currentStorageKey || "") === String(nextStorageKey || "")) {
+    return {
+      storageProvider: "azure_blob",
+      storageKey: nextStorageKey,
+      storageUrl: null,
+    };
+  }
+
+  const downloaded = await downloadBlob(args.currentStorageKey);
+
+  await uploadBlob({
+    storageKey: nextStorageKey,
+    contentType: args.contentType || downloaded.contentType,
+    buffer: downloaded.buffer,
+  });
+
+  return {
+    storageProvider: "azure_blob",
+    storageKey: nextStorageKey,
+    storageUrl: null,
+  };
+}
+
 /* =========================================================
    installatie-programmering
    ========================================================= */

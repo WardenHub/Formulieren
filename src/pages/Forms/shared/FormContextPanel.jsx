@@ -11,6 +11,8 @@ import { RotateCCWIcon } from "@/components/ui/rotate-ccw";
 import { SquarePenIcon } from "@/components/ui/square-pen";
 import { DeleteIcon } from "@/components/ui/delete";
 import { AttachFileIcon } from "@/components/ui/attach-file";
+import { CameraIcon } from "@/components/ui/camera";
+import { ClapIcon } from "@/components/ui/clap";
 
 import {
   getDocuments,
@@ -19,6 +21,7 @@ import {
   getFormInstanceDocuments,
   putFormInstanceDocuments,
   uploadFormInstanceDocumentFile,
+  putFormInstanceDocumentFileName,
   getFormInstanceDocumentDownloadUrl,
   downloadFormInstanceDocumentFile,
   putFormInstanceDocumentLabels,
@@ -71,7 +74,13 @@ function formatDateTime(value) {
   if (!value) return null;
   const d = new Date(value);
   if (Number.isNaN(d.getTime())) return null;
-  return d.toLocaleString("nl-NL");
+  return d.toLocaleString("nl-NL", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
 }
 
 function getFileExtension(name) {
@@ -81,9 +90,38 @@ function getFileExtension(name) {
   return raw.slice(idx + 1).toLowerCase();
 }
 
+function splitFileName(value) {
+  const raw = String(value || "").trim();
+  const idx = raw.lastIndexOf(".");
+  if (idx <= 0 || idx === raw.length - 1) {
+    return {
+      baseName: raw,
+      extension: "",
+    };
+  }
+
+  return {
+    baseName: raw.slice(0, idx),
+    extension: raw.slice(idx + 1),
+  };
+}
+
 function sanitizeFileName(value, fallback = "bijlage") {
   const raw = String(value || "").trim() || fallback;
   return raw.replace(/[\\/:*?"<>|]/g, "-").replace(/\s+/g, " ").trim() || fallback;
+}
+
+function buildFileNameWithOriginalExtension(value, originalFileName, fallback = "bijlage") {
+  const original = splitFileName(originalFileName);
+  const next = splitFileName(sanitizeFileName(value, original.baseName || fallback));
+
+  if (!original.extension || next.extension) {
+    return next.baseName
+      ? `${next.baseName}${next.extension ? `.${next.extension}` : ""}`
+      : fallback;
+  }
+
+  return `${next.baseName || fallback}.${original.extension}`;
 }
 
 function isImageFileName(name) {
@@ -105,7 +143,7 @@ function isPreviewableFormDoc(doc) {
 }
 
 function renameFileForUpload(file, nextName) {
-  const safeName = sanitizeFileName(nextName, file?.name || "bijlage");
+  const safeName = buildFileNameWithOriginalExtension(nextName, file?.name || "bijlage");
   if (!file || safeName === file.name) return file;
 
   return new File([file], safeName, {
@@ -332,6 +370,7 @@ function FileActions({
   disableEdit,
   canEditLabels,
   isEditing,
+  compact = false,
 }) {
   return (
     <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
@@ -340,10 +379,19 @@ function FileActions({
         className="btn btn-secondary"
         onClick={onOpen}
         disabled={disableOpen}
-        style={{ display: "inline-flex", alignItems: "center", gap: 8 }}
+        style={{
+          display: "inline-flex",
+          alignItems: "center",
+          justifyContent: "center",
+          gap: compact ? 0 : 8,
+          width: compact ? 38 : undefined,
+          minWidth: compact ? 38 : undefined,
+          paddingInline: compact ? 0 : undefined,
+        }}
+        title="Openen"
       >
         <ArrowBigRightIcon size={16} />
-        Openen
+        {compact ? null : "Openen"}
       </button>
 
       <button
@@ -351,10 +399,19 @@ function FileActions({
         className="btn btn-secondary"
         onClick={onDownload}
         disabled={disableDownload}
-        style={{ display: "inline-flex", alignItems: "center", gap: 8 }}
+        style={{
+          display: "inline-flex",
+          alignItems: "center",
+          justifyContent: "center",
+          gap: compact ? 0 : 8,
+          width: compact ? 38 : undefined,
+          minWidth: compact ? 38 : undefined,
+          paddingInline: compact ? 0 : undefined,
+        }}
+        title="Downloaden"
       >
         <DownloadIcon size={16} />
-        Downloaden
+        {compact ? null : "Downloaden"}
       </button>
 
       {canEditLabels ? (
@@ -379,6 +436,7 @@ function DocumentCard({
   labels,
   note,
   actions,
+  headerActions,
   editArea,
   previewUrl = null,
   previewAlt = "Preview",
@@ -512,11 +570,14 @@ function DocumentCard({
             </div>
           </div>
 
-          {collapsible ? (
-            <div style={{ flex: "0 0 auto", display: "inline-flex", alignItems: "center" }}>
-              {open ? <ChevronUpIcon size={18} /> : <PlusIcon size={18} />}
-            </div>
-          ) : null}
+          <div style={{ flex: "0 0 auto", display: "inline-flex", alignItems: "center", gap: 8 }}>
+            {headerActions}
+            {collapsible ? (
+              <div style={{ display: "inline-flex", alignItems: "center" }}>
+                {open ? <ChevronUpIcon size={18} /> : <PlusIcon size={18} />}
+              </div>
+            ) : null}
+          </div>
         </div>
 
         {labels?.length ? (
@@ -654,8 +715,10 @@ export default function FormContextPanel({
   const selectedUploadsRef = useRef([]);
   const [note, setNote] = useState("");
   const [selectedLabels, setSelectedLabels] = useState([]);
+  const [labelInput, setLabelInput] = useState("");
   const [imageVariant, setImageVariant] = useState("ORIGINAL");
   const [dragActive, setDragActive] = useState(false);
+  const [addSourceMode, setAddSourceMode] = useState("files");
 
   const [editingDocId, setEditingDocId] = useState(null);
 
@@ -668,6 +731,7 @@ export default function FormContextPanel({
   const fileInputRef = useRef(null);
   const mobileCameraInputRef = useRef(null);
   const webcamVideoRef = useRef(null);
+  const captureIconRef = useRef(null);
 
   const labelLookup = useMemo(() => {
     const map = new Map();
@@ -676,6 +740,18 @@ export default function FormContextPanel({
     }
     return map;
   }, []);
+
+  const filteredLabelOptions = useMemo(() => {
+    const search = String(labelInput || "").trim().toLowerCase();
+    return LABEL_OPTIONS.filter((item) => {
+      if (selectedLabels.includes(item.key)) return false;
+      if (!search) return true;
+      return (
+        item.label.toLowerCase().includes(search) ||
+        item.key.toLowerCase().includes(search)
+      );
+    }).slice(0, 8);
+  }, [labelInput, selectedLabels]);
 
   useEffect(() => {
     setHasCameraSupport(
@@ -881,6 +957,13 @@ export default function FormContextPanel({
     setUploadError(null);
   }
 
+  function selectSuggestedLabel(labelKey) {
+    if (!labelKey) return;
+    setSelectedLabels((prev) => (prev.includes(labelKey) ? prev : [...prev, labelKey]));
+    setLabelInput("");
+    setUploadError(null);
+  }
+
   function getDocSelectedLabelKeys(doc) {
     return normalizeSelectedLabels(
       (Array.isArray(doc?.labels) ? doc.labels : []).map((x) => x?.label_key || x?.key)
@@ -927,10 +1010,23 @@ export default function FormContextPanel({
   function updateSelectedUploadFileName(id, value) {
     setSelectedUploads((prev) =>
       prev.map((item) =>
-        item.id === id ? { ...item, fileName: value } : item
+        item.id === id
+          ? {
+              ...item,
+              fileName: buildFileNameWithOriginalExtension(value, item.file?.name || "bijlage"),
+            }
+          : item
       )
     );
     setUploadError(null);
+  }
+
+  function activateAddSourceMode(nextMode) {
+    if (nextMode === "files" && cameraMode === "desktop-webcam") {
+      closeDesktopWebcam();
+    }
+    setAddSourceMode(nextMode);
+    setCameraError(null);
   }
 
   async function updateDocLabelsRealtime(doc, nextSelected) {
@@ -1008,6 +1104,54 @@ export default function FormContextPanel({
     } catch (e) {
       setFormDocs(previousDocs);
       setError(String(e?.message || e || "Bijlage opslaan mislukt."));
+    } finally {
+      setBusyDocId(null);
+    }
+  }
+
+  async function saveDocFileName(doc, rawFileName) {
+    const nextFileName = buildFileNameWithOriginalExtension(
+      rawFileName,
+      doc.file_name || doc.title || "bijlage"
+    );
+
+    if (!nextFileName || nextFileName === doc.file_name) {
+      return;
+    }
+
+    setBusyDocId(doc.form_instance_document_id);
+    setError(null);
+
+    const previousDocs = formDocs;
+
+    try {
+      setFormDocs((prev) =>
+        prev.map((item) =>
+          item.form_instance_document_id === doc.form_instance_document_id
+            ? { ...item, file_name: nextFileName }
+            : item
+        )
+      );
+
+      const result = await putFormInstanceDocumentFileName(
+        code,
+        instanceId,
+        doc.form_instance_document_id,
+        nextFileName
+      );
+
+      if (result?.document) {
+        setFormDocs((prev) =>
+          prev.map((item) =>
+            item.form_instance_document_id === doc.form_instance_document_id
+              ? { ...item, ...result.document }
+              : item
+          )
+        );
+      }
+    } catch (e) {
+      setFormDocs(previousDocs);
+      setError(String(e?.message || e || "Bestandsnaam wijzigen mislukt."));
     } finally {
       setBusyDocId(null);
     }
@@ -1173,6 +1317,7 @@ export default function FormContextPanel({
   function openCameraOrFallback() {
     setUploadError(null);
     setCameraError(null);
+    setAddSourceMode("camera");
 
     if (isProbablyMobileDevice()) {
       mobileCameraInputRef.current?.click();
@@ -1314,6 +1459,23 @@ export default function FormContextPanel({
               </div>
             ) : (
               <div style={{ display: "grid", gap: 8 }}>
+                <div className="muted" style={{ fontSize: 13, lineHeight: 1.45 }}>
+                  Officiële documenten en programmeringen beheer je in{" "}
+                  {documentsTabHref ? (
+                    <Link
+                      to={documentsTabHref}
+                      target="_blank"
+                      rel="noreferrer"
+                      style={{ color: "inherit", textDecoration: "underline" }}
+                    >
+                      Documenten
+                    </Link>
+                  ) : (
+                    "Documenten"
+                  )}
+                  {" "}van de installatie.
+                </div>
+
                 {installationGroups.map((group) => {
                   const typeOpen = installationTypeOpenMap[group.key] === true;
 
@@ -1361,13 +1523,14 @@ export default function FormContextPanel({
                                 }
                                 subtitle={subtitleParts.join(" ; ")}
                                 note={doc.note || null}
-                                actions={
+                                headerActions={
                                   <FileActions
                                     onOpen={() => handleOpenInstallationDocument(doc)}
                                     onDownload={() => handleDownloadInstallationDocument(doc)}
                                     disableOpen={!doc.file_name && !doc.storage_key}
                                     disableDownload={!doc.file_name && !doc.storage_key}
                                     canEditLabels={false}
+                                    compact={true}
                                   />
                                 }
                               />
@@ -1445,7 +1608,10 @@ export default function FormContextPanel({
                         ref={fileInputRef}
                         type="file"
                         multiple
-                        onChange={(e) => addFilesToSelection(e.target.files)}
+                        onChange={(e) => {
+                          setAddSourceMode("files");
+                          addFilesToSelection(e.target.files);
+                        }}
                         style={{ display: "none" }}
                       />
 
@@ -1454,83 +1620,103 @@ export default function FormContextPanel({
                         type="file"
                         accept="image/*"
                         capture="environment"
-                        onChange={(e) => addFilesToSelection(e.target.files)}
+                        onChange={(e) => {
+                          setAddSourceMode("camera");
+                          addFilesToSelection(e.target.files);
+                        }}
                         style={{ display: "none" }}
                       />
 
                       <div
-                        role="button"
-                        tabIndex={0}
-                        onClick={() => fileInputRef.current?.click()}
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter" || e.key === " ") {
-                            e.preventDefault();
-                            fileInputRef.current?.click();
-                          }
-                        }}
-                        onDragOver={(e) => {
-                          e.preventDefault();
-                          setDragActive(true);
-                        }}
-                        onDragEnter={(e) => {
-                          e.preventDefault();
-                          setDragActive(true);
-                        }}
-                        onDragLeave={(e) => {
-                          e.preventDefault();
-                          const next = e.relatedTarget;
-                          if (!e.currentTarget.contains(next)) {
-                            setDragActive(false);
-                          }
-                        }}
-                        onDrop={(e) => {
-                          e.preventDefault();
-                          setDragActive(false);
-                          addFilesToSelection(e.dataTransfer.files);
-                        }}
                         style={{
-                          padding: 14,
-                          borderRadius: 12,
-                          border: dragActive
-                            ? "1px solid rgba(255,255,255,0.22)"
-                            : "1px dashed rgba(255,255,255,0.12)",
-                          background: dragActive
-                            ? "rgba(255,255,255,0.06)"
-                            : "rgba(255,255,255,0.03)",
-                          cursor: "pointer",
                           display: "grid",
                           gap: 8,
                         }}
                       >
-                        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                        <div className="muted" style={{ fontSize: 12 }}>
+                          Kies hoe je de bijlage wilt toevoegen
+                        </div>
+
+                        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                           <button
                             type="button"
-                            className="btn btn-secondary"
-                            onClick={(e) => {
-                              e.stopPropagation();
+                            className={addSourceMode === "files" ? "btn" : "btn btn-secondary"}
+                            onClick={() => {
+                              activateAddSourceMode("files");
                               fileInputRef.current?.click();
                             }}
                             style={{ display: "inline-flex", alignItems: "center", gap: 8 }}
                           >
-                            Bestanden kiezen
+                            <UploadIcon size={16} />
+                            Bestand uploaden
                           </button>
 
-                          <span className="muted" style={{ fontSize: 13 }}>
-                            Sleep bestanden hierheen, of kies meerdere bestanden tegelijk.
-                          </span>
+                          <button
+                            type="button"
+                            className={addSourceMode === "camera" ? "btn" : "btn btn-secondary"}
+                            onClick={() => {
+                              activateAddSourceMode("camera");
+                              openCameraOrFallback();
+                            }}
+                            style={{ display: "inline-flex", alignItems: "center", gap: 8 }}
+                          >
+                            <CameraIcon size={16} />
+                            Foto maken
+                          </button>
                         </div>
-                      </div>
 
-                      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                        <button
-                          type="button"
-                          className="btn btn-secondary"
-                          onClick={openCameraOrFallback}
-                          style={{ display: "inline-flex", alignItems: "center", gap: 8 }}
-                        >
-                          <UploadIcon size={16} />
-                          Neem foto
-                        </button>
+                        {addSourceMode === "files" ? (
+                          <div
+                            role="button"
+                            tabIndex={0}
+                            onClick={() => fileInputRef.current?.click()}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter" || e.key === " ") {
+                                e.preventDefault();
+                                fileInputRef.current?.click();
+                              }
+                            }}
+                            onDragOver={(e) => {
+                              e.preventDefault();
+                              setDragActive(true);
+                            }}
+                            onDragEnter={(e) => {
+                              e.preventDefault();
+                              setDragActive(true);
+                            }}
+                            onDragLeave={(e) => {
+                              e.preventDefault();
+                              const next = e.relatedTarget;
+                              if (!e.currentTarget.contains(next)) {
+                                setDragActive(false);
+                              }
+                            }}
+                            onDrop={(e) => {
+                              e.preventDefault();
+                              setDragActive(false);
+                              addFilesToSelection(e.dataTransfer.files);
+                            }}
+                            style={{
+                              padding: 14,
+                              borderRadius: 12,
+                              border: dragActive
+                                ? "1px solid rgba(255,255,255,0.22)"
+                                : "1px dashed rgba(255,255,255,0.12)",
+                              background: dragActive
+                                ? "rgba(255,255,255,0.06)"
+                                : "rgba(255,255,255,0.03)",
+                              cursor: "pointer",
+                              display: "grid",
+                              gap: 8,
+                            }}
+                          >
+                            <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                              <span className="muted" style={{ fontSize: 13 }}>
+                                Sleep bestanden hierheen, of kies meerdere bestanden tegelijk.
+                              </span>
+                            </div>
+                          </div>
+                        ) : null}
                       </div>
 
                       {cameraError ? (
@@ -1576,10 +1762,12 @@ export default function FormContextPanel({
                               type="button"
                               className="btn"
                               onClick={captureDesktopWebcamPhoto}
+                              onMouseEnter={() => captureIconRef.current?.startAnimation?.()}
+                              onMouseLeave={() => captureIconRef.current?.stopAnimation?.()}
                               style={{ display: "inline-flex", alignItems: "center", gap: 8 }}
                             >
-                              <UploadIcon size={16} />
-                              Foto maken
+                              <ClapIcon ref={captureIconRef} size={16} />
+                              Foto vastleggen
                             </button>
 
                             <button
@@ -1647,27 +1835,71 @@ export default function FormContextPanel({
                           Labels ; minimaal 1 verplicht
                         </div>
 
-                        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                          {LABEL_OPTIONS.map((item) => {
-                            const active = selectedLabels.includes(item.key);
-                            const baseStyle = LABEL_STYLES[item.key] || LABEL_STYLES.OVERIG;
+                        <div style={{ display: "grid", gap: 8 }}>
+                          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                            <input
+                              className="input"
+                              value={labelInput}
+                              onChange={(e) => setLabelInput(e.target.value)}
+                              onKeyDown={(e) => {
+                                if ((e.key === "Enter" || e.key === "Tab") && filteredLabelOptions.length === 1) {
+                                  e.preventDefault();
+                                  selectSuggestedLabel(filteredLabelOptions[0].key);
+                                }
+                              }}
+                              placeholder="Zoek standaardlabel"
+                              style={{ flex: "1 1 260px" }}
+                            />
+                          </div>
 
-                            return (
-                              <button
-                                key={item.key}
-                                type="button"
-                                className="btn btn-secondary"
-                                onClick={() => toggleSelectedLabel(item.key)}
-                                style={{
-                                  ...baseStyle,
-                                  opacity: active ? 1 : 0.65,
-                                  fontWeight: active ? 800 : 600,
-                                }}
-                              >
-                                {item.label}
-                              </button>
-                            );
-                          })}
+                          {filteredLabelOptions.length > 0 ? (
+                            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                              {filteredLabelOptions.map((item) => {
+                                const baseStyle = LABEL_STYLES[item.key] || LABEL_STYLES.OVERIG;
+                                return (
+                                  <button
+                                    key={item.key}
+                                    type="button"
+                                    className="btn btn-secondary"
+                                    onClick={() => selectSuggestedLabel(item.key)}
+                                    style={{
+                                      ...baseStyle,
+                                      display: "inline-flex",
+                                      alignItems: "center",
+                                      gap: 8,
+                                      fontWeight: 700,
+                                    }}
+                                    title={`${item.label} kiezen`}
+                                  >
+                                    {item.label}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          ) : null}
+
+                          {selectedLabels.length > 0 ? (
+                            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                              {selectedLabels.map((labelKey) => {
+                                const baseStyle = LABEL_STYLES[labelKey] || LABEL_STYLES.OVERIG;
+                                return (
+                                  <button
+                                    key={labelKey}
+                                    type="button"
+                                    className="btn btn-secondary"
+                                    onClick={() => toggleSelectedLabel(labelKey)}
+                                    style={{
+                                      ...baseStyle,
+                                      fontWeight: 700,
+                                    }}
+                                    title="Klik om label te verwijderen"
+                                  >
+                                    {labelLookup.get(labelKey) || labelKey}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          ) : null}
                         </div>
 
                       </div>
@@ -1828,7 +2060,44 @@ export default function FormContextPanel({
 
                               <div style={{ display: "grid", gap: 6 }}>
                                 <div className="muted" style={{ fontSize: 12 }}>
-                                  Bestandsnaam / weergavenaam
+                                  Bestandsnaam
+                                </div>
+                                <input
+                                  className="input"
+                                  value={doc.file_name || ""}
+                                  disabled={docBusy}
+                                  onChange={(e) => {
+                                    const value = e.target.value;
+                                    setFormDocs((prev) =>
+                                      prev.map((x) =>
+                                        x.form_instance_document_id === doc.form_instance_document_id
+                                          ? {
+                                              ...x,
+                                              file_name: buildFileNameWithOriginalExtension(
+                                                value,
+                                                x.file_name || x.title || "bijlage"
+                                              ),
+                                            }
+                                          : x
+                                      )
+                                    );
+                                  }}
+                                  onBlur={() => {
+                                    const currentDoc = formDocs.find(
+                                      (x) => x.form_instance_document_id === doc.form_instance_document_id
+                                    );
+                                    saveDocFileName(doc, currentDoc?.file_name || "");
+                                  }}
+                                  placeholder="Bestandsnaam"
+                                />
+                                <div className="muted" style={{ fontSize: 11 }}>
+                                  De uploadnaam en het onderliggende bestand worden samen hernoemd.
+                                </div>
+                              </div>
+
+                              <div style={{ display: "grid", gap: 6 }}>
+                                <div className="muted" style={{ fontSize: 12 }}>
+                                  Weergavenaam
                                 </div>
                                 <input
                                   className="input"
@@ -1853,11 +2122,8 @@ export default function FormContextPanel({
                                         )?.title || null,
                                     })
                                   }
-                                  placeholder="Bestandsnaam of korte omschrijving"
+                                  placeholder="Optionele titel in Ember"
                                 />
-                                <div className="muted" style={{ fontSize: 11 }}>
-                                  Dit wijzigt de getoonde naam. Het originele uploadbestand blijft bewaard.
-                                </div>
                               </div>
 
                               <div style={{ display: "grid", gap: 6 }}>

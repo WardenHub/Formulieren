@@ -93,8 +93,7 @@ function buildTeamsChatUrl(email, formInstanceId) {
   if (!cleanEmail) return null;
   const monitorUrl = `${window.location.origin}/monitor/formulieren/${encodeURIComponent(formInstanceId)}`;
   const message =
-    `Hallo; ik wil het hebben over formulier ${formInstanceId}. ` +
-    `Je vindt het formulier hier: ${monitorUrl}`;
+    `Hallo; ik wil het hebben over formulier ${formInstanceId}.\n\n${monitorUrl}`;
   const topic = `Formulier ${formInstanceId}`;
   return `https://teams.microsoft.com/l/chat/0/0?users=${encodeURIComponent(cleanEmail)}&topicname=${encodeURIComponent(topic)}&message=${encodeURIComponent(message)}`;
 }
@@ -862,13 +861,27 @@ export default function FormsMonitorPage() {
                             <button
                               type="button"
                               className="monitor-tag monitor-tag--active monitor-link-tag"
-                              title="Open parent formulier"
+                              title="Open vervolgformulieren"
                               onClick={(e) => {
                                 e.stopPropagation();
-                                navigate(`/monitor/formulieren/${row.parent_instance_id}`);
+                                navigate(`/monitor/formulieren/${row.form_instance_id}?section=follow_forms`);
                               }}
                             >
                               vervolg op formulier #{row.parent_instance_id}
+                            </button>
+                          ) : null}
+
+                          {row.relations?.has_children ? (
+                            <button
+                              type="button"
+                              className="monitor-tag monitor-tag--active monitor-link-tag"
+                              title="Open vervolgformulieren"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                navigate(`/monitor/formulieren/${row.form_instance_id}?section=follow_forms`);
+                              }}
+                            >
+                              heeft vervolgformulier
                             </button>
                           ) : null}
 

@@ -1,7 +1,7 @@
 // src/pages/Installations/InstallationDetails.jsx
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useParams, useNavigate } from "react-router-dom";
+import { useParams, useNavigate, useSearchParams } from "react-router-dom";
 
 import AtriumTab from "./AtriumTab.jsx";
 import DocumentsTab from "./DocumentsTab.jsx";
@@ -184,6 +184,7 @@ function buildSoftwareHeaderSummary(softwareData) {
 export default function InstallationDetails() {
   const { code } = useParams();
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
 
   const backIconRef = useRef(null);
   const collapseAllIconRef = useRef(null);
@@ -200,7 +201,10 @@ export default function InstallationDetails() {
   const typePickerRef = useRef(null);
   const saveOkTimerRef = useRef(null);
 
-  const [activeTab, setActiveTab] = useState("documents");
+  const [activeTab, setActiveTab] = useState(() => {
+    const requestedTab = String(searchParams.get("tab") || "").trim().toLowerCase();
+    return requestedTab || "documents";
+  });
 
   const [installation, setInstallation] = useState(null);
   const [catalog, setCatalogState] = useState(null);
@@ -527,6 +531,17 @@ export default function InstallationDetails() {
       setFormsActivationToken((n) => n + 1);
     }
   }, [activeTab]);
+
+  useEffect(() => {
+    const currentParam = String(searchParams.get("tab") || "").trim().toLowerCase();
+    if (currentParam === activeTab) return;
+
+    const nextParams = new URLSearchParams(searchParams);
+    if (activeTab) nextParams.set("tab", activeTab);
+    else nextParams.delete("tab");
+
+    setSearchParams(nextParams, { replace: true });
+  }, [activeTab, searchParams, setSearchParams]);
 
   useEffect(() => {
     function onKeyDown(e) {

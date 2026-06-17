@@ -254,7 +254,9 @@ doc_active_docs as (
     d.title as doc_titel,
     d.document_number as doc_nummer,
     convert(nvarchar(10), d.document_date, 23) as doc_datum,
-    d.revision as doc_revisie
+    d.revision as doc_revisie,
+    d.file_name as doc_bestandsnaam,
+    d.storage_url as doc_storage_url
   from dbo.InstallationDocument d
   join inst i on i.installation_id = d.installation_id
   join doc_applicable_types t on t.document_type_key = d.document_type_key
@@ -296,7 +298,9 @@ doc_groups as (
                 r.doc_titel,
                 r.doc_nummer,
                 r.doc_datum,
-                r.doc_revisie
+                r.doc_revisie,
+                r.doc_bestandsnaam,
+                r.doc_storage_url
               from doc_active_docs r
               where r.sectie_key = g.sectie_key
                 and r.document_type_key = t.document_type_key

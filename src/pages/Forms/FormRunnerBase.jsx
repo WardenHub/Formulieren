@@ -25,12 +25,15 @@ import { MicIcon } from "@/components/ui/mic";
 import { AirVentIcon } from "@/components/ui/air-vent";
 import { MenuIcon } from "@/components/ui/menu";
 import { CircleHelpIcon } from "@/components/ui/circle-help";
+import { HomeIcon } from "@/components/ui/home";
 import { pushRecentHomeItem } from "../../lib/recentHomeItems.js";
 
 import {
   getFormInstance,
   getFormInstanceDocuments,
+  getFormsMonitorFollowUps,
   putFormInstanceMetadata,
+  putFormInstanceDocumentFollowUps,
   putFormAnswers,
   submitFormInstance,
   previewSubmitFormInstance,
@@ -52,7 +55,6 @@ import {
   translateApiError,
   getDraftRev,
   getAnswersObject,
-  buildSubmitConfirmText,
 } from "./shared/surveyCore.jsx";
 
 import {
@@ -114,6 +116,7 @@ function normalizePreviewFollowUps(preview) {
 
   const normalizedItems = items.map((item, idx) => ({
     id: item?.fingerprint || `preview-${idx}`,
+    questionName: String(item?.questionName || item?.question_name || "").trim(),
     kind: String(item?.kind || "").trim(),
     title: String(item?.workflowTitle || "").trim(),
     description: String(item?.workflowDescription || "").trim(),
@@ -153,6 +156,20 @@ function normalizeFormDocumentsResponse(data) {
   return [];
 }
 
+function normalizeFormsMonitorFollowUps(data) {
+  const items = Array.isArray(data?.items) ? data.items : Array.isArray(data) ? data : [];
+  return items
+    .map((item) => ({
+      follow_up_action_id: String(item?.follow_up_action_id || "").trim(),
+      source_fingerprint: String(item?.source_fingerprint || "").trim(),
+      workflow_title: String(item?.workflow_title || item?.title || "Actiepunt").trim(),
+      workflow_description: String(item?.workflow_description || "").trim(),
+      source_item_code: String(item?.source_item_code || "").trim(),
+      kind: String(item?.kind || "").trim(),
+    }))
+    .filter((item) => item.follow_up_action_id);
+}
+
 function hasStoredFormDocumentFile(doc) {
   if (!doc) return false;
 
@@ -172,14 +189,87 @@ async function loadFormAttachmentSummary(code, instanceId) {
   try {
     const res = await getFormInstanceDocuments(code, instanceId);
     const docs = normalizeFormDocumentsResponse(res);
+    const storedDocs = docs.filter(hasStoredFormDocumentFile);
     return {
-      formAttachmentCount: docs.filter(hasStoredFormDocumentFile).length,
+      formAttachmentCount: storedDocs.length,
+      documents: storedDocs,
     };
   } catch {
     return {
       formAttachmentCount: null,
+      documents: [],
     };
   }
+}
+
+function normalizeSubmitDialogDocument(doc) {
+  return {
+    form_instance_document_id: String(doc?.form_instance_document_id || "").trim(),
+    title: String(doc?.title || doc?.file_name || "Bijlage").trim(),
+    file_name: String(doc?.file_name || "").trim(),
+    note: String(doc?.note || "").trim(),
+    file_size_bytes: Number(doc?.file_size_bytes || 0) || 0,
+    labels: Array.isArray(doc?.labels) ? doc.labels : [],
+    selectedFingerprints: Array.from(
+      new Set(
+        (Array.isArray(doc?.follow_ups) ? doc.follow_ups : [])
+          .map((item) => String(item?.source_fingerprint || "").trim())
+          .filter(Boolean)
+      )
+    ),
+  };
+}
+
+function normalizeSubmitDialogFollowUpItems(items) {
+  return (Array.isArray(items) ? items : []).map((item, idx) => ({
+    id: String(item?.id || `follow-up-${idx}`).trim(),
+    fingerprint: String(item?.id || "").trim(),
+    kind: String(item?.kind || "").trim(),
+    title: String(item?.title || "Actiepunt").trim(),
+    description: String(item?.description || "").trim(),
+    category: String(item?.category || "").trim(),
+    itemCode: String(item?.itemCode || "").trim(),
+    questionName: String(item?.questionName || "").trim(),
+  }));
+}
+
+function buildSubmitDialogFollowUpLabel(item) {
+  const title = String(item?.title || "Actiepunt").trim();
+  const source = String(item?.itemCode || item?.questionName || "").trim();
+  return source ? `${title} ; ${source}` : title;
+}
+
+function buildDocumentFollowUpPayloadFromFingerprints(selectedFingerprints, actualFollowUps) {
+  const byFingerprint = new Map(
+    (Array.isArray(actualFollowUps) ? actualFollowUps : [])
+      .filter((item) => item?.source_fingerprint && item?.follow_up_action_id)
+      .map((item) => [String(item.source_fingerprint), item])
+  );
+
+  return Array.from(
+    new Set(
+      (Array.isArray(selectedFingerprints) ? selectedFingerprints : [])
+        .map((item) => String(item || "").trim())
+        .filter(Boolean)
+    )
+  )
+    .map((fingerprint, index) => {
+      const match = byFingerprint.get(fingerprint);
+      if (!match) return null;
+      return {
+        follow_up_action_id: match.follow_up_action_id,
+        is_primary: index === 0,
+      };
+    })
+    .filter(Boolean);
+}
+
+function formatBytes(value) {
+  const n = Number(value);
+  if (!Number.isFinite(n) || n <= 0) return null;
+  if (n < 1024) return `${n} B`;
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
+  return `${(n / (1024 * 1024)).toFixed(1)} MB`;
 }
 
 function formatFollowUpKindLabel(kind) {
@@ -543,6 +633,8 @@ export default function FormRunnerBase({ mode }) {
   const [instanceMetaOpen, setInstanceMetaOpen] = useState(false);
   const [contextPanelOpen, setContextPanelOpen] = useState(false);
   const [assistantPanelOpen, setAssistantPanelOpen] = useState(false);
+  const [assistantAutoStartToken, setAssistantAutoStartToken] = useState(0);
+  const [submitDialog, setSubmitDialog] = useState(null);
   const [actionsMenuOpen, setActionsMenuOpen] = useState(false);
   const [actionsDocked, setActionsDocked] = useState(false);
   const [guidanceDialog, setGuidanceDialog] = useState(null);
@@ -878,6 +970,12 @@ export default function FormRunnerBase({ mode }) {
   }, [contextPanelOpen, assistantPanelOpen, isDebug]);
 
   useEffect(() => {
+    if (canEditAnswers) return;
+    setContextPanelOpen(false);
+    setAssistantPanelOpen(false);
+  }, [canEditAnswers]);
+
+  useEffect(() => {
     if (!actionsMenuOpen) return undefined;
 
     function onPointerDown(e) {
@@ -1102,6 +1200,30 @@ export default function FormRunnerBase({ mode }) {
     requestAnimationFrame(() => {
       scrollToQuestionByName(item.questionName);
     });
+  }
+
+  function openSubmitSummaryItem(item) {
+    if (isDebug || !item?.questionName || !surveyModelRef.current) return;
+
+    const model = surveyModelRef.current;
+    const question = model.getQuestionByName?.(item.questionName) || null;
+    const targetPage = question?.page || question?.parent?.page || null;
+
+    if (targetPage) {
+      const pageIndex = model.visiblePages.indexOf(targetPage);
+      if (pageIndex >= 0) {
+        setRuntimePageIndex(pageIndex, { closeBookmarks: true });
+      }
+    }
+
+    requestAnimationFrame(() => {
+      scrollToQuestionByName(item.questionName);
+    });
+  }
+
+  function openAssistantPanelWithRecording() {
+    setAssistantAutoStartToken((prev) => prev + 1);
+    setAssistantPanelOpen(true);
   }
 
   function goToPageIndex(pageIndex) {
@@ -1832,30 +1954,100 @@ export default function FormRunnerBase({ mode }) {
       }
 
       const previewSummary = normalizePreviewFollowUps(preview);
-      const attachmentSummary =
-        previewSummary.totalCount > 0
-          ? await loadFormAttachmentSummary(code, instanceId)
-          : { formAttachmentCount: null };
+      const attachmentSummary = await loadFormAttachmentSummary(code, instanceId);
 
-      const confirmed = window.confirm(
-        buildSubmitConfirmText(preview, {
-          formAttachmentCount: attachmentSummary.formAttachmentCount,
-        })
-      );
-      if (!confirmed) return;
+      setSubmitDialog({
+        rawPreview: preview,
+        previewSummary,
+        followUpItems: normalizeSubmitDialogFollowUpItems(previewSummary.items),
+        formAttachmentCount: attachmentSummary.formAttachmentCount,
+        documents: (attachmentSummary.documents || []).map(normalizeSubmitDialogDocument),
+        submitting: false,
+      });
+    } catch (e) {
+      const msg = String(e?.message || e || "").toLowerCase();
+
+      if (msg.includes("draft_rev") || msg.includes("expected_draft_rev")) {
+        setError("Opslaan conflict. Ik heb de nieuwste versie opgehaald. Probeer opnieuw.");
+        await reload({ forceEditor: true });
+      } else {
+        setError(translateApiError(e, status));
+      }
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function toggleSubmitDialogDocumentFollowUp(documentId, fingerprint) {
+    setSubmitDialog((prev) => {
+      if (!prev) return prev;
+
+      return {
+        ...prev,
+        documents: prev.documents.map((doc) => {
+          if (doc.form_instance_document_id !== documentId) return doc;
+
+          const nextSet = new Set(doc.selectedFingerprints || []);
+          if (nextSet.has(fingerprint)) nextSet.delete(fingerprint);
+          else nextSet.add(fingerprint);
+
+          return {
+            ...doc,
+            selectedFingerprints: Array.from(nextSet),
+          };
+        }),
+      };
+    });
+  }
+
+  async function confirmSubmitDialog() {
+    if (!submitDialog) return;
+
+    setBusy(true);
+    setError(null);
+    setSubmitDialog((prev) => (prev ? { ...prev, submitting: true } : prev));
+
+    try {
+      const cur = getCurrentAnswersObject();
+      if (!cur.ok) {
+        setError(cur.error);
+        return;
+      }
 
       if (hasUnsavedChanges) {
         await persistPendingChanges(cur.value, { reloadAfter: false, animateSave: false });
       }
 
       const submitRes = await submitFormInstance(code, instanceId);
-
       const syncCounts = normalizeSubmitSyncCounts(submitRes);
 
+      const selectedDocs = (submitDialog.documents || []).filter(
+        (doc) => Array.isArray(doc.selectedFingerprints) && doc.selectedFingerprints.length > 0
+      );
+
+      if (selectedDocs.length > 0) {
+        const followUpsRes = await getFormsMonitorFollowUps(instanceId);
+        const actualFollowUps = normalizeFormsMonitorFollowUps(followUpsRes);
+
+        for (const doc of selectedDocs) {
+          const payload = buildDocumentFollowUpPayloadFromFingerprints(
+            doc.selectedFingerprints,
+            actualFollowUps
+          );
+
+          await putFormInstanceDocumentFollowUps(
+            code,
+            instanceId,
+            doc.form_instance_document_id,
+            payload
+          );
+        }
+      }
+
       setSubmitSummary({
-        ...previewSummary,
+        ...submitDialog.previewSummary,
         syncCounts,
-        rawPreview: preview,
+        rawPreview: submitDialog.rawPreview,
         rawSubmit: submitRes,
       });
 
@@ -1876,6 +2068,7 @@ export default function FormRunnerBase({ mode }) {
         parent_instance_id: currentParentInstanceId,
       }));
 
+      setSubmitDialog(null);
       setShowSubmitCelebration(true);
 
       if (submitCelebrationTimerRef.current) {
@@ -1912,6 +2105,7 @@ export default function FormRunnerBase({ mode }) {
       }
     } finally {
       setBusy(false);
+      setSubmitDialog((prev) => (prev ? { ...prev, submitting: false } : prev));
     }
   }
 
@@ -2184,6 +2378,17 @@ export default function FormRunnerBase({ mode }) {
           </div>
 
           <div className="form-runner-header-actions" style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+            {!isDebug && status === "INGEDIEND" ? (
+              <button
+                type="button"
+                className="icon-btn"
+                title="Naar home"
+                onClick={() => navigate("/")}
+              >
+                <HomeIcon size={18} />
+              </button>
+            ) : null}
+
             {!isDebug && (
               <div ref={actionsMenuRef} style={{ position: "relative" }}>
                 <button
@@ -2202,7 +2407,7 @@ export default function FormRunnerBase({ mode }) {
 
                 {actionsMenuOpen && (
                   <div
-                    className="card"
+                    className="card form-runner-actions-menu"
                     role="menu"
                     style={{
                       position: "absolute",
@@ -2552,12 +2757,20 @@ export default function FormRunnerBase({ mode }) {
 
               <div style={{ display: "grid", gap: 6 }}>
                 {submitSummary.items.slice(0, 8).map((item) => (
-                  <div
+                  <button
+                    type="button"
                     key={item.id}
+                    onClick={() => openSubmitSummaryItem(item)}
+                    disabled={!item.questionName}
                     style={themedSoftBox({
                       padding: "10px 12px",
                       display: "grid",
                       gap: 4,
+                      width: "100%",
+                      textAlign: "left",
+                      border: "none",
+                      cursor: item.questionName ? "pointer" : "default",
+                      opacity: item.questionName ? 1 : 0.88,
                     })}
                   >
                     <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
@@ -2577,7 +2790,7 @@ export default function FormRunnerBase({ mode }) {
                         {item.description}
                       </div>
                     ) : null}
-                  </div>
+                  </button>
                 ))}
 
                 {submitSummary.items.length > 8 && (
@@ -2593,7 +2806,7 @@ export default function FormRunnerBase({ mode }) {
 
       {!isDebug && !submitSummary && !canEditAnswers && runtimeReady && surveyModelRef.current && (
         <div
-          className="card"
+          className="card form-runner-readonly-banner"
           style={{
             padding: 14,
             display: "grid",
@@ -2668,6 +2881,7 @@ export default function FormRunnerBase({ mode }) {
                   key={surveyRenderKey}
                   model={model}
                   activePageIndex={currentPageIndex}
+                  installationCode={code}
                   canEdit={canEditAnswers}
                   hasValidatedOnce={hasValidatedOnce}
                   validationSummary={validationSummary}
@@ -2685,7 +2899,7 @@ export default function FormRunnerBase({ mode }) {
 
       {!isDebug && (
         <>
-          {!contextPanelOpen && !assistantPanelOpen && (
+          {canEditAnswers && !contextPanelOpen && !assistantPanelOpen && (
             <>
               <div className="form-runner-floating-actions form-runner-floating-actions--middle">
                 <button
@@ -2705,7 +2919,7 @@ export default function FormRunnerBase({ mode }) {
                   type="button"
                   className="icon-btn form-runner-floating-btn"
                   title="Ember assistent openen"
-                  onClick={() => setAssistantPanelOpen(true)}
+                  onClick={openAssistantPanelWithRecording}
                   onMouseEnter={() => assistantToggleIconRef.current?.startAnimation?.()}
                   onMouseLeave={() => assistantToggleIconRef.current?.stopAnimation?.()}
                 >
@@ -2759,6 +2973,7 @@ export default function FormRunnerBase({ mode }) {
                       activePageName={surveyModelRef.current?.currentPage?.name || null}
                       onApplied={handleAssistantApplied}
                       onClose={() => setAssistantPanelOpen(false)}
+                      autoStartToken={assistantAutoStartToken}
                     />
                   </div>
                 </div>
@@ -3031,6 +3246,187 @@ export default function FormRunnerBase({ mode }) {
           </div>
         </>
       )}
+
+      {submitDialog ? (
+        <>
+          <button
+            type="button"
+            aria-label="Sluit submitvenster"
+            className="form-guidance-modal-backdrop"
+            onClick={() => {
+              if (!submitDialog.submitting) setSubmitDialog(null);
+            }}
+          />
+
+          <div
+            className="card form-guidance-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Formulier indienen"
+            style={{ width: "min(980px, calc(100vw - 24px))" }}
+          >
+            <div className="form-guidance-modal__head">
+              <div style={{ display: "flex", gap: 10, alignItems: "flex-start", minWidth: 0 }}>
+                <FileCheck2Icon size={18} />
+                <div style={{ minWidth: 0 }}>
+                  <div className="form-guidance-modal__title">Formulier indienen</div>
+                  <div className="muted form-guidance-modal__subtitle">
+                    Controleer opvolgregistraties en koppel formulierbijlagen waar nodig.
+                  </div>
+                </div>
+              </div>
+
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  disabled={submitDialog.submitting}
+                  onClick={() => setSubmitDialog(null)}
+                >
+                  Annuleren
+                </button>
+
+                <button
+                  type="button"
+                  className="btn"
+                  disabled={submitDialog.submitting}
+                  onClick={confirmSubmitDialog}
+                >
+                  {submitDialog.submitting ? "Indienen..." : "Definitief indienen"}
+                </button>
+              </div>
+            </div>
+
+            <div className="form-guidance-modal__body" style={{ display: "grid", gap: 16 }}>
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                <span style={themedChip({ fontSize: 12 })}>
+                  Workflowacties: {submitDialog.previewSummary.workflowCount}
+                </span>
+                <span style={themedChip({ fontSize: 12 })}>
+                  Rapportopmerkingen: {submitDialog.previewSummary.reportOnlyCount}
+                </span>
+                <span style={themedChip({ fontSize: 12 })}>
+                  Formulierbijlagen: {submitDialog.formAttachmentCount ?? 0}
+                </span>
+              </div>
+
+              {submitDialog.followUpItems.length > 0 ? (
+                <div className="card" style={{ padding: 12, display: "grid", gap: 10 }}>
+                  <div style={{ fontWeight: 800, fontSize: 14 }}>Opvolgregistraties bij indienen</div>
+                  <div style={{ display: "grid", gap: 8 }}>
+                    {submitDialog.followUpItems.map((item) => (
+                      <div
+                        key={item.id}
+                        style={themedSoftBox({
+                          padding: "10px 12px",
+                          display: "grid",
+                          gap: 4,
+                        })}
+                      >
+                        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                          <strong>{item.title || "Actiepunt"}</strong>
+                          {item.kind ? (
+                            <span className="muted" style={themedChip({ fontSize: 12 })}>
+                              {formatFollowUpKindLabel(item.kind)}
+                            </span>
+                          ) : null}
+                        </div>
+
+                        {item.description ? (
+                          <div className="muted" style={{ fontSize: 12 }}>
+                            {item.description}
+                          </div>
+                        ) : null}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : (
+                <div className="card" style={{ padding: 12, display: "grid", gap: 6 }}>
+                  <div style={{ fontWeight: 800, fontSize: 14 }}>Geen opvolgregistraties gevonden</div>
+                  <div className="muted" style={{ fontSize: 13 }}>
+                    Dit formulier levert op dit moment geen opvolgacties of rapportopmerkingen op.
+                  </div>
+                </div>
+              )}
+
+              <div className="card" style={{ padding: 12, display: "grid", gap: 12 }}>
+                <div style={{ fontWeight: 800, fontSize: 14 }}>Koppel bestanden aan de opvolgacties</div>
+                <div className="muted" style={{ fontSize: 13 }}>
+                  Per formulierbijlage kun je aangeven of deze bij een opvolgregistratie hoort. Geen selectie betekent; niet koppelen.
+                </div>
+
+                {submitDialog.documents.length === 0 ? (
+                  <div className="muted" style={{ fontSize: 13 }}>
+                    Er zijn nog geen formulierbijlagen toegevoegd.
+                  </div>
+                ) : submitDialog.followUpItems.length === 0 ? (
+                  <div className="muted" style={{ fontSize: 13 }}>
+                    Er zijn wel formulierbijlagen aanwezig, maar er zijn geen opvolgregistraties om aan te koppelen.
+                  </div>
+                ) : (
+                  <div style={{ display: "grid", gap: 10 }}>
+                    {submitDialog.documents.map((doc) => (
+                      <div key={doc.form_instance_document_id} className="card" style={{ padding: 12, display: "grid", gap: 10 }}>
+                        <div style={{ display: "grid", gap: 4 }}>
+                          <div style={{ fontWeight: 800 }}>
+                            {doc.title || doc.file_name || "Bijlage"}
+                          </div>
+                          <div className="muted" style={{ fontSize: 12 }}>
+                            {[doc.file_name || null, formatBytes(doc.file_size_bytes) || null].filter(Boolean).join(" ; ")}
+                          </div>
+                          {doc.labels?.length ? (
+                            <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                              {doc.labels.map((item, idx) => (
+                                <span key={`${item.label_key || idx}`} style={themedChip({ fontSize: 12 })}>
+                                  {item.display_name || item.label || item.label_key}
+                                </span>
+                              ))}
+                            </div>
+                          ) : null}
+                        </div>
+
+                        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                          {submitDialog.followUpItems.map((item) => {
+                            const active = doc.selectedFingerprints.includes(item.fingerprint);
+
+                            return (
+                              <button
+                                key={`${doc.form_instance_document_id}-${item.fingerprint}`}
+                                type="button"
+                                className="btn btn-secondary"
+                                onClick={() =>
+                                  toggleSubmitDialogDocumentFollowUp(
+                                    doc.form_instance_document_id,
+                                    item.fingerprint
+                                  )
+                                }
+                                style={{
+                                  fontSize: 12,
+                                  textAlign: "left",
+                                  ...(active
+                                    ? themedChip({
+                                        fontSize: 12,
+                                        fontWeight: 800,
+                                        border: "1px solid var(--accent)",
+                                      })
+                                    : {}),
+                                }}
+                              >
+                                {buildSubmitDialogFollowUpLabel(item)}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        </>
+      ) : null}
 
       {guidanceDialog ? (
         <>

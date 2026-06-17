@@ -437,6 +437,7 @@ export default function FormAssistantPanel({
   draftRev,
   activePageName,
   onApplied,
+  autoStartToken = 0,
 }) {
   const recorder = useAssistantAudioRecorder({ maxDurationMs: 60000 });
 
@@ -448,6 +449,7 @@ export default function FormAssistantPanel({
   const helpIconRef = useRef(null);
   const undoIconRef = useRef(null);
   const helpWrapRef = useRef(null);
+  const lastAutoStartTokenRef = useRef(0);
 
   const [busy, setBusy] = useState(false);
   const [phase, setPhase] = useState("idle");
@@ -653,6 +655,18 @@ export default function FormAssistantPanel({
       setError(getErrorMessage(e, "Opname starten mislukt."));
     }
   }
+
+  useEffect(() => {
+    if (!autoStartToken || autoStartToken === lastAutoStartTokenRef.current) return;
+    lastAutoStartTokenRef.current = autoStartToken;
+
+    if (!canEdit || busy || recorder.busy || recorder.recording || !recorder.supported) {
+      return;
+    }
+
+    void startRecording();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoStartToken, canEdit, busy, recorder.busy, recorder.recording, recorder.supported]);
 
   async function stopAndProcess() {
     setBusy(true);

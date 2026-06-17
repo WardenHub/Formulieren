@@ -47,6 +47,7 @@ import {
   getFormInstanceDocuments,
   putFormInstanceDocuments,
   uploadFormInstanceDocumentFile,
+  putFormInstanceDocumentFileName,
   getFormInstanceDocumentDownloadUrl,
   downloadFormInstanceDocumentFile,
   createFormInstanceDocumentReplacement,
@@ -233,6 +234,12 @@ router.post(
   requireRole("admin", "gebruiker"),
   upload.single("file"),
   uploadFormInstanceDocumentFile
+);
+
+router.put(
+  "/:code/forms/instances/:instanceId/documents/:documentId/file-name",
+  requireRole("admin", "gebruiker"),
+  putFormInstanceDocumentFileName
 );
 
 router.get(

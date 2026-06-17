@@ -7,6 +7,7 @@ import {
   putInstallationSoftware,
   uploadInstallationProgramming,
 } from "../../api/emberApi.js";
+import Tabs from "../../components/Tabs.jsx";
 
 import { MonitorCheckIcon } from "@/components/ui/monitor-check";
 import { UploadIcon } from "@/components/ui/upload";
@@ -15,6 +16,8 @@ import { ArchiveIcon } from "@/components/ui/archive";
 import { ChevronDownIcon } from "@/components/ui/chevron-down";
 import { ChevronRightIcon } from "@/components/ui/chevron-right";
 import { FileCogIcon } from "@/components/ui/file-cog";
+import { CpuIcon } from "@/components/ui/cpu";
+import { GitPullRequestIcon } from "@/components/ui/git-pull-request";
 
 function cx(...parts) {
   return parts.filter(Boolean).join(" ");
@@ -231,6 +234,7 @@ const SoftwareTab = forwardRef(function SoftwareTab(
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState(null);
+  const [activeSubTab, setActiveSubTab] = useState("software");
   const [openMap, setOpenMap] = useState({
     programmering: true,
     beheerportaal: true,
@@ -303,6 +307,22 @@ const SoftwareTab = forwardRef(function SoftwareTab(
   const programmingSummary = useMemo(
     () => buildProgrammingSummary(programmingState, programmingItems),
     [programmingState, programmingItems]
+  );
+
+  const softwareSubTabs = useMemo(
+    () => [
+      {
+        key: "software",
+        label: "Software",
+        Icon: CpuIcon,
+      },
+      {
+        key: "beheerportaal",
+        label: "Beheerportaal",
+        Icon: GitPullRequestIcon,
+      },
+    ],
+    []
   );
 
   function toggleSection(key) {
@@ -482,170 +502,36 @@ const SoftwareTab = forwardRef(function SoftwareTab(
         {error ? <div className="ember-label ember-label--danger">{error}</div> : null}
       </div>
 
-      {renderSection(
-        "Programmering",
-        "programmering",
-        "Leg vast of programmering aanwezig is; upload bij voorkeur een ZIP-bestand. Historische bestanden blijven zichtbaar.",
-        <div style={{ display: "grid", gap: 16 }}>
-          <div className="cf-grid">
-            <div className="cf-row">
-              <div className="cf-label">
-                <div className="cf-label-text">Status</div>
-              </div>
+      <Tabs tabs={softwareSubTabs} activeKey={activeSubTab} onChange={setActiveSubTab} />
 
-              <div className="cf-control">
-                <select
-                  className="input"
-                  value={programmingState.presence_mode}
-                  disabled={readOnly}
-                  onChange={(e) =>
-                    setProgrammingState((prev) => ({
-                      ...prev,
-                      presence_mode: e.target.value || "NONE",
-                    }))
-                  }
-                >
-                  <option value="NONE">Geen programmering vastgelegd</option>
-                  <option value="MANUAL">Programmering aanwezig zonder bestand</option>
-                  <option value="FILE">Programmering aanwezig via bestand(en)</option>
-                </select>
-              </div>
-            </div>
-
-            <div className="cf-row">
-              <div className="cf-label">
-                <div className="cf-label-text">Notitie</div>
-              </div>
-
-              <div className="cf-control">
-                <textarea
-                  className="input"
-                  rows={3}
-                  placeholder="Leg kort uit hoe de programmering geregeld is; bijvoorbeeld via extern beheer of server."
-                  value={programmingState.presence_note}
-                  disabled={readOnly}
-                  onChange={(e) =>
-                    setProgrammingState((prev) => ({
-                      ...prev,
-                      presence_note: e.target.value,
-                    }))
-                  }
-                />
-              </div>
-            </div>
-          </div>
-
-          {!readOnly ? (
-            <div className="card" style={{ padding: 16, display: "grid", gap: 14 }}>
-              <div style={{ display: "grid", gap: 4 }}>
-                <div style={{ fontWeight: 800, fontSize: 18 }}>Nieuwe programmering uploaden</div>
-                <div className="muted" style={{ fontSize: 13 }}>
-                  Voeg bij voorkeur één ZIP-bestand per versie toe; geen losse mappenstructuren of bundels vol subbestanden.
-                </div>
-              </div>
-
-              <input
-                ref={uploadInputRef}
-                type="file"
-                hidden
-                accept=".zip,application/zip,application/x-zip-compressed"
-                onChange={(e) => {
-                  const file = e.target.files?.[0] || null;
-                  setUploadFile(file);
-                  if (file && !uploadDraft.title) {
-                    setUploadDraft((prev) => ({
-                      ...prev,
-                      title: String(file.name || "").replace(/\.zip$/i, ""),
-                    }));
-                  }
-                }}
-              />
-
-              <ClickableUploadBar
-                title={uploadFile ? uploadFile.name : "ZIP-bestand kiezen"}
-                subtitle={
-                  uploadFile
-                    ? "Klaar voor upload; metadata hieronder mag je nog aanpassen."
-                    : "Klik om een ZIP-bestand te kiezen."
-                }
-                onClick={() => openNativeFilePicker(uploadInputRef.current)}
-                disabled={uploading}
-              />
-
+      {activeSubTab === "software" ? (
+        <>
+          {renderSection(
+            "Programmering",
+            "programmering",
+            "Leg vast of programmering aanwezig is; upload bij voorkeur een ZIP-bestand. Historische bestanden blijven zichtbaar.",
+            <div style={{ display: "grid", gap: 16 }}>
               <div className="cf-grid">
                 <div className="cf-row">
                   <div className="cf-label">
-                    <div className="cf-label-text">Titel</div>
+                    <div className="cf-label-text">Status</div>
                   </div>
-                  <div className="cf-control">
-                    <input
-                      className="input"
-                      value={uploadDraft.title}
-                      disabled={uploading}
-                      placeholder="Programmering Bosch BMI"
-                      onChange={(e) =>
-                        setUploadDraft((prev) => ({ ...prev, title: e.target.value }))
-                      }
-                    />
-                  </div>
-                </div>
 
-                <div className="cf-row">
-                  <div className="cf-label">
-                    <div className="cf-label-text">Versie</div>
-                  </div>
-                  <div className="cf-control">
-                    <input
-                      className="input"
-                      value={uploadDraft.version_label}
-                      disabled={uploading}
-                      placeholder="1.0"
-                      onChange={(e) =>
-                        setUploadDraft((prev) => ({ ...prev, version_label: e.target.value }))
-                      }
-                    />
-                  </div>
-                </div>
-
-                <div className="cf-row">
-                  <div className="cf-label">
-                    <div className="cf-label-text">Datum</div>
-                  </div>
-                  <div className="cf-control">
-                    <input
-                      type="date"
-                      className="input"
-                      value={uploadDraft.programming_date}
-                      disabled={uploading}
-                      onChange={(e) =>
-                        setUploadDraft((prev) => ({ ...prev, programming_date: e.target.value }))
-                      }
-                    />
-                  </div>
-                </div>
-
-                <div className="cf-row">
-                  <div className="cf-label">
-                    <div className="cf-label-text">Vervangt</div>
-                  </div>
                   <div className="cf-control">
                     <select
                       className="input"
-                      value={uploadDraft.parent_programming_id}
-                      disabled={uploading}
+                      value={programmingState.presence_mode}
+                      disabled={readOnly}
                       onChange={(e) =>
-                        setUploadDraft((prev) => ({
+                        setProgrammingState((prev) => ({
                           ...prev,
-                          parent_programming_id: e.target.value || "",
+                          presence_mode: e.target.value || "NONE",
                         }))
                       }
                     >
-                      <option value="">geen specifieke vorige versie</option>
-                      {activeProgrammingItems.map((item) => (
-                        <option key={item.programming_id} value={item.programming_id}>
-                          {item.title || item.file_name || item.programming_id}
-                        </option>
-                      ))}
+                      <option value="NONE">Geen programmering vastgelegd</option>
+                      <option value="MANUAL">Programmering aanwezig zonder bestand</option>
+                      <option value="FILE">Programmering aanwezig via bestand(en)</option>
                     </select>
                   </div>
                 </div>
@@ -654,339 +540,479 @@ const SoftwareTab = forwardRef(function SoftwareTab(
                   <div className="cf-label">
                     <div className="cf-label-text">Notitie</div>
                   </div>
+
                   <div className="cf-control">
                     <textarea
                       className="input"
-                      rows={2}
-                      value={uploadDraft.note}
-                      disabled={uploading}
-                      placeholder="Korte context; bijvoorbeeld paneeltype of exportmoment."
+                      rows={3}
+                      placeholder="Leg kort uit hoe de programmering geregeld is; bijvoorbeeld via extern beheer of server."
+                      value={programmingState.presence_note}
+                      disabled={readOnly}
                       onChange={(e) =>
-                        setUploadDraft((prev) => ({ ...prev, note: e.target.value }))
+                        setProgrammingState((prev) => ({
+                          ...prev,
+                          presence_note: e.target.value,
+                        }))
                       }
                     />
                   </div>
                 </div>
               </div>
 
-              <div style={{ display: "flex", justifyContent: "flex-end" }}>
-                <AnimatedActionButton
-                  title="programmering uploaden"
-                  Icon={UploadIcon}
-                  className="btn btn-secondary"
-                  disabled={uploading || !uploadFile}
-                  onClick={handleUploadProgramming}
-                >
-                  {uploading ? "uploaden..." : "ZIP uploaden"}
-                </AnimatedActionButton>
-              </div>
-            </div>
-          ) : null}
+              {!readOnly ? (
+                <div className="card" style={{ padding: 16, display: "grid", gap: 14 }}>
+                  <div style={{ display: "grid", gap: 4 }}>
+                    <div style={{ fontWeight: 800, fontSize: 18 }}>Nieuwe programmering uploaden</div>
+                    <div className="muted" style={{ fontSize: 13 }}>
+                      Voeg bij voorkeur één ZIP-bestand per versie toe; geen losse mappenstructuren of bundels vol subbestanden.
+                    </div>
+                  </div>
 
-          <div style={{ display: "grid", gap: 10 }}>
-            <div style={{ fontWeight: 800, fontSize: 18 }}>Actieve programmeerbestanden</div>
-            {activeProgrammingItems.length === 0 ? (
-              <div className="muted">Nog geen actieve programmeerbestanden.</div>
-            ) : (
-              <div className="doc-list">
-                {activeProgrammingItems.map((item) => (
-                  <div key={item.programming_id} className="doc-main-item">
-                    <div className="doc-card">
-                      <div className="doc-card__top">
-                        <div className="doc-card__top-left">
-                          <div className="doc-card__top-icon">
-                            <FileCogIcon size={18} className="doc-anim-icon" />
-                          </div>
+                  <input
+                    ref={uploadInputRef}
+                    type="file"
+                    hidden
+                    accept=".zip,application/zip,application/x-zip-compressed"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0] || null;
+                      setUploadFile(file);
+                      if (file && !uploadDraft.title) {
+                        setUploadDraft((prev) => ({
+                          ...prev,
+                          title: String(file.name || "").replace(/\.zip$/i, ""),
+                        }));
+                      }
+                    }}
+                  />
 
-                          <div className="doc-card__main">
-                            <div className="doc-card__title-row">
-                              <div className="doc-card__title">
-                                {item.title || item.file_name || "Programmering"}
-                              </div>
+                  <ClickableUploadBar
+                    title={uploadFile ? uploadFile.name : "ZIP-bestand kiezen"}
+                    subtitle={
+                      uploadFile
+                        ? "Klaar voor upload; metadata hieronder mag je nog aanpassen."
+                        : "Klik om een ZIP-bestand te kiezen."
+                    }
+                    onClick={() => openNativeFilePicker(uploadInputRef.current)}
+                    disabled={uploading}
+                  />
 
-                              <div className="doc-card__labels">
-                                {item.has_file ? (
-                                  <StatusChip tone="success">ZIP aanwezig</StatusChip>
-                                ) : (
-                                  <StatusChip tone="warning">Nog zonder bestand</StatusChip>
-                                )}
-                                {item.version_label ? <StatusChip tone="neutral">Versie; {item.version_label}</StatusChip> : null}
-                                {item.programming_date ? <StatusChip tone="neutral">Datum; {isoDate(item.programming_date)}</StatusChip> : null}
-                                {item.file_size_bytes ? <StatusChip tone="muted">{formatBytes(item.file_size_bytes)}</StatusChip> : null}
-                              </div>
-                            </div>
+                  <div className="cf-grid">
+                    <div className="cf-row">
+                      <div className="cf-label">
+                        <div className="cf-label-text">Titel</div>
+                      </div>
+                      <div className="cf-control">
+                        <input
+                          className="input"
+                          value={uploadDraft.title}
+                          disabled={uploading}
+                          placeholder="Programmering Bosch BMI"
+                          onChange={(e) =>
+                            setUploadDraft((prev) => ({ ...prev, title: e.target.value }))
+                          }
+                        />
+                      </div>
+                    </div>
 
-                            <div className="muted doc-card__subtitle">
-                              {item.note || item.file_name || " "}
-                            </div>
-                          </div>
-                        </div>
+                    <div className="cf-row">
+                      <div className="cf-label">
+                        <div className="cf-label-text">Versie</div>
+                      </div>
+                      <div className="cf-control">
+                        <input
+                          className="input"
+                          value={uploadDraft.version_label}
+                          disabled={uploading}
+                          placeholder="1.0"
+                          onChange={(e) =>
+                            setUploadDraft((prev) => ({ ...prev, version_label: e.target.value }))
+                          }
+                        />
+                      </div>
+                    </div>
 
-                        <div className="doc-card__actions">
-                          {item.has_file ? (
-                            <AnimatedActionButton
-                              title="openen"
-                              Icon={FileCogIcon}
-                              onClick={() => handleOpenProgramming(item)}
-                            >
-                              openen
-                            </AnimatedActionButton>
-                          ) : null}
+                    <div className="cf-row">
+                      <div className="cf-label">
+                        <div className="cf-label-text">Datum</div>
+                      </div>
+                      <div className="cf-control">
+                        <input
+                          type="date"
+                          className="input"
+                          value={uploadDraft.programming_date}
+                          disabled={uploading}
+                          onChange={(e) =>
+                            setUploadDraft((prev) => ({ ...prev, programming_date: e.target.value }))
+                          }
+                        />
+                      </div>
+                    </div>
 
-                          {item.has_file ? (
-                            <AnimatedActionButton
-                              title="downloaden"
-                              Icon={DownloadIcon}
-                              onClick={() => handleDownloadProgramming(item)}
-                            >
-                              downloaden
-                            </AnimatedActionButton>
-                          ) : null}
+                    <div className="cf-row">
+                      <div className="cf-label">
+                        <div className="cf-label-text">Vervangt</div>
+                      </div>
+                      <div className="cf-control">
+                        <select
+                          className="input"
+                          value={uploadDraft.parent_programming_id}
+                          disabled={uploading}
+                          onChange={(e) =>
+                            setUploadDraft((prev) => ({
+                              ...prev,
+                              parent_programming_id: e.target.value || "",
+                            }))
+                          }
+                        >
+                          <option value="">geen specifieke vorige versie</option>
+                          {activeProgrammingItems.map((item) => (
+                            <option key={item.programming_id} value={item.programming_id}>
+                              {item.title || item.file_name || item.programming_id}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
 
-                          {!readOnly ? (
-                            <AnimatedActionButton
-                              title="archiveren"
-                              Icon={ArchiveIcon}
-                              onClick={() => handleArchiveProgramming(item)}
-                            >
-                              archiveren
-                            </AnimatedActionButton>
-                          ) : null}
-                        </div>
+                    <div className="cf-row">
+                      <div className="cf-label">
+                        <div className="cf-label-text">Notitie</div>
+                      </div>
+                      <div className="cf-control">
+                        <textarea
+                          className="input"
+                          rows={2}
+                          value={uploadDraft.note}
+                          disabled={uploading}
+                          placeholder="Korte context; bijvoorbeeld paneeltype of exportmoment."
+                          onChange={(e) =>
+                            setUploadDraft((prev) => ({ ...prev, note: e.target.value }))
+                          }
+                        />
                       </div>
                     </div>
                   </div>
-                ))}
-              </div>
-            )}
-          </div>
 
-          {archivedProgrammingItems.length > 0 ? (
-            <div style={{ display: "grid", gap: 10 }}>
-              <div style={{ fontWeight: 800, fontSize: 18 }}>Historische programmeerbestanden</div>
-              <div className="doc-list doc-list--archived">
-                {archivedProgrammingItems.map((item) => (
-                  <div key={item.programming_id} className="doc-main-item">
-                    <div className="doc-card">
-                      <div className="doc-card__top">
-                        <div className="doc-card__top-left">
-                          <div className="doc-card__top-icon">
-                            <FileCogIcon size={18} className="doc-anim-icon" />
-                          </div>
+                  <div style={{ display: "flex", justifyContent: "flex-end" }}>
+                    <AnimatedActionButton
+                      title="programmering uploaden"
+                      Icon={UploadIcon}
+                      className="btn btn-secondary"
+                      disabled={uploading || !uploadFile}
+                      onClick={handleUploadProgramming}
+                    >
+                      {uploading ? "uploaden..." : "ZIP uploaden"}
+                    </AnimatedActionButton>
+                  </div>
+                </div>
+              ) : null}
 
-                          <div className="doc-card__main">
-                            <div className="doc-card__title-row">
-                              <div className="doc-card__title">
-                                {item.title || item.file_name || "Programmering"}
+              <div style={{ display: "grid", gap: 10 }}>
+                <div style={{ fontWeight: 800, fontSize: 18 }}>Actieve programmeerbestanden</div>
+                {activeProgrammingItems.length === 0 ? (
+                  <div className="muted">Nog geen actieve programmeerbestanden.</div>
+                ) : (
+                  <div className="doc-list">
+                    {activeProgrammingItems.map((item) => (
+                      <div key={item.programming_id} className="doc-main-item">
+                        <div className="doc-card">
+                          <div className="doc-card__top">
+                            <div className="doc-card__top-left">
+                              <div className="doc-card__top-icon">
+                                <FileCogIcon size={18} className="doc-anim-icon" />
                               </div>
-                              <div className="doc-card__labels">
-                                <StatusChip tone="neutral">Historisch</StatusChip>
-                                {item.version_label ? <StatusChip tone="neutral">Versie; {item.version_label}</StatusChip> : null}
-                                {item.programming_date ? <StatusChip tone="neutral">Datum; {isoDate(item.programming_date)}</StatusChip> : null}
+
+                              <div className="doc-card__main">
+                                <div className="doc-card__title-row">
+                                  <div className="doc-card__title">
+                                    {item.title || item.file_name || "Programmering"}
+                                  </div>
+
+                                  <div className="doc-card__labels">
+                                    {item.has_file ? (
+                                      <StatusChip tone="success">ZIP aanwezig</StatusChip>
+                                    ) : (
+                                      <StatusChip tone="warning">Nog zonder bestand</StatusChip>
+                                    )}
+                                    {item.version_label ? <StatusChip tone="neutral">Versie; {item.version_label}</StatusChip> : null}
+                                    {item.programming_date ? <StatusChip tone="neutral">Datum; {isoDate(item.programming_date)}</StatusChip> : null}
+                                    {item.file_size_bytes ? <StatusChip tone="muted">{formatBytes(item.file_size_bytes)}</StatusChip> : null}
+                                  </div>
+                                </div>
+
+                                <div className="muted doc-card__subtitle">
+                                  {item.note || item.file_name || " "}
+                                </div>
                               </div>
                             </div>
 
-                            <div className="muted doc-card__subtitle">
-                              {item.note || item.file_name || " "}
+                            <div className="doc-card__actions">
+                              {item.has_file ? (
+                                <AnimatedActionButton
+                                  title="openen"
+                                  Icon={FileCogIcon}
+                                  onClick={() => handleOpenProgramming(item)}
+                                >
+                                  openen
+                                </AnimatedActionButton>
+                              ) : null}
+
+                              {item.has_file ? (
+                                <AnimatedActionButton
+                                  title="downloaden"
+                                  Icon={DownloadIcon}
+                                  onClick={() => handleDownloadProgramming(item)}
+                                >
+                                  downloaden
+                                </AnimatedActionButton>
+                              ) : null}
+
+                              {!readOnly ? (
+                                <AnimatedActionButton
+                                  title="archiveren"
+                                  Icon={ArchiveIcon}
+                                  onClick={() => handleArchiveProgramming(item)}
+                                >
+                                  archiveren
+                                </AnimatedActionButton>
+                              ) : null}
                             </div>
                           </div>
-                        </div>
-
-                        <div className="doc-card__actions">
-                          {item.has_file ? (
-                            <AnimatedActionButton
-                              title="openen"
-                              Icon={FileCogIcon}
-                              onClick={() => handleOpenProgramming(item)}
-                            >
-                              openen
-                            </AnimatedActionButton>
-                          ) : null}
-
-                          {item.has_file ? (
-                            <AnimatedActionButton
-                              title="downloaden"
-                              Icon={DownloadIcon}
-                              onClick={() => handleDownloadProgramming(item)}
-                            >
-                              downloaden
-                            </AnimatedActionButton>
-                          ) : null}
                         </div>
                       </div>
-                    </div>
+                    ))}
                   </div>
-                ))}
+                )}
               </div>
-            </div>
-          ) : null}
-        </div>,
-        <StatusChip tone={programmingSummary.tone}>{programmingSummary.label}</StatusChip>
-      )}
 
-      {renderSection(
-        "Beheerportaal",
-        "beheerportaal",
-        "Leg het gekoppelde beheerportaal vast; maximaal één portaal per installatie.",
-        <div className="cf-grid">
-          <div className="cf-row">
-            <div className="cf-label">
-              <div className="cf-label-text">Portaal</div>
-            </div>
-            <div className="cf-control">
-              <select
-                className="input"
-                value={managementPortal.portal_key}
-                disabled={readOnly}
-                onChange={(e) =>
-                  setManagementPortal((prev) => ({
-                    ...prev,
-                    portal_key: e.target.value || "",
-                  }))
-                }
-              >
-                <option value="">geen beheerportaal</option>
-                {portalOptions.map((item) => (
-                  <option key={item.portal_key} value={item.portal_key}>
-                    {item.display_name}
-                  </option>
-                ))}
-              </select>
-            </div>
-          </div>
+              {archivedProgrammingItems.length > 0 ? (
+                <div style={{ display: "grid", gap: 10 }}>
+                  <div style={{ fontWeight: 800, fontSize: 18 }}>Historische programmeerbestanden</div>
+                  <div className="doc-list doc-list--archived">
+                    {archivedProgrammingItems.map((item) => (
+                      <div key={item.programming_id} className="doc-main-item">
+                        <div className="doc-card">
+                          <div className="doc-card__top">
+                            <div className="doc-card__top-left">
+                              <div className="doc-card__top-icon">
+                                <FileCogIcon size={18} className="doc-anim-icon" />
+                              </div>
 
-          <div className="cf-row">
-            <div className="cf-label">
-              <div className="cf-label-text">Naam in portaal</div>
-            </div>
-            <div className="cf-control">
-              <input
-                className="input"
-                value={managementPortal.portal_installation_name}
-                disabled={readOnly || !managementPortal.portal_key}
-                placeholder="Naam of label van de installatie in het portaal"
-                onChange={(e) =>
-                  setManagementPortal((prev) => ({
-                    ...prev,
-                    portal_installation_name: e.target.value,
-                  }))
-                }
-              />
-            </div>
-          </div>
+                              <div className="doc-card__main">
+                                <div className="doc-card__title-row">
+                                  <div className="doc-card__title">
+                                    {item.title || item.file_name || "Programmering"}
+                                  </div>
+                                  <div className="doc-card__labels">
+                                    <StatusChip tone="neutral">Historisch</StatusChip>
+                                    {item.version_label ? <StatusChip tone="neutral">Versie; {item.version_label}</StatusChip> : null}
+                                    {item.programming_date ? <StatusChip tone="neutral">Datum; {isoDate(item.programming_date)}</StatusChip> : null}
+                                  </div>
+                                </div>
 
-          <div className="cf-row">
-            <div className="cf-label">
-              <div className="cf-label-text">Referentie</div>
-            </div>
-            <div className="cf-control">
-              <input
-                className="input"
-                value={managementPortal.portal_installation_reference}
-                disabled={readOnly || !managementPortal.portal_key}
-                placeholder="Installatie-id of referentie in het portaal"
-                onChange={(e) =>
-                  setManagementPortal((prev) => ({
-                    ...prev,
-                    portal_installation_reference: e.target.value,
-                  }))
-                }
-              />
-            </div>
-          </div>
+                                <div className="muted doc-card__subtitle">
+                                  {item.note || item.file_name || " "}
+                                </div>
+                              </div>
+                            </div>
 
-          <div className="cf-row">
-            <div className="cf-label">
-              <div className="cf-label-text">URL naar installatie</div>
-            </div>
-            <div className="cf-control">
-              <input
-                className="input"
-                value={managementPortal.portal_installation_url}
-                disabled={readOnly || !managementPortal.portal_key}
-                placeholder="https://..."
-                onChange={(e) =>
-                  setManagementPortal((prev) => ({
-                    ...prev,
-                    portal_installation_url: e.target.value,
-                  }))
-                }
-              />
-            </div>
-          </div>
+                            <div className="doc-card__actions">
+                              {item.has_file ? (
+                                <AnimatedActionButton
+                                  title="openen"
+                                  Icon={FileCogIcon}
+                                  onClick={() => handleOpenProgramming(item)}
+                                >
+                                  openen
+                                </AnimatedActionButton>
+                              ) : null}
 
-          <div className="cf-row">
-            <div className="cf-label">
-              <div className="cf-label-text">Notitie</div>
-            </div>
-            <div className="cf-control">
-              <textarea
-                className="input"
-                rows={2}
-                value={managementPortal.note}
-                disabled={readOnly || !managementPortal.portal_key}
-                placeholder="Korte context; bijvoorbeeld tenant of bijzonderheden."
-                onChange={(e) =>
-                  setManagementPortal((prev) => ({
-                    ...prev,
-                    note: e.target.value,
-                  }))
-                }
-              />
-            </div>
-          </div>
+                              {item.has_file ? (
+                                <AnimatedActionButton
+                                  title="downloaden"
+                                  Icon={DownloadIcon}
+                                  onClick={() => handleDownloadProgramming(item)}
+                                >
+                                  downloaden
+                                </AnimatedActionButton>
+                              ) : null}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
+            </div>,
+            <StatusChip tone={programmingSummary.tone}>{programmingSummary.label}</StatusChip>
+          )}
 
-          {managementPortal.portal_installation_url ? (
-            <div className="cf-row">
-              <div className="cf-label">
-                <div className="cf-label-text">Actie</div>
-              </div>
-              <div className="cf-control">
-                <div style={{ display: "flex", justifyContent: "flex-start" }}>
-                  <StatusChip tone="info" href={managementPortal.portal_installation_url}>
-                    Open beheerportaal
-                  </StatusChip>
+          {renderSection(
+            "Bron uit Atrium",
+            "bron",
+            "Alleen lezen; dit zijn bestaande Atrium-velden die context kunnen geven bij software en beheer.",
+            <div className="cf-grid">
+              <div className="cf-row">
+                <div className="cf-label">
+                  <div className="cf-label-text">Softwareversie</div>
+                </div>
+                <div className="cf-control">
+                  <input className="input" value={softwareData?.atrium?.software_versie || ""} disabled />
                 </div>
               </div>
+
+              <div className="cf-row">
+                <div className="cf-label">
+                  <div className="cf-label-text">Software gebruiker</div>
+                </div>
+                <div className="cf-control">
+                  <input className="input" value={softwareData?.atrium?.software_gebruikersnaam || ""} disabled />
+                </div>
+              </div>
+            </div>,
+            <StatusChip tone="muted">Atrium</StatusChip>
+          )}
+        </>
+      ) : (
+        renderSection(
+          "Beheerportaal",
+          "beheerportaal",
+          "Leg het gekoppelde beheerportaal vast; maximaal één portaal per installatie.",
+          <div className="cf-grid">
+            <div className="cf-row">
+              <div className="cf-label">
+                <div className="cf-label-text">Portaal</div>
+              </div>
+              <div className="cf-control">
+                <select
+                  className="input"
+                  value={managementPortal.portal_key}
+                  disabled={readOnly}
+                  onChange={(e) =>
+                    setManagementPortal((prev) => ({
+                      ...prev,
+                      portal_key: e.target.value || "",
+                    }))
+                  }
+                >
+                  <option value="">geen beheerportaal</option>
+                  {portalOptions.map((item) => (
+                    <option key={item.portal_key} value={item.portal_key}>
+                      {item.display_name}
+                    </option>
+                  ))}
+                </select>
+              </div>
             </div>
-          ) : null}
-        </div>,
-        managementPortal.portal_key ? (
-          <StatusChip
-            tone="info"
-            href={managementPortal.portal_installation_url || null}
-          >
-            {softwareData?.managementPortal?.portal_display_name || managementPortal.portal_key}
-          </StatusChip>
-        ) : (
-          <StatusChip tone="muted">Geen portaal</StatusChip>
+
+            <div className="cf-row">
+              <div className="cf-label">
+                <div className="cf-label-text">Naam in portaal</div>
+              </div>
+              <div className="cf-control">
+                <input
+                  className="input"
+                  value={managementPortal.portal_installation_name}
+                  disabled={readOnly || !managementPortal.portal_key}
+                  placeholder="Naam of label van de installatie in het portaal"
+                  onChange={(e) =>
+                    setManagementPortal((prev) => ({
+                      ...prev,
+                      portal_installation_name: e.target.value,
+                    }))
+                  }
+                />
+              </div>
+            </div>
+
+            <div className="cf-row">
+              <div className="cf-label">
+                <div className="cf-label-text">Referentie</div>
+              </div>
+              <div className="cf-control">
+                <input
+                  className="input"
+                  value={managementPortal.portal_installation_reference}
+                  disabled={readOnly || !managementPortal.portal_key}
+                  placeholder="Installatie-id of referentie in het portaal"
+                  onChange={(e) =>
+                    setManagementPortal((prev) => ({
+                      ...prev,
+                      portal_installation_reference: e.target.value,
+                    }))
+                  }
+                />
+              </div>
+            </div>
+
+            <div className="cf-row">
+              <div className="cf-label">
+                <div className="cf-label-text">URL naar installatie</div>
+              </div>
+              <div className="cf-control">
+                <input
+                  className="input"
+                  value={managementPortal.portal_installation_url}
+                  disabled={readOnly || !managementPortal.portal_key}
+                  placeholder="https://..."
+                  onChange={(e) =>
+                    setManagementPortal((prev) => ({
+                      ...prev,
+                      portal_installation_url: e.target.value,
+                    }))
+                  }
+                />
+              </div>
+            </div>
+
+            <div className="cf-row">
+              <div className="cf-label">
+                <div className="cf-label-text">Notitie</div>
+              </div>
+              <div className="cf-control">
+                <textarea
+                  className="input"
+                  rows={2}
+                  value={managementPortal.note}
+                  disabled={readOnly || !managementPortal.portal_key}
+                  placeholder="Korte context; bijvoorbeeld tenant of bijzonderheden."
+                  onChange={(e) =>
+                    setManagementPortal((prev) => ({
+                      ...prev,
+                      note: e.target.value,
+                    }))
+                  }
+                />
+              </div>
+            </div>
+
+            {managementPortal.portal_installation_url ? (
+              <div className="cf-row">
+                <div className="cf-label">
+                  <div className="cf-label-text">Actie</div>
+                </div>
+                <div className="cf-control">
+                  <div style={{ display: "flex", justifyContent: "flex-start" }}>
+                    <StatusChip tone="info" href={managementPortal.portal_installation_url}>
+                      Open beheerportaal
+                    </StatusChip>
+                  </div>
+                </div>
+              </div>
+            ) : null}
+          </div>,
+          managementPortal.portal_key ? (
+            <StatusChip
+              tone="info"
+              href={managementPortal.portal_installation_url || null}
+            >
+              {softwareData?.managementPortal?.portal_display_name || managementPortal.portal_key}
+            </StatusChip>
+          ) : (
+            <StatusChip tone="muted">Geen portaal</StatusChip>
+          )
         )
-      )}
-
-      {renderSection(
-        "Bron uit Atrium",
-        "bron",
-        "Alleen lezen; dit zijn bestaande Atrium-velden die context kunnen geven bij software en beheer.",
-        <div className="cf-grid">
-          <div className="cf-row">
-            <div className="cf-label">
-              <div className="cf-label-text">Softwareversie</div>
-            </div>
-            <div className="cf-control">
-              <input className="input" value={softwareData?.atrium?.software_versie || ""} disabled />
-            </div>
-          </div>
-
-          <div className="cf-row">
-            <div className="cf-label">
-              <div className="cf-label-text">Software gebruiker</div>
-            </div>
-            <div className="cf-control">
-              <input className="input" value={softwareData?.atrium?.software_gebruikersnaam || ""} disabled />
-            </div>
-          </div>
-        </div>,
-        <StatusChip tone="muted">Atrium</StatusChip>
       )}
     </div>
   );

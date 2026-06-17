@@ -598,41 +598,119 @@ select
 
 
 export const searchInstallationsSql = `
-select top (@take)
-  a.installatie_code as atrium_installation_code,
-  i.installation_id,
-  i.installation_type_key,
-  it.display_name as installation_type_name,
-  a.BedrijfUnit,
-  a.installation_status,
+with matched as (
+  select top (@take)
+    a.installatie_code as atrium_installation_code,
+    i.installation_id,
+    i.installation_type_key,
+    it.display_name as installation_type_name,
+    a.BedrijfUnit,
+    a.installation_status,
 
-  -- “naam” voor UI
-  coalesce(nullif(a.obj_naam, ''), nullif(a.installatie_naam, ''), a.installatie_code) as installation_name,
+    -- “naam” voor UI
+    coalesce(nullif(a.obj_naam, ''), nullif(a.installatie_naam, ''), a.installatie_code) as installation_name,
 
-  -- handig voor UI: bestaat er al een ember record?
-  cast(case when i.installation_id is null then 0 else 1 end as bit) as has_ember_record
+    -- handig voor UI: bestaat er al een ember record?
+    cast(case when i.installation_id is null then 0 else 1 end as bit) as has_ember_record,
 
-from dbo.AtriumInstallationBase a
-left join dbo.Installation i
-  on i.atrium_installation_code = a.installatie_code
-left join dbo.InstallationType it
-  on it.installation_type_key = i.installation_type_key
+    case
+      when a.installatie_code = @q then 0
+      when a.installatie_code like @qPrefix then 1
+      when a.installatie_code like @qLike then 2
+      when a.obj_naam like @qPrefix then 3
+      when a.obj_naam like @qLike then 4
+      else 9
+    end as search_rank
 
-where
-  (
-    a.installatie_code like @qLike
-    or a.obj_naam like @qLike
-    or a.installatie_naam like @qLike
-  )
+  from dbo.AtriumInstallationBase a
+  left join dbo.Installation i
+    on i.atrium_installation_code = a.installatie_code
+  left join dbo.InstallationType it
+    on it.installation_type_key = i.installation_type_key
 
+  where
+    (
+      a.installatie_code like @qLike
+      or a.obj_naam like @qLike
+      or a.installatie_naam like @qLike
+    )
+
+  order by
+    case
+      when a.installatie_code = @q then 0
+      when a.installatie_code like @qPrefix then 1
+      when a.installatie_code like @qLike then 2
+      when a.obj_naam like @qPrefix then 3
+      when a.obj_naam like @qLike then 4
+      else 9
+    end,
+    a.installatie_code
+)
+select
+  m.atrium_installation_code,
+  m.installation_id,
+  m.installation_type_key,
+  m.installation_type_name,
+  m.BedrijfUnit,
+  m.installation_status,
+  m.installation_name,
+  m.has_ember_record,
+  mp.portal_key as management_portal_key,
+  mp.portal_display_name as management_portal_name,
+  doc.required_document_count,
+  doc.missing_required_document_count,
+  cast(
+    case
+      when isnull(doc.required_document_count, 0) > 0
+       and isnull(doc.missing_required_document_count, 0) = 0 then 1
+      else 0
+    end
+    as bit
+  ) as required_documents_complete
+from matched m
+outer apply (
+  select top 1
+    mp.portal_key,
+    p.display_name as portal_display_name
+  from dbo.InstallationManagementPortal mp
+  join dbo.ManagementPortalDefinition p
+    on p.portal_key = mp.portal_key
+   and p.is_active = 1
+  where mp.atrium_installation_code = m.atrium_installation_code
+    and mp.is_active = 1
+  order by
+    mp.created_at desc,
+    mp.installation_management_portal_id desc
+) mp
+outer apply (
+  select
+    count(*) as required_document_count,
+    sum(case when present.has_file = 1 then 0 else 1 end) as missing_required_document_count
+  from (
+    select distinct
+      r.document_type_key
+    from dbo.DocumentTypeRequirement r
+    join dbo.DocumentType dt
+      on dt.document_type_key = r.document_type_key
+    where r.installation_type_key = m.installation_type_key
+      and r.is_required = 1
+      and dt.is_active = 1
+      and isnull(dt.is_attachment_only, 0) = 0
+  ) req
+  outer apply (
+    select top 1
+      cast(1 as bit) as has_file
+    from dbo.InstallationDocument d
+    where d.atrium_installation_code = m.atrium_installation_code
+      and d.document_type_key = req.document_type_key
+      and d.is_active = 1
+      and d.storage_key is not null
+    order by
+      d.created_at desc,
+      d.document_id desc
+  ) present
+) doc
 order by
-  case
-    when a.installatie_code = @q then 0
-    when a.installatie_code like @qPrefix then 1
-    when a.installatie_code like @qLike then 2
-    when a.obj_naam like @qPrefix then 3
-    when a.obj_naam like @qLike then 4
-    else 9
-  end,
-  a.installatie_code;
+  m.search_rank,
+  m.atrium_installation_code;
 `;

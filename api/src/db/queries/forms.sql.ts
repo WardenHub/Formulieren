@@ -1566,6 +1566,82 @@ where d.form_instance_document_id = @documentId
 `;
 
 // =========================================================
+// form instance documents - rename stored file
+// =========================================================
+
+export const renameFormInstanceDocumentFileSql = `
+-- expects:
+--   @code nvarchar(...)
+--   @instanceId bigint
+--   @documentId uniqueidentifier
+--   @fileName nvarchar(...)
+--   @storageProvider nvarchar(...)
+--   @storageKey nvarchar(...)
+--   @storageUrl nvarchar(...) (nullable)
+--   @updatedBy nvarchar(...)
+
+if not exists (
+  select 1
+  from dbo.FormInstance fi
+  where fi.form_instance_id = @instanceId
+    and fi.atrium_installation_code = @code
+    and fi.status in (N'CONCEPT', N'INGEDIEND', N'IN_BEHANDELING')
+)
+begin
+  throw 50000, 'form instance not editable', 1;
+end;
+
+update dbo.FormInstanceDocument
+set
+  file_name = @fileName,
+  storage_provider = @storageProvider,
+  storage_key = @storageKey,
+  storage_url = @storageUrl,
+  file_last_modified_at = sysutcdatetime(),
+  file_last_modified_by = @updatedBy,
+  updated_at = sysutcdatetime(),
+  updated_by = @updatedBy
+where form_instance_document_id = @documentId
+  and form_instance_id = @instanceId
+  and atrium_installation_code = @code
+  and storage_key is not null;
+
+select top 1
+  d.form_instance_document_id,
+  d.form_instance_id,
+  d.parent_document_id,
+  d.relation_type,
+  d.title,
+  d.note,
+  d.document_number,
+  d.document_date,
+  d.revision,
+  d.file_name,
+  d.mime_type,
+  d.file_size_bytes,
+  d.uploaded_at,
+  d.uploaded_by,
+  d.file_last_modified_at,
+  d.file_last_modified_by,
+  d.storage_provider,
+  d.storage_key,
+  d.storage_url,
+  d.checksum_sha256,
+  d.image_width_px,
+  d.image_height_px,
+  d.image_variant,
+  d.is_active,
+  d.created_at,
+  d.created_by,
+  d.updated_at,
+  d.updated_by
+from dbo.FormInstanceDocument d
+where d.form_instance_document_id = @documentId
+  and d.form_instance_id = @instanceId
+  and d.atrium_installation_code = @code;
+`;
+
+// =========================================================
 // form instance documents - replacement
 // =========================================================
 

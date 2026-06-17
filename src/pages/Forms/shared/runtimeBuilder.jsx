@@ -99,13 +99,54 @@ export function createRuntimeSurveyModel(
 }
 
 export function setRuntimeSurveyData(model, answersObj, suppressDirtyRef) {
+  const normalizedAnswers = normalizeFixedMatrixAnswers(model, answersObj);
+
   suppressDirtyRef.current = true;
   try {
-    model.data = answersObj && typeof answersObj === "object" ? answersObj : {};
+    model.data = normalizedAnswers;
     syncAllMatrixQuestionVisualErrors(model, false);
   } finally {
     suppressDirtyRef.current = false;
   }
+}
+
+function normalizeFixedMatrixAnswers(model, answersObj) {
+  const base =
+    answersObj && typeof answersObj === "object"
+      ? deepClone(answersObj)
+      : {};
+
+  if (!model?.getAllQuestions) return base;
+
+  const questions = model.getAllQuestions() || [];
+
+  for (const question of questions) {
+    const type = String(question?.getType?.() || question?.jsonObj?.type || "").trim();
+    if (type !== "matrixdynamic") continue;
+
+    const name = String(question?.name || "").trim();
+    if (!name) continue;
+
+    const allowAddRows =
+      question?.allowAddRows === true ||
+      question?.jsonObj?.allowAddRows === true;
+    if (allowAddRows) continue;
+
+    const defaultRows = Array.isArray(question?.defaultValue)
+      ? question.defaultValue
+      : Array.isArray(question?.jsonObj?.defaultValue)
+        ? question.jsonObj.defaultValue
+        : [];
+
+    if (!defaultRows.length) continue;
+
+    const currentRows = Array.isArray(base[name]) ? base[name] : null;
+    if (!currentRows || currentRows.length <= defaultRows.length) continue;
+
+    base[name] = currentRows.slice(0, defaultRows.length);
+  }
+
+  return base;
 }
 
 function getInstanceDocumentNumber(instance) {
