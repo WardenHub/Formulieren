@@ -106,15 +106,17 @@ from dbo.UserProfile up
 where
   nullif(ltrim(rtrim(@actorValue)), N'') is not null
   and (
-    nullif(ltrim(rtrim(up.preferred_display_name)), N'') = nullif(ltrim(rtrim(@actorValue)), N'')
+    nullif(ltrim(rtrim(up.user_object_id)), N'') = nullif(ltrim(rtrim(@actorValue)), N'')
+    or nullif(ltrim(rtrim(up.preferred_display_name)), N'') = nullif(ltrim(rtrim(@actorValue)), N'')
     or nullif(ltrim(rtrim(up.display_name_snapshot)), N'') = nullif(ltrim(rtrim(@actorValue)), N'')
     or nullif(ltrim(rtrim(up.email_snapshot)), N'') = nullif(ltrim(rtrim(@actorValue)), N'')
   )
 order by
   case
-    when nullif(ltrim(rtrim(up.preferred_display_name)), N'') = nullif(ltrim(rtrim(@actorValue)), N'') then 0
-    when nullif(ltrim(rtrim(up.display_name_snapshot)), N'') = nullif(ltrim(rtrim(@actorValue)), N'') then 1
-    when nullif(ltrim(rtrim(up.email_snapshot)), N'') = nullif(ltrim(rtrim(@actorValue)), N'') then 2
+    when nullif(ltrim(rtrim(up.user_object_id)), N'') = nullif(ltrim(rtrim(@actorValue)), N'') then 0
+    when nullif(ltrim(rtrim(up.preferred_display_name)), N'') = nullif(ltrim(rtrim(@actorValue)), N'') then 1
+    when nullif(ltrim(rtrim(up.display_name_snapshot)), N'') = nullif(ltrim(rtrim(@actorValue)), N'') then 2
+    when nullif(ltrim(rtrim(up.email_snapshot)), N'') = nullif(ltrim(rtrim(@actorValue)), N'') then 3
     else 9
   end,
   up.updated_at desc,
@@ -433,7 +435,8 @@ export const getUserProfileStatsSql = `
     sum(case when status = N'INGETROKKEN' then 1 else 0 end) as ingetrokken_count
   from dbo.FormInstance
   where
-    created_by = @actorEmail
+    created_by = @actorObjectId
+    or created_by = @actorEmail
     or created_by = @actorName
 ),
 follow_up_stats as (
@@ -451,7 +454,8 @@ follow_up_stats as (
     from dbo.FormInstance fi
     where fi.form_instance_id = fua.form_instance_id
       and (
-        fi.created_by = @actorEmail
+        fi.created_by = @actorObjectId
+        or fi.created_by = @actorEmail
         or fi.created_by = @actorName
       )
   )
@@ -531,11 +535,13 @@ left join (
 ) a
   on a.user_object_id = up.user_object_id
 left join form_counts fc
-  on fc.created_by = up.email_snapshot
+  on fc.created_by = up.user_object_id
+  or fc.created_by = up.email_snapshot
   or fc.created_by = up.display_name_snapshot
   or fc.created_by = up.preferred_display_name
 left join follow_up_counts fuc
-  on fuc.created_by = up.email_snapshot
+  on fuc.created_by = up.user_object_id
+  or fuc.created_by = up.email_snapshot
   or fuc.created_by = up.display_name_snapshot
   or fuc.created_by = up.preferred_display_name
 order by

@@ -10,10 +10,7 @@ import {
   saveAdminInstallationManagementPortalsSql,
   initializeInstallationTypesSql,
 } from "../db/queries/adminInstallations.sql.js";
-
-function getUserDisplayName(user: any) {
-  return user?.name || user?.upn || user?.objectId || "unknown";
-}
+import { getUserAuditActor } from "../utils/userIdentity.js";
 
 function normalizeNullableString(value: any) {
   if (value == null) return null;
@@ -232,7 +229,7 @@ export async function saveAdminInstallationTypes(items: any[], user: any) {
 
   await sqlQuery(saveAdminInstallationTypesSql, {
     itemsJson: JSON.stringify(normalized),
-    updatedBy: getUserDisplayName(user),
+    updatedBy: getUserAuditActor(user),
   });
 
   return await getAdminInstallationsCatalog();
@@ -257,7 +254,7 @@ export async function saveAdminInstallationSections(items: any[], user: any) {
 
   await sqlQuery(saveAdminInstallationSectionsSql, {
     itemsJson: JSON.stringify(normalized),
-    updatedBy: getUserDisplayName(user),
+    updatedBy: getUserAuditActor(user),
   });
 
   return await getAdminInstallationsCatalog();
@@ -299,7 +296,7 @@ export async function saveAdminInstallationFields(items: any[], user: any) {
 
   await sqlQuery(saveAdminInstallationFieldsSql, {
     itemsJson: JSON.stringify(normalized),
-    updatedBy: getUserDisplayName(user),
+    updatedBy: getUserAuditActor(user),
   });
 
   return await getAdminInstallationsCatalog();
@@ -369,7 +366,7 @@ export async function saveAdminInstallationDocuments(items: any[], user: any) {
 
   await sqlQuery(saveAdminInstallationDocumentsSql, {
     itemsJson: JSON.stringify(normalized),
-    updatedBy: getUserDisplayName(user),
+    updatedBy: getUserAuditActor(user),
   });
 
   return await getAdminInstallationsCatalog();
@@ -403,7 +400,7 @@ export async function saveAdminInstallationExternalFields(items: any[], user: an
 
   await sqlQuery(saveAdminInstallationExternalFieldsSql, {
     itemsJson: JSON.stringify(normalized),
-    updatedBy: getUserDisplayName(user),
+    updatedBy: getUserAuditActor(user),
   });
 
   return await getAdminInstallationsCatalog();
@@ -431,7 +428,7 @@ export async function saveAdminInstallationManagementPortals(items: any[], user:
 
   await sqlQuery(saveAdminInstallationManagementPortalsSql, {
     itemsJson: JSON.stringify(normalized),
-    updatedBy: getUserDisplayName(user),
+    updatedBy: getUserAuditActor(user),
   });
 
   return await getAdminInstallationsCatalog();
@@ -440,7 +437,7 @@ export async function saveAdminInstallationManagementPortals(items: any[], user:
 export async function initializeInstallationTypesFromAtrium(user: any, triggerSource = "admin") {
   const normalizedTriggerSource = normalizeNullableString(triggerSource) || "admin";
   const result: any = await sqlQueryRaw(initializeInstallationTypesSql, {
-    updatedBy: getUserDisplayName(user),
+    updatedBy: getUserAuditActor(user),
     triggerSource: normalizedTriggerSource,
   });
 

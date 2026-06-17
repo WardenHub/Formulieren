@@ -3287,7 +3287,7 @@ html[data-appearance="light"] .type-telefonie{
   min-height: 124px;
   border: 1px dashed var(--border);
   border-radius: 14px;
-  background: var(--row-bg);
+  background: color-mix(in srgb, #ffffff 92%, #e5e7eb 8%);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -3299,6 +3299,7 @@ html[data-appearance="light"] .type-telefonie{
   width: 100%;
   text-align: center;
   color: var(--muted);
+  background: transparent;
 }
 
 .profile-signature-image{

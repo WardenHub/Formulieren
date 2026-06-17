@@ -55,8 +55,7 @@ export default function UserAvatar({
         if (!cancelled) {
           setSrc(nextUrl || null);
         }
-      } catch (err) {
-        console.error("avatar media fetch failed", err);
+      } catch {
         if (!cancelled) {
           setSrc(null);
         }

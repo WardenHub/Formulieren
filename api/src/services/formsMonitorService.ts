@@ -20,6 +20,13 @@ import {
 } from "../db/queries/formFollowUps.sql.js";
 import { getUserProfileSql } from "../db/queries/profile.sql.js";
 import { isHistoricalInstallationStatus } from "./installationsService.js";
+import {
+  getUserActorCandidates,
+  getUserAuditActor,
+  getUserDisplayNameSnapshot,
+  getUserEmail,
+  getUserObjectId,
+} from "../utils/userIdentity.js";
 
 type UserContext = {
   user: any;
@@ -52,40 +59,6 @@ function normalizeBoolean(value: any, fallback = false): boolean {
   if (["1", "true", "yes", "ja"].includes(s)) return true;
   if (["0", "false", "no", "nee"].includes(s)) return false;
   return fallback;
-}
-
-function getActor(user: any) {
-  const raw =
-    user?.email ||
-    user?.upn ||
-    user?.preferred_username ||
-    user?.name ||
-    user?.objectId ||
-    "unknown";
-
-  return String(raw).trim() || "unknown";
-}
-
-function getActorObjectId(user: any) {
-  const raw = user?.objectId || user?.email || user?.upn || user?.preferred_username || user?.name || null;
-  const clean = String(raw || "").trim();
-  return clean || null;
-}
-
-function getActorCandidates(user: any) {
-  return Array.from(
-    new Set(
-      [
-        user?.email,
-        user?.upn,
-        user?.preferred_username,
-        user?.name,
-        user?.objectId,
-      ]
-        .map((value) => String(value || "").trim())
-        .filter(Boolean)
-    )
-  );
 }
 
 function profileDisplayName(row: any) {
@@ -337,12 +310,12 @@ export async function getMonitorList(input: {
   const onlyActionable = normalizeBoolean(input?.query?.onlyActionable, false);
   const take = Math.min(Math.max(Number(input?.query?.take ?? 25) || 25, 1), 200);
   const skip = Math.max(Number(input?.query?.skip ?? 0) || 0, 0);
-  const actor = getActor(input.user);
-  const actorCandidates = getActorCandidates(input.user);
+  const actor = getUserAuditActor(input.user);
+  const actorCandidates = getUserActorCandidates(input.user);
   const assignedUserObjectId = normalizeOptionalString(input?.query?.assignedUserObjectId);
   const assignedSearch = normalizeOptionalString(input?.query?.assignedSearch);
   const unassignedOnly = normalizeBoolean(input?.query?.unassignedOnly, false);
-  const viewerUserObjectId = getActorObjectId(input.user);
+  const viewerUserObjectId = getUserObjectId(input.user);
 
   const rows = await sqlQuery(getFormsMonitorListSql, {
     q,
@@ -435,7 +408,7 @@ export async function getMonitorDetail(formInstanceIdRaw: any, context: DetailCo
   const formInstanceId = parsePositiveInt(formInstanceIdRaw);
   if (formInstanceId == null) return { error: "not found" };
 
-  const actor = getActor(context.user);
+  const actor = getUserAuditActor(context.user);
 
   let item = await getMonitorDetailRow(formInstanceId);
   if (!item) return { error: "not found" };
@@ -475,8 +448,8 @@ export async function getMonitorDetail(formInstanceIdRaw: any, context: DetailCo
       can_set_compliment_points: isManager(context.roles || []),
     },
     viewer: {
-      actor: getActor(context.user),
-      user_object_id: getActorObjectId(context.user),
+      actor: getUserAuditActor(context.user),
+      user_object_id: getUserObjectId(context.user),
     },
   };
 }
@@ -503,7 +476,7 @@ export async function runMonitorFormStatusAction(formInstanceIdRaw: any, action:
   const formInstanceId = parsePositiveInt(formInstanceIdRaw);
   if (formInstanceId == null) return { error: "not found" };
 
-  const actor = getActor(context.user);
+  const actor = getUserAuditActor(context.user);
   const item = await getMonitorDetailRow(formInstanceId);
   if (!item) return { error: "not found" };
 
@@ -539,7 +512,7 @@ export async function runMonitorFollowUpStatusAction(
   const followUpActionId = normalizeOptionalString(followUpActionIdRaw);
   if (!followUpActionId) return { error: "not found" };
 
-  const actor = getActor(context.user);
+  const actor = getUserAuditActor(context.user);
   const rows = await sqlQuery(getFormFollowUpByIdSql, { followUpActionId });
   const followUpRow: any = rows?.[0] ?? null;
   if (!followUpRow) return { error: "not found" };
@@ -593,7 +566,7 @@ export async function updateMonitorFollowUpNote(
     throw new Error("forbidden");
   }
 
-  const actor = getActor(context.user);
+  const actor = getUserAuditActor(context.user);
   const note = normalizeOptionalString(payload?.note);
 
   const existingRows = await sqlQuery(getFormFollowUpByIdSql, { followUpActionId });
@@ -631,7 +604,7 @@ export async function updateMonitorFormAssignment(
     throw new Error("historical installation read-only");
   }
 
-  const changedBy = getActor(context.user);
+  const changedBy = getUserAuditActor(context.user);
   const clearRequested = normalizeBoolean(payload?.clear, false);
   const requestedUserObjectId = clearRequested
     ? null
@@ -676,7 +649,7 @@ export async function upsertMonitorComplimentPoint(
     throw new Error("historical installation read-only");
   }
 
-  const reviewerUserObjectId = getActorObjectId(context.user);
+  const reviewerUserObjectId = getUserObjectId(context.user);
   if (!reviewerUserObjectId) throw new Error("missing reviewer");
 
   const pointValueRaw = Number(payload?.point_value ?? payload?.pointValue ?? 0);
@@ -690,8 +663,8 @@ export async function upsertMonitorComplimentPoint(
 
   const reviewerSnapshot = {
     user_object_id: reviewerUserObjectId,
-    display_name_snapshot: normalizeOptionalString(context.user?.name) || getActor(context.user),
-    email_snapshot: normalizeOptionalString(context.user?.email || context.user?.preferred_username),
+    display_name_snapshot: getUserDisplayNameSnapshot(context.user),
+    email_snapshot: getUserEmail(context.user),
   };
 
   await sqlQuery(upsertFormInstanceComplimentPointSql, {
@@ -701,7 +674,7 @@ export async function upsertMonitorComplimentPoint(
     reviewerEmailSnapshot: reviewerSnapshot.email_snapshot,
     pointValue,
     reason,
-    changedBy: getActor(context.user),
+    changedBy: getUserAuditActor(context.user),
   });
 
   return await getMonitorDetail(formInstanceId, {

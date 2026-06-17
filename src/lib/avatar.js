@@ -6,6 +6,10 @@ function firstNonEmpty(...values) {
   return null;
 }
 
+function normalizeLookupKey(value) {
+  return String(value || "").trim().toLowerCase();
+}
+
 export function buildInitials(name, email, fallback = "E") {
   const source = String(name || email || "").trim();
   if (!source) return fallback;
@@ -31,6 +35,51 @@ export function getDirectoryDisplayName(item) {
       item?.email ||
       ""
   ).trim();
+}
+
+export function getDirectoryActorKeys(item) {
+  const values = [
+    item?.user_object_id,
+    item?.email,
+    item?.email_snapshot,
+    item?.preferred_display_name,
+    item?.display_name_snapshot,
+    item?.effective_display_name,
+  ];
+
+  return Array.from(
+    new Set(values.map(normalizeLookupKey).filter(Boolean))
+  );
+}
+
+export function buildDirectoryActorLookup(items) {
+  const byKey = new Map();
+
+  for (const item of Array.isArray(items) ? items : []) {
+    for (const key of getDirectoryActorKeys(item)) {
+      if (!byKey.has(key)) {
+        byKey.set(key, item);
+      }
+    }
+  }
+
+  return byKey;
+}
+
+export function resolveActorDirectoryEntry(actorValue, actorLookup) {
+  if (!actorLookup || typeof actorLookup.get !== "function") return null;
+  const key = normalizeLookupKey(actorValue);
+  if (!key) return null;
+  return actorLookup.get(key) || null;
+}
+
+export function resolveActorDisplayName(actorValue, actorLookup, fallback = "-") {
+  const directoryEntry = resolveActorDirectoryEntry(actorValue, actorLookup);
+  const directoryName = getDirectoryDisplayName(directoryEntry);
+  if (directoryName) return directoryName;
+
+  const raw = String(actorValue || "").trim();
+  return raw || fallback;
 }
 
 export function resolveAvatarMode(profileData) {

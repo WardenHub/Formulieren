@@ -168,9 +168,7 @@ export default function ProfilePage() {
           if (prev) URL.revokeObjectURL(prev);
           return nextObjectUrl;
         });
-      } catch (err) {
-        console.error("avatar media fetch failed", err);
-
+      } catch {
         if (!cancelled) {
           setAvatarObjectUrl((prev) => {
             if (prev) URL.revokeObjectURL(prev);

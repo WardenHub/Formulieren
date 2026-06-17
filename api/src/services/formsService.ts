@@ -31,10 +31,7 @@ import {
   getInstallationArchiveState,
 } from "./installationsService.js";
 import { createFormGuidanceMediaDownloadUrl } from "./blobStorageService.js";
-
-function getUserDisplayName(user: any) {
-  return user?.name || user?.upn || user?.objectId || "unknown";
-}
+import { getUserAuditActor } from "../utils/userIdentity.js";
 
 function parseJsonObject(value: any, fallback: any = {}) {
   if (value == null) return fallback;
@@ -197,7 +194,7 @@ async function buildGuidanceMap(rows: any[]) {
 export async function getFormStartPreflight(code: string, formCode: string, user: any) {
   const cleanCode = String(code || "").trim();
   const cleanFormCode = String(formCode || "").trim();
-  const createdBy = getUserDisplayName(user);
+  const createdBy = getUserAuditActor(user);
   const archiveState = await getInstallationArchiveState(cleanCode);
 
   const rows = await sqlQuery(getFormStartPreflightSql, {
@@ -421,7 +418,7 @@ export async function getInstallationFormInstances(
 export async function startFormInstance(code: string, formCode: string, user: any) {
   const cleanCode = String(code || "").trim();
   const cleanFormCode = String(formCode || "").trim();
-  const createdBy = getUserDisplayName(user);
+  const createdBy = getUserAuditActor(user);
 
   await assertInstallationWritable(cleanCode);
 
@@ -446,7 +443,7 @@ export async function startChildFormInstance(
   const cleanCode = String(code || "").trim();
   const cleanFormCode = String(formCode || "").trim();
   const parentId = parseInstanceId(parentInstanceId);
-  const createdBy = getUserDisplayName(user);
+  const createdBy = getUserAuditActor(user);
 
   if (parentId == null) {
     return { ok: false, error: "ongeldige parent_instance_id" };
@@ -500,7 +497,7 @@ export async function updateFormInstanceMetadata(
 ) {
   const cleanCode = String(code || "").trim();
   const id = parseInstanceId(instanceId);
-  const updatedBy = getUserDisplayName(user);
+  const updatedBy = getUserAuditActor(user);
 
   if (id == null) {
     return { ok: false, error: "ongeldige form_instance_id" };
@@ -560,7 +557,7 @@ export async function updateFormInstanceMetadata(
 export async function saveFormAnswers(code: string, instanceId: number | string, payload: any, user: any) {
   const cleanCode = String(code || "").trim();
   const id = parseInstanceId(instanceId);
-  const updatedBy = getUserDisplayName(user);
+  const updatedBy = getUserAuditActor(user);
 
   if (id == null) {
     return { ok: false, error: "ongeldige form_instance_id" };
@@ -711,7 +708,7 @@ export async function previewSubmitFormInstance(
       form_code: item.form_code ?? null,
       form_name: item.form_name ?? null,
       draft_rev: item.draft_rev ?? 0,
-      previewed_by: getUserDisplayName(user),
+      previewed_by: getUserAuditActor(user),
       used_override_answers:
         !!overrideAnswers && typeof overrideAnswers === "object",
     },
@@ -721,7 +718,7 @@ export async function previewSubmitFormInstance(
 export async function submitFormInstance(code: string, instanceId: number | string, user: any) {
   const cleanCode = String(code || "").trim();
   const id = parseInstanceId(instanceId);
-  const submittedBy = getUserDisplayName(user);
+  const submittedBy = getUserAuditActor(user);
 
   if (id == null) return { error: "not found" };
 
@@ -765,7 +762,7 @@ export async function submitFormInstance(code: string, instanceId: number | stri
 export async function withdrawFormInstance(code: string, instanceId: number | string, user: any) {
   const cleanCode = String(code || "").trim();
   const id = parseInstanceId(instanceId);
-  const updatedBy = getUserDisplayName(user);
+  const updatedBy = getUserAuditActor(user);
 
   if (id == null) return { error: "not found" };
 
@@ -783,7 +780,7 @@ export async function withdrawFormInstance(code: string, instanceId: number | st
 export async function reopenFormInstance(code: string, instanceId: number | string, user: any) {
   const cleanCode = String(code || "").trim();
   const id = parseInstanceId(instanceId);
-  const updatedBy = getUserDisplayName(user);
+  const updatedBy = getUserAuditActor(user);
 
   if (id == null) return { error: "not found" };
 
@@ -803,7 +800,7 @@ export async function reopenFormInstance(code: string, instanceId: number | stri
 
 export async function importFormAnswerFile(code: string, file: any, user: any) {
   const cleanCode = String(code || "").trim();
-  const updatedBy = getUserDisplayName(user);
+  const updatedBy = getUserAuditActor(user);
 
   await assertInstallationWritable(cleanCode);
 

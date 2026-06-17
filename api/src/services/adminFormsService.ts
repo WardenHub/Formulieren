@@ -9,10 +9,7 @@ import {
   saveAdminFormConfigSql,
   createAdminFormVersionSql,
 } from "../db/queries/adminForms.sql.js";
-
-function getUserDisplayName(user: any) {
-  return user?.name || user?.upn || user?.objectId || "unknown";
-}
+import { getUserAuditActor } from "../utils/userIdentity.js";
 
 function parseJsonObject(value: any, fallback: any = null) {
   if (value == null) return fallback;
@@ -197,7 +194,7 @@ export async function createAdminForm(payload: any, user: any) {
     return n > max ? n : max;
   }, 0);
 
-  const createdBy = getUserDisplayName(user);
+  const createdBy = getUserAuditActor(user);
 
   const rows = await sqlQuery(createAdminFormSql, {
     code,
@@ -226,7 +223,7 @@ export async function saveAdminFormsOrder(items: any[], user: any) {
     return { ok: false, error: "geen geldige items ontvangen" };
   }
 
-  const updatedBy = getUserDisplayName(user);
+  const updatedBy = getUserAuditActor(user);
 
   await sqlQuery(saveAdminFormsOrderSql, {
     itemsJson: JSON.stringify(normalized),
@@ -256,7 +253,7 @@ export async function saveAdminFormConfig(formId: string, payload: any, user: an
 
   const preflight = payload?.preflight || {};
 
-  const updatedBy = getUserDisplayName(user);
+  const updatedBy = getUserAuditActor(user);
 
   await sqlQuery(saveAdminFormConfigSql, {
     formId: id,
@@ -310,7 +307,7 @@ export async function createAdminFormVersion(formId: string, payload: any, user:
     return { ok: false, error: validation.error };
   }
 
-  const publishedBy = getUserDisplayName(user);
+  const publishedBy = getUserAuditActor(user);
 
   const rows = await sqlQuery(createAdminFormVersionSql, {
     formId: id,

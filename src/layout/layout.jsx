@@ -202,9 +202,7 @@ export default function Layout() {
           if (prev) URL.revokeObjectURL(prev);
           return createdUrl;
         });
-      } catch (err) {
-        console.error("avatar media fetch failed", err);
-
+      } catch {
         if (!cancelled) {
           setAvatarObjectUrl((prev) => {
             if (prev) URL.revokeObjectURL(prev);

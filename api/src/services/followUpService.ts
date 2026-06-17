@@ -15,6 +15,7 @@ import {
   updateFormFollowUpContentSql,
   markFormFollowUpVervallenSql,
 } from "../db/queries/formFollowUps.sql.js";
+import { getUserAuditActor } from "../utils/userIdentity.js";
 
 type SyncFollowUpsInput = {
   formInstance: {
@@ -72,7 +73,7 @@ export async function syncFormFollowUps(input: SyncFollowUpsInput) {
   const formInstanceId = parseFormInstanceId(input?.formInstance?.form_instance_id);
   const installationId = String(input?.formInstance?.installation_id || "").trim();
   const atriumCode = String(input?.formInstance?.atrium_installation_code || "").trim();
-  const actor = getActor(input?.user);
+  const actor = getUserAuditActor(input?.user);
 
   if (formInstanceId == null) {
     throw new Error("syncFormFollowUps: form_instance_id ontbreekt");
@@ -290,16 +291,4 @@ function parseFormInstanceId(value: unknown): number | null {
 
   if (!Number.isInteger(n) || n <= 0) return null;
   return n;
-}
-
-function getActor(user: any) {
-  const raw =
-    user?.email ||
-    user?.upn ||
-    user?.preferred_username ||
-    user?.name ||
-    user?.id ||
-    "system";
-
-  return String(raw).trim() || "system";
 }

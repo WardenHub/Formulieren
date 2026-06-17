@@ -21,10 +21,10 @@ import {
   assertInstallationWritable,
   isHistoricalInstallationStatus,
 } from "./installationsService.js";
-
-function getUserDisplayName(user: any) {
-  return user?.name || user?.upn || user?.email || user?.objectId || "unknown";
-}
+import {
+  getUserAuditActor,
+  getUserDisplayNameSnapshot,
+} from "../utils/userIdentity.js";
 
 function parsePositiveInt(value: any): number | null {
   const n = Number(String(value ?? "").trim());
@@ -183,7 +183,7 @@ async function getOrCreateSession(args: {
     activeQuestionName: args.activeQuestionName || null,
     activeSectionKey: args.activeSectionKey || null,
     clientContextJson: toJson(args.clientContext),
-    startedBy: getUserDisplayName(args.user),
+    startedBy: getUserAuditActor(args.user),
   });
 
   const session: any = rows?.[0] ?? null;
@@ -200,7 +200,7 @@ async function insertPatches(args: {
   user: any;
 }) {
   const out: any[] = [];
-  const proposedBy = getUserDisplayName(args.user);
+  const proposedBy = getUserDisplayNameSnapshot(args.user);
 
   for (const raw of args.patches || []) {
     const rows = await sqlQuery(createAssistantPatchSql, {
@@ -314,7 +314,7 @@ export async function transcribeAssistantAudio(
     completionTokens: null,
     totalTokens: null,
     errorMessage: null,
-    createdBy: getUserDisplayName(user),
+    createdBy: getUserAuditActor(user),
   });
 
   const turn: any = turnRows?.[0];
@@ -346,7 +346,7 @@ export async function transcribeAssistantAudio(
     storageKey: blob.storage_key,
     storageUrl: blob.storage_url,
     checksumSha256: blob.checksum_sha256,
-    capturedBy: getUserDisplayName(user),
+    capturedBy: getUserAuditActor(user),
   });
 
   return {
@@ -442,7 +442,7 @@ export async function interpretAssistantText(
     completionTokens: null,
     totalTokens: null,
     errorMessage: local.handled ? null : "AI provider nog niet geconfigureerd.",
-    createdBy: getUserDisplayName(user),
+    createdBy: getUserAuditActor(user),
   });
 
   const turn: any = turnRows?.[0];
@@ -491,7 +491,7 @@ export async function markAssistantPatchesApplied(
     formInstanceId: instanceId,
     patchIdsJson: JSON.stringify(patchIds),
     appliedDraftRev: Number.isFinite(appliedDraftRev) ? Math.trunc(appliedDraftRev) : null,
-    appliedBy: getUserDisplayName(user),
+    appliedBy: getUserAuditActor(user),
   });
 
   return { ok: true, items: rows || [] };
@@ -517,7 +517,7 @@ export async function markAssistantPatchesRejected(
     formInstanceId: instanceId,
     patchIdsJson: JSON.stringify(patchIds),
     rejectedReason,
-    rejectedBy: getUserDisplayName(user),
+    rejectedBy: getUserAuditActor(user),
   });
 
   return { ok: true, items: rows || [] };

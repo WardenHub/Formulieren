@@ -47,6 +47,7 @@ import {
 import { 
   getInstallationComponentsSql
  } from "../db/queries/installationComponents.sql.js";
+import { getUserAuditActor } from "../utils/userIdentity.js";
 
 
 
@@ -231,7 +232,7 @@ export async function upsertCustomValues(code: string, values: any[], user: any)
 
   const valuesJson = JSON.stringify(cleaned);
 
-  const updatedBy = user?.name || user?.objectId || "unknown";
+  const updatedBy = getUserAuditActor(user);
   
 
   const result = await sqlQuery(upsertCustomValuesSql, {
@@ -407,7 +408,7 @@ export async function upsertInstallationDocuments(code: string, documents: any[]
     }));
 
   const documentsJson = JSON.stringify(cleaned);
-  const updatedBy = user?.name || user?.objectId || "unknown";
+  const updatedBy = getUserAuditActor(user);
 
   const result = await sqlQuery(upsertInstallationDocumentsMetadataSql, {
     code,
@@ -490,7 +491,7 @@ export async function upsertEnergySupplyBrandTypes(types: any[], user: any) {
     }));
 
   const typesJson = JSON.stringify(cleaned);
-  const updatedBy = user?.name || user?.objectId || "unknown";
+  const updatedBy = getUserAuditActor(user);
 
   const result = await sqlQuery(upsertEnergySupplyBrandTypesSql, {
     typesJson,
@@ -567,7 +568,7 @@ export async function upsertInstallationEnergySupplies(code: string, items: any[
   }
 
   const itemsJson = JSON.stringify(cleaned);
-  const updatedBy = user?.name || user?.objectId || "unknown";
+  const updatedBy = getUserAuditActor(user);
 
   const result = await sqlQuery(upsertInstallationEnergySuppliesSql, {
     code,
@@ -579,7 +580,7 @@ export async function upsertInstallationEnergySupplies(code: string, items: any[
 }
 
 export async function deleteInstallationEnergySupply(code: string, energy_supply_id: string, user: any) {
-  const updatedBy = user?.name || user?.objectId || "unknown";
+  const updatedBy = getUserAuditActor(user);
 
   await assertInstallationWritable(code);
 
@@ -668,7 +669,7 @@ export async function upsertInstallationPerformanceRequirements(code: string, pa
     };
   });
 
-  const updatedBy = user?.name || user?.objectId || "unknown";
+  const updatedBy = getUserAuditActor(user);
   const rowsJson = JSON.stringify(cleaned);
 
   const result = await sqlQuery(upsertInstallationPerformanceRequirementSql, {

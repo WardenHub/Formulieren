@@ -21,10 +21,7 @@ import {
   renameFormInstanceDocumentBlob,
 } from "./blobStorageService.js";
 import { assertInstallationWritable } from "./installationsService.js";
-
-function actorName(user: any) {
-  return user?.name || user?.email || user?.objectId || "unknown";
-}
+import { getUserAuditActor } from "../utils/userIdentity.js";
 
 function toNullableString(v: any) {
   if (v === null || v === undefined) return null;
@@ -166,7 +163,7 @@ export async function upsertFormInstanceDocuments(
     code,
     instanceId,
     itemsJson: JSON.stringify(Array.isArray(items) ? items : []),
-    updatedBy: actorName(user),
+    updatedBy: getUserAuditActor(user),
   });
 
   return {
@@ -202,7 +199,7 @@ export async function createReplacementDocument(
     documentNumber: toNullableString(payload?.document_number),
     documentDate: payload?.document_date ?? null,
     revision: toNullableString(payload?.revision),
-    createdBy: actorName(user),
+    createdBy: getUserAuditActor(user),
   });
 
   return {
@@ -238,7 +235,7 @@ export async function createAttachmentDocument(
     documentNumber: toNullableString(payload?.document_number),
     documentDate: payload?.document_date ?? null,
     revision: toNullableString(payload?.revision),
-    createdBy: actorName(user),
+    createdBy: getUserAuditActor(user),
   });
 
   return {
@@ -261,7 +258,7 @@ export async function replaceDocumentLabels(
     instanceId,
     documentId,
     labelsJson: JSON.stringify(Array.isArray(labels) ? labels : []),
-    updatedBy: actorName(user),
+    updatedBy: getUserAuditActor(user),
   });
 
   return {
@@ -284,7 +281,7 @@ export async function replaceDocumentFollowUps(
     instanceId,
     documentId,
     itemsJson: JSON.stringify(Array.isArray(items) ? items : []),
-    updatedBy: actorName(user),
+    updatedBy: getUserAuditActor(user),
   });
 
   return {
@@ -347,7 +344,7 @@ export async function uploadDocumentFile(
       checksumSha256: checksum,
       imageWidthPx: imageMeta.imageWidthPx,
       imageHeightPx: imageMeta.imageHeightPx,
-      updatedBy: actorName(user),
+      updatedBy: getUserAuditActor(user),
     });
 
     return {
@@ -408,7 +405,7 @@ export async function renameDocumentFile(
       storageProvider: uploaded.storageProvider,
       storageKey: uploaded.storageKey,
       storageUrl: uploaded.storageUrl,
-      updatedBy: actorName(user),
+      updatedBy: getUserAuditActor(user),
     });
 
     if (uploaded.storageKey !== currentStorageKey) {
@@ -510,7 +507,7 @@ export async function deleteDocument(
     code,
     instanceId,
     documentId,
-    updatedBy: actorName(user),
+    updatedBy: getUserAuditActor(user),
   });
 
   return {

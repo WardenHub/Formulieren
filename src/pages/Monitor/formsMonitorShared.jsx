@@ -1,3 +1,5 @@
+import { resolveActorDisplayName } from "../../lib/avatar.js";
+
 export const OVERVIEW_LS_KEY = "forms-monitor-overview-state-v5";
 export const DETAIL_UI_LS_KEY = "forms-monitor-detail-ui-state-v6";
 export const DETAIL_NOTES_LS_KEY = "forms-monitor-detail-notes-v5";
@@ -88,16 +90,22 @@ export function getFollowUpCardClass(status) {
   return "monitor-followup-card monitor-followup-card--muted";
 }
 
-export function getLastModifiedBy(source) {
+export function getLastModifiedBy(source, actorLookup = null) {
   if (!source) return "-";
-  return (
+  return resolveActorDisplayName(
     source.updated_by ||
-    source.last_modified_by ||
-    source.modified_by ||
-    source.submitted_by ||
-    source.created_by ||
+      source.last_modified_by ||
+      source.modified_by ||
+      source.submitted_by ||
+      source.created_by,
+    actorLookup,
     "-"
   );
+}
+
+export function getCreatedByDisplay(source, actorLookup = null) {
+  if (!source) return "-";
+  return resolveActorDisplayName(source.created_by, actorLookup, "-");
 }
 
 export function compactInstallationLine(item) {
@@ -106,14 +114,18 @@ export function compactInstallationLine(item) {
   return [code, name].filter(Boolean).join(" ");
 }
 
-export function buildClipboardText({ detailItem, row }) {
+export function buildClipboardText({ detailItem, row, actorLookup = null }) {
   const vraagNummer =
     row?.source_item_code ||
     (row?.source_row_index != null ? String(row.source_row_index) : null) ||
     "onbekend";
 
   const formTitel = detailItem?.form_name || detailItem?.form_code || "formulier";
-  const invuller = detailItem?.created_by || detailItem?.submitted_by || "onbekend";
+  const invuller = resolveActorDisplayName(
+    detailItem?.created_by || detailItem?.submitted_by,
+    actorLookup,
+    "onbekend"
+  );
   const categorie = row?.category || "-";
   const omschrijving = row?.workflow_title || "Actiepunt";
   const toelichting = row?.workflow_description || "-";

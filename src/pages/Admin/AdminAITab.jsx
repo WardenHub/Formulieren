@@ -7,9 +7,11 @@ import { RefreshCWIcon } from "@/components/ui/refresh-cw";
 import { BrainIcon } from "@/components/ui/brain";
 import {
   getAdminAssistantAudit,
+  getUserDirectory,
   transcribeFormAssistantAudio,
 } from "../../api/emberApi.js";
 import { useAssistantAudioRecorder } from "../Forms/shared/assistantAudio.jsx";
+import { buildDirectoryActorLookup, resolveActorDisplayName } from "../../lib/avatar.js";
 
 function getErrorMessage(error, fallback = "Onbekende fout") {
   return String(error?.message || error || fallback);
@@ -72,9 +74,14 @@ function StatusBadge({ value }) {
   );
 }
 
-function AuditCard({ item }) {
+function AuditCard({ item, actorLookup }) {
   const transcript = item?.normalized_text || item?.transcript_text || item?.raw_input_text || "";
   const target = item?.target_label || item?.target_path || item?.question_name || "";
+  const actorDisplayName = resolveActorDisplayName(
+    item?.turn_created_by || item?.started_by,
+    actorLookup,
+    "-"
+  );
 
   return (
     <div className="admin-subcard" style={{ display: "grid", gap: 10 }}>
@@ -118,7 +125,7 @@ function AuditCard({ item }) {
 
         <div>
           <div className="admin-panel-subtitle">Gebruiker</div>
-          <div>{item?.turn_created_by || item?.started_by || "-"}</div>
+          <div>{actorDisplayName}</div>
         </div>
 
         <div>
@@ -186,6 +193,8 @@ export default function AdminAITab() {
   const [auditLoading, setAuditLoading] = useState(false);
   const [auditError, setAuditError] = useState("");
   const [auditItems, setAuditItems] = useState([]);
+  const [directoryItems, setDirectoryItems] = useState([]);
+  const actorLookup = useMemo(() => buildDirectoryActorLookup(directoryItems), [directoryItems]);
 
   const canRunTest = useMemo(() => {
     return (
@@ -219,6 +228,24 @@ export default function AdminAITab() {
   useEffect(() => {
     refreshAudit();
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    getUserDirectory()
+      .then((res) => {
+        if (cancelled) return;
+        setDirectoryItems(Array.isArray(res?.items) ? res.items : []);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setDirectoryItems([]);
+      });
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   useEffect(() => {
@@ -472,6 +499,7 @@ export default function AdminAITab() {
               <AuditCard
                 key={`${item.assistant_session_id || "s"}-${item.assistant_turn_id || "t"}-${item.assistant_patch_id || "p"}-${index}`}
                 item={item}
+                actorLookup={actorLookup}
               />
             ))}
           </div>

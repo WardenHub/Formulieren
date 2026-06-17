@@ -14,8 +14,17 @@ import { ChevronUpIcon } from "@/components/ui/chevron-up";
 import {
   getFormsCatalog,
   getInstallationFormInstances,
+  getUserDirectory,
 } from "../../api/emberApi.js";
 import { isHistoricalInstallation } from "../../lib/installationStatus.js";
+import UserAvatar from "../../components/UserAvatar.jsx";
+import {
+  buildDirectoryActorLookup,
+  buildInitials,
+  getDirectoryDisplayName,
+  resolveActorDisplayName,
+  resolveDirectoryAvatarPath,
+} from "../../lib/avatar.js";
 
 const STATUS_FILTER_OPTIONS = [
   { key: "INGEDIEND", label: "Ingediend" },
@@ -150,8 +159,10 @@ function buildTeamsChatUrl(email, formInstanceId) {
   return `https://teams.microsoft.com/l/chat/0/0?users=${encodeURIComponent(cleanEmail)}&topicname=${encodeURIComponent(topic)}&message=${encodeURIComponent(message)}`;
 }
 
-function AssignedTag({ item }) {
-  const displayName = String(item?.assigned_display_name_snapshot || "").trim();
+function AssignedTag({ item, ownerEntry }) {
+  const displayName =
+    getDirectoryDisplayName(ownerEntry) ||
+    String(item?.assigned_display_name_snapshot || "").trim();
   const email = String(item?.assigned_email_snapshot || "").trim();
   if (!displayName && !email) return null;
 
@@ -160,8 +171,14 @@ function AssignedTag({ item }) {
 
   if (!teamsUrl) {
     return (
-      <span className="ember-label ember-label--info" title="Toegewezen aan">
-        Toegewezen aan {label}
+      <span className="ember-label ember-label--info monitor-assignee-chip" title="Toegewezen aan">
+        <UserAvatar
+          path={resolveDirectoryAvatarPath(ownerEntry)}
+          fallback={buildInitials(label, email, "E")}
+          alt={label}
+          className="avatar-badge monitor-assignee-avatar"
+        />
+        <span className="monitor-assignee-chip__text">Toegewezen aan {label}</span>
       </span>
     );
   }
@@ -169,18 +186,19 @@ function AssignedTag({ item }) {
   return (
     <button
       type="button"
-      className="ember-label ember-label--info ember-label--button"
+      className="ember-label ember-label--info ember-label--button monitor-assignee-chip"
       title={`Stuur Teams-bericht naar ${label}`}
       onClick={() => window.open(teamsUrl, "_blank", "noopener,noreferrer")}
     >
-      Toegewezen aan {label}
+      <UserAvatar
+        path={resolveDirectoryAvatarPath(ownerEntry)}
+        fallback={buildInitials(label, email, "E")}
+        alt={label}
+        className="avatar-badge monitor-assignee-avatar"
+      />
+      <span className="monitor-assignee-chip__text">Toegewezen aan {label}</span>
     </button>
   );
-}
-
-function getLastModifiedBy(item) {
-  if (!item) return "-";
-  return item.updated_by || item.submitted_by || item.created_by || "-";
 }
 
 function canStartFollowUp(item) {
@@ -339,6 +357,7 @@ export default function FormsTab({
   const [instancesLoading, setInstancesLoading] = useState(false);
   const [instancesError, setInstancesError] = useState(null);
   const [instances, setInstances] = useState([]);
+  const [directoryItems, setDirectoryItems] = useState([]);
 
   const [searchInput, setSearchInput] = useState(storedState?.searchInput ?? "");
   const [appliedSearch, setAppliedSearch] = useState(storedState?.appliedSearch ?? "");
@@ -464,6 +483,24 @@ export default function FormsTab({
       cancelled = true;
     };
   }, [code, typeKey]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    getUserDirectory()
+      .then((res) => {
+        if (cancelled) return;
+        setDirectoryItems(Array.isArray(res?.items) ? res.items : []);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setDirectoryItems([]);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     if (!isActive) return;
@@ -594,6 +631,16 @@ export default function FormsTab({
   }, [instances, selectedFormTypes]);
 
   const visibleRows = useMemo(() => buildVisibleRows(filteredInstances), [filteredInstances]);
+  const directoryByUserObjectId = useMemo(() => {
+    const next = new Map();
+    for (const item of directoryItems || []) {
+      const key = String(item?.user_object_id || "").trim();
+      if (!key) continue;
+      next.set(key, item);
+    }
+    return next;
+  }, [directoryItems]);
+  const actorLookup = useMemo(() => buildDirectoryActorLookup(directoryItems), [directoryItems]);
 
   function toggleStatusFilter(statusKey) {
     setSelectedStatuses((prev) => {
@@ -1021,9 +1068,17 @@ export default function FormsTab({
                     childOkToStart &&
                     typeof onOpenChildForm === "function" &&
                     Boolean(followUpFormCode);
+                  const ownerEntry = directoryByUserObjectId.get(
+                    String(item?.assigned_user_object_id || "").trim()
+                  );
 
                   const modifiedAt = item.updated_at || item.created_at;
-                  const modifiedBy = getLastModifiedBy(item);
+                  const modifiedBy = resolveActorDisplayName(
+                    item.updated_by || item.submitted_by || item.created_by,
+                    actorLookup,
+                    "-"
+                  );
+                  const createdBy = resolveActorDisplayName(item.created_by, actorLookup, "");
 
                   function openChildForm() {
                     if (!childStartClickable) return;
@@ -1046,7 +1101,7 @@ export default function FormsTab({
                             <StatusTag status={item.status} />
                             <SummaryTag title="Formuliernummer">#{item.form_instance_id}</SummaryTag>
                             <SummaryTag title="Versie">v{item.version_label || "-"}</SummaryTag>
-                            <AssignedTag item={item} />
+                            <AssignedTag item={item} ownerEntry={ownerEntry} />
 
                             {item.parent_instance_id ? (
                               <RelationTag title="Vervolgrelatie">
@@ -1079,7 +1134,7 @@ export default function FormsTab({
                           <div className="muted">door {modifiedBy}</div>
                           <div className="muted forms-instance-created">
                             Aangemaakt: {formatCompactDateTime(item.created_at)}
-                            {item.created_by ? ` door ${item.created_by}` : ""}
+                            {createdBy ? ` door ${createdBy}` : ""}
                           </div>
                         </div>
                       </div>

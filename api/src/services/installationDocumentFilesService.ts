@@ -15,10 +15,7 @@ import {
   downloadInstallationDocumentBlob,
 } from "./blobStorageService.js";
 import { assertInstallationWritable } from "./installationsService.js";
-
-function actorName(user: any) {
-  return user?.name || user?.email || user?.objectId || "unknown";
-}
+import { getUserAuditActor } from "../utils/userIdentity.js";
 
 function toNullableString(v: any) {
   if (v === null || v === undefined) return null;
@@ -64,7 +61,7 @@ export async function createReplacementDocument(
     documentNumber: toNullableString(payload?.document_number),
     documentDate: payload?.document_date ?? null,
     revision: toNullableString(payload?.revision),
-    createdBy: actorName(user),
+    createdBy: getUserAuditActor(user),
   });
 
   return {
@@ -99,7 +96,7 @@ export async function createAttachmentDocument(
     documentNumber: toNullableString(payload?.document_number),
     documentDate: payload?.document_date ?? null,
     revision: toNullableString(payload?.revision),
-    createdBy: actorName(user),
+    createdBy: getUserAuditActor(user),
   });
 
   return {
@@ -152,7 +149,7 @@ export async function uploadDocumentFile(
       storageKey: uploaded.storageKey,
       storageUrl: uploaded.storageUrl,
       checksumSha256: checksum,
-      updatedBy: actorName(user),
+      updatedBy: getUserAuditActor(user),
     });
 
     return {

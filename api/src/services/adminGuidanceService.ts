@@ -16,10 +16,7 @@ import {
   deleteFormGuidanceMediaBlob,
   uploadFormGuidanceMediaBlob,
 } from "./blobStorageService.js";
-
-function actorName(user: any) {
-  return user?.name || user?.email || user?.upn || user?.objectId || "unknown";
-}
+import { getUserAuditActor } from "../utils/userIdentity.js";
 
 function normalizeOptionalText(value: any) {
   if (value == null) return null;
@@ -426,7 +423,7 @@ export async function createGuidanceItem(payload: any, user: any) {
     bodyMarkdown: normalizeOptionalText(payload?.body_markdown),
     sortOrder: normalizeSortOrder(payload?.sort_order, maxSort + 10),
     isActive: payload?.is_active === false ? false : true,
-    actor: actorName(user),
+    actor: getUserAuditActor(user),
   });
 
   const createdGuidanceId = rows?.[0]?.guidance_id ?? null;
@@ -449,7 +446,7 @@ export async function updateGuidanceItem(guidanceId: string, payload: any, user:
     bodyMarkdown: normalizeOptionalText(payload?.body_markdown),
     sortOrder: normalizeSortOrder(payload?.sort_order, 0),
     isActive: payload?.is_active === false ? false : true,
-    actor: actorName(user),
+    actor: getUserAuditActor(user),
   });
 
   return getAdminGuidanceCatalog();
@@ -469,7 +466,7 @@ export async function replaceGuidanceLinks(guidanceId: string, links: any[], use
   await sqlQuery(replaceGuidanceLinksSql, {
     guidanceId,
     linksJson: JSON.stringify(normalized),
-    actor: actorName(user),
+    actor: getUserAuditActor(user),
   });
 
   return getAdminGuidanceCatalog();
@@ -501,7 +498,7 @@ export async function uploadGuidanceMedia(
   validateUploadFileForKind(file, mediaKind);
 
   const guidanceMediaId = crypto.randomUUID();
-  const actor = actorName(user);
+  const actor = getUserAuditActor(user);
   let uploaded: { storageProvider: string; storageKey: string; storageUrl: string | null } | null = null;
 
   try {
@@ -568,7 +565,7 @@ export async function addExternalGuidanceMedia(guidanceId: string, payload: any,
     storageUrl: null,
     caption: normalizeOptionalText(payload?.caption),
     isActive: payload?.is_active === false ? false : true,
-    actor: actorName(user),
+    actor: getUserAuditActor(user),
   });
 
   return getAdminGuidanceCatalog();
@@ -578,7 +575,7 @@ export async function activateGuidanceMedia(guidanceId: string, guidanceMediaId:
   await sqlQuery(activateGuidanceMediaAssetSql, {
     guidanceId,
     guidanceMediaId,
-    actor: actorName(user),
+    actor: getUserAuditActor(user),
   });
 
   return getAdminGuidanceCatalog();
@@ -589,7 +586,7 @@ export async function updateGuidanceMedia(guidanceId: string, guidanceMediaId: s
     guidanceId,
     guidanceMediaId,
     caption: normalizeOptionalText(payload?.caption),
-    actor: actorName(user),
+    actor: getUserAuditActor(user),
   });
 
   return getAdminGuidanceCatalog();
@@ -608,7 +605,7 @@ export async function archiveGuidanceMedia(guidanceId: string, guidanceMediaId: 
   await sqlQuery(archiveGuidanceMediaAssetSql, {
     guidanceId,
     guidanceMediaId,
-    actor: actorName(user),
+    actor: getUserAuditActor(user),
   });
 
   return getAdminGuidanceCatalog();

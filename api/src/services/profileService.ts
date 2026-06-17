@@ -22,14 +22,12 @@ import {
   uploadUserProfileSignatureBlob,
   deleteUserProfileSignatureBlob,
 } from "./blobStorageService.js";
-
-function actorName(user: any) {
-  return user?.name || user?.email || user?.objectId || "unknown";
-}
-
-function actorEmail(user: any) {
-  return user?.email || null;
-}
+import {
+  getUserAuditActor,
+  getUserDisplayNameSnapshot,
+  getUserEmail,
+  getUserObjectId,
+} from "../utils/userIdentity.js";
 
 function toNullableString(v: any) {
   if (v === null || v === undefined) return null;
@@ -179,21 +177,21 @@ function buildTeamsDeepLink(email: string | null) {
 }
 
 async function ensureProfile(user: any) {
-  const userObjectId = String(user?.objectId || "").trim();
+  const userObjectId = String(getUserObjectId(user) || "").trim();
   if (!userObjectId) throw new Error("missing user object id");
 
   const rows = await sqlQuery(ensureUserProfileSql, {
     userObjectId,
-    emailSnapshot: toNullableString(user?.email),
-    displayNameSnapshot: toNullableString(user?.name),
-    actor: actorName(user),
+    emailSnapshot: getUserEmail(user),
+    displayNameSnapshot: toNullableString(getUserDisplayNameSnapshot(user)),
+    actor: getUserAuditActor(user),
   });
 
   return rows?.[0] ?? null;
 }
 
 async function loadProfileParts(user: any) {
-  const userObjectId = String(user?.objectId || "").trim();
+  const userObjectId = String(getUserObjectId(user) || "").trim();
   if (!userObjectId) throw new Error("missing user object id");
 
   await ensureProfile(user);
@@ -203,8 +201,9 @@ async function loadProfileParts(user: any) {
     sqlQuery(getActiveUserProfileAvatarSql, { userObjectId }),
     sqlQuery(getActiveUserProfileSignatureSql, { userObjectId }),
     sqlQuery(getUserProfileStatsSql, {
-      actorEmail: actorEmail(user),
-      actorName: actorName(user),
+      actorObjectId: getUserObjectId(user),
+      actorEmail: getUserEmail(user),
+      actorName: getUserDisplayNameSnapshot(user),
     }),
   ]);
 
@@ -347,7 +346,7 @@ export async function getMyProfile(user: any) {
 
 export async function getDirectory(user: any) {
   const rows = await sqlQuery(getUserDirectorySql, {});
-  const currentUserObjectId = String(user?.objectId || "").trim() || null;
+  const currentUserObjectId = String(getUserObjectId(user) || "").trim() || null;
 
   return {
     items: (rows || [])
@@ -360,7 +359,7 @@ export async function getDirectory(user: any) {
 }
 
 export async function updateMyProfile(payload: any, user: any) {
-  const userObjectId = String(user?.objectId || "").trim();
+  const userObjectId = String(getUserObjectId(user) || "").trim();
   if (!userObjectId) throw new Error("missing user object id");
 
   await ensureProfile(user);
@@ -372,7 +371,7 @@ export async function updateMyProfile(payload: any, user: any) {
     appearancePreference: normalizeAppearancePreference(payload?.appearance_preference),
     avatarSourcePreference: normalizeAvatarSourcePreference(payload?.avatar_source_preference),
     signatureSourcePreference: normalizeSignatureSourcePreference(payload?.signature_source_preference),
-    actor: actorName(user),
+    actor: getUserAuditActor(user),
   });
 
   return loadProfileParts(user);
@@ -381,7 +380,7 @@ export async function updateMyProfile(payload: any, user: any) {
 export async function uploadMyAvatar(file: Express.Multer.File, user: any) {
   if (!file) throw new Error("missing file");
 
-  const userObjectId = String(user?.objectId || "").trim();
+  const userObjectId = String(getUserObjectId(user) || "").trim();
   if (!userObjectId) throw new Error("missing user object id");
 
   await ensureProfile(user);
@@ -391,7 +390,7 @@ export async function uploadMyAvatar(file: Express.Multer.File, user: any) {
 
   const placeholderRows = await sqlQuery(createUserProfileAvatarPlaceholderSql, {
     userObjectId,
-    actor: actorName(user),
+    actor: getUserAuditActor(user),
   });
 
   const avatar = placeholderRows?.[0] ?? null;
@@ -419,7 +418,7 @@ export async function uploadMyAvatar(file: Express.Multer.File, user: any) {
       storageKey: uploaded.storageKey,
       storageUrl: uploaded.storageUrl,
       checksumSha256: checksum,
-      actor: actorName(user),
+      actor: getUserAuditActor(user),
     });
 
     await sqlQuery(updateUserProfileSql, {
@@ -429,7 +428,7 @@ export async function uploadMyAvatar(file: Express.Multer.File, user: any) {
       appearancePreference: currentBefore?.appearance_preference ?? "system",
       avatarSourcePreference: "uploaded",
       signatureSourcePreference: currentBefore?.signature_source_preference ?? "uploaded",
-      actor: actorName(user),
+      actor: getUserAuditActor(user),
     });
 
     return loadProfileParts(user);
@@ -446,7 +445,7 @@ export async function uploadMyAvatar(file: Express.Multer.File, user: any) {
 }
 
 export async function deleteMyAvatar(user: any) {
-  const userObjectId = String(user?.objectId || "").trim();
+  const userObjectId = String(getUserObjectId(user) || "").trim();
   if (!userObjectId) throw new Error("missing user object id");
 
   await ensureProfile(user);
@@ -460,7 +459,7 @@ export async function deleteMyAvatar(user: any) {
 
   await sqlQuery(deactivateActiveUserProfileAvatarSql, {
     userObjectId,
-    actor: actorName(user),
+    actor: getUserAuditActor(user),
   });
 
   const profileRows = await sqlQuery(getUserProfileSql, { userObjectId });
@@ -473,7 +472,7 @@ export async function deleteMyAvatar(user: any) {
     appearancePreference: currentProfile?.appearance_preference ?? "system",
     avatarSourcePreference: "microsoft",
     signatureSourcePreference: currentProfile?.signature_source_preference ?? "uploaded",
-    actor: actorName(user),
+    actor: getUserAuditActor(user),
   });
 
   return loadProfileParts(user);
@@ -482,7 +481,7 @@ export async function deleteMyAvatar(user: any) {
 export async function uploadMySignature(file: Express.Multer.File, user: any) {
   if (!file) throw new Error("missing file");
 
-  const userObjectId = String(user?.objectId || "").trim();
+  const userObjectId = String(getUserObjectId(user) || "").trim();
   if (!userObjectId) throw new Error("missing user object id");
 
   await ensureProfile(user);
@@ -492,7 +491,7 @@ export async function uploadMySignature(file: Express.Multer.File, user: any) {
 
   const placeholderRows = await sqlQuery(createUserProfileSignaturePlaceholderSql, {
     userObjectId,
-    actor: actorName(user),
+    actor: getUserAuditActor(user),
   });
 
   const signature = placeholderRows?.[0] ?? null;
@@ -522,7 +521,7 @@ export async function uploadMySignature(file: Express.Multer.File, user: any) {
       checksumSha256: checksum,
       imageWidthPx: null,
       imageHeightPx: null,
-      actor: actorName(user),
+      actor: getUserAuditActor(user),
     });
 
     await sqlQuery(updateUserProfileSql, {
@@ -532,7 +531,7 @@ export async function uploadMySignature(file: Express.Multer.File, user: any) {
       appearancePreference: currentBefore?.appearance_preference ?? "system",
       avatarSourcePreference: currentBefore?.avatar_source_preference ?? "microsoft",
       signatureSourcePreference: "uploaded",
-      actor: actorName(user),
+      actor: getUserAuditActor(user),
     });
 
     return loadProfileParts(user);
@@ -549,7 +548,7 @@ export async function uploadMySignature(file: Express.Multer.File, user: any) {
 }
 
 export async function deleteMySignature(user: any) {
-  const userObjectId = String(user?.objectId || "").trim();
+  const userObjectId = String(getUserObjectId(user) || "").trim();
   if (!userObjectId) throw new Error("missing user object id");
 
   await ensureProfile(user);
@@ -563,7 +562,7 @@ export async function deleteMySignature(user: any) {
 
   await sqlQuery(deactivateActiveUserProfileSignatureSql, {
     userObjectId,
-    actor: actorName(user),
+    actor: getUserAuditActor(user),
   });
 
   const profileRows = await sqlQuery(getUserProfileSql, { userObjectId });
@@ -576,7 +575,7 @@ export async function deleteMySignature(user: any) {
     appearancePreference: currentProfile?.appearance_preference ?? "system",
     avatarSourcePreference: currentProfile?.avatar_source_preference ?? "microsoft",
     signatureSourcePreference: "none",
-    actor: actorName(user),
+    actor: getUserAuditActor(user),
   });
 
   return loadProfileParts(user);

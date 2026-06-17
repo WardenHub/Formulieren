@@ -45,6 +45,7 @@ import Tabs from "../../components/Tabs.jsx";
 import UserAvatar from "../../components/UserAvatar.jsx";
 import {
   buildInitials,
+  buildDirectoryActorLookup,
   getDirectoryDisplayName as getAvatarDirectoryDisplayName,
   resolveDirectoryAvatarPath,
 } from "../../lib/avatar.js";
@@ -66,6 +67,7 @@ import {
   buildRelationRows,
   groupFollowUpsByStatus,
   buildFollowUpStatusCounts,
+  getCreatedByDisplay,
   readStateFromStorage,
   saveStateToStorage,
 } from "./formsMonitorShared.jsx";
@@ -1313,6 +1315,8 @@ export default function FormsMonitorDetailPage() {
     );
   }, [directoryItems, item?.assigned_user_object_id]);
 
+  const actorLookup = useMemo(() => buildDirectoryActorLookup(directoryItems), [directoryItems]);
+
   const ownerDisplayLabel =
     getDirectoryDisplayName(ownerDirectoryEntry) ||
     String(item?.assigned_display_name_snapshot || item?.assigned_email_snapshot || "").trim();
@@ -1653,6 +1657,7 @@ export default function FormsMonitorDetailPage() {
       const text = buildClipboardText({
         detailItem: detail?.item || {},
         row,
+        actorLookup,
       });
 
       await navigator.clipboard.writeText(text);
@@ -2413,7 +2418,7 @@ export default function FormsMonitorDetailPage() {
                           <div className="cf-label-text cf-label-text--accent">Aangemaakt door</div>
                         </div>
                         <div className="cf-control">
-                          <input className="input" readOnly value={item.created_by ?? ""} />
+                          <input className="input" readOnly value={getCreatedByDisplay(item, actorLookup)} />
                         </div>
                       </div>
 
@@ -2431,7 +2436,7 @@ export default function FormsMonitorDetailPage() {
                           <div className="cf-label-text cf-label-text--accent">Gewijzigd door</div>
                         </div>
                         <div className="cf-control">
-                          <input className="input" readOnly value={getLastModifiedBy(item)} />
+                          <input className="input" readOnly value={getLastModifiedBy(item, actorLookup)} />
                         </div>
                       </div>
 

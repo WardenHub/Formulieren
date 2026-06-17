@@ -16,10 +16,7 @@ import {
   uploadInstallationProgrammingBlob,
 } from "./blobStorageService.js";
 import { assertInstallationWritable } from "./installationsService.js";
-
-function actorName(user: any) {
-  return user?.name || user?.email || user?.objectId || "unknown";
-}
+import { getUserAuditActor } from "../utils/userIdentity.js";
 
 function toNullableString(v: any) {
   if (v === null || v === undefined) return null;
@@ -136,7 +133,7 @@ export async function getInstallationSoftware(code: string) {
 export async function upsertInstallationSoftware(code: string, payload: any, user: any) {
   await assertInstallationWritable(code);
 
-  const updatedBy = actorName(user);
+  const updatedBy = getUserAuditActor(user);
 
   await sqlQuery(ensureInstallationSql, {
     code,
@@ -174,7 +171,7 @@ export async function uploadInstallationProgramming(
     throw new Error("programming file must be zip");
   }
 
-  const updatedBy = actorName(user);
+  const updatedBy = getUserAuditActor(user);
 
   await sqlQuery(ensureInstallationSql, {
     code,
@@ -309,7 +306,7 @@ export async function archiveInstallationProgramming(code: string, programmingId
   await sqlQuery(archiveInstallationProgrammingSql, {
     code,
     programmingId,
-    updatedBy: actorName(user),
+    updatedBy: getUserAuditActor(user),
   });
 
   return {

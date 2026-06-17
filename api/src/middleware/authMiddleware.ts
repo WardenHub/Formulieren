@@ -83,8 +83,6 @@ function getAppRolesFromPrincipal(principal: any) {
 }
 
 async function graphGet(url: string) {
-  console.log("[GRAPH] GET", url);
-
   const token = await credential.getToken("https://graph.microsoft.com/.default");
 
   const res = await fetch(url, {

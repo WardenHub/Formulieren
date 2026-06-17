@@ -16,23 +16,6 @@ import { DefaultAzureCredential } from "@azure/identity";
 
 const graphCredential = new DefaultAzureCredential();
 
-function safeDecodeJwtPayload(token: string | null | undefined) {
-  const raw = String(token || "").trim();
-  if (!raw) return null;
-
-  try {
-    const parts = raw.split(".");
-    if (parts.length < 2) return null;
-    const normalized = parts[1]
-      .replace(/-/g, "+")
-      .replace(/_/g, "/")
-      .padEnd(Math.ceil(parts[1].length / 4) * 4, "=");
-    return JSON.parse(Buffer.from(normalized, "base64").toString("utf-8"));
-  } catch {
-    return null;
-  }
-}
-
 function looksLikeGuid(value: string) {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
     String(value || "").trim()
@@ -48,7 +31,6 @@ async function tryDownloadMicrosoftUserPhoto(identifier: string | null | undefin
   if (!clean) return null;
 
   if (!looksLikeGuid(clean) && !looksLikeRealEmail(clean)) {
-    console.log("[profile microsoft photo] skipped invalid identifier", clean);
     return null;
   }
 
@@ -56,10 +38,7 @@ async function tryDownloadMicrosoftUserPhoto(identifier: string | null | undefin
   try {
     token = await graphCredential.getToken("https://graph.microsoft.com/.default");
   } catch (err) {
-    console.error("[profile microsoft photo] graph token acquisition failed", {
-      identifier: clean,
-      message: err instanceof Error ? err.message : String(err),
-    });
+    console.error("[profile microsoft photo] graph token acquisition failed", err);
     return null;
   }
 
@@ -67,17 +46,6 @@ async function tryDownloadMicrosoftUserPhoto(identifier: string | null | undefin
     console.error("[profile microsoft photo] no graph token");
     return null;
   }
-
-  const tokenPayload = safeDecodeJwtPayload(token.token);
-  console.log("[profile microsoft photo] graph token acquired", {
-    identifier: clean,
-    aud: tokenPayload?.aud || null,
-    appid: tokenPayload?.appid || tokenPayload?.azp || null,
-    oid: tokenPayload?.oid || tokenPayload?.sub || null,
-    tid: tokenPayload?.tid || null,
-    roles: Array.isArray(tokenPayload?.roles) ? tokenPayload.roles : [],
-    scp: tokenPayload?.scp || null,
-  });
 
   const url = `https://graph.microsoft.com/v1.0/users/${encodeURIComponent(clean)}/photo/$value`;
 
@@ -88,19 +56,10 @@ async function tryDownloadMicrosoftUserPhoto(identifier: string | null | undefin
   });
 
   if (res.status === 404) {
-    console.log("[profile microsoft photo] graph 404 no photo or not visible", {
-      identifier: clean,
-      url,
-    });
     return null;
   }
 
   if (res.status === 400) {
-    const text = await res.text().catch(() => "");
-    console.log("[profile microsoft photo] graph 400 invalid target", {
-      identifier: clean,
-      body: text,
-    });
     return null;
   }
 
@@ -109,7 +68,6 @@ async function tryDownloadMicrosoftUserPhoto(identifier: string | null | undefin
     console.error("[profile microsoft photo] graph failed", {
       identifier: clean,
       status: res.status,
-      wwwAuthenticate: res.headers.get("www-authenticate") || null,
       body: text,
     });
     return null;
@@ -128,11 +86,6 @@ export async function getMyMicrosoftAvatarFile(req: any, res: Response) {
     const userObjectId = String(req.user?.objectId || "").trim();
     const email = String(req.user?.email || "").trim();
 
-    console.log("[profile microsoft photo] request", {
-      userObjectId,
-      email,
-    });
-
     const photoByOid = await tryDownloadMicrosoftUserPhoto(userObjectId);
 
     if (photoByOid) {
@@ -150,11 +103,6 @@ export async function getMyMicrosoftAvatarFile(req: any, res: Response) {
       res.setHeader("Content-Length", String(photoByEmail.buffer.length));
       return res.send(photoByEmail.buffer);
     }
-
-    console.log("[profile microsoft photo] no microsoft photo resolved", {
-      userObjectId,
-      email,
-    });
 
     return res.status(404).json({
       error: "microsoft avatar not available",
@@ -185,6 +133,7 @@ export async function getDirectoryMicrosoftAvatarFile(req: any, res: Response) {
 
     if (!photo) return res.status(404).end();
 
+    res.setHeader("Cache-Control", "private, max-age=300");
     res.setHeader("Content-Type", photo.contentType);
     res.setHeader("Content-Length", String(photo.buffer.length));
     return res.send(photo.buffer);
@@ -278,6 +227,7 @@ export async function getMyAvatarFile(req: any, res: Response) {
 
     const blob = await downloadUserProfileAvatarBlob(String(row.storage_key));
 
+    res.setHeader("Cache-Control", "private, max-age=300");
     res.setHeader("Content-Type", blob.contentType || "application/octet-stream");
     res.setHeader("Content-Length", String(blob.contentLength || blob.buffer.length));
     return res.send(blob.buffer);
@@ -301,6 +251,7 @@ export async function getMySignatureFile(req: any, res: Response) {
 
     const blob = await downloadUserProfileSignatureBlob(String(row.storage_key));
 
+    res.setHeader("Cache-Control", "private, max-age=300");
     res.setHeader("Content-Type", blob.contentType || "application/octet-stream");
     res.setHeader("Content-Length", String(blob.contentLength || blob.buffer.length));
     return res.send(blob.buffer);
@@ -326,6 +277,7 @@ export async function getDirectoryAvatarFile(req: any, res: Response) {
 
     const blob = await downloadUserProfileAvatarBlob(String(row.storage_key));
 
+    res.setHeader("Cache-Control", "private, max-age=300");
     res.setHeader("Content-Type", blob.contentType || "application/octet-stream");
     res.setHeader("Content-Length", String(blob.contentLength || blob.buffer.length));
     return res.send(blob.buffer);

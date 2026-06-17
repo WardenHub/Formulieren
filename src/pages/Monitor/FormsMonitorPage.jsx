@@ -7,6 +7,7 @@ import { getUserDirectory } from "../../api/emberApi.js";
 import UserAvatar from "../../components/UserAvatar.jsx";
 import {
   buildInitials,
+  buildDirectoryActorLookup,
   getDirectoryDisplayName,
   resolveDirectoryAvatarPath,
 } from "../../lib/avatar.js";
@@ -315,6 +316,8 @@ export default function FormsMonitorPage() {
     }
     return next;
   }, [directoryItems]);
+
+  const actorLookup = useMemo(() => buildDirectoryActorLookup(directoryItems), [directoryItems]);
 
   useEffect(() => {
     saveStateToStorage(OVERVIEW_LS_KEY, { filters, autoRefreshEnabled });
@@ -960,7 +963,7 @@ export default function FormsMonitorPage() {
 
                       <div className="monitor-dossier-row__audit">
                         <div>Laatste wijziging: {formatDateTime(row.updated_at || row.created_at)}</div>
-                        <div>Laatst gewijzigd door: {getLastModifiedBy(row)}</div>
+                        <div>Laatst gewijzigd door: {getLastModifiedBy(row, actorLookup)}</div>
                       </div>
 
                       <div
