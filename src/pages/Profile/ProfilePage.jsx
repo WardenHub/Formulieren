@@ -11,6 +11,7 @@ import {
 } from "../../api/emberApi.js";
 import { fetchProtectedObjectUrl } from "../../api/http.js";
 import { applyAppearancePreference } from "../../theme/appearance.js";
+import { resolveProfileAvatarPath } from "../../lib/avatar.js";
 
 import SaveButton from "@/components/SaveButton.jsx";
 import { UploadIcon } from "@/components/ui/upload";
@@ -35,24 +36,7 @@ function statusToneClass(kind) {
 }
 
 function resolveAvatarImagePath(data) {
-  return (
-    data?.effective?.avatar_url ||
-    data?.effective?.avatar_download_url ||
-    data?.effective?.avatar_preview_url ||
-    data?.effective?.microsoft_avatar_url ||
-    data?.effective?.microsoft_photo_url ||
-    data?.avatar?.download_url ||
-    data?.avatar?.preview_url ||
-    data?.avatar?.url ||
-    data?.microsoftAvatar?.download_url ||
-    data?.microsoftAvatar?.preview_url ||
-    data?.microsoftAvatar?.url ||
-    data?.microsoftPhoto?.download_url ||
-    data?.microsoftPhoto?.preview_url ||
-    data?.microsoftPhoto?.url ||
-    data?.profile?.avatar_url ||
-    null
-  );
+  return resolveProfileAvatarPath(data);
 }
 
 function resolveSignatureImagePath(data) {
@@ -110,7 +94,7 @@ export default function ProfilePage() {
     preferred_display_name: "",
     profile_note: "",
     appearance_preference: "system",
-    avatar_source_preference: "uploaded",
+    avatar_source_preference: "microsoft",
     signature_source_preference: "uploaded",
   });
 
@@ -139,7 +123,7 @@ export default function ProfilePage() {
         preferred_display_name: res?.profile?.preferred_display_name || "",
         profile_note: res?.profile?.profile_note || "",
         appearance_preference: res?.profile?.appearance_preference || "system",
-        avatar_source_preference: res?.profile?.avatar_source_preference || "uploaded",
+        avatar_source_preference: res?.profile?.avatar_source_preference || "microsoft",
         signature_source_preference: res?.profile?.signature_source_preference || "uploaded",
       });
 
@@ -259,7 +243,7 @@ export default function ProfilePage() {
       (draft.preferred_display_name || "") !== (data.profile.preferred_display_name || "") ||
       (draft.profile_note || "") !== (data.profile.profile_note || "") ||
       (draft.appearance_preference || "system") !== (data.profile.appearance_preference || "system") ||
-      (draft.avatar_source_preference || "uploaded") !== (data.profile.avatar_source_preference || "uploaded") ||
+      (draft.avatar_source_preference || "microsoft") !== (data.profile.avatar_source_preference || "microsoft") ||
       (draft.signature_source_preference || "uploaded") !== (data.profile.signature_source_preference || "uploaded")
     );
   }, [draft, data]);
@@ -291,7 +275,7 @@ export default function ProfilePage() {
         preferred_display_name: res?.profile?.preferred_display_name || "",
         profile_note: res?.profile?.profile_note || "",
         appearance_preference: res?.profile?.appearance_preference || "system",
-        avatar_source_preference: res?.profile?.avatar_source_preference || "uploaded",
+        avatar_source_preference: res?.profile?.avatar_source_preference || "microsoft",
         signature_source_preference: res?.profile?.signature_source_preference || "uploaded",
       });
 
@@ -327,7 +311,7 @@ export default function ProfilePage() {
       setData(res || null);
       setDraft((prev) => ({
         ...prev,
-        avatar_source_preference: res?.profile?.avatar_source_preference || "uploaded",
+        avatar_source_preference: res?.profile?.avatar_source_preference || "microsoft",
       }));
 
       setAvatarObjectUrl((prev) => {
@@ -356,7 +340,7 @@ export default function ProfilePage() {
       setData(res || null);
       setDraft((prev) => ({
         ...prev,
-        avatar_source_preference: res?.profile?.avatar_source_preference || "uploaded",
+        avatar_source_preference: res?.profile?.avatar_source_preference || "microsoft",
       }));
 
       if (avatarPreviewUrl) URL.revokeObjectURL(avatarPreviewUrl);

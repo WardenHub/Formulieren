@@ -13,45 +13,14 @@ import { MonitorCheckIcon } from "@/components/ui/monitor-check";
 import { IdCardIcon } from "@/components/ui/id-card";
 import { MenuIcon } from "@/components/ui/menu";
 import { BookTextIcon } from "@/components/ui/book-text";
+import { buildInitials, resolveProfileAvatarPath } from "../lib/avatar.js";
 
 function initialsFromProfilePayload(profileData, meData) {
-  return (
-    profileData?.effective?.initials ||
-    profileData?.profile?.initials ||
-    meData?.profile?.initials ||
-    "E"
-  );
-}
-
-function resolveLayoutAvatarPath(profileData, meData) {
-  const avatarMode =
-    profileData?.profile?.avatar_source_preference ||
-    profileData?.effective?.avatar_mode ||
-    "microsoft";
-
-  if (avatarMode === "none") return null;
-
-  if (avatarMode === "microsoft") {
-    return (
-      profileData?.effective?.microsoft_avatar_url ||
-      profileData?.effective?.microsoft_photo_url ||
-      profileData?.effective?.avatar_url ||
-      profileData?.profile?.avatar_url ||
-      meData?.profile?.avatar_url ||
-      "/me/profile/avatar/microsoft/file"
-    );
-  }
-
-  return (
-    profileData?.effective?.avatar_url ||
-    profileData?.effective?.avatar_download_url ||
-    profileData?.effective?.avatar_preview_url ||
-    profileData?.avatar?.download_url ||
-    profileData?.avatar?.preview_url ||
-    profileData?.avatar?.url ||
-    profileData?.profile?.avatar_url ||
-    meData?.profile?.avatar_url ||
-    null
+  return buildInitials(
+    profileData?.profile?.effective_display_name ||
+      meData?.profile?.display_name,
+    profileData?.profile?.email_snapshot || meData?.user?.email,
+    profileData?.effective?.initials || profileData?.profile?.initials || meData?.profile?.initials || "E"
   );
 }
 
@@ -211,7 +180,7 @@ export default function Layout() {
     let createdUrl = null;
 
     async function loadAvatarObjectUrl() {
-      const mediaPath = resolveLayoutAvatarPath(profileData, meData);
+      const mediaPath = resolveProfileAvatarPath(profileData, meData);
 
       if (!mediaPath) {
         setAvatarObjectUrl((prev) => {

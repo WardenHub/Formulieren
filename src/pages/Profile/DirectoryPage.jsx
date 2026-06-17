@@ -3,8 +3,13 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { getUserDirectory } from "../../api/emberApi.js";
-import { fetchProtectedObjectUrl } from "../../api/http.js";
 import teamsLogo from "../../assets/teams-logo.png";
+import UserAvatar from "../../components/UserAvatar.jsx";
+import {
+  buildInitials,
+  getDirectoryDisplayName,
+  resolveDirectoryAvatarPath,
+} from "../../lib/avatar.js";
 
 import { ChevronLeftIcon } from "@/components/ui/chevron-left";
 import { SearchIcon } from "@/components/ui/search";
@@ -16,69 +21,6 @@ function truncateNote(value) {
   if (!text) return "";
   if (text.length <= NOTE_MAX) return text;
   return `${text.slice(0, NOTE_MAX).trim()}...`;
-}
-
-function DirectoryAvatar({ item }) {
-  const [src, setSrc] = useState(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    let nextUrl = null;
-
-    async function load() {
-      const path = item?.avatar?.url;
-
-      if (!path) {
-        setSrc((prev) => {
-          if (prev) URL.revokeObjectURL(prev);
-          return null;
-        });
-        return;
-      }
-
-      try {
-        nextUrl = await fetchProtectedObjectUrl(path);
-
-        if (cancelled) {
-          if (nextUrl) URL.revokeObjectURL(nextUrl);
-          return;
-        }
-
-        setSrc((prev) => {
-          if (prev) URL.revokeObjectURL(prev);
-          return nextUrl;
-        });
-      } catch (err) {
-        console.error("directory avatar load failed", err);
-
-        if (!cancelled) {
-          setSrc((prev) => {
-            if (prev) URL.revokeObjectURL(prev);
-            return null;
-          });
-        }
-      }
-    }
-
-    load();
-
-    return () => {
-      cancelled = true;
-      if (nextUrl) URL.revokeObjectURL(nextUrl);
-    };
-  }, [item?.avatar?.url]);
-
-  if (src) {
-    return (
-      <img
-        src={src}
-        alt={item?.effective_display_name || "Profiel"}
-        className="directory-card-avatar-image"
-      />
-    );
-  }
-
-  return <span>{item?.initials || "E"}</span>;
 }
 
 export default function DirectoryPage() {
@@ -226,7 +168,17 @@ export default function DirectoryPage() {
                       <div className="ui-row-between">
                         <div className="ui-row">
                           <div className="profile-avatar-preview">
-                            <DirectoryAvatar item={item} />
+                            <UserAvatar
+                              path={resolveDirectoryAvatarPath(item)}
+                              fallback={buildInitials(
+                                getDirectoryDisplayName(item),
+                                item?.email,
+                                item?.initials || "E"
+                              )}
+                              alt={getDirectoryDisplayName(item) || "Profiel"}
+                              className="profile-avatar-preview"
+                              imageClassName="directory-card-avatar-image"
+                            />
                           </div>
 
                           <div className="ui-stack-sm ui-min-0">

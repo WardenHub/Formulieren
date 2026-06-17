@@ -42,6 +42,12 @@ import { ChevronsUpDownIcon } from "@/components/ui/chevrons-up-down";
 import { GavelIcon } from "@/components/ui/gavel";
 import { pushRecentHomeItem } from "../../lib/recentHomeItems.js";
 import Tabs from "../../components/Tabs.jsx";
+import UserAvatar from "../../components/UserAvatar.jsx";
+import {
+  buildInitials,
+  getDirectoryDisplayName as getAvatarDirectoryDisplayName,
+  resolveDirectoryAvatarPath,
+} from "../../lib/avatar.js";
 import teamsLogo from "../../assets/teams-logo.png";
 
 import {
@@ -95,6 +101,27 @@ function SummaryTag({ children, title, tone = "neutral", active = false, onClick
   );
 }
 
+function AssignedOwnerChip({ label, email, ownerEntry, onClick }) {
+  if (!label) return null;
+
+  return (
+    <button
+      type="button"
+      className="ember-label ember-label--info monitor-assignee-chip"
+      title="Open eigenaar"
+      onClick={onClick}
+    >
+      <UserAvatar
+        path={resolveDirectoryAvatarPath(ownerEntry)}
+        fallback={buildInitials(label, email, "E")}
+        alt={label}
+        className="avatar-badge monitor-assignee-avatar"
+      />
+      <span className="monitor-assignee-chip__text">Toegewezen aan {label}</span>
+    </button>
+  );
+}
+
 function buildTeamsChatUrl(email, formInstanceId) {
   const cleanEmail = String(email || "").trim();
   if (!cleanEmail) return null;
@@ -106,13 +133,7 @@ function buildTeamsChatUrl(email, formInstanceId) {
 }
 
 function getDirectoryDisplayName(item) {
-  return String(
-    item?.effective_display_name ||
-      item?.preferred_display_name ||
-      item?.display_name_snapshot ||
-      item?.email_snapshot ||
-      ""
-  ).trim();
+  return getAvatarDirectoryDisplayName(item);
 }
 
 function ActionFooter({
@@ -1282,9 +1303,19 @@ export default function FormsMonitorDetailPage() {
   const totalFilterActive = activeStatusFilters.length === 0;
 
   const hasStatusMenuActions = Boolean(allowedActions.set_ingediend || allowedActions.set_concept);
-  const ownerDisplayLabel = String(
-    item?.assigned_display_name_snapshot || item?.assigned_email_snapshot || ""
-  ).trim();
+  const ownerDirectoryEntry = useMemo(() => {
+    const assignedUserObjectId = String(item?.assigned_user_object_id || "").trim();
+    if (!assignedUserObjectId) return null;
+    return (
+      directoryItems.find(
+        (entry) => String(entry?.user_object_id || "").trim() === assignedUserObjectId
+      ) || null
+    );
+  }, [directoryItems, item?.assigned_user_object_id]);
+
+  const ownerDisplayLabel =
+    getDirectoryDisplayName(ownerDirectoryEntry) ||
+    String(item?.assigned_display_name_snapshot || item?.assigned_email_snapshot || "").trim();
   const hasFollowFormRelations = Boolean(detail?.parent || (Array.isArray(detail?.children) && detail.children.length > 0));
   const detailSectionTabs = [
     { key: "action_points", label: "Actiepunten", Icon: ClipboardCheckIcon },
@@ -1820,14 +1851,12 @@ export default function FormsMonitorDetailPage() {
                   <SummaryTag title="Documentnummer" tone="muted">#{item.form_instance_id}</SummaryTag>
                   <StatusTag status={item.status} />
                   {ownerDisplayLabel ? (
-                    <button
-                      type="button"
-                      className="ember-label ember-label--info"
-                      title="Open eigenaar"
+                    <AssignedOwnerChip
+                      label={ownerDisplayLabel}
+                      email={item.assigned_email_snapshot}
+                      ownerEntry={ownerDirectoryEntry}
                       onClick={() => setOwnerPopupOpen((prev) => !prev)}
-                    >
-                      Toegewezen aan {ownerDisplayLabel}
-                    </button>
+                    />
                   ) : null}
                   {item.parent_instance_id ? (
                     <button
@@ -1888,14 +1917,12 @@ export default function FormsMonitorDetailPage() {
                     <StatusTag status={item.status} />
 
                     {ownerDisplayLabel ? (
-                      <button
-                        type="button"
-                        className="ember-label ember-label--info"
-                        title="Open eigenaar"
+                      <AssignedOwnerChip
+                        label={ownerDisplayLabel}
+                        email={item.assigned_email_snapshot}
+                        ownerEntry={ownerDirectoryEntry}
                         onClick={() => setOwnerPopupOpen((prev) => !prev)}
-                      >
-                        Toegewezen aan {ownerDisplayLabel}
-                      </button>
+                      />
                     ) : null}
 
                     <SummaryTag title="Documentnummer" tone="muted">
@@ -2069,7 +2096,21 @@ export default function FormsMonitorDetailPage() {
                         <div className="ember-label-row">
                           {ownerDisplayLabel ? (
                             <SummaryTag title="Huidige toewijzing" tone="info">
-                              {ownerDisplayLabel}
+                              <span className="monitor-assignee-chip">
+                                <UserAvatar
+                                  path={resolveDirectoryAvatarPath(ownerDirectoryEntry)}
+                                  fallback={buildInitials(
+                                    ownerDisplayLabel,
+                                    item.assigned_email_snapshot,
+                                    "E"
+                                  )}
+                                  alt={ownerDisplayLabel}
+                                  className="avatar-badge monitor-assignee-avatar"
+                                />
+                                <span className="monitor-assignee-chip__text">
+                                  {ownerDisplayLabel}
+                                </span>
+                              </span>
                             </SummaryTag>
                           ) : (
                             <SummaryTag title="Huidige toewijzing" tone="muted">

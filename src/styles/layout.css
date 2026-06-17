@@ -3225,6 +3225,28 @@ html[data-appearance="light"] .type-telefonie{
   font-size: 12px;
 }
 
+.monitor-assignee-avatar{
+  width: 24px;
+  height: 24px;
+  font-size: 11px;
+  border-color: color-mix(in srgb, var(--text) 10%, transparent);
+  background: color-mix(in srgb, var(--surface-1) 82%, white 18%);
+}
+
+.monitor-assignee-chip{
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.monitor-assignee-chip__text{
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .profile-avatar-image,
 .directory-card-avatar-image{
   width: 100%;

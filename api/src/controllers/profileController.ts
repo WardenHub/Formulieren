@@ -35,7 +35,16 @@ async function tryDownloadMicrosoftUserPhoto(identifier: string | null | undefin
     return null;
   }
 
-  const token = await graphCredential.getToken("https://graph.microsoft.com/.default");
+  let token = null;
+  try {
+    token = await graphCredential.getToken("https://graph.microsoft.com/.default");
+  } catch (err) {
+    console.error("[profile microsoft photo] graph token acquisition failed", {
+      identifier: clean,
+      message: err instanceof Error ? err.message : String(err),
+    });
+    return null;
+  }
 
   if (!token?.token) {
     console.error("[profile microsoft photo] no graph token");

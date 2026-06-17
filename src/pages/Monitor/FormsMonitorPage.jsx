@@ -4,6 +4,12 @@ import { useNavigate } from "react-router-dom";
 
 import { getFormsMonitorList } from "../../api/emberApi.js";
 import { getUserDirectory } from "../../api/emberApi.js";
+import UserAvatar from "../../components/UserAvatar.jsx";
+import {
+  buildInitials,
+  getDirectoryDisplayName,
+  resolveDirectoryAvatarPath,
+} from "../../lib/avatar.js";
 
 import { SearchIcon } from "@/components/ui/search";
 import { ArrowBigRightIcon } from "@/components/ui/arrow-big-right";
@@ -183,6 +189,35 @@ function FilterGroup({ label, children, extra = null, className = "" }) {
   );
 }
 
+function renderAssignedOwnerChip(row, ownerEntry, onOpenTeams) {
+  const label =
+    getDirectoryDisplayName(ownerEntry) ||
+    String(row?.assigned_display_name_snapshot || row?.assigned_email_snapshot || "").trim();
+
+  if (!label) return null;
+
+  return (
+    <button
+      type="button"
+      className="monitor-tag monitor-tag--active monitor-assignee-chip"
+      title={
+        row?.assigned_email_snapshot
+          ? `Stuur Teams-bericht naar ${label}`
+          : "Toegewezen behandelaar"
+      }
+      onClick={onOpenTeams}
+    >
+      <UserAvatar
+        path={resolveDirectoryAvatarPath(ownerEntry)}
+        fallback={buildInitials(label, row?.assigned_email_snapshot, "E")}
+        alt={label}
+        className="avatar-badge monitor-assignee-avatar"
+      />
+      <span className="monitor-assignee-chip__text">Toegewezen aan {label}</span>
+    </button>
+  );
+}
+
 export default function FormsMonitorPage() {
   const storedState = useMemo(() => readStateFromStorage(OVERVIEW_LS_KEY), []);
   const navigate = useNavigate();
@@ -270,6 +305,16 @@ export default function FormsMonitorPage() {
       done: Number(base?.done ?? fallback.done),
     };
   }, [visibleItems]);
+
+  const directoryByUserObjectId = useMemo(() => {
+    const next = new Map();
+    for (const item of directoryItems || []) {
+      const key = String(item?.user_object_id || "").trim();
+      if (!key) continue;
+      next.set(key, item);
+    }
+    return next;
+  }, [directoryItems]);
 
   useEffect(() => {
     saveStateToStorage(OVERVIEW_LS_KEY, { filters, autoRefreshEnabled });
@@ -800,6 +845,9 @@ export default function FormsMonitorPage() {
           ) : (
             <div className="monitor-list">
               {visibleItems.map((row) => {
+                const ownerEntry = directoryByUserObjectId.get(
+                  String(row?.assigned_user_object_id || "").trim()
+                );
                 const actionCountsRaw = buildMonitorRowActionCounts(row);
                 const actionCounts = {
                   open: Number(actionCountsRaw?.open ?? getOpenCount(row)),
@@ -834,27 +882,16 @@ export default function FormsMonitorPage() {
                           </SummaryTag>
 
                           {row.assigned_display_name_snapshot || row.assigned_email_snapshot ? (
-                            <button
-                              type="button"
-                              className="monitor-tag monitor-tag--active"
-                              title={
-                                row.assigned_email_snapshot
-                                  ? `Stuur Teams-bericht naar ${row.assigned_display_name_snapshot || row.assigned_email_snapshot}`
-                                  : "Toegewezen behandelaar"
+                            renderAssignedOwnerChip(row, ownerEntry, (e) => {
+                              e.stopPropagation();
+                              const teamsUrl = buildTeamsChatUrl(
+                                row.assigned_email_snapshot,
+                                row.form_instance_id
+                              );
+                              if (teamsUrl) {
+                                window.open(teamsUrl, "_blank", "noopener,noreferrer");
                               }
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                const teamsUrl = buildTeamsChatUrl(
-                                  row.assigned_email_snapshot,
-                                  row.form_instance_id
-                                );
-                                if (teamsUrl) {
-                                  window.open(teamsUrl, "_blank", "noopener,noreferrer");
-                                }
-                              }}
-                            >
-                              Toegewezen aan {row.assigned_display_name_snapshot || row.assigned_email_snapshot}
-                            </button>
+                            })
                           ) : null}
 
                           {row.parent_instance_id ? (
