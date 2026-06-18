@@ -107,8 +107,6 @@ async function tryDownloadMicrosoftUserPhoto(identifier: string | null | undefin
     return null;
   }
 
-  const tokenSummary = summarizeGraphToken(token.token);
-
   const url = `https://graph.microsoft.com/v1.0/users/${encodeURIComponent(clean)}/photo/$value`;
 
   const res = await fetch(url, {
@@ -134,7 +132,7 @@ async function tryDownloadMicrosoftUserPhoto(identifier: string | null | undefin
       requestId: res.headers.get("request-id") || null,
       clientRequestId: res.headers.get("client-request-id") || null,
       xMsAgsDiagnostic: res.headers.get("x-ms-ags-diagnostic") || null,
-      token: tokenSummary,
+      token: summarizeGraphToken(token.token),
       credential: getGraphCredentialDebugContext(),
       body: text,
     });
