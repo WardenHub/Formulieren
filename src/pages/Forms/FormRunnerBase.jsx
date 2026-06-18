@@ -16,6 +16,7 @@ import { FolderInputIcon } from "@/components/ui/folder-input";
 import { FolderXIcon } from "@/components/ui/folder-x";
 import { HistoryIcon } from "@/components/ui/history";
 import { CheckCheckIcon } from "@/components/ui/check-check";
+import { CheckIcon } from "@/components/ui/check";
 import { PartyPopperIcon } from "@/components/ui/party-popper";
 import { RotateCCWIcon } from "@/components/ui/rotate-ccw";
 import { ChevronUpIcon } from "@/components/ui/chevron-up";
@@ -3395,6 +3396,7 @@ export default function FormRunnerBase({ mode }) {
                                 key={`${doc.form_instance_document_id}-${item.fingerprint}`}
                                 type="button"
                                 className="btn btn-secondary"
+                                aria-pressed={active}
                                 onClick={() =>
                                   toggleSubmitDialogDocumentFollowUp(
                                     doc.form_instance_document_id,
@@ -3404,15 +3406,20 @@ export default function FormRunnerBase({ mode }) {
                                 style={{
                                   fontSize: 12,
                                   textAlign: "left",
+                                  display: "inline-flex",
+                                  alignItems: "center",
+                                  gap: 6,
                                   ...(active
-                                    ? themedChip({
-                                        fontSize: 12,
+                                    ? {
+                                        background: "var(--success-bg)",
+                                        border: "1px solid var(--success-border)",
+                                        color: "var(--success-text)",
                                         fontWeight: 800,
-                                        border: "1px solid var(--accent)",
-                                      })
+                                      }
                                     : {}),
                                 }}
                               >
+                                {active ? <CheckIcon size={14} className="nav-anim-icon" /> : null}
                                 {buildSubmitDialogFollowUpLabel(item)}
                               </button>
                             );

@@ -3,6 +3,7 @@ export const getFormFollowUpsByInstanceSql = `
 select
   follow_up_action_id,
   form_instance_id,
+  kind,
   source_fingerprint,
   source_question_name,
   source_question_type,
@@ -12,8 +13,11 @@ select
   workflow_description,
   category,
   certificate_impact,
+  certificate_impact_override,
+  isnull(certificate_impact_override, certificate_impact) as effective_certificate_impact,
   status,
-  note
+  note,
+  resolution_outcome
 from dbo.FormFollowUpAction
 where form_instance_id = @formInstanceId
 `;
@@ -31,6 +35,7 @@ insert into dbo.FormFollowUpAction
   source_item_code,
   source_fingerprint,
 
+  kind,
   workflow_title,
   workflow_description,
   category,
@@ -54,6 +59,7 @@ values
   @sourceItemCode,
   @sourceFingerprint,
 
+  @kind,
   @workflowTitle,
   @workflowDescription,
   @category,
@@ -74,6 +80,7 @@ set
   source_question_type = @sourceQuestionType,
   source_row_index = @sourceRowIndex,
   source_item_code = @sourceItemCode,
+  kind = @kind,
   workflow_title = @workflowTitle,
   workflow_description = @workflowDescription,
   category = @category,
@@ -98,10 +105,10 @@ where follow_up_action_id = @followUpActionId
 export const getFormFollowUpSummaryByInstanceSql = `
 select
   count(*) as total_count,
-  sum(case when status in (N'OPEN', N'WACHTENOPDERDEN') then 1 else 0 end) as open_count,
-  sum(case when status in (N'AFGEHANDELD', N'AFGEWEZEN', N'VERVALLEN', N'INFORMATIEF') then 1 else 0 end) as terminal_count,
-  sum(case when status = N'INFORMATIEF' then 1 else 0 end) as informative_count,
-  sum(case when status <> N'INFORMATIEF' then 1 else 0 end) as relevant_count
+  sum(case when kind = N'workflow' and status in (N'OPEN', N'WACHTENOPDERDEN') then 1 else 0 end) as open_count,
+  sum(case when kind = N'workflow' and status in (N'AFGEHANDELD', N'AFGEWEZEN', N'VERVALLEN') then 1 else 0 end) as terminal_count,
+  sum(case when kind = N'report-only' then 1 else 0 end) as informative_count,
+  sum(case when kind = N'workflow' then 1 else 0 end) as relevant_count
 from dbo.FormFollowUpAction
 where form_instance_id = @formInstanceId
 `;
@@ -110,15 +117,19 @@ export const getFormFollowUpsMonitorByInstanceSql = `
 select
   follow_up_action_id,
   form_instance_id,
+  kind,
   workflow_title,
   workflow_description,
   category,
   certificate_impact,
+  certificate_impact_override,
+  isnull(certificate_impact_override, certificate_impact) as effective_certificate_impact,
   status,
   note,
   assigned_to,
   due_date,
   resolution_note,
+  resolution_outcome,
   resolved_at,
   resolved_by,
   created_at,
@@ -141,9 +152,14 @@ export const getFormFollowUpByIdSql = `
 select top 1
   fua.follow_up_action_id,
   fua.form_instance_id,
+  fua.kind,
   fua.status,
   fua.note,
   fua.workflow_title,
+  fua.certificate_impact,
+  fua.certificate_impact_override,
+  isnull(fua.certificate_impact_override, fua.certificate_impact) as effective_certificate_impact,
+  fua.resolution_outcome,
   fua.resolution_note,
   fi.status as form_status,
   ab.installation_status
@@ -171,8 +187,10 @@ where follow_up_action_id = @followUpActionId;
 select top 1
   follow_up_action_id,
   form_instance_id,
+  kind,
   status,
   note,
+  resolution_outcome,
   resolution_note,
   resolved_at,
   resolved_by,
@@ -193,8 +211,32 @@ where follow_up_action_id = @followUpActionId;
 select top 1
   follow_up_action_id,
   form_instance_id,
+  kind,
   status,
   note,
+  resolution_outcome,
+  updated_at,
+  updated_by
+from dbo.FormFollowUpAction
+where follow_up_action_id = @followUpActionId
+`;
+
+export const updateFormFollowUpCertificateImpactSql = `
+update dbo.FormFollowUpAction
+set
+  certificate_impact_override = @certificateImpactOverride,
+  updated_at = sysutcdatetime(),
+  updated_by = @actor
+where follow_up_action_id = @followUpActionId
+  and kind = N'workflow';
+
+select top 1
+  follow_up_action_id,
+  form_instance_id,
+  kind,
+  certificate_impact,
+  certificate_impact_override,
+  isnull(certificate_impact_override, certificate_impact) as effective_certificate_impact,
   updated_at,
   updated_by
 from dbo.FormFollowUpAction

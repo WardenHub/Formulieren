@@ -8,6 +8,24 @@ function normalizeNullableNumber(value) {
   return Number.isFinite(n) ? n : null;
 }
 
+const DOCUMENT_PROFILE_OPTIONS = [
+  { value: "", label: "Niet ingesteld" },
+  { value: "certified_maintenance_report", label: "Gecertificeerd onderhoudsrapport" },
+  { value: "commissioning_report", label: "Rapport van oplevering" },
+  { value: "maintenance_plan", label: "Onderhoudsplan" },
+  { value: "measurement_report", label: "Meetrapport" },
+  { value: "audit_report", label: "Auditrapport" },
+  { value: "safety_form", label: "Veiligheidsformulier" },
+  { value: "analysis_form", label: "Analyseformulier" },
+  { value: "intake_report", label: "Intakeformulier" },
+];
+
+const WORKFLOW_PROFILE_OPTIONS = [
+  { value: "", label: "Niet ingesteld" },
+  { value: "standard", label: "Standaard" },
+  { value: "certified_maintenance", label: "Gecertificeerd onderhoud" },
+];
+
 function normalizeDraftFromForm(selectedForm) {
   if (!selectedForm) return null;
 
@@ -16,6 +34,9 @@ function normalizeDraftFromForm(selectedForm) {
     code: selectedForm.code,
     name: selectedForm.name ?? "",
     description: selectedForm.description ?? "",
+    document_profile_key: selectedForm.document_profile_key ?? "",
+    workflow_profile_key: selectedForm.workflow_profile_key ?? "",
+    official_document_number: selectedForm.official_document_number ?? "",
     status: selectedForm.status ?? "A",
     applicability_type_keys: [...(selectedForm.applicability_type_keys || [])],
     preflight: {
@@ -309,6 +330,60 @@ const AdminFormsConfigTab = forwardRef(function AdminFormsConfigTab(
                       className="cf-textarea"
                       value={draft.description}
                       onChange={(e) => setField("description", e.target.value)}
+                    />
+                  </div>
+                </div>
+
+                <div className="cf-row">
+                  <div className="cf-label">
+                    <div className="cf-label-text">Documentsoort</div>
+                  </div>
+
+                  <div className="cf-control">
+                    <select
+                      className="input"
+                      value={draft.document_profile_key ?? ""}
+                      onChange={(e) => setField("document_profile_key", e.target.value)}
+                    >
+                      {DOCUMENT_PROFILE_OPTIONS.map((option) => (
+                        <option key={option.value || "empty"} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
+                <div className="cf-row">
+                  <div className="cf-label">
+                    <div className="cf-label-text">Workflowprofiel</div>
+                  </div>
+
+                  <div className="cf-control">
+                    <select
+                      className="input"
+                      value={draft.workflow_profile_key ?? ""}
+                      onChange={(e) => setField("workflow_profile_key", e.target.value)}
+                    >
+                      {WORKFLOW_PROFILE_OPTIONS.map((option) => (
+                        <option key={option.value || "empty"} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
+                <div className="cf-row">
+                  <div className="cf-label">
+                    <div className="cf-label-text">Officieel documentnummer</div>
+                  </div>
+
+                  <div className="cf-control">
+                    <input
+                      className="input"
+                      value={draft.official_document_number ?? ""}
+                      onChange={(e) => setField("official_document_number", e.target.value)}
                     />
                   </div>
                 </div>

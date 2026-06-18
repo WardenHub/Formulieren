@@ -16,6 +16,9 @@ select top 1
 
   fd.name as form_name,
   fd.code as form_code,
+  fd.document_profile_key,
+  fd.workflow_profile_key,
+  fd.official_document_number,
 
   fv.version_label,
   fv.survey_json,

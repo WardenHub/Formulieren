@@ -36,6 +36,7 @@ type PreviewFollowUpsInput = {
 type ExistingFollowUpRow = {
   follow_up_action_id: string;
   form_instance_id: number;
+  kind: "workflow" | "report-only";
   source_fingerprint: string;
   source_question_name: string;
   source_question_type: string | null;
@@ -45,9 +46,11 @@ type ExistingFollowUpRow = {
   workflow_description: string | null;
   category: string | null;
   certificate_impact: "yes" | "no" | null;
+  certificate_impact_override: "yes" | "no" | null;
+  effective_certificate_impact: "yes" | "no" | null;
   status:
     | "OPEN"
-    | "AFGEHANDELD"
+      | "AFGEHANDELD"
     | "WACHTENOPDERDEN"
     | "AFGEWEZEN"
     | "VERVALLEN"
@@ -96,7 +99,7 @@ export async function syncFormFollowUps(input: SyncFollowUpsInput) {
   const existingByFingerprint = new Map<string, ExistingFollowUpRow>();
 
   for (const row of existing) {
-    existingByFingerprint.set(String(row.source_fingerprint), row);
+    existingByFingerprint.set(buildFollowUpSyncKey(row.kind, row.source_fingerprint), row);
   }
 
   const extractedFingerprints = new Set<string>();
@@ -106,9 +109,10 @@ export async function syncFormFollowUps(input: SyncFollowUpsInput) {
   let vervallen = 0;
 
   for (const candidate of extracted) {
-    extractedFingerprints.add(candidate.fingerprint);
+    const candidateKey = buildFollowUpSyncKey(candidate.kind, candidate.fingerprint);
+    extractedFingerprints.add(candidateKey);
 
-    const current = existingByFingerprint.get(candidate.fingerprint);
+    const current = existingByFingerprint.get(candidateKey);
 
     if (!current) {
       await insertFollowUp({
@@ -136,7 +140,7 @@ export async function syncFormFollowUps(input: SyncFollowUpsInput) {
   }
 
   for (const row of existing) {
-    const fp = String(row.source_fingerprint || "").trim();
+    const fp = buildFollowUpSyncKey(row.kind, row.source_fingerprint);
     if (!fp || extractedFingerprints.has(fp)) continue;
 
     if (row.status === "VERVALLEN") continue;
@@ -188,6 +192,7 @@ async function insertFollowUp(args: {
     sourceRowIndex: candidate.rowIndex ?? null,
     sourceItemCode: candidate.itemCode || null,
     sourceFingerprint: candidate.fingerprint,
+    kind: candidate.kind,
     workflowTitle: candidate.workflowTitle,
     workflowDescription: candidate.workflowDescription || null,
     category: candidate.category || null,
@@ -210,6 +215,7 @@ async function updateFollowUpContent(args: {
     sourceQuestionType: candidate.questionType || null,
     sourceRowIndex: candidate.rowIndex ?? null,
     sourceItemCode: candidate.itemCode || null,
+    kind: candidate.kind,
     workflowTitle: candidate.workflowTitle,
     workflowDescription: candidate.workflowDescription || null,
     category: candidate.category || null,
@@ -229,17 +235,17 @@ function dedupeCandidates(items: FollowUpCandidate[]) {
   const map = new Map<string, FollowUpCandidate>();
 
   for (const item of items || []) {
-    const fp = String(item?.fingerprint || "").trim();
-    if (!fp) continue;
+    const key = buildFollowUpSyncKey(item?.kind, item?.fingerprint);
+    if (!key) continue;
 
-    const existing = map.get(fp);
+    const existing = map.get(key);
     if (!existing) {
-      map.set(fp, item);
+      map.set(key, item);
       continue;
     }
 
     if (scoreCandidate(item) >= scoreCandidate(existing)) {
-      map.set(fp, item);
+      map.set(key, item);
     }
   }
 
@@ -259,6 +265,7 @@ function scoreCandidate(item: FollowUpCandidate) {
 
 function hasMeaningfulChanges(row: ExistingFollowUpRow, candidate: FollowUpCandidate) {
   return (
+    normalizeNullable(row.kind) !== normalizeNullable(candidate.kind) ||
     normalizeNullable(row.source_question_name) !== normalizeNullable(candidate.questionName) ||
     normalizeNullable(row.source_question_type) !== normalizeNullable(candidate.questionType) ||
     normalizeNumber(row.source_row_index) !== normalizeNumber(candidate.rowIndex) ||
@@ -274,6 +281,12 @@ function normalizeNullable(v: unknown) {
   if (v === null || v === undefined) return null;
   const s = String(v).trim();
   return s.length ? s : null;
+}
+
+function buildFollowUpSyncKey(kind: unknown, fingerprint: unknown) {
+  const cleanKind = String(kind || "").trim();
+  const cleanFingerprint = String(fingerprint || "").trim();
+  return `${cleanKind}::${cleanFingerprint}`;
 }
 
 function normalizeNumber(v: unknown) {

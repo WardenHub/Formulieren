@@ -522,6 +522,13 @@ export function putFormsMonitorFollowUpNote(followUpActionId, payload) {
   );
 }
 
+export function putFormsMonitorFollowUpCertificateImpact(followUpActionId, payload) {
+  return apiPut(
+    `/forms-monitor/follow-ups/${encodeURIComponent(followUpActionId)}/certificate-impact`,
+    payload ?? {}
+  );
+}
+
 // admin forms
 export function getAdminForms() {
   return apiGet("/admin/forms");

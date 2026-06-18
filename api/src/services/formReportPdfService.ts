@@ -497,6 +497,7 @@ function tocTable(surveyJson: any) {
 function buildGeneralInfoPages(item: any, answers: any, profileName: string) {
   const documentnummer = firstText(
     answers?.documentnummer,
+    item?.official_document_number,
     item?.form_instance_id
   );
   const onderhoudDatum = answerDateText(

@@ -17,6 +17,7 @@ import {
   getFormFollowUpByIdSql,
   updateFormFollowUpStatusSql,
   updateFormFollowUpNoteSql,
+  updateFormFollowUpCertificateImpactSql,
 } from "../db/queries/formFollowUps.sql.js";
 import { getUserProfileSql } from "../db/queries/profile.sql.js";
 import { isHistoricalInstallationStatus } from "./installationsService.js";
@@ -59,6 +60,17 @@ function normalizeBoolean(value: any, fallback = false): boolean {
   if (["1", "true", "yes", "ja"].includes(s)) return true;
   if (["0", "false", "no", "nee"].includes(s)) return false;
   return fallback;
+}
+
+function normalizeCertificateImpactOverride(value: any) {
+  const raw = normalizeOptionalString(value);
+  if (!raw) return null;
+
+  const lower = raw.toLowerCase();
+  if (lower === "yes") return "yes";
+  if (lower === "no") return "no";
+
+  throw new Error("invalid certificate impact override");
 }
 
 function profileDisplayName(row: any) {
@@ -248,6 +260,9 @@ function mapFormActionToStatus(action: string) {
 function assertFollowUpActionAllowed(followUpRow: any, action: string, roles: string[]) {
   if (!isManager(roles)) throw new Error("forbidden");
   if (!followUpRow) throw new Error("not found");
+  if (String(followUpRow.kind || "").trim().toLowerCase() !== "workflow") {
+    throw new Error("report-only follow-ups cannot use workflow status actions");
+  }
 
   const valid = [
     "mark_done",
@@ -582,6 +597,47 @@ export async function updateMonitorFollowUpNote(
   const rows = await sqlQuery(updateFormFollowUpNoteSql, {
     followUpActionId,
     note,
+    actor,
+  });
+
+  return {
+    ok: true,
+    item: rows?.[0] ?? null,
+  };
+}
+
+export async function updateMonitorFollowUpCertificateImpact(
+  followUpActionIdRaw: any,
+  payload: any,
+  context: UserContext
+) {
+  const followUpActionId = normalizeOptionalString(followUpActionIdRaw);
+  if (!followUpActionId) return { error: "not found" };
+
+  if (!isManager(context.roles || [])) {
+    throw new Error("forbidden");
+  }
+
+  const actor = getUserAuditActor(context.user);
+  const certificateImpactOverride = normalizeCertificateImpactOverride(
+    payload?.certificate_impact_override ?? payload?.certificateImpactOverride
+  );
+
+  const existingRows = await sqlQuery(getFormFollowUpByIdSql, { followUpActionId });
+  const existing = existingRows?.[0] ?? null;
+  if (!existing) return { error: "not found" };
+
+  if (String(existing.kind || "").trim().toLowerCase() !== "workflow") {
+    throw new Error("certificate impact override is only allowed for workflow follow-ups");
+  }
+
+  if (isHistoricalInstallationStatus(existing.installation_status)) {
+    throw new Error("historical installation read-only");
+  }
+
+  const rows = await sqlQuery(updateFormFollowUpCertificateImpactSql, {
+    followUpActionId,
+    certificateImpactOverride,
     actor,
   });
 

@@ -10,6 +10,7 @@ import {
   putFormsMonitorComplimentPoint,
   postFormsMonitorFollowUpStatusAction,
   putFormsMonitorFollowUpNote,
+  putFormsMonitorFollowUpCertificateImpact,
   downloadFormsMonitorPdf,
   getFormInstanceDocuments,
   putFormInstanceDocuments,
@@ -38,8 +39,8 @@ import { ArchiveIcon } from "@/components/ui/archive";
 import { ChevronLeftIcon } from "@/components/ui/chevron-left";
 import { BadgeAlertIcon } from "@/components/ui/badge-alert";
 import { PartyPopperIcon } from "@/components/ui/party-popper";
-import { ChevronsUpDownIcon } from "@/components/ui/chevrons-up-down";
 import { GavelIcon } from "@/components/ui/gavel";
+import { MenuIcon } from "@/components/ui/menu";
 import { pushRecentHomeItem } from "../../lib/recentHomeItems.js";
 import Tabs from "../../components/Tabs.jsx";
 import UserAvatar from "../../components/UserAvatar.jsx";
@@ -136,6 +137,12 @@ function buildTeamsChatUrl(email, formInstanceId) {
 
 function getDirectoryDisplayName(item) {
   return getAvatarDirectoryDisplayName(item);
+}
+
+function getFollowUpKindLabel(kind) {
+  return String(kind || "").trim().toLowerCase() === "report-only"
+    ? "Rapportopmerking"
+    : "Workflowactie";
 }
 
 function ActionFooter({
@@ -1211,6 +1218,7 @@ export default function FormsMonitorDetailPage() {
   const filterInfoBtnRef = useRef(null);
   const filterInfoPopupRef = useRef(null);
   const successPartyRef = useRef(null);
+  const actionMenuIconRef = useRef(null);
   const actionMenuBtnRef = useRef(null);
   const actionMenuPopupRef = useRef(null);
   const ownerBtnRef = useRef(null);
@@ -1660,6 +1668,43 @@ export default function FormsMonitorDetailPage() {
     }
   }
 
+  async function handleCertificateImpactOverride(followUpActionId, nextValue) {
+    if (!followUpActionId || followUpBusyId) return;
+
+    setFollowUpBusyId(followUpActionId);
+    setError(null);
+
+    try {
+      const res = await putFormsMonitorFollowUpCertificateImpact(followUpActionId, {
+        certificate_impact_override: nextValue || null,
+      });
+
+      const updated = res?.item || null;
+      if (!updated) return;
+
+      setFollowUps((prev) =>
+        prev.map((row) =>
+          String(row.follow_up_action_id) === String(followUpActionId)
+            ? {
+                ...row,
+                certificate_impact_override: updated.certificate_impact_override ?? null,
+                effective_certificate_impact:
+                  updated.effective_certificate_impact ??
+                  row.effective_certificate_impact ??
+                  row.certificate_impact,
+                updated_at: updated.updated_at ?? row.updated_at,
+                updated_by: updated.updated_by ?? row.updated_by,
+              }
+            : row
+        )
+      );
+    } catch (e) {
+      setError(String(e?.message || e || "Certificaateffect opslaan mislukt."));
+    } finally {
+      setFollowUpBusyId(null);
+    }
+  }
+
   async function handleCopyClipboard(row) {
     const key = String(row?.follow_up_action_id || "");
     if (!key) return;
@@ -2048,8 +2093,10 @@ export default function FormsMonitorDetailPage() {
                           setActionMenuOpen((prev) => !prev);
                           setOwnerPopupOpen(false);
                         }}
+                        onMouseEnter={() => actionMenuIconRef.current?.startAnimation?.()}
+                        onMouseLeave={() => actionMenuIconRef.current?.stopAnimation?.()}
                       >
-                        <ChevronsUpDownIcon size={18} className="nav-anim-icon" />
+                        <MenuIcon ref={actionMenuIconRef} size={18} className="nav-anim-icon" />
                       </button>
 
                       {actionMenuOpen ? (
@@ -2583,6 +2630,13 @@ export default function FormsMonitorDetailPage() {
                                     const noteSaving = Boolean(noteSavingById[noteKey]);
                                     const noteSaved = Boolean(noteSavedById[noteKey]);
                                     const copied = Boolean(copiedById[noteKey]);
+                                    const isWorkflow =
+                                      String(row.kind || "").trim().toLowerCase() === "workflow";
+                                    const effectiveCertificateImpact = String(
+                                      row.effective_certificate_impact || row.certificate_impact || ""
+                                    )
+                                      .trim()
+                                      .toLowerCase();
 
                                     return (
                                       <div key={row.follow_up_action_id} className={getFollowUpCardClass(row.status)}>
@@ -2603,13 +2657,20 @@ export default function FormsMonitorDetailPage() {
                                           </div>
 
                                           <div className="ember-label-row">
+                                            <SummaryTag
+                                              title="Type opvolgregistratie"
+                                              tone={isWorkflow ? "info" : "muted"}
+                                            >
+                                              {getFollowUpKindLabel(row.kind)}
+                                            </SummaryTag>
+
                                             {row.category ? (
                                               <SummaryTag title="Categorie" tone="muted">
                                                 {row.category}
                                               </SummaryTag>
                                             ) : null}
 
-                                            {String(row.certificate_impact || "").toLowerCase() === "yes" ? (
+                                            {effectiveCertificateImpact === "yes" ? (
                                               <SummaryTag title="Dit actiepunt blokkeert het certificaat" tone="warning">
                                                 Blokkeert certificaat
                                               </SummaryTag>
@@ -2626,6 +2687,65 @@ export default function FormsMonitorDetailPage() {
                                         <div className="ember-page-subtitle">
                                           Laatste wijziging; {formatDateTime(row.updated_at || row.created_at)}
                                         </div>
+
+                                        {isWorkflow ? (
+                                          <div className="monitor-followup-note-box">
+                                            <div className="ui-row">
+                                              <GavelIcon size={16} />
+                                              <strong>Certificaateffect</strong>
+                                            </div>
+
+                                            <select
+                                              className="input"
+                                              disabled={followUpBusyId === row.follow_up_action_id}
+                                              value={String(row.certificate_impact_override || "")}
+                                              onChange={(e) =>
+                                                handleCertificateImpactOverride(
+                                                  row.follow_up_action_id,
+                                                  e.target.value
+                                                )
+                                              }
+                                            >
+                                              <option value="">
+                                                {effectiveCertificateImpact === "yes"
+                                                  ? "Volgens formulierdefinitie; blokkeert certificaat"
+                                                  : "Volgens formulierdefinitie; blokkeert certificaat niet"}
+                                              </option>
+                                              <option value="yes">Blokkeert certificaat</option>
+                                              <option value="no">Blokkeert certificaat niet</option>
+                                            </select>
+
+                                            <div className="ember-label-row">
+                                              {row.certificate_impact_override ? (
+                                                <SummaryTag
+                                                  title="Dit certificaateffect is handmatig overschreven"
+                                                  tone="warning"
+                                                >
+                                                  Handmatige override
+                                                </SummaryTag>
+                                              ) : (
+                                                <SummaryTag
+                                                  title="Het certificaateffect volgt de formulierdefinitie"
+                                                  tone="muted"
+                                                >
+                                                  Volgens formulierdefinitie
+                                                </SummaryTag>
+                                              )}
+                                            </div>
+                                          </div>
+                                        ) : (
+                                          <div className="monitor-followup-note-box">
+                                            <div className="ui-row">
+                                              <GavelIcon size={16} />
+                                              <strong>Rapportopmerking</strong>
+                                            </div>
+
+                                            <div className="ember-page-subtitle">
+                                              Deze rapportopmerking blijft zichtbaar in de rapportage, maar telt niet mee
+                                              voor certificering of het definitief oordeel.
+                                            </div>
+                                          </div>
+                                        )}
 
                                         <FollowUpLinkedDocuments
                                           code={item.atrium_installation_code}
@@ -2672,53 +2792,71 @@ export default function FormsMonitorDetailPage() {
                                             {copied ? "Actietekst gekopieerd" : "Kopieer actietekst"}
                                           </button>
 
-                                          <div className="ember-toolbar">
-                                            <button
-                                              type="button"
-                                              className="btn btn-secondary"
-                                              disabled={followUpBusyId === row.follow_up_action_id}
-                                              onClick={() => handleFollowUpAction(row.follow_up_action_id, "set_open")}
-                                            >
-                                              Open
-                                            </button>
+                                          {isWorkflow ? (
+                                            <div className="ember-toolbar">
+                                              <button
+                                                type="button"
+                                                className="btn btn-secondary"
+                                                disabled={followUpBusyId === row.follow_up_action_id}
+                                                onClick={() => handleFollowUpAction(row.follow_up_action_id, "set_open")}
+                                              >
+                                                Open
+                                              </button>
 
-                                            <button
-                                              type="button"
-                                              className="btn btn-secondary"
-                                              disabled={followUpBusyId === row.follow_up_action_id}
-                                              onClick={() => handleFollowUpAction(row.follow_up_action_id, "set_waiting_third_party")}
-                                            >
-                                              Wachten op derden
-                                            </button>
+                                              <button
+                                                type="button"
+                                                className="btn btn-secondary"
+                                                disabled={followUpBusyId === row.follow_up_action_id}
+                                                onClick={() =>
+                                                  handleFollowUpAction(
+                                                    row.follow_up_action_id,
+                                                    "set_waiting_third_party"
+                                                  )
+                                                }
+                                              >
+                                                Wachten op derden
+                                              </button>
 
-                                            <button
-                                              type="button"
-                                              className="btn btn-secondary"
-                                              disabled={followUpBusyId === row.follow_up_action_id}
-                                              onClick={() => handleFollowUpAction(row.follow_up_action_id, "set_rejected")}
-                                            >
-                                              Afgewezen
-                                            </button>
+                                              <button
+                                                type="button"
+                                                className="btn btn-secondary"
+                                                disabled={followUpBusyId === row.follow_up_action_id}
+                                                onClick={() =>
+                                                  handleFollowUpAction(row.follow_up_action_id, "set_rejected")
+                                                }
+                                              >
+                                                Afgewezen
+                                              </button>
 
-                                            <button
-                                              type="button"
-                                              className="btn btn-secondary"
-                                              disabled={followUpBusyId === row.follow_up_action_id}
-                                              onClick={() => handleFollowUpAction(row.follow_up_action_id, "set_vervallen")}
-                                            >
-                                              Vervallen
-                                            </button>
+                                              <button
+                                                type="button"
+                                                className="btn btn-secondary"
+                                                disabled={followUpBusyId === row.follow_up_action_id}
+                                                onClick={() =>
+                                                  handleFollowUpAction(row.follow_up_action_id, "set_vervallen")
+                                                }
+                                              >
+                                                Vervallen
+                                              </button>
 
-                                            <button
-                                              type="button"
-                                              className="btn btn-success"
-                                              disabled={followUpBusyId === row.follow_up_action_id}
-                                              onClick={() => handleFollowUpAction(row.follow_up_action_id, "mark_done")}
+                                              <button
+                                                type="button"
+                                                className="btn btn-success"
+                                                disabled={followUpBusyId === row.follow_up_action_id}
+                                                onClick={() => handleFollowUpAction(row.follow_up_action_id, "mark_done")}
+                                              >
+                                                <CheckIcon size={18} className="nav-anim-icon" />
+                                                Actiepunt afronden
+                                              </button>
+                                            </div>
+                                          ) : (
+                                            <SummaryTag
+                                              title="Rapportopmerkingen hebben geen workflowafhandeling"
+                                              tone="muted"
                                             >
-                                              <CheckIcon size={18} className="nav-anim-icon" />
-                                              Actiepunt afronden
-                                            </button>
-                                          </div>
+                                              Geen workflowactie
+                                            </SummaryTag>
+                                          )}
                                         </div>
                                       </div>
                                     );

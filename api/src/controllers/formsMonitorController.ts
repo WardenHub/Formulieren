@@ -173,6 +173,9 @@ export async function postFormsMonitorFollowUpStatusAction(req: any, res: Respon
     if (msg.includes("invalid status transition")) {
       return res.status(409).json({ error: "invalid status transition" });
     }
+    if (msg.includes("report-only follow-ups cannot use workflow status actions")) {
+      return res.status(409).json({ error: "report-only follow-ups cannot use workflow status actions" });
+    }
     if (msg.includes("forbidden")) {
       return res.status(403).json({ error: "forbidden" });
     }
@@ -212,6 +215,45 @@ export async function putFormsMonitorFollowUpNote(req: any, res: Response) {
 
     console.error(err);
     return res.status(500).json({ error: "putFormsMonitorFollowUpNote failed" });
+  }
+}
+
+export async function putFormsMonitorFollowUpCertificateImpact(req: any, res: Response) {
+  try {
+    const followUpActionId = String(req.params.followUpActionId || "");
+    const payload = req.body || {};
+
+    const data = await service.updateMonitorFollowUpCertificateImpact(followUpActionId, payload, {
+      user: req.user,
+      roles: req.roles || [],
+    });
+
+    if (data?.error === "not found") {
+      return res.status(404).json({ error: "not found" });
+    }
+
+    return res.json(data);
+  } catch (err: any) {
+    const msg = String(err?.message || err).toLowerCase();
+
+    if (msg.includes("not found")) {
+      return res.status(404).json({ error: "not found" });
+    }
+    if (isHistoricalReadOnlyMessage(msg)) {
+      return res.status(409).json({ error: "historical installation read-only" });
+    }
+    if (msg.includes("invalid certificate impact override")) {
+      return res.status(400).json({ error: "invalid certificate impact override" });
+    }
+    if (msg.includes("only allowed for workflow")) {
+      return res.status(409).json({ error: "certificate impact override only allowed for workflow follow-ups" });
+    }
+    if (msg.includes("forbidden")) {
+      return res.status(403).json({ error: "forbidden" });
+    }
+
+    console.error(err);
+    return res.status(500).json({ error: "putFormsMonitorFollowUpCertificateImpact failed" });
   }
 }
 

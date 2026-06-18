@@ -26,6 +26,9 @@ select
   fd.code,
   fd.name,
   fd.description,
+  fd.document_profile_key,
+  fd.workflow_profile_key,
+  fd.official_document_number,
   fd.status,
   fd.sort_order,
   isnull(vs.latest_version, 0) as latest_version,
@@ -46,6 +49,9 @@ select top 1
   fd.code,
   fd.name,
   fd.description,
+  fd.document_profile_key,
+  fd.workflow_profile_key,
+  fd.official_document_number,
   fd.status,
   fd.sort_order,
   lvr.survey_json as active_survey_json
@@ -238,6 +244,9 @@ update dbo.FormDefinition
 set
   name = @name,
   description = @description,
+  document_profile_key = @documentProfileKey,
+  workflow_profile_key = @workflowProfileKey,
+  official_document_number = @officialDocumentNumber,
   status = @status,
   updated_at = sysutcdatetime(),
   updated_by = @updatedBy

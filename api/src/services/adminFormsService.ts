@@ -38,6 +38,12 @@ function normalizeNullableNumber(value: any): number | null {
   return Math.trunc(n);
 }
 
+function normalizeNullableString(value: any): string | null {
+  if (value == null) return null;
+  const txt = String(value).trim();
+  return txt.length ? txt : null;
+}
+
 function isPlainObject(value: any) {
   return !!value && typeof value === "object" && !Array.isArray(value);
 }
@@ -112,6 +118,9 @@ export async function getAdminForms() {
         code: r.code,
         name: r.name,
         description: r.description ?? null,
+        document_profile_key: normalizeNullableString(r.document_profile_key),
+        workflow_profile_key: normalizeNullableString(r.workflow_profile_key),
+        official_document_number: normalizeNullableString(r.official_document_number),
         status: r.status ?? null,
         sort_order: r.sort_order == null ? null : Number(r.sort_order),
         latest_version: Number(r.latest_version ?? 0),
@@ -152,6 +161,9 @@ export async function getAdminFormDetail(formId: string) {
     code: formRow.code,
     name: formRow.name,
     description: formRow.description ?? null,
+    document_profile_key: normalizeNullableString(formRow.document_profile_key),
+    workflow_profile_key: normalizeNullableString(formRow.workflow_profile_key),
+    official_document_number: normalizeNullableString(formRow.official_document_number),
     status: formRow.status ?? null,
     sort_order: formRow.sort_order == null ? null : Number(formRow.sort_order),
     active_survey_json: parseJsonObject(formRow.active_survey_json, null),
@@ -240,6 +252,9 @@ export async function saveAdminFormConfig(formId: string, payload: any, user: an
   const name = String(payload?.name || "").trim();
   const description =
     payload?.description == null ? null : String(payload.description).trim() || null;
+  const documentProfileKey = normalizeNullableString(payload?.document_profile_key);
+  const workflowProfileKey = normalizeNullableString(payload?.workflow_profile_key);
+  const officialDocumentNumber = normalizeNullableString(payload?.official_document_number);
   const status = String(payload?.status || "").trim().toUpperCase();
 
   if (!name) return { ok: false, error: "name is verplicht" };
@@ -259,6 +274,9 @@ export async function saveAdminFormConfig(formId: string, payload: any, user: an
     formId: id,
     name,
     description,
+    documentProfileKey,
+    workflowProfileKey,
+    officialDocumentNumber,
     status,
     applicabilityJson: JSON.stringify(applicability_type_keys),
     requiresType: preflight?.requires_type === false ? false : true,
