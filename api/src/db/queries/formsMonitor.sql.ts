@@ -67,7 +67,14 @@ base as (
       select 1
       from dbo.FormInstance child_fi
       where child_fi.parent_instance_id = fi.form_instance_id
-    ) then 1 else 0 end as has_children
+    ) then 1 else 0 end as has_children,
+
+    (
+      select top 1 child_fi.form_instance_id
+      from dbo.FormInstance child_fi
+      where child_fi.parent_instance_id = fi.form_instance_id
+      order by child_fi.created_at desc, child_fi.form_instance_id desc
+    ) as latest_child_form_instance_id
   from dbo.FormInstance fi
   join dbo.FormDefinitionVersion fv
     on fv.form_version_id = fi.form_version_id
@@ -197,6 +204,7 @@ select
   n.gebruiker_code,
   n.gebruiker_naam,
   n.has_children,
+  n.latest_child_form_instance_id,
   n.follow_up_total_count,
   n.follow_up_open_count,
   n.follow_up_waiting_count,

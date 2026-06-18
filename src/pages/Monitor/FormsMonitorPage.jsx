@@ -95,16 +95,6 @@ function getStatusGroupChipClass(groupKey, active) {
   return "monitor-tag monitor-tag--neutral";
 }
 
-function buildTeamsChatUrl(email, formInstanceId) {
-  const cleanEmail = String(email || "").trim();
-  if (!cleanEmail) return null;
-  const monitorUrl = `${window.location.origin}/monitor/formulieren/${encodeURIComponent(formInstanceId)}`;
-  const message =
-    `Hallo; ik wil het hebben over formulier ${formInstanceId}.\n\n${monitorUrl}`;
-  const topic = `Formulier ${formInstanceId}`;
-  return `https://teams.microsoft.com/l/chat/0/0?users=${encodeURIComponent(cleanEmail)}&topicname=${encodeURIComponent(topic)}&message=${encodeURIComponent(message)}`;
-}
-
 function buildEffectiveStatuses(selectedGroupKeys) {
   const keys = Array.isArray(selectedGroupKeys) ? selectedGroupKeys : [];
   if (keys.length === 0) return STATUS_GROUP_OPTIONS.flatMap((opt) => opt.statuses);
@@ -190,24 +180,15 @@ function FilterGroup({ label, children, extra = null, className = "" }) {
   );
 }
 
-function renderAssignedOwnerChip(row, ownerEntry, onOpenTeams) {
+function renderAssignedOwnerChip(row, ownerEntry, onClick = null) {
   const label =
     getDirectoryDisplayName(ownerEntry) ||
     String(row?.assigned_display_name_snapshot || row?.assigned_email_snapshot || "").trim();
 
   if (!label) return null;
 
-  return (
-    <button
-      type="button"
-      className="monitor-tag monitor-tag--active monitor-assignee-chip"
-      title={
-        row?.assigned_email_snapshot
-          ? `Stuur Teams-bericht naar ${label}`
-          : "Toegewezen behandelaar"
-      }
-      onClick={onOpenTeams}
-    >
+  const content = (
+    <>
       <UserAvatar
         path={resolveDirectoryAvatarPath(ownerEntry)}
         fallback={buildInitials(label, row?.assigned_email_snapshot, "E")}
@@ -215,7 +196,33 @@ function renderAssignedOwnerChip(row, ownerEntry, onOpenTeams) {
         className="avatar-badge monitor-assignee-avatar"
       />
       <span className="monitor-assignee-chip__text">Toegewezen aan {label}</span>
-    </button>
+    </>
+  );
+
+  if (typeof onClick === "function") {
+    return (
+      <button
+        type="button"
+        className="monitor-tag monitor-tag--active monitor-assignee-chip"
+        title={
+          row?.assigned_email_snapshot
+            ? `Stuur Teams-bericht naar ${label}`
+            : "Toegewezen behandelaar"
+        }
+        onClick={onClick}
+      >
+        {content}
+      </button>
+    );
+  }
+
+  return (
+    <span
+      className="monitor-tag monitor-tag--active monitor-assignee-chip"
+      title="Toegewezen behandelaar"
+    >
+      {content}
+    </span>
   );
 }
 
@@ -885,16 +892,7 @@ export default function FormsMonitorPage() {
                           </SummaryTag>
 
                           {row.assigned_display_name_snapshot || row.assigned_email_snapshot ? (
-                            renderAssignedOwnerChip(row, ownerEntry, (e) => {
-                              e.stopPropagation();
-                              const teamsUrl = buildTeamsChatUrl(
-                                row.assigned_email_snapshot,
-                                row.form_instance_id
-                              );
-                              if (teamsUrl) {
-                                window.open(teamsUrl, "_blank", "noopener,noreferrer");
-                              }
-                            })
+                            renderAssignedOwnerChip(row, ownerEntry)
                           ) : null}
 
                           {row.parent_instance_id ? (
@@ -922,6 +920,9 @@ export default function FormsMonitorPage() {
                               }}
                             >
                               heeft vervolgformulier
+                              {row.relations?.latest_child_form_instance_id != null
+                                ? ` #${row.relations.latest_child_form_instance_id}`
+                                : ""}
                             </button>
                           ) : null}
 

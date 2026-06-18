@@ -383,6 +383,8 @@ export async function getMonitorList(input: {
     relations: {
       has_parent: r.parent_instance_id != null,
       has_children: Number(r.has_children ?? 0) === 1,
+      latest_child_form_instance_id:
+        r.latest_child_form_instance_id == null ? null : Number(r.latest_child_form_instance_id),
     },
   }));
 

@@ -10,7 +10,7 @@ import {
   putFormsMonitorComplimentPoint,
   postFormsMonitorFollowUpStatusAction,
   putFormsMonitorFollowUpNote,
-  getFormsMonitorPdfUrl,
+  downloadFormsMonitorPdf,
   getFormInstanceDocuments,
   putFormInstanceDocuments,
   uploadFormInstanceDocumentFile,
@@ -1336,9 +1336,20 @@ export default function FormsMonitorDetailPage() {
     setSearchParams(next, { replace: true });
   }
 
-  function handleDownloadPdf() {
+  async function handleDownloadPdf() {
     if (!item?.form_instance_id) return;
-    window.location.href = getFormsMonitorPdfUrl(item.form_instance_id);
+
+    setError(null);
+
+    try {
+      const result = await downloadFormsMonitorPdf(item.form_instance_id);
+      triggerBrowserDownload(
+        result.blob,
+        result.fileName || `${item.form_name || item.form_code || "formulier"}_${item.form_instance_id}.pdf`
+      );
+    } catch (e) {
+      setError(String(e?.message || e || "PDF export mislukt."));
+    }
   }
 
   useEffect(() => {
@@ -2700,7 +2711,7 @@ export default function FormsMonitorDetailPage() {
 
                                             <button
                                               type="button"
-                                              className="btn btn-primary"
+                                              className="btn btn-success"
                                               disabled={followUpBusyId === row.follow_up_action_id}
                                               onClick={() => handleFollowUpAction(row.follow_up_action_id, "mark_done")}
                                             >

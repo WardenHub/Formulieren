@@ -556,9 +556,20 @@ html[data-appearance="light"] .ember-group-card{
   color: var(--danger-text);
 }
 
+.btn-success{
+  border-color: var(--success-border);
+  background: var(--success-bg-soft);
+  color: var(--success-text);
+}
+
 .btn.danger:hover,
 .btn-danger:hover{
   background: var(--danger-bg);
+}
+
+.btn-success:hover{
+  background: var(--success-bg);
+  border-color: var(--success-border);
 }
 
 .btn-compact{
