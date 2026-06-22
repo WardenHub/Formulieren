@@ -65,12 +65,13 @@ export default function DirectoryPage() {
 
     return [...items]
       .filter((item) => {
+        const displayName = getDirectoryDisplayName(item);
         const email = String(item?.email || "").trim().toLowerCase();
         if (email === "jesse@local") return false;
 
         if (!needle) return true;
 
-        return [item?.effective_display_name, item?.email, item?.profile_note]
+        return [displayName, item?.email, item?.profile_note]
           .filter(Boolean)
           .some((value) => String(value).toLowerCase().includes(needle));
       })
@@ -84,8 +85,8 @@ export default function DirectoryPage() {
           Number(a?.stats?.follow_ups_total || 0);
         if (followDiff !== 0) return followDiff;
 
-        return String(a?.effective_display_name || "").localeCompare(
-          String(b?.effective_display_name || ""),
+        return String(getDirectoryDisplayName(a) || "").localeCompare(
+          String(getDirectoryDisplayName(b) || ""),
           "nl"
         );
       });
@@ -157,6 +158,7 @@ export default function DirectoryPage() {
                   const followUpsTotal = Number(item?.stats?.follow_ups_total || 0);
                   const followUpsOpen = Number(item?.stats?.follow_ups_open || 0);
                   const note = truncateNote(item?.profile_note);
+                  const displayName = getDirectoryDisplayName(item) || "Gebruiker";
 
                   return (
                     <div
@@ -183,7 +185,7 @@ export default function DirectoryPage() {
 
                           <div className="ui-stack-sm ui-min-0">
                             <div className="profile-media-title">
-                              {item?.effective_display_name || "Gebruiker"}
+                              {displayName}
                             </div>
                             <div className="ember-page-subtitle">
                               {item?.email || "-"}

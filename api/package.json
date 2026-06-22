@@ -4,9 +4,11 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "set NODE_ENV=development&& node ./node_modules/tsx/dist/cli.mjs watch src/server.ts",
+    "dev": "node ./scripts/dev.mjs",
     "build": "node ./node_modules/typescript/bin/tsc",
-    "start": "node dist/server.js"
+    "start": "node dist/server.js",
+    "playwright:install": "node ./node_modules/playwright/cli.js install chromium",
+    "playwright:check": "node -e \"import('playwright').then(async ({ chromium }) => { const b = await chromium.launch({ headless: true }); console.log('chromium ok'); await b.close(); })\""
   },
   "dependencies": {
     "@azure/identity": "^4.13.0",
@@ -17,6 +19,7 @@
     "microsoft-cognitiveservices-speech-sdk": "^1.50.0",
     "mssql": "^12.2.0",
     "multer": "^1.4.5-lts.1",
+    "pdf-lib": "^1.17.1",
     "pdfmake": "^0.3.7",
     "tedious": "^19.2.0"
   },
@@ -27,6 +30,7 @@
     "@types/node": "^25.0.10",
     "@types/pdfmake": "^0.3.2",
     "cross-env": "^10.1.0",
+    "playwright": "^1.61.0",
     "tsx": "^4.21.0",
     "typescript": "^5.9.3"
   }

@@ -2523,6 +2523,53 @@ html[data-appearance="light"] .type-telefonie{
   background: var(--row-bg);
 }
 
+.monitor-followup-action-group{
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: flex-start;
+}
+
+.monitor-certificate-menu{
+  position: relative;
+}
+
+.monitor-certificate-menu__trigger--open{
+  border-color: var(--info-border);
+  background: var(--info-bg-soft);
+}
+
+.monitor-certificate-menu__panel{
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  min-width: 240px;
+  padding: 6px;
+  display: grid;
+  gap: 4px;
+  z-index: 60;
+  box-shadow: var(--shadow-panel);
+}
+
+.monitor-certificate-menu__option{
+  width: 100%;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+  border-radius: 10px;
+  padding: 10px 12px;
+  font: inherit;
+  cursor: pointer;
+  transition: background .16s ease, color .16s ease;
+}
+
+.monitor-certificate-menu__option:hover,
+.monitor-certificate-menu__option:focus-visible{
+  background: var(--surface-3);
+  outline: none;
+}
+
 .monitor-empty-state{
   padding: 14px;
   display: grid;

@@ -145,6 +145,13 @@ function getFollowUpKindLabel(kind) {
     : "Workflowactie";
 }
 
+function getCertificateImpactChoiceLabel(value) {
+  const token = String(value || "").trim().toLowerCase();
+  if (token === "yes") return "Blokkeert certificaat";
+  if (token === "no") return "Blokkeert niet";
+  return "Normale workflow";
+}
+
 function ActionFooter({
   canFinish,
   finishBusy,
@@ -1267,6 +1274,7 @@ export default function FormsMonitorDetailPage() {
 
   const [formActionBusy, setFormActionBusy] = useState(false);
   const [followUpBusyId, setFollowUpBusyId] = useState(null);
+  const [certificateMenuOpenId, setCertificateMenuOpenId] = useState(null);
 
   const [noteDrafts, setNoteDrafts] = useState(storedNotesState?.noteDrafts ?? {});
   const [noteSavingById, setNoteSavingById] = useState({});
@@ -1672,6 +1680,7 @@ export default function FormsMonitorDetailPage() {
     if (!followUpActionId || followUpBusyId) return;
 
     setFollowUpBusyId(followUpActionId);
+    setCertificateMenuOpenId(null);
     setError(null);
 
     try {
@@ -2676,6 +2685,15 @@ export default function FormsMonitorDetailPage() {
                                               </SummaryTag>
                                             ) : null}
 
+                                            {row.certificate_impact_override ? (
+                                              <SummaryTag
+                                                title="Dit certificaateffect is handmatig overschreven"
+                                                tone="warning"
+                                              >
+                                                Handmatige override certificaat
+                                              </SummaryTag>
+                                            ) : null}
+
                                             {row.source_item_code || row.source_row_index != null ? (
                                               <SummaryTag title="Vraagnummer" tone="muted">
                                                 vraag {row.source_item_code || row.source_row_index}
@@ -2688,52 +2706,7 @@ export default function FormsMonitorDetailPage() {
                                           Laatste wijziging; {formatDateTime(row.updated_at || row.created_at)}
                                         </div>
 
-                                        {isWorkflow ? (
-                                          <div className="monitor-followup-note-box">
-                                            <div className="ui-row">
-                                              <GavelIcon size={16} />
-                                              <strong>Certificaateffect</strong>
-                                            </div>
-
-                                            <select
-                                              className="input"
-                                              disabled={followUpBusyId === row.follow_up_action_id}
-                                              value={String(row.certificate_impact_override || "")}
-                                              onChange={(e) =>
-                                                handleCertificateImpactOverride(
-                                                  row.follow_up_action_id,
-                                                  e.target.value
-                                                )
-                                              }
-                                            >
-                                              <option value="">
-                                                {effectiveCertificateImpact === "yes"
-                                                  ? "Volgens formulierdefinitie; blokkeert certificaat"
-                                                  : "Volgens formulierdefinitie; blokkeert certificaat niet"}
-                                              </option>
-                                              <option value="yes">Blokkeert certificaat</option>
-                                              <option value="no">Blokkeert certificaat niet</option>
-                                            </select>
-
-                                            <div className="ember-label-row">
-                                              {row.certificate_impact_override ? (
-                                                <SummaryTag
-                                                  title="Dit certificaateffect is handmatig overschreven"
-                                                  tone="warning"
-                                                >
-                                                  Handmatige override
-                                                </SummaryTag>
-                                              ) : (
-                                                <SummaryTag
-                                                  title="Het certificaateffect volgt de formulierdefinitie"
-                                                  tone="muted"
-                                                >
-                                                  Volgens formulierdefinitie
-                                                </SummaryTag>
-                                              )}
-                                            </div>
-                                          </div>
-                                        ) : (
+                                        {isWorkflow ? null : (
                                           <div className="monitor-followup-note-box">
                                             <div className="ui-row">
                                               <GavelIcon size={16} />
@@ -2779,18 +2752,83 @@ export default function FormsMonitorDetailPage() {
                                         </div>
 
                                         <div className="ui-row-between">
-                                          <button
-                                            type="button"
-                                            className="btn btn-secondary"
-                                            onClick={() => handleCopyClipboard(row)}
-                                          >
-                                            {copied ? (
-                                              <CheckIcon size={18} className="nav-anim-icon" />
-                                            ) : (
-                                              <ArchiveIcon size={18} />
-                                            )}
-                                            {copied ? "Actietekst gekopieerd" : "Kopieer actietekst"}
-                                          </button>
+                                          <div className="monitor-followup-action-group">
+                                            <button
+                                              type="button"
+                                              className="btn btn-secondary"
+                                              onClick={() => handleCopyClipboard(row)}
+                                            >
+                                              {copied ? (
+                                                <CheckIcon size={18} className="nav-anim-icon" />
+                                              ) : (
+                                                <ArchiveIcon size={18} />
+                                              )}
+                                              {copied ? "Actietekst gekopieerd" : "Kopieer actietekst"}
+                                            </button>
+
+                                            {isWorkflow ? (
+                                              <div className="monitor-certificate-menu">
+                                                <button
+                                                  type="button"
+                                                  className={`btn btn-secondary ${certificateMenuOpenId === row.follow_up_action_id ? "monitor-certificate-menu__trigger--open" : ""}`}
+                                                  disabled={followUpBusyId === row.follow_up_action_id}
+                                                  onClick={() =>
+                                                    setCertificateMenuOpenId((current) =>
+                                                      current === row.follow_up_action_id
+                                                        ? null
+                                                        : row.follow_up_action_id
+                                                    )
+                                                  }
+                                                >
+                                                  <GavelIcon size={18} />
+                                                  {row.certificate_impact_override
+                                                    ? getCertificateImpactChoiceLabel(row.certificate_impact_override)
+                                                    : "Certificaat"}
+                                                </button>
+
+                                                {certificateMenuOpenId === row.follow_up_action_id ? (
+                                                  <div className="card monitor-certificate-menu__panel">
+                                                    <button
+                                                      type="button"
+                                                      className="monitor-certificate-menu__option"
+                                                      onClick={() =>
+                                                        handleCertificateImpactOverride(
+                                                          row.follow_up_action_id,
+                                                          ""
+                                                        )
+                                                      }
+                                                    >
+                                                      Normale workflow
+                                                    </button>
+                                                    <button
+                                                      type="button"
+                                                      className="monitor-certificate-menu__option"
+                                                      onClick={() =>
+                                                        handleCertificateImpactOverride(
+                                                          row.follow_up_action_id,
+                                                          "yes"
+                                                        )
+                                                      }
+                                                    >
+                                                      Blokkeert certificaat
+                                                    </button>
+                                                    <button
+                                                      type="button"
+                                                      className="monitor-certificate-menu__option"
+                                                      onClick={() =>
+                                                        handleCertificateImpactOverride(
+                                                          row.follow_up_action_id,
+                                                          "no"
+                                                        )
+                                                      }
+                                                    >
+                                                      Blokkeert niet
+                                                    </button>
+                                                  </div>
+                                                ) : null}
+                                              </div>
+                                            ) : null}
+                                          </div>
 
                                           {isWorkflow ? (
                                             <div className="ember-toolbar">

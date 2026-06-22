@@ -9,7 +9,7 @@ function isHistoricalReadOnlyMessage(msg: string) {
 
 export async function downloadFormsMonitorPdf(req: any, res: any) {
   try {
-    const result = await buildFormReportPdf(req.params.formInstanceId, req.user);
+    const result: any = await buildFormReportPdf(req.params.formInstanceId, req.user);
 
     if (result?.error === "not found") {
       return res.status(404).json({ error: "not found" });

@@ -11,7 +11,14 @@ import {
   transcribeFormAssistantAudio,
 } from "../../api/emberApi.js";
 import { useAssistantAudioRecorder } from "../Forms/shared/assistantAudio.jsx";
-import { buildDirectoryActorLookup, resolveActorDisplayName } from "../../lib/avatar.js";
+import UserAvatar from "../../components/UserAvatar.jsx";
+import {
+  buildDirectoryActorLookup,
+  buildInitials,
+  resolveActorDirectoryEntry,
+  resolveActorDisplayName,
+  resolveDirectoryAvatarPath,
+} from "../../lib/avatar.js";
 
 function getErrorMessage(error, fallback = "Onbekende fout") {
   return String(error?.message || error || fallback);
@@ -77,11 +84,18 @@ function StatusBadge({ value }) {
 function AuditCard({ item, actorLookup }) {
   const transcript = item?.normalized_text || item?.transcript_text || item?.raw_input_text || "";
   const target = item?.target_label || item?.target_path || item?.question_name || "";
+  const actorEntry = resolveActorDirectoryEntry(
+    item?.turn_created_by || item?.started_by,
+    actorLookup
+  );
   const actorDisplayName = resolveActorDisplayName(
     item?.turn_created_by || item?.started_by,
     actorLookup,
     "-"
   );
+  const actorEmail = String(
+    actorEntry?.email || actorEntry?.email_snapshot || ""
+  ).trim();
 
   return (
     <div className="admin-subcard" style={{ display: "grid", gap: 10 }}>
@@ -125,7 +139,20 @@ function AuditCard({ item, actorLookup }) {
 
         <div>
           <div className="admin-panel-subtitle">Gebruiker</div>
-          <div>{actorDisplayName}</div>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
+            <UserAvatar
+              path={resolveDirectoryAvatarPath(actorEntry)}
+              fallback={buildInitials(actorDisplayName, actorEmail, "E")}
+              alt={actorDisplayName}
+              className="avatar-badge"
+            />
+            <div style={{ minWidth: 0 }}>
+              <div>{actorDisplayName}</div>
+              {actorEmail ? (
+                <div className="admin-panel-subtitle">{actorEmail}</div>
+              ) : null}
+            </div>
+          </div>
         </div>
 
         <div>

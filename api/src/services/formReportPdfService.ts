@@ -11,6 +11,8 @@ import {
   getUserProfileSql,
 } from "../db/queries/profile.sql.js";
 import { downloadUserProfileSignatureBlob } from "./blobStorageService.js";
+import { buildFormReportExportModel } from "./formReportExportModelService.js";
+import { tryBuildHtmlFormReportPdf } from "./formReportHtmlRendererService.js";
 
 const BRAND_RED = "#ed1c24";
 const DARK = "#222222";
@@ -1601,7 +1603,7 @@ function buildDocDefinition(args: {
   };
 }
 
-export async function buildFormReportPdf(formInstanceIdRaw: any, user: any) {
+async function buildLegacyFormReportPdf(formInstanceIdRaw: any, user: any) {
   const formInstanceId = Number(formInstanceIdRaw);
   if (!Number.isInteger(formInstanceId) || formInstanceId <= 0) {
     return { error: "not found" };
@@ -1647,4 +1649,39 @@ export async function buildFormReportPdf(formInstanceIdRaw: any, user: any) {
     fileName,
     contentDisposition: `attachment; filename="${fileName.replace(/"/g, "")}"`,
   };
+}
+
+function formReportRendererMode() {
+  const raw = String(process.env.FORM_REPORT_RENDERER_MODE || "legacy").trim().toLowerCase();
+  if (["legacy", "hybrid", "html"].includes(raw)) return raw;
+  return "legacy";
+}
+
+export async function buildFormReportPdf(formInstanceIdRaw: any, user: any) {
+  const mode = formReportRendererMode();
+
+  if (mode !== "legacy") {
+    const exportModelResult: any = await buildFormReportExportModel(formInstanceIdRaw, user);
+    if (exportModelResult?.error === "not found") return exportModelResult;
+
+    try {
+      const htmlResult: any = await tryBuildHtmlFormReportPdf(exportModelResult.model);
+
+      if (!htmlResult?.unsupported) {
+        return htmlResult;
+      }
+
+      if (mode === "html") {
+        throw new Error("HTML PDF renderer does not support this document profile yet");
+      }
+    } catch (err) {
+      if (mode === "html") {
+        throw err;
+      }
+
+      console.warn("[form report pdf] html renderer failed; falling back to legacy pdfmake renderer", err);
+    }
+  }
+
+  return buildLegacyFormReportPdf(formInstanceIdRaw, user);
 }

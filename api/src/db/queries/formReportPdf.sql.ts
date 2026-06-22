@@ -26,6 +26,7 @@ select top 1
   fa.answers_json,
 
   ab.installatie_naam,
+  ab.BedrijfUnit as bedrijf_unit,
   ab.obj_naam,
   ab.obj_adr_formatted,
   ab.gebruiker_code,
