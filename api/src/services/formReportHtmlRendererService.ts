@@ -24,6 +24,10 @@ function normalizeToken(value: any) {
   return normalizeText(value).toUpperCase().replace(/\s+/g, "");
 }
 
+function normalizeColumnToken(value: any) {
+  return normalizeToken(value).replace(/[^A-Z0-9]/g, "");
+}
+
 function firstText(...values: any[]) {
   for (const value of values) {
     const text = normalizeText(value);
@@ -36,6 +40,12 @@ function versionLabel(value: any) {
   const text = normalizeText(value);
   if (!text) return "";
   return /^v/i.test(text) ? text : `v${text}`;
+}
+
+function compactVersionLabel(value: any) {
+  const label = versionLabel(value);
+  if (!label) return "";
+  return label.replace(/^v(\d+)\.0$/i, "v$1");
 }
 
 function joinNonEmpty(values: any[], separator = " ; ") {
@@ -122,13 +132,22 @@ function isCertifiedMaintenanceReport(model: any) {
 }
 
 function footerLeftLabel(model: any) {
+  const formVersion = versionLabel(
+    firstText(model?.form?.version_label, model?.form?.version, model?.form?.form_version)
+  );
+  const compactVersion = firstText(compactVersionLabel(formVersion), "v1");
+  const officialNumber = normalizeText(model?.form?.official_document_number);
+  const formName = firstText(model?.form?.name, model?.surveyJson?.title, "Formulier");
+  const formNumber = firstText(model?.form?.id);
+
   return [
-    firstText(model?.form?.name, model?.surveyJson?.title, "Formulier"),
-    firstText(model?.form?.official_document_number, model?.form?.id),
-    firstText(versionLabel(model?.form?.version_label), "v1.0"),
+    officialNumber,
+    formName,
+    formNumber,
+    compactVersion,
   ]
     .filter(Boolean)
-    .join(" - ");
+    .join(" · ");
 }
 
 function isPrintableCustomerText(value: any) {
@@ -232,11 +251,28 @@ function buildAddress(model: any) {
   );
 }
 
+function pdfHeaderTitles(model: any) {
+  const cfg = reportConfig(model);
+  const title = firstText(cfg.coverMainTitle, "Rapport van Onderhoud");
+  const subtitle = firstText(cfg.coverSubTitle, model?.form?.name, model?.surveyJson?.title);
+
+  if (normalizeToken(title) === normalizeToken(subtitle)) {
+    return { title: subtitle, subtitle: "" };
+  }
+
+  return { title, subtitle };
+}
+
 function visibleSurveyPages(model: any) {
   const pages = Array.isArray(model?.surveyJson?.pages) ? model.surveyJson.pages : [];
   return pages.filter((page: any) => {
     const pageName = normalizeToken(page?.name);
-    return pageName && pageName !== "DOCUMENTEN";
+    const pageTitle = normalizeToken(page?.title);
+    if (!pageName && !pageTitle) return false;
+    if (pageName === "DOCUMENTEN" || pageTitle === "DOCUMENTEN") return false;
+    if (pageName === "GEGEVENS" || pageTitle === "GEGEVENS") return false;
+    if (pageName === "GEGEVENSVERVOLG" || pageTitle === "GEGEVENSVERVOLG") return false;
+    return true;
   });
 }
 
@@ -393,6 +429,7 @@ function renderCoverPage(model: any) {
   const cfg = reportConfig(model);
   const reportTitle = firstText(cfg.coverMainTitle, "Rapport van Onderhoud");
   const reportSubTitle = firstText(cfg.coverSubTitle, model?.form?.name, model?.surveyJson?.title);
+  const coverHeading = firstText(reportSubTitle, reportTitle);
   const objectTitle = firstText(
     model?.installation?.installation_name,
     model?.installation?.object_name,
@@ -412,13 +449,11 @@ function renderCoverPage(model: any) {
 
   return `
     <main class="cover-page">
-      <div class="cover-top">
-        <div class="cover-logo">${model?.assets?.logoDataUrl ? `<img src="${model.assets.logoDataUrl}" alt="Wardenburg" />` : ""}</div>
-      </div>
+      <div class="cover-top"></div>
 
       <div class="cover-title-block">
-        <div class="cover-kicker">${escapeHtml(reportSubTitle)}</div>
-        <h1>${escapeHtml(reportTitle)}</h1>
+        <div class="cover-title-logo">${model?.assets?.logoDataUrl ? `<img src="${model.assets.logoDataUrl}" alt="Bedrijfslogo" />` : ""}</div>
+        <h1>${escapeHtml(coverHeading)}</h1>
         <div class="cover-object">${escapeHtml(objectTitle)}</div>
         ${address ? `<div class="cover-address">${escapeHtml(address)}</div>` : ""}
       </div>
@@ -546,14 +581,13 @@ function renderOverviewPages(model: any) {
 
 function renderAppendixOverviewPage(model: any) {
   const groups = Array.isArray(model?.installationDocuments?.groups) ? model.installationDocuments.groups : [];
-  const rows = groups.flatMap((group: any, groupIndex: number) => {
+  const rows = groups.flatMap((group: any) => {
     const docs = Array.isArray(group?.items) ? group.items : [];
     const documentNumbers = Array.from(new Set(docs.map((doc: any) => normalizeText(doc?.document_number)).filter(Boolean))).join(", ");
     const documentDates = Array.from(new Set(docs.map((doc: any) => formatExportDate(doc?.document_date)).filter(Boolean))).join(", ");
 
     return [
       {
-        appendix: String.fromCharCode(65 + groupIndex),
         onderwerp: firstText(group?.name, "Bijlage"),
         count: docs.length || 0,
         documentNumbers,
@@ -572,7 +606,6 @@ function renderAppendixOverviewPage(model: any) {
             <table class="report-table appendix-table">
               <thead>
                 <tr>
-                  <th>Bijlage</th>
                   <th>Onderwerp</th>
                   <th>Aantal</th>
                   <th>Documentnummer</th>
@@ -584,7 +617,6 @@ function renderAppendixOverviewPage(model: any) {
                   .map(
                     (row) => `
                       <tr>
-                        <td>${escapeHtml(row.appendix)}</td>
                         <td>${escapeHtml(displayText(row.onderwerp))}</td>
                         <td class="align-center">${escapeHtml(String(row.count))}</td>
                         <td>${escapeHtml(displayText(row.documentNumbers))}</td>
@@ -607,12 +639,120 @@ function labelForElement(element: any) {
 }
 
 function renderSimpleField(label: string, value: any, options: { wide?: boolean } = {}) {
+  const isLongLabel = !options.wide && normalizeText(label).length > 42;
   return `
-    <div class="field-card ${options.wide ? "wide" : ""}">
-      <div class="field-label">${escapeHtml(label)}</div>
-      <div class="field-value">${renderValueCell(value)}</div>
+    <div class="field-card ${options.wide ? "wide" : ""} ${isLongLabel ? "long-label" : ""}">
+      ${
+        options.wide
+          ? `
+            <div class="field-label">${escapeHtml(label)}</div>
+            <div class="field-value">${renderValueCell(value)}</div>
+          `
+          : `
+            <div class="field-label-inline">${escapeHtml(label)}</div>
+            <div class="field-value-inline">${renderValueCell(value)}</div>
+          `
+      }
     </div>
   `;
+}
+
+function renderFullWidthSimpleFieldTable(label: string, value: any, dividerPercent: number) {
+  const safeDivider = Math.max(20, Math.min(80, Number(dividerPercent) || 40));
+  return `
+    <table class="report-table single-field-table">
+      <colgroup>
+        <col style="width:${safeDivider}%">
+        <col style="width:${100 - safeDivider}%">
+      </colgroup>
+      <tbody>
+        <tr>
+          <th>${escapeHtml(label)}</th>
+          <td>${renderValueCell(value)}</td>
+        </tr>
+      </tbody>
+    </table>
+  `;
+}
+
+function splitColumnIndexForMatrixColumns(columns: any[]) {
+  const firstVoldoetIndex = columns.findIndex((column: any) => normalizeColumnToken(column?.name).includes("VOLDOET"));
+  if (firstVoldoetIndex > 0) return firstVoldoetIndex;
+
+  const firstMetricIndex = columns.findIndex((column: any) => {
+    const token = normalizeColumnToken(column?.name);
+    return token === "A" || token === "H" || token === "V" || token === "L" || token === "ASP" || token === "INTERN" || token === "EXTERN" || token.includes("MAX");
+  });
+  if (firstMetricIndex > 0) return firstMetricIndex;
+
+  const firstOpmerkingIndex = columns.findIndex((column: any) => normalizeColumnToken(column?.name).includes("OPMERKING"));
+  if (firstOpmerkingIndex > 0) return firstOpmerkingIndex;
+
+  return columns.length >= 2 ? 1 : null;
+}
+
+function renderAlignedSimpleFieldTable(label: string, value: any, referenceMatrix: any) {
+  if (!referenceMatrix || normalizeText(referenceMatrix?.type).toLowerCase() !== "matrixdynamic") return "";
+
+  const columns = matrixColumns(referenceMatrix);
+  const splitIndex = splitColumnIndexForMatrixColumns(columns);
+  if (!columns.length || !splitIndex || splitIndex >= columns.length) return "";
+
+  return `
+    <table class="report-table single-field-table">
+      <colgroup>
+        ${columns.map((column: any) => `<col style="width:${matrixColumnWidth(column, columns.length)}">`).join("")}
+      </colgroup>
+      <tbody>
+        <tr>
+          <th colspan="${splitIndex}">${escapeHtml(label)}</th>
+          <td colspan="${columns.length - splitIndex}">${renderValueCell(value)}</td>
+        </tr>
+      </tbody>
+    </table>
+  `;
+}
+
+function sumColumnWidths(columns: any[]) {
+  return columns.reduce((total: number, column: any) => {
+    const widthText = String(matrixColumnWidth(column, columns.length) || "").replace("%", "").trim();
+    const width = Number(widthText);
+    return total + (Number.isFinite(width) ? width : 0);
+  }, 0);
+}
+
+function normalizedPercentBefore(columns: any[], endExclusive: number) {
+  const totalWidth = sumColumnWidths(columns);
+  if (!totalWidth) return null;
+  return (sumColumnWidths(columns.slice(0, endExclusive)) / totalWidth) * 100;
+}
+
+function percentWidth(value: any) {
+  const widthText = String(value || "").replace("%", "").trim();
+  const width = Number(widthText);
+  return Number.isFinite(width) ? width : null;
+}
+
+function dividerPercentForMatrix(element: any) {
+  if (!element || normalizeText(element?.type).toLowerCase() !== "matrixdynamic") {
+    return null;
+  }
+
+  const columns = matrixColumns(element);
+  if (!columns.length) return null;
+
+  const splitIndex = splitColumnIndexForMatrixColumns(columns);
+  return splitIndex ? normalizedPercentBefore(columns, splitIndex) ?? sumColumnWidths(columns.slice(0, splitIndex)) : 40;
+}
+
+function alignmentMatrixForAdjacent(previousElement: any, nextElement: any) {
+  if (nextElement && normalizeText(nextElement?.type).toLowerCase() === "matrixdynamic") return nextElement;
+  if (previousElement && normalizeText(previousElement?.type).toLowerCase() === "matrixdynamic") return previousElement;
+  return null;
+}
+
+function alignmentPercentForAdjacentMatrix(previousElement: any, nextElement: any) {
+  return dividerPercentForMatrix(alignmentMatrixForAdjacent(previousElement, nextElement)) ?? 40;
 }
 
 function matrixRows(element: any, answers: any) {
@@ -630,12 +770,21 @@ function matrixColumns(element: any) {
     { name: "voldoet", title: "Voldoet" },
     { name: "opmerking", title: "Opmerking" },
   ];
-  return (explicitColumns.length ? explicitColumns : fallbackColumns).filter((column: any) => normalizeText(column?.name) && column?.name !== "doc_type");
+  return (explicitColumns.length ? explicitColumns : fallbackColumns).filter((column: any) => normalizeText(column?.name) && normalizeColumnToken(column?.name) !== "DOCTYPE");
 }
 
 function matrixColumnWidth(column: any, totalColumns: number) {
-  const name = normalizeToken(column?.name);
-  if (name.includes("ITEMCODE")) return "10%";
+  const name = normalizeColumnToken(column?.name);
+  const explicitWidth = percentWidth(column?.width);
+  if (explicitWidth && explicitWidth > 0) {
+    if (name.includes("ITEMCODE")) return `${Math.max(12, explicitWidth)}%`;
+    if (name.includes("VOLDOET")) return `${Math.max(18, explicitWidth)}%`;
+    if (name.includes("OPMERKING")) return `${Math.max(24, explicitWidth)}%`;
+    if (name.includes("ONDERWERP") || name.includes("OMSCHRIJVING")) return `${Math.max(30, explicitWidth)}%`;
+    return `${explicitWidth}%`;
+  }
+
+  if (name.includes("ITEMCODE")) return "12%";
   if (name.includes("VOLDOET")) return "18%";
   if (name.includes("OPMERKING")) return "30%";
   if (name.includes("GEBRUIKERSFUNCTIE")) return "12%";
@@ -657,15 +806,35 @@ function renderAssessmentChip(value: any) {
 }
 
 function renderMatrixCell(column: any, row: any) {
-  const columnName = normalizeToken(column?.name);
+  const columnName = normalizeColumnToken(column?.name);
   const value = row?.[column?.name];
   if (columnName.includes("VOLDOET")) {
     return `<td class="align-center">${renderAssessmentChip(value)}</td>`;
   }
   if (columnName.includes("ITEMCODE")) {
-    return `<td class="align-center">${escapeHtml(displayText(value))}</td>`;
+    return `<td class="align-center item-code-cell">${escapeHtml(displayText(value))}</td>`;
   }
   return `<td>${renderValueCell(value)}</td>`;
+}
+
+function isPrintableMatrixRow(row: any, columns: any[]) {
+  if (!row || typeof row !== "object") return false;
+
+  const topicColumns = columns.filter((column: any) => {
+    const token = normalizeColumnToken(column?.name);
+    return token.includes("ONDERWERP") || token.includes("OMSCHRIJVING") || token === "TITEL";
+  });
+
+  if (topicColumns.length && !topicColumns.some((column: any) => normalizeText(row?.[column?.name]))) {
+    return false;
+  }
+
+  return columns.some((column: any) => {
+    const token = normalizeColumnToken(column?.name);
+    if (token === "DOCTYPE") return false;
+    if (token.includes("ITEMCODE") || token === "NR" || token === "NUMMER") return false;
+    return Boolean(normalizeText(row?.[column?.name]));
+  });
 }
 
 function renderMatrixTableMarkup(columns: any[], rows: any[]) {
@@ -696,28 +865,26 @@ function renderMatrixTableMarkup(columns: any[], rows: any[]) {
 
 function renderMatrixTable(element: any, answers: any, options: { nested?: boolean } = {}) {
   const columns = matrixColumns(element);
-  const hasOnderwerpColumn = columns.some((column: any) => normalizeToken(column?.name) === "ONDERWERP");
   const rows = matrixRows(element, answers)
-    .filter((row: any) => row && typeof row === "object")
-    .filter((row: any) => !(hasOnderwerpColumn && !normalizeText(row?.onderwerp)));
+    .filter((row: any) => isPrintableMatrixRow(row, columns));
   if (!rows.length) return "";
 
   const title = labelForElement(element);
   const visibleTitle = shouldHideGeneratedSubsectionTitle(title) ? "" : title;
   const isPrestatieEisenMatrix =
-    columns.some((column: any) => normalizeToken(column?.name).includes("GEBRUIKERSFUNCTIE")) &&
-    columns.some((column: any) => normalizeToken(column?.name) === "A") &&
-    columns.some((column: any) => normalizeToken(column?.name) === "ASP");
+    columns.some((column: any) => normalizeColumnToken(column?.name).includes("GEBRUIKERSFUNCTIE")) &&
+    columns.some((column: any) => normalizeColumnToken(column?.name) === "A") &&
+    columns.some((column: any) => normalizeColumnToken(column?.name) === "ASP");
 
   const shouldSplitWideMatrix = columns.length >= 9;
   const keyColumns = shouldSplitWideMatrix
     ? isPrestatieEisenMatrix
       ? columns.filter((column: any) => {
-          const token = normalizeToken(column?.name);
+          const token = normalizeColumnToken(column?.name);
           return token.includes("GEBRUIKERSFUNCTIE") || token === "LABEL";
         })
       : columns.filter((column: any) => {
-          const token = normalizeToken(column?.name);
+          const token = normalizeColumnToken(column?.name);
           return token.includes("ITEMCODE") || token === "ONDERWERP" || token.includes("GEBRUIKERSFUNCTIE") || token === "LABEL" || token.includes("DOORMELDING");
         })
     : [];
@@ -732,11 +899,11 @@ function renderMatrixTable(element: any, answers: any, options: { nested?: boole
     const chunks = isPrestatieEisenMatrix
       ? [
           remainderColumns.filter((column: any) => {
-            const token = normalizeToken(column?.name);
+            const token = normalizeColumnToken(column?.name);
             return token.includes("DOORMELDING") || token === "A" || token === "H" || token === "V" || token === "L" || token === "ASP";
           }),
           remainderColumns.filter((column: any) => {
-            const token = normalizeToken(column?.name);
+            const token = normalizeColumnToken(column?.name);
             return token === "INTERN" || token === "EXTERN" || token.includes("MAX");
           }),
         ].filter((chunk: any[]) => chunk.length)
@@ -792,28 +959,61 @@ function simpleFieldTypes() {
   return new Set(["text", "dropdown", "radiogroup", "comment", "boolean", "expression"]);
 }
 
-function renderPanel(element: any, answers: any) {
+function renderPanel(element: any, answers: any, options: { dividerPercent?: number; alignmentMatrix?: any } = {}) {
   const children = Array.isArray(element?.elements) ? element.elements : [];
   const simpleRows = children.filter((child: any) => simpleFieldTypes().has(normalizeText(child?.type).toLowerCase()));
   const complexChildren = children.filter((child: any) => !simpleFieldTypes().has(normalizeText(child?.type).toLowerCase()));
 
   const simpleHtml = simpleRows.length
     ? `
-      <div class="field-grid">
-        ${simpleRows
-          .map((child: any) =>
-            renderSimpleField(
-              labelForElement(child),
-              answerFor(answers, child?.name),
-              { wide: normalizeText(child?.type).toLowerCase() === "comment" }
-            )
-          )
-          .join("")}
-      </div>
+      ${
+        simpleRows.length === 1 && normalizeText(simpleRows[0]?.type).toLowerCase() !== "comment"
+          ? firstText(renderAlignedSimpleFieldTable(labelForElement(simpleRows[0]), answerFor(answers, simpleRows[0]?.name), options.alignmentMatrix))
+            || renderFullWidthSimpleFieldTable(
+                labelForElement(simpleRows[0]),
+                answerFor(answers, simpleRows[0]?.name),
+                options.dividerPercent ?? 52
+              )
+          : `
+            <div class="field-grid">
+              ${simpleRows
+                .map((child: any) =>
+                  renderSimpleField(
+                    labelForElement(child),
+                    answerFor(answers, child?.name),
+                    { wide: normalizeText(child?.type).toLowerCase() === "comment" }
+                  )
+                )
+                .join("")}
+            </div>
+          `
+      }
     `
     : "";
 
-  const complexHtml = complexChildren.map((child: any) => renderElement(child, answers)).join("");
+  const nextComplexElementFrom = (startIndex: number) => {
+    for (let index = startIndex; index < complexChildren.length; index += 1) {
+      const candidate = complexChildren[index];
+      if (normalizeText(candidate?.type).toLowerCase() !== "html") return candidate;
+    }
+    return null;
+  };
+
+  let previousComplexElement: any = null;
+  const complexHtml = complexChildren
+    .map((child: any, index: number) => {
+      const type = normalizeText(child?.type).toLowerCase();
+      const nextComplexElement = nextComplexElementFrom(index + 1);
+      const html = renderElement(child, answers, {
+        dividerPercent: type === "panel" ? alignmentPercentForAdjacentMatrix(previousComplexElement, nextComplexElement) : undefined,
+        alignmentMatrix: type === "panel" ? alignmentMatrixForAdjacent(previousComplexElement, nextComplexElement) : undefined,
+      });
+      if (type !== "html") {
+        previousComplexElement = child;
+      }
+      return html;
+    })
+    .join("");
   const content = `${simpleHtml}${complexHtml}`;
   if (!normalizeText(stripHtml(content))) return "";
 
@@ -939,7 +1139,7 @@ function renderAdditionalRemarksPage(model: any, page: any) {
   `;
 }
 
-function renderElement(element: any, answers: any) {
+function renderElement(element: any, answers: any, options: { dividerPercent?: number; alignmentMatrix?: any } = {}) {
   const type = normalizeText(element?.type).toLowerCase();
 
   if (type === "html") {
@@ -948,7 +1148,7 @@ function renderElement(element: any, answers: any) {
     return `<div class="page-intro">${escapeHtml(text)}</div>`;
   }
 
-  if (type === "panel") return renderPanel(element, answers);
+  if (type === "panel") return renderPanel(element, answers, { dividerPercent: options.dividerPercent, alignmentMatrix: options.alignmentMatrix });
   if (type === "matrixdynamic") return renderMatrixTable(element, answers);
   if (type === "paneldynamic") return renderPanelDynamic(element, answers);
 
@@ -962,33 +1162,73 @@ function renderElement(element: any, answers: any) {
 function renderSurveyPageElements(elements: any[], answers: any) {
   const parts: string[] = [];
   const bufferedSimpleFields: any[] = [];
+  let previousComplexElement: any = null;
 
-  const flushSimpleFields = () => {
+  const nextComplexElementFrom = (startIndex: number) => {
+    for (let index = startIndex; index < elements.length; index += 1) {
+      const candidate = elements[index];
+      const type = normalizeText(candidate?.type).toLowerCase();
+      if (!simpleFieldTypes().has(type)) {
+        return candidate;
+      }
+    }
+    return null;
+  };
+
+  const flushSimpleFields = (nextComplexElement: any = null) => {
     if (!bufferedSimpleFields.length) return;
+
+    const renderAsSingleAlignedRow =
+      bufferedSimpleFields.length === 1 &&
+      normalizeText(bufferedSimpleFields[0]?.type).toLowerCase() !== "comment";
+
+    if (renderAsSingleAlignedRow) {
+      const singleField = bufferedSimpleFields[0];
+      const alignmentMatrix = alignmentMatrixForAdjacent(previousComplexElement, nextComplexElement);
+      parts.push(
+        renderAlignedSimpleFieldTable(labelForElement(singleField), answerFor(answers, singleField?.name), alignmentMatrix) ||
+          renderFullWidthSimpleFieldTable(
+            labelForElement(singleField),
+            answerFor(answers, singleField?.name),
+            alignmentPercentForAdjacentMatrix(previousComplexElement, nextComplexElement)
+          )
+      );
+      bufferedSimpleFields.length = 0;
+      return;
+    }
 
     parts.push(`
       <div class="field-grid">
         ${bufferedSimpleFields
-          .map((element: any) =>
-            renderSimpleField(labelForElement(element), answerFor(answers, element?.name), {
-              wide: normalizeText(element?.type).toLowerCase() === "comment",
-            })
-          )
+          .map((element: any) => {
+            const type = normalizeText(element?.type).toLowerCase();
+            return renderSimpleField(labelForElement(element), answerFor(answers, element?.name), {
+              wide: type === "comment",
+            });
+          })
           .join("")}
       </div>
     `);
     bufferedSimpleFields.length = 0;
   };
 
-  for (const element of elements) {
+  for (let index = 0; index < elements.length; index += 1) {
+    const element = elements[index];
     const type = normalizeText(element?.type).toLowerCase();
     if (simpleFieldTypes().has(type)) {
       bufferedSimpleFields.push(element);
       continue;
     }
 
-    flushSimpleFields();
-    parts.push(renderElement(element, answers));
+    flushSimpleFields(element);
+    const nextComplexElement = nextComplexElementFrom(index + 1);
+    parts.push(
+      renderElement(element, answers, {
+        dividerPercent: type === "panel" ? alignmentPercentForAdjacentMatrix(previousComplexElement, nextComplexElement) : undefined,
+        alignmentMatrix: type === "panel" ? alignmentMatrixForAdjacent(previousComplexElement, nextComplexElement) : undefined,
+      })
+    );
+    previousComplexElement = element;
   }
 
   flushSimpleFields();
@@ -1085,47 +1325,47 @@ function renderAttachmentCard(item: any) {
 }
 
 function renderFollowUpSection(title: string, intro: string, items: any[], attachmentMap: Map<string, any[]>, emptyText: string) {
+  if (!items.length) {
+    return "";
+  }
+
   return `
     <section class="followup-section">
       <div class="section-heading">${escapeHtml(title)}</div>
       <div class="page-intro">${escapeHtml(intro)}</div>
-      ${
-        items.length
-          ? items
-              .map((item: any) => {
-                const linkedDocuments = followUpDocumentsForItem(item, attachmentMap);
-                return `
-                  <article class="followup-card">
-                    <div class="followup-card-head">
-                      <div class="followup-title">${escapeHtml(firstText(item?.workflow_title, item?.workflow_description, "Actiepunt"))}</div>
-                      <div class="followup-status">${escapeHtml(normalizedStatusLabel(item?.status))}</div>
+      ${items
+        .map((item: any) => {
+          const linkedDocuments = followUpDocumentsForItem(item, attachmentMap);
+          return `
+            <article class="followup-card">
+              <div class="followup-card-head">
+                <div class="followup-title">${escapeHtml(firstText(item?.workflow_title, item?.workflow_description, "Actiepunt"))}</div>
+                <div class="followup-status">${escapeHtml(normalizedStatusLabel(item?.status))}</div>
+              </div>
+              <div class="followup-grid">
+                ${renderSimpleField("Type", isWorkflow(item) ? "Workflowactie" : "Rapportopmerking")}
+                ${renderSimpleField("Categorie", item?.category)}
+                ${renderSimpleField("Certificaatimpact", item?.effective_certificate_impact || item?.certificate_impact)}
+                ${renderSimpleField("Uitkomst", item?.resolution_outcome)}
+                ${renderSimpleField("Omschrijving", firstText(item?.workflow_description, item?.note), { wide: true })}
+                ${renderSimpleField("Afhandelnotitie", item?.resolution_note, { wide: true })}
+              </div>
+              ${
+                linkedDocuments.length
+                  ? `
+                    <div class="linked-documents">
+                      <div class="linked-documents-title">Gekoppelde formulierbijlagen</div>
+                      <div class="attachment-grid">
+                        ${linkedDocuments.map((doc: any) => renderAttachmentCard(doc)).join("")}
+                      </div>
                     </div>
-                    <div class="followup-grid">
-                      ${renderSimpleField("Type", isWorkflow(item) ? "Workflowactie" : "Rapportopmerking")}
-                      ${renderSimpleField("Categorie", item?.category)}
-                      ${renderSimpleField("Certificaatimpact", item?.effective_certificate_impact || item?.certificate_impact)}
-                      ${renderSimpleField("Uitkomst", item?.resolution_outcome)}
-                      ${renderSimpleField("Omschrijving", firstText(item?.workflow_description, item?.note), { wide: true })}
-                      ${renderSimpleField("Afhandelnotitie", item?.resolution_note, { wide: true })}
-                    </div>
-                    ${
-                      linkedDocuments.length
-                        ? `
-                          <div class="linked-documents">
-                            <div class="linked-documents-title">Gekoppelde formulierbijlagen</div>
-                            <div class="attachment-grid">
-                              ${linkedDocuments.map((doc: any) => renderAttachmentCard(doc)).join("")}
-                            </div>
-                          </div>
-                        `
-                        : ""
-                    }
-                  </article>
-                `;
-              })
-              .join("")
-          : `<div class="empty-box">${escapeHtml(emptyText)}</div>`
-      }
+                  `
+                  : ""
+              }
+            </article>
+          `;
+        })
+        .join("")}
     </section>
   `;
 }
@@ -1137,37 +1377,46 @@ function renderActionPointSummaryPage(model: any) {
   const reportItems = reportOnlyItems(model);
   const otherWorkflowItems = allWorkflowItems.filter((item: any) => effectiveCertificateImpact(item) !== "YES");
 
+  const sections = [
+    renderFollowUpSection(
+      "Certificaatpunten",
+      "Deze workflowactiepunten beïnvloeden het mogen afgeven van een definitief oordeel.",
+      certificateItems,
+      attachmentMap,
+      "Er zijn geen certificaatpunten geregistreerd."
+    ),
+    renderFollowUpSection(
+      "Workflowacties zonder certificaatimpact",
+      "Deze acties horen bij de afhandeling van het rapport, maar blokkeren het certificaatoordeel niet rechtstreeks.",
+      otherWorkflowItems,
+      attachmentMap,
+      "Er zijn geen aanvullende workflowacties zonder certificaatimpact."
+    ),
+    renderFollowUpSection(
+      "Rapportopmerkingen",
+      "Deze opmerkingen worden in het rapport getoond, maar tellen niet mee als certificeringsblokkade.",
+      reportItems,
+      attachmentMap,
+      "Er zijn geen rapportopmerkingen geregistreerd."
+    ),
+  ].filter(Boolean);
+
+  if (!sections.length) {
+    return "";
+  }
+
   return `
     <section class="page-break-before report-page">
       <div class="page-title">Actiepunten en bewijs</div>
       <div class="page-intro">Samenvatting van workflowacties, rapportopmerkingen en gekoppelde formulierbijlagen.</div>
-      ${renderFollowUpSection(
-        "Certificaatpunten",
-        "Deze workflowactiepunten beïnvloeden het mogen afgeven van een definitief oordeel.",
-        certificateItems,
-        attachmentMap,
-        "Er zijn geen certificaatpunten geregistreerd."
-      )}
-      ${renderFollowUpSection(
-        "Workflowacties zonder certificaatimpact",
-        "Deze acties horen bij de afhandeling van het rapport, maar blokkeren het certificaatoordeel niet rechtstreeks.",
-        otherWorkflowItems,
-        attachmentMap,
-        "Er zijn geen aanvullende workflowacties zonder certificaatimpact."
-      )}
-      ${renderFollowUpSection(
-        "Rapportopmerkingen",
-        "Deze opmerkingen worden in het rapport getoond, maar tellen niet mee als certificeringsblokkade.",
-        reportItems,
-        attachmentMap,
-        "Er zijn geen rapportopmerkingen geregistreerd."
-      )}
+      ${sections.join("")}
     </section>
   `;
 }
 
 function buildPdfHeaderTemplate(model: any) {
-  const reportTitle = firstText(reportConfig(model)?.coverSubTitle, model?.form?.name, model?.surveyJson?.title, "Rapport van Onderhoud");
+  const headerTitles = pdfHeaderTitles(model);
+  const centerTitle = firstText(headerTitles.subtitle, headerTitles.title, model?.form?.name, model?.surveyJson?.title, "Rapport");
   const objectTitle = firstText(
     model?.installation?.installation_name,
     model?.installation?.object_name,
@@ -1183,6 +1432,7 @@ function buildPdfHeaderTemplate(model: any) {
         width: 100%;
         box-sizing: border-box;
         padding: 0 12mm;
+        margin-top: -3mm;
         font-family: Calibri, Arial, sans-serif;
         color: #0f172a;
       }
@@ -1191,8 +1441,8 @@ function buildPdfHeaderTemplate(model: any) {
         align-items: center;
         justify-content: space-between;
         gap: 6mm;
-        min-height: 28mm;
-        padding: 5mm 0 4mm 0;
+        min-height: 14mm;
+        padding: 0.4mm 0 0.6mm 0;
         border-bottom: 1px solid #d9d9d9;
       }
       .pdf-header-col {
@@ -1210,13 +1460,17 @@ function buildPdfHeaderTemplate(model: any) {
         color: #878787;
         font-size: 8.8pt;
         line-height: 1.25;
+        padding-right: 0;
+        margin-right: -2mm;
       }
       .pdf-header-logo {
         display: block;
-        width: 38mm;
-        max-height: 19mm;
+        width: 40mm;
+        max-height: 14mm;
         object-fit: contain;
         object-position: left center;
+        transform: translateX(-8mm);
+        transform-origin: left center;
       }
       .pdf-header-title {
         font-size: 13pt;
@@ -1235,7 +1489,7 @@ function buildPdfHeaderTemplate(model: any) {
           ${logo ? `<img class="pdf-header-logo" src="${logo}" alt="Logo" />` : ""}
         </div>
         <div class="pdf-header-col center">
-          <div class="pdf-header-title">${escapeHtml(reportTitle)}</div>
+          <div class="pdf-header-title">${escapeHtml(centerTitle)}</div>
         </div>
         <div class="pdf-header-col right">
           <div class="pdf-header-meta-strong">${escapeHtml(objectTitle)}</div>
@@ -1472,9 +1726,8 @@ function renderSignaturePage(model: any) {
 function renderHtmlDocument(model: any) {
   const reportTitle = firstText(reportConfig(model)?.coverMainTitle, "Rapport van Onderhoud");
   const bodyContent = `
-    ${renderOverviewPages(model)}
     ${renderActionPointSummaryPage(model)}
-    ${renderDocumentsPage(model)}
+    ${renderAppendixOverviewPage(model)}
     ${renderSurveyPages(model)}
     ${renderSignaturePage(model)}
   `;
@@ -1517,7 +1770,7 @@ function renderHtmlDocument(model: any) {
           }
 
           .page-break-before { page-break-before: always; break-before: page; }
-          .report-page { min-height: 1px; padding-top: 3mm; }
+          .report-page { min-height: 1px; padding-top: 28mm; }
 
           .cover-page {
             min-height: 248mm;
@@ -1527,20 +1780,25 @@ function renderHtmlDocument(model: any) {
           }
 
           .cover-top {
-            display: flex;
-            justify-content: space-between;
-            align-items: flex-start;
-            gap: 10mm;
+            min-height: 2mm;
           }
 
-          .cover-logo img {
-            max-width: 62mm;
-            max-height: 18mm;
+          .cover-title-logo {
+            min-height: 24mm;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-bottom: 5mm;
+          }
+
+          .cover-title-logo img {
+            max-width: 74mm;
+            max-height: 24mm;
             object-fit: contain;
           }
 
           .cover-title-block {
-            padding-top: 12mm;
+            padding-top: 8mm;
             text-align: center;
           }
 
@@ -1663,23 +1921,65 @@ function renderHtmlDocument(model: any) {
           .remarks-grid {
             display: grid;
             grid-template-columns: repeat(2, minmax(0, 1fr));
-            gap: 3.2mm;
+            gap: 3mm;
+            align-items: stretch;
+            break-inside: avoid-page;
+            page-break-inside: avoid;
+          }
+
+          .single-field-grid {
+            grid-template-columns: minmax(0, 1fr);
+          }
+
+          .single-field-table {
+            width: 100%;
+            table-layout: fixed;
+          }
+
+          .single-field-table th,
+          .single-field-table td {
+            vertical-align: middle;
+            padding: 3.2mm 4mm;
+          }
+
+          .single-field-table th {
+            background: var(--panel);
+            color: var(--muted);
+            font-size: 8.8pt;
+            font-weight: 700;
+            text-align: left;
           }
 
           .info-card,
           .field-card {
             border: 1px solid var(--line);
             background: white;
-            min-height: 18mm;
+            min-height: 12mm;
+            display: grid;
+            grid-template-columns: minmax(28mm, 34%) minmax(0, 1fr);
+            break-inside: avoid-page;
+            page-break-inside: avoid;
+          }
+
+          .field-card.long-label {
+            grid-template-columns: minmax(44mm, 44%) minmax(0, 1fr);
+          }
+
+          .field-card.full-width-split {
+            grid-column: 1 / -1;
+            grid-template-columns: var(--field-divider, 40%) minmax(0, 1fr);
+            width: 100%;
           }
 
           .field-card.wide {
             grid-column: 1 / -1;
+            grid-template-columns: 1fr;
+            min-height: 16mm;
           }
 
           .info-label,
           .field-label {
-            padding: 2.2mm 3mm 1.4mm 3mm;
+            padding: 2mm 3mm 1.4mm 3mm;
             font-size: 8.6pt;
             font-weight: 700;
             color: var(--muted);
@@ -1689,7 +1989,29 @@ function renderHtmlDocument(model: any) {
 
           .info-value,
           .field-value {
-            padding: 2.8mm 3mm;
+            padding: 2.6mm 3mm;
+            white-space: pre-wrap;
+            word-break: break-word;
+            align-self: center;
+          }
+
+          .field-label-inline,
+          .field-value-inline {
+            padding: 2.4mm 3mm;
+            min-height: 100%;
+            display: flex;
+            align-items: center;
+          }
+
+          .field-label-inline {
+            background: var(--panel);
+            border-right: 1px solid var(--line);
+            color: var(--muted);
+            font-size: 8.6pt;
+            font-weight: 700;
+          }
+
+          .field-value-inline {
             white-space: pre-wrap;
             word-break: break-word;
           }
@@ -1698,7 +2020,9 @@ function renderHtmlDocument(model: any) {
             font-size: 22pt;
             font-weight: 700;
             line-height: 1.08;
-            margin: 0 0 5mm 0;
+            margin: 0 0 4mm 0;
+            break-after: avoid;
+            page-break-after: avoid;
           }
 
           .page-intro,
@@ -1734,7 +2058,7 @@ function renderHtmlDocument(model: any) {
           .panel-section,
           .paneldynamic-section,
           .matrix-section {
-            margin-bottom: 7mm;
+            margin-bottom: 6mm;
           }
 
           .matrix-section {
@@ -1755,6 +2079,15 @@ function renderHtmlDocument(model: any) {
           .matrix-section > .subsection-title {
             break-after: avoid;
             page-break-after: avoid;
+          }
+
+          .section-heading + .field-grid,
+          .section-heading + .paneldynamic-list,
+          .section-heading + .report-table,
+          .subsection-title + .report-table,
+          .matrix-continuation-label + .report-table {
+            break-before: avoid;
+            page-break-before: avoid;
           }
 
           .followup-section .followup-card:first-of-type,
@@ -1807,11 +2140,16 @@ function renderHtmlDocument(model: any) {
           .report-table th,
           .report-table td {
             border: 1px solid var(--line);
-            padding: 2.6mm 3mm;
+            padding: 2.4mm 3mm;
             vertical-align: top;
             white-space: pre-wrap;
             word-break: normal;
             overflow-wrap: anywhere;
+          }
+
+          .matrix-table th,
+          .matrix-table td {
+            vertical-align: middle;
           }
 
           .report-table th {
@@ -1824,6 +2162,12 @@ function renderHtmlDocument(model: any) {
 
           .align-center {
             text-align: center;
+          }
+
+          .report-table td.item-code-cell {
+            white-space: nowrap;
+            word-break: keep-all;
+            overflow-wrap: normal;
           }
 
           .assessment-chip {
@@ -2147,18 +2491,18 @@ function renderHtmlDocument(model: any) {
           }
 
           .matrix-split-block.is-prestatie-followup col:first-child {
-            width: 15%;
+            width: 18%;
           }
 
           .matrix-split-block.is-prestatie-followup col:nth-child(2) {
-            width: 15%;
+            width: 18%;
           }
 
           .matrix-split-block.is-prestatie-followup col:nth-child(3),
           .matrix-split-block.is-prestatie-followup col:nth-child(4),
           .matrix-split-block.is-prestatie-followup col:nth-child(5),
           .matrix-split-block.is-prestatie-followup col:nth-child(6) {
-            width: 10%;
+            width: 16%;
           }
 
           .matrix-continuation-label {
@@ -2180,9 +2524,8 @@ function renderHtmlDocument(model: any) {
 function renderBodyHtmlDocument(model: any) {
   const reportTitle = firstText(reportConfig(model)?.coverMainTitle, "Rapport van Onderhoud");
   const bodyContent = `
-    ${renderOverviewPages(model)}
     ${renderActionPointSummaryPage(model)}
-    ${renderDocumentsPage(model)}
+    ${renderAppendixOverviewPage(model)}
     ${renderSurveyPages(model)}
     ${renderSignaturePage(model)}
   `;
@@ -2196,12 +2539,10 @@ function renderBodyHtmlDocument(model: any) {
         <style>
           @page {
             size: A4;
-            margin: 0;
           }
 
           @page landscape {
             size: A4 landscape;
-            margin: 0;
           }
 
           :root {
@@ -2225,7 +2566,7 @@ function renderBodyHtmlDocument(model: any) {
           }
 
           .page-break-before { page-break-before: always; break-before: page; }
-          .report-page { min-height: 1px; padding-top: 3mm; }
+          .report-page { min-height: 1px; }
 
           .cover-page {
             min-height: 248mm;
@@ -2235,20 +2576,25 @@ function renderBodyHtmlDocument(model: any) {
           }
 
           .cover-top {
-            display: flex;
-            justify-content: space-between;
-            align-items: flex-start;
-            gap: 10mm;
+            min-height: 2mm;
           }
 
-          .cover-logo img {
-            max-width: 62mm;
-            max-height: 18mm;
+          .cover-title-logo {
+            min-height: 24mm;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-bottom: 5mm;
+          }
+
+          .cover-title-logo img {
+            max-width: 74mm;
+            max-height: 24mm;
             object-fit: contain;
           }
 
           .cover-title-block {
-            padding-top: 12mm;
+            padding-top: 8mm;
             text-align: center;
           }
 
@@ -2371,23 +2717,65 @@ function renderBodyHtmlDocument(model: any) {
           .remarks-grid {
             display: grid;
             grid-template-columns: repeat(2, minmax(0, 1fr));
-            gap: 3.2mm;
+            gap: 3mm;
+            align-items: stretch;
+            break-inside: avoid-page;
+            page-break-inside: avoid;
+          }
+
+          .single-field-grid {
+            grid-template-columns: minmax(0, 1fr);
+          }
+
+          .single-field-table {
+            width: 100%;
+            table-layout: fixed;
+          }
+
+          .single-field-table th,
+          .single-field-table td {
+            vertical-align: middle;
+            padding: 3.2mm 4mm;
+          }
+
+          .single-field-table th {
+            background: var(--panel);
+            color: var(--muted);
+            font-size: 8.8pt;
+            font-weight: 700;
+            text-align: left;
           }
 
           .info-card,
           .field-card {
             border: 1px solid var(--line);
             background: white;
-            min-height: 18mm;
+            min-height: 12mm;
+            display: grid;
+            grid-template-columns: minmax(28mm, 34%) minmax(0, 1fr);
+            break-inside: avoid-page;
+            page-break-inside: avoid;
+          }
+
+          .field-card.long-label {
+            grid-template-columns: minmax(44mm, 44%) minmax(0, 1fr);
+          }
+
+          .field-card.full-width-split {
+            grid-column: 1 / -1;
+            grid-template-columns: var(--field-divider, 40%) minmax(0, 1fr);
+            width: 100%;
           }
 
           .field-card.wide {
             grid-column: 1 / -1;
+            grid-template-columns: 1fr;
+            min-height: 16mm;
           }
 
           .info-label,
           .field-label {
-            padding: 2.2mm 3mm 1.4mm 3mm;
+            padding: 2mm 3mm 1.4mm 3mm;
             font-size: 8.6pt;
             font-weight: 700;
             color: var(--muted);
@@ -2397,7 +2785,29 @@ function renderBodyHtmlDocument(model: any) {
 
           .info-value,
           .field-value {
-            padding: 2.8mm 3mm;
+            padding: 2.6mm 3mm;
+            white-space: pre-wrap;
+            word-break: break-word;
+            align-self: center;
+          }
+
+          .field-label-inline,
+          .field-value-inline {
+            padding: 2.4mm 3mm;
+            min-height: 100%;
+            display: flex;
+            align-items: center;
+          }
+
+          .field-label-inline {
+            background: var(--panel);
+            border-right: 1px solid var(--line);
+            color: var(--muted);
+            font-size: 8.6pt;
+            font-weight: 700;
+          }
+
+          .field-value-inline {
             white-space: pre-wrap;
             word-break: break-word;
           }
@@ -2406,7 +2816,9 @@ function renderBodyHtmlDocument(model: any) {
             font-size: 22pt;
             font-weight: 700;
             line-height: 1.08;
-            margin: 0 0 5mm 0;
+            margin: 0 0 4mm 0;
+            break-after: avoid;
+            page-break-after: avoid;
           }
 
           .page-intro,
@@ -2442,7 +2854,7 @@ function renderBodyHtmlDocument(model: any) {
           .panel-section,
           .paneldynamic-section,
           .matrix-section {
-            margin-bottom: 7mm;
+            margin-bottom: 6mm;
           }
 
           .matrix-section {
@@ -2463,6 +2875,15 @@ function renderBodyHtmlDocument(model: any) {
           .matrix-section > .subsection-title {
             break-after: avoid;
             page-break-after: avoid;
+          }
+
+          .section-heading + .field-grid,
+          .section-heading + .paneldynamic-list,
+          .section-heading + .report-table,
+          .subsection-title + .report-table,
+          .matrix-continuation-label + .report-table {
+            break-before: avoid;
+            page-break-before: avoid;
           }
 
           .followup-section .followup-card:first-of-type,
@@ -2515,11 +2936,16 @@ function renderBodyHtmlDocument(model: any) {
           .report-table th,
           .report-table td {
             border: 1px solid var(--line);
-            padding: 2.6mm 3mm;
+            padding: 2.4mm 3mm;
             vertical-align: top;
             white-space: pre-wrap;
             word-break: normal;
             overflow-wrap: anywhere;
+          }
+
+          .matrix-table th,
+          .matrix-table td {
+            vertical-align: middle;
           }
 
           .report-table th {
@@ -2532,6 +2958,12 @@ function renderBodyHtmlDocument(model: any) {
 
           .align-center {
             text-align: center;
+          }
+
+          .report-table td.item-code-cell {
+            white-space: nowrap;
+            word-break: keep-all;
+            overflow-wrap: normal;
           }
 
           .assessment-chip {
@@ -2695,6 +3127,16 @@ function renderBodyHtmlDocument(model: any) {
           .document-table th:nth-child(4) { width: 10%; }
           .document-table th:nth-child(5) { width: 30%; }
 
+          .appendix-table th:nth-child(1) { width: 34%; }
+          .appendix-table th:nth-child(2) { width: 12%; }
+          .appendix-table th:nth-child(3) { width: 30%; }
+          .appendix-table th:nth-child(4) { width: 24%; }
+
+          .appendix-table th:nth-child(1) { width: 34%; }
+          .appendix-table th:nth-child(2) { width: 12%; }
+          .appendix-table th:nth-child(3) { width: 30%; }
+          .appendix-table th:nth-child(4) { width: 24%; }
+
           .signature-grid {
             display: grid;
             gap: 4mm;
@@ -2830,6 +3272,21 @@ function renderBodyHtmlDocument(model: any) {
             margin-top: 4mm;
           }
 
+          .matrix-split-block.is-prestatie-followup col:first-child {
+            width: 18%;
+          }
+
+          .matrix-split-block.is-prestatie-followup col:nth-child(2) {
+            width: 18%;
+          }
+
+          .matrix-split-block.is-prestatie-followup col:nth-child(3),
+          .matrix-split-block.is-prestatie-followup col:nth-child(4),
+          .matrix-split-block.is-prestatie-followup col:nth-child(5),
+          .matrix-split-block.is-prestatie-followup col:nth-child(6) {
+            width: 16%;
+          }
+
           .matrix-continuation-label {
             margin: 0 0 2mm 0;
             color: var(--muted);
@@ -2884,7 +3341,7 @@ export async function tryBuildHtmlFormReportPdf(model: any): Promise<any> {
         printBackground: true,
         displayHeaderFooter: true,
         margin: {
-          top: "58mm",
+          top: "18mm",
           right: "12mm",
           bottom: "16mm",
           left: "12mm",

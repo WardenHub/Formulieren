@@ -1652,9 +1652,9 @@ async function buildLegacyFormReportPdf(formInstanceIdRaw: any, user: any) {
 }
 
 function formReportRendererMode() {
-  const raw = String(process.env.FORM_REPORT_RENDERER_MODE || "legacy").trim().toLowerCase();
+  const raw = String(process.env.FORM_REPORT_RENDERER_MODE || "html").trim().toLowerCase();
   if (["legacy", "hybrid", "html"].includes(raw)) return raw;
-  return "legacy";
+  return "html";
 }
 
 export async function buildFormReportPdf(formInstanceIdRaw: any, user: any) {
