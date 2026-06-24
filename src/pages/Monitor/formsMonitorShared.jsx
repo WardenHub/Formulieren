@@ -1,7 +1,7 @@
 import { resolveActorDisplayName } from "../../lib/avatar.js";
 
 export const OVERVIEW_LS_KEY = "forms-monitor-overview-state-v5";
-export const DETAIL_UI_LS_KEY = "forms-monitor-detail-ui-state-v6";
+export const DETAIL_UI_LS_KEY = "forms-monitor-detail-ui-state-v7";
 export const DETAIL_NOTES_LS_KEY = "forms-monitor-detail-notes-v5";
 
 export const AUTO_REFRESH_MS = 30000;

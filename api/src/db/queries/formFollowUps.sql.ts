@@ -113,6 +113,59 @@ from dbo.FormFollowUpAction
 where form_instance_id = @formInstanceId
 `;
 
+export const getFormFollowUpSummaryByChainSql = `
+;with current_form as (
+  select top 1
+    form_instance_id,
+    parent_instance_id
+  from dbo.FormInstance
+  where form_instance_id = @formInstanceId
+),
+ancestor_forms as (
+  select
+    form_instance_id,
+    parent_instance_id
+  from current_form
+
+  union all
+
+  select
+    parent.form_instance_id,
+    parent.parent_instance_id
+  from dbo.FormInstance parent
+  join ancestor_forms child
+    on child.parent_instance_id = parent.form_instance_id
+),
+root_form as (
+  select
+    top 1 form_instance_id as root_form_instance_id
+  from ancestor_forms
+  order by case when parent_instance_id is null then 0 else 1 end
+),
+chain_forms as (
+  select fi.form_instance_id
+  from dbo.FormInstance fi
+  join root_form root
+    on root.root_form_instance_id = fi.form_instance_id
+
+  union all
+
+  select child.form_instance_id
+  from dbo.FormInstance child
+  join chain_forms parent
+    on child.parent_instance_id = parent.form_instance_id
+)
+select
+  count(*) as total_count,
+  sum(case when fua.kind = N'workflow' and fua.status in (N'OPEN', N'WACHTENOPDERDEN') then 1 else 0 end) as open_count,
+  sum(case when fua.kind = N'workflow' and fua.status in (N'AFGEHANDELD', N'AFGEWEZEN', N'VERVALLEN') then 1 else 0 end) as terminal_count,
+  sum(case when fua.kind = N'report-only' then 1 else 0 end) as informative_count,
+  sum(case when fua.kind = N'workflow' then 1 else 0 end) as relevant_count
+from dbo.FormFollowUpAction fua
+join chain_forms cf
+  on cf.form_instance_id = fua.form_instance_id
+`;
+
 export const getFormFollowUpsMonitorByInstanceSql = `
 select
   follow_up_action_id,
@@ -146,6 +199,112 @@ order by
   case when status in (N'OPEN', N'WACHTENOPDERDEN') then 0 else 1 end,
   created_at desc,
   follow_up_action_id desc
+`;
+
+export const getFormFollowUpsMonitorByChainSql = `
+;with current_form as (
+  select top 1
+    form_instance_id,
+    parent_instance_id
+  from dbo.FormInstance
+  where form_instance_id = @formInstanceId
+),
+ancestor_forms as (
+  select
+    form_instance_id,
+    parent_instance_id
+  from current_form
+
+  union all
+
+  select
+    parent.form_instance_id,
+    parent.parent_instance_id
+  from dbo.FormInstance parent
+  join ancestor_forms child
+    on child.parent_instance_id = parent.form_instance_id
+),
+root_form as (
+  select
+    top 1 form_instance_id as root_form_instance_id
+  from ancestor_forms
+  order by case when parent_instance_id is null then 0 else 1 end
+),
+chain_form_ids as (
+  select fi.form_instance_id
+  from dbo.FormInstance fi
+  join root_form root
+    on root.root_form_instance_id = fi.form_instance_id
+
+  union all
+
+  select child.form_instance_id
+  from dbo.FormInstance child
+  join chain_form_ids parent
+    on child.parent_instance_id = parent.form_instance_id
+),
+chain_forms as (
+  select
+    fi.form_instance_id,
+    fi.parent_instance_id,
+    fi.atrium_installation_code,
+    fd.code as form_code,
+    fd.name as form_name,
+    fv.version_label,
+    case
+      when fi.form_instance_id = @formInstanceId then N'current'
+      when fi.form_instance_id = root.root_form_instance_id then N'parent'
+      else N'child'
+    end as source_relation
+  from dbo.FormInstance fi
+  join chain_form_ids cfi
+    on cfi.form_instance_id = fi.form_instance_id
+  join dbo.FormDefinitionVersion fv
+    on fv.form_version_id = fi.form_version_id
+  join dbo.FormDefinition fd
+    on fd.form_id = fv.form_id
+  cross join root_form root
+)
+select
+  fua.follow_up_action_id,
+  fua.form_instance_id,
+  cf.form_instance_id as source_form_instance_id,
+  cf.source_relation as source_form_relation,
+  cf.atrium_installation_code as source_atrium_installation_code,
+  cf.form_code as source_form_code,
+  cf.form_name as source_form_name,
+  cf.version_label as source_version_label,
+  fua.kind,
+  fua.workflow_title,
+  fua.workflow_description,
+  fua.category,
+  fua.certificate_impact,
+  fua.certificate_impact_override,
+  isnull(fua.certificate_impact_override, fua.certificate_impact) as effective_certificate_impact,
+  fua.status,
+  fua.note,
+  fua.assigned_to,
+  fua.due_date,
+  fua.resolution_note,
+  fua.resolution_outcome,
+  fua.resolved_at,
+  fua.resolved_by,
+  fua.created_at,
+  fua.created_by,
+  fua.updated_at,
+  fua.updated_by,
+  fua.source_question_name,
+  fua.source_question_type,
+  fua.source_row_index,
+  fua.source_item_code
+from dbo.FormFollowUpAction fua
+join chain_forms cf
+  on cf.form_instance_id = fua.form_instance_id
+order by
+  case when fua.status in (N'OPEN', N'WACHTENOPDERDEN') then 0 else 1 end,
+  case cf.source_relation when N'current' then 0 when N'parent' then 1 else 2 end,
+  fua.created_at desc,
+  fua.follow_up_action_id desc
 `;
 
 export const getFormFollowUpByIdSql = `

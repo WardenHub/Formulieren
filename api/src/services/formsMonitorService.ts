@@ -12,8 +12,8 @@ import {
   upsertFormInstanceComplimentPointSql,
 } from "../db/queries/formsMonitor.sql.js";
 import {
-  getFormFollowUpSummaryByInstanceSql,
-  getFormFollowUpsMonitorByInstanceSql,
+  getFormFollowUpSummaryByChainSql,
+  getFormFollowUpsMonitorByChainSql,
   getFormFollowUpByIdSql,
   updateFormFollowUpStatusSql,
   updateFormFollowUpNoteSql,
@@ -175,8 +175,8 @@ async function getChildrenRows(formInstanceId: number) {
   return Array.isArray(rows) ? rows : [];
 }
 
-async function getFollowUpSummary(formInstanceId: number) {
-  const rows = await sqlQuery(getFormFollowUpSummaryByInstanceSql, { formInstanceId });
+async function getFollowUpChainSummary(formInstanceId: number) {
+  const rows = await sqlQuery(getFormFollowUpSummaryByChainSql, { formInstanceId });
   const row: any = rows?.[0] ?? null;
 
   return {
@@ -446,7 +446,7 @@ export async function getMonitorDetail(formInstanceIdRaw: any, context: DetailCo
   const [parent, children, followUpSummary] = await Promise.all([
     getParentRow(formInstanceId),
     getChildrenRows(formInstanceId),
-    getFollowUpSummary(formInstanceId),
+    getFollowUpChainSummary(formInstanceId),
   ]);
   const complimentPoints = await sqlQuery(getFormInstanceComplimentPointsSql, { formInstanceId });
 
@@ -479,8 +479,8 @@ export async function getMonitorFollowUps(formInstanceIdRaw: any, _context: User
   if (!detail) return { error: "not found" };
 
   const [rows, summary] = await Promise.all([
-    sqlQuery(getFormFollowUpsMonitorByInstanceSql, { formInstanceId }),
-    getFollowUpSummary(formInstanceId),
+    sqlQuery(getFormFollowUpsMonitorByChainSql, { formInstanceId }),
+    getFollowUpChainSummary(formInstanceId),
   ]);
 
   return {
@@ -501,7 +501,7 @@ export async function runMonitorFormStatusAction(formInstanceIdRaw: any, action:
     throw new Error("historical installation read-only");
   }
 
-  const followUpSummary = await getFollowUpSummary(formInstanceId);
+  const followUpSummary = await getFollowUpChainSummary(formInstanceId);
 
   assertFormStatusActionAllowed(item, action, context.roles || [], followUpSummary);
 
@@ -561,7 +561,7 @@ export async function runMonitorFollowUpStatusAction(
     isResolved: mapped.isResolved ? 1 : 0,
   });
 
-  const summary = await getFollowUpSummary(Number(followUpRow.form_instance_id));
+  const summary = await getFollowUpChainSummary(Number(followUpRow.form_instance_id));
 
   return {
     ok: true,

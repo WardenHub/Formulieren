@@ -2513,6 +2513,7 @@ html[data-appearance="light"] .type-telefonie{
 .monitor-followup-card--warning{ border-color: var(--warning-border); background: var(--warning-bg-soft); }
 .monitor-followup-card--success{ border-color: var(--success-border); background: var(--success-bg-soft); }
 .monitor-followup-card--danger{ border-color: var(--danger-border); background: var(--danger-bg-soft); }
+.monitor-followup-card--muted{ border-color: var(--border); background: var(--surface-2); }
 
 .monitor-followup-note-box{
   padding: 10px;
@@ -2528,6 +2529,46 @@ html[data-appearance="light"] .type-telefonie{
   flex-wrap: wrap;
   gap: 10px;
   align-items: flex-start;
+}
+
+.monitor-followup-status-btn{
+  transition: background .16s ease, border-color .16s ease, box-shadow .16s ease, color .16s ease, transform .16s ease;
+}
+
+.monitor-followup-status-btn--active{
+  font-weight: 800;
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--border) 38%, transparent);
+  transform: translateY(-1px);
+}
+
+.monitor-followup-status-btn--info{
+  border-color: var(--info-border);
+  background: var(--info-bg-soft);
+  color: var(--info-text);
+}
+
+.monitor-followup-status-btn--warning{
+  border-color: var(--warning-border);
+  background: var(--warning-bg-soft);
+  color: var(--warning-text);
+}
+
+.monitor-followup-status-btn--danger{
+  border-color: var(--danger-border);
+  background: var(--danger-bg-soft);
+  color: var(--danger-text);
+}
+
+.monitor-followup-status-btn--muted{
+  border-color: var(--border);
+  background: var(--surface-3);
+  color: var(--muted);
+}
+
+.monitor-followup-status-btn--success{
+  border-color: var(--success-border);
+  background: var(--success-bg-soft);
+  color: var(--success-text);
 }
 
 .monitor-certificate-menu{

@@ -152,6 +152,46 @@ function getCertificateImpactChoiceLabel(value) {
   return "Normale workflow";
 }
 
+function getFollowUpSourceLabel(row, currentFormInstanceId) {
+  const sourceId = row?.source_form_instance_id ?? row?.form_instance_id;
+  const relation = String(row?.source_form_relation || "").trim().toLowerCase();
+  const idText = sourceId ? ` #${sourceId}` : "";
+
+  if (!sourceId || String(sourceId) === String(currentFormInstanceId)) {
+    return `Dit formulier${idText}`;
+  }
+
+  if (relation === "parent") return `Hoofdformulier${idText}`;
+  if (relation === "child") return `Vervolgformulier${idText}`;
+  return `Bronformulier${idText}`;
+}
+
+function getFollowUpStatusButtonClass(currentStatus, buttonStatus) {
+  const current = String(currentStatus || "").trim().toUpperCase();
+  const isActive = current === buttonStatus;
+  const baseClass = "btn btn-secondary monitor-followup-status-btn";
+
+  if (!isActive) return baseClass;
+
+  if (buttonStatus === "AFGEHANDELD") {
+    return `${baseClass} monitor-followup-status-btn--active monitor-followup-status-btn--success`;
+  }
+
+  if (buttonStatus === "WACHTENOPDERDEN") {
+    return `${baseClass} monitor-followup-status-btn--active monitor-followup-status-btn--warning`;
+  }
+
+  if (buttonStatus === "AFGEWEZEN") {
+    return `${baseClass} monitor-followup-status-btn--active monitor-followup-status-btn--danger`;
+  }
+
+  if (buttonStatus === "VERVALLEN") {
+    return `${baseClass} monitor-followup-status-btn--active monitor-followup-status-btn--muted`;
+  }
+
+  return `${baseClass} monitor-followup-status-btn--active monitor-followup-status-btn--info`;
+}
+
 function ActionFooter({
   canFinish,
   finishBusy,
@@ -1241,6 +1281,9 @@ export default function FormsMonitorDetailPage() {
 
   const initialSectionKey = String(searchParams.get("section") || storedUiState?.activeSectionKey || "action_points");
   const [activeSectionKey, setActiveSectionKey] = useState(initialSectionKey);
+  const [activeMetadataTab, setActiveMetadataTab] = useState(
+    storedUiState?.activeMetadataTab === "relation" ? "relation" : "form"
+  );
   const [statusOpenMap, setStatusOpenMap] = useState(
     storedUiState?.statusOpenMap ?? {
       OPEN: true,
@@ -1318,6 +1361,14 @@ export default function FormsMonitorDetailPage() {
     return groups;
   }, [followUps, activeStatusFilters]);
 
+  const currentFormFollowUps = useMemo(() => {
+    if (!item?.form_instance_id) return followUps;
+    return followUps.filter((row) => {
+      const sourceId = row?.source_form_instance_id ?? row?.form_instance_id;
+      return String(sourceId || "") === String(item.form_instance_id);
+    });
+  }, [followUps, item?.form_instance_id]);
+
   const totalFilterActive = activeStatusFilters.length === 0;
 
   const hasStatusMenuActions = Boolean(allowedActions.set_ingediend || allowedActions.set_concept);
@@ -1341,8 +1392,12 @@ export default function FormsMonitorDetailPage() {
     { key: "action_points", label: "Actiepunten", Icon: ClipboardCheckIcon },
     { key: "evidence", label: "Bijlagen en bewijs", Icon: FolderInputIcon },
     { key: "feedback", label: "Feedback", Icon: GavelIcon },
-    { key: "relations", label: "Relatiedata", Icon: ArchiveIcon },
+    { key: "relations", label: "Metadata", Icon: ArchiveIcon },
     ...(hasFollowFormRelations ? [{ key: "follow_forms", label: "Vervolgformulieren", Icon: ArrowBigRightIcon }] : []),
+  ];
+  const metadataTabs = [
+    { key: "form", label: "Formulier", Icon: SquarePenIcon },
+    { key: "relation", label: "Relatie", Icon: ArchiveIcon },
   ];
 
   function openSection(nextKey) {
@@ -1371,10 +1426,11 @@ export default function FormsMonitorDetailPage() {
   useEffect(() => {
     saveStateToStorage(DETAIL_UI_LS_KEY, {
       activeSectionKey,
+      activeMetadataTab,
       statusOpenMap,
       activeStatusFilters,
     });
-  }, [activeSectionKey, statusOpenMap, activeStatusFilters]);
+  }, [activeSectionKey, activeMetadataTab, statusOpenMap, activeStatusFilters]);
 
   useEffect(() => {
     if (!hasFollowFormRelations && activeSectionKey === "follow_forms") {
@@ -2438,7 +2494,7 @@ export default function FormsMonitorDetailPage() {
                   <MonitorEvidencePanel
                     code={item.atrium_installation_code}
                     instanceId={item.form_instance_id}
-                    followUps={followUps}
+                    followUps={currentFormFollowUps}
                     canEdit={canEditEvidence}
                     canDeleteDocuments={canDeleteEvidence}
                     onDocumentsChange={setEvidenceDocuments}
@@ -2449,9 +2505,12 @@ export default function FormsMonitorDetailPage() {
 
             {activeSectionKey === "relations" ? (
               <div className="ui-stack">
+                <Tabs tabs={metadataTabs} activeKey={activeMetadataTab} onChange={setActiveMetadataTab} />
+
+                {activeMetadataTab === "relation" ? (
                 <div className="monitor-detail-section is-open">
                   <div className="monitor-detail-section__body">
-                    <div className="monitor-detail-section__title">Relatiedata</div>
+                    <div className="monitor-detail-section__title">Relatie</div>
                     <div className="cf-grid">
                       {relationRows.map((row) => (
                         <div className="cf-row" key={row.label}>
@@ -2466,10 +2525,12 @@ export default function FormsMonitorDetailPage() {
                     </div>
                   </div>
                 </div>
+                ) : null}
 
+                {activeMetadataTab === "form" ? (
                 <div className="monitor-detail-section is-open">
                   <div className="monitor-detail-section__body">
-                    <div className="monitor-detail-section__title">Formuliereigenschappen</div>
+                    <div className="monitor-detail-section__title">Formulier</div>
                     <div className="cf-grid">
                       <div className="cf-row">
                         <div className="cf-label">
@@ -2518,8 +2579,9 @@ export default function FormsMonitorDetailPage() {
                     </div>
                   </div>
                 </div>
+                ) : null}
 
-                {item.instance_note ? (
+                {activeMetadataTab === "form" && item.instance_note ? (
                   <div className="monitor-detail-section is-open">
                     <div className="monitor-detail-section__body">
                       <div className="monitor-detail-section__title">Formulieropmerking</div>
@@ -2646,6 +2708,17 @@ export default function FormsMonitorDetailPage() {
                                     )
                                       .trim()
                                       .toLowerCase();
+                                    const isOpenFollowUpStatus = ["OPEN", "WACHTENOPDERDEN"].includes(
+                                      String(row.status || "").trim()
+                                    );
+                                    const rowStatus = String(row.status || "").trim().toUpperCase();
+                                    const rowSourceId = row.source_form_instance_id ?? row.form_instance_id;
+                                    const rowSourceIsCurrent =
+                                      String(rowSourceId || "") === String(item?.form_instance_id || "");
+                                    const rowSourceLabel = getFollowUpSourceLabel(
+                                      row,
+                                      item?.form_instance_id
+                                    );
 
                                     return (
                                       <div key={row.follow_up_action_id} className={getFollowUpCardClass(row.status)}>
@@ -2679,9 +2752,21 @@ export default function FormsMonitorDetailPage() {
                                               </SummaryTag>
                                             ) : null}
 
-                                            {effectiveCertificateImpact === "yes" ? (
+                                            {hasFollowFormRelations ? (
+                                              <SummaryTag title="Herkomst actiepunt" tone={rowSourceIsCurrent ? "muted" : "info"}>
+                                                {rowSourceLabel}
+                                              </SummaryTag>
+                                            ) : null}
+
+                                            {effectiveCertificateImpact === "yes" && isOpenFollowUpStatus ? (
                                               <SummaryTag title="Dit actiepunt blokkeert het certificaat" tone="warning">
                                                 Blokkeert certificaat
+                                              </SummaryTag>
+                                            ) : null}
+
+                                            {effectiveCertificateImpact === "yes" && !isOpenFollowUpStatus ? (
+                                              <SummaryTag title="Dit certificaatpunt is afgehandeld of afgesloten" tone="success">
+                                                Certificaatpunt afgehandeld
                                               </SummaryTag>
                                             ) : null}
 
@@ -2721,10 +2806,14 @@ export default function FormsMonitorDetailPage() {
                                         )}
 
                                         <FollowUpLinkedDocuments
-                                          code={item.atrium_installation_code}
-                                          instanceId={item.form_instance_id}
+                                          code={
+                                            rowSourceIsCurrent
+                                              ? item.atrium_installation_code
+                                              : row.source_atrium_installation_code || item.atrium_installation_code
+                                          }
+                                          instanceId={rowSourceIsCurrent ? item.form_instance_id : rowSourceId}
                                           row={row}
-                                          documents={evidenceDocuments}
+                                          documents={rowSourceIsCurrent ? evidenceDocuments : []}
                                         />
 
                                         <div className="monitor-followup-note-box">
@@ -2834,7 +2923,8 @@ export default function FormsMonitorDetailPage() {
                                             <div className="ember-toolbar">
                                               <button
                                                 type="button"
-                                                className="btn btn-secondary"
+                                                className={getFollowUpStatusButtonClass(rowStatus, "OPEN")}
+                                                aria-pressed={rowStatus === "OPEN"}
                                                 disabled={followUpBusyId === row.follow_up_action_id}
                                                 onClick={() => handleFollowUpAction(row.follow_up_action_id, "set_open")}
                                               >
@@ -2843,7 +2933,8 @@ export default function FormsMonitorDetailPage() {
 
                                               <button
                                                 type="button"
-                                                className="btn btn-secondary"
+                                                className={getFollowUpStatusButtonClass(rowStatus, "WACHTENOPDERDEN")}
+                                                aria-pressed={rowStatus === "WACHTENOPDERDEN"}
                                                 disabled={followUpBusyId === row.follow_up_action_id}
                                                 onClick={() =>
                                                   handleFollowUpAction(
@@ -2857,7 +2948,8 @@ export default function FormsMonitorDetailPage() {
 
                                               <button
                                                 type="button"
-                                                className="btn btn-secondary"
+                                                className={getFollowUpStatusButtonClass(rowStatus, "AFGEWEZEN")}
+                                                aria-pressed={rowStatus === "AFGEWEZEN"}
                                                 disabled={followUpBusyId === row.follow_up_action_id}
                                                 onClick={() =>
                                                   handleFollowUpAction(row.follow_up_action_id, "set_rejected")
@@ -2868,7 +2960,8 @@ export default function FormsMonitorDetailPage() {
 
                                               <button
                                                 type="button"
-                                                className="btn btn-secondary"
+                                                className={getFollowUpStatusButtonClass(rowStatus, "VERVALLEN")}
+                                                aria-pressed={rowStatus === "VERVALLEN"}
                                                 disabled={followUpBusyId === row.follow_up_action_id}
                                                 onClick={() =>
                                                   handleFollowUpAction(row.follow_up_action_id, "set_vervallen")
@@ -2879,12 +2972,13 @@ export default function FormsMonitorDetailPage() {
 
                                               <button
                                                 type="button"
-                                                className="btn btn-success"
+                                                className={getFollowUpStatusButtonClass(rowStatus, "AFGEHANDELD")}
+                                                aria-pressed={rowStatus === "AFGEHANDELD"}
                                                 disabled={followUpBusyId === row.follow_up_action_id}
                                                 onClick={() => handleFollowUpAction(row.follow_up_action_id, "mark_done")}
                                               >
                                                 <CheckIcon size={18} className="nav-anim-icon" />
-                                                Actiepunt afronden
+                                                Klaar
                                               </button>
                                             </div>
                                           ) : (
