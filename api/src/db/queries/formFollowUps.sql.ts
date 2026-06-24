@@ -99,13 +99,13 @@ set
   updated_at = sysutcdatetime(),
   updated_by = @actor
 where follow_up_action_id = @followUpActionId
-  and status in (N'OPEN', N'WACHTENOPDERDEN', N'INFORMATIEF')
+  and status in (N'OPEN', N'PLANNING_NODIG', N'WACHTENOPDERDEN', N'GEPLAND', N'INFORMATIEF')
 `;
 
 export const getFormFollowUpSummaryByInstanceSql = `
 select
   count(*) as total_count,
-  sum(case when kind = N'workflow' and status in (N'OPEN', N'WACHTENOPDERDEN') then 1 else 0 end) as open_count,
+  sum(case when kind = N'workflow' and status in (N'OPEN', N'PLANNING_NODIG', N'WACHTENOPDERDEN') then 1 else 0 end) as open_count,
   sum(case when kind = N'workflow' and status in (N'AFGEHANDELD', N'AFGEWEZEN', N'VERVALLEN') then 1 else 0 end) as terminal_count,
   sum(case when kind = N'report-only' then 1 else 0 end) as informative_count,
   sum(case when kind = N'workflow' then 1 else 0 end) as relevant_count
@@ -157,7 +157,7 @@ chain_forms as (
 )
 select
   count(*) as total_count,
-  sum(case when fua.kind = N'workflow' and fua.status in (N'OPEN', N'WACHTENOPDERDEN') then 1 else 0 end) as open_count,
+  sum(case when fua.kind = N'workflow' and fua.status in (N'OPEN', N'PLANNING_NODIG', N'WACHTENOPDERDEN') then 1 else 0 end) as open_count,
   sum(case when fua.kind = N'workflow' and fua.status in (N'AFGEHANDELD', N'AFGEWEZEN', N'VERVALLEN') then 1 else 0 end) as terminal_count,
   sum(case when fua.kind = N'report-only' then 1 else 0 end) as informative_count,
   sum(case when fua.kind = N'workflow' then 1 else 0 end) as relevant_count
@@ -196,7 +196,11 @@ select
 from dbo.FormFollowUpAction
 where form_instance_id = @formInstanceId
 order by
-  case when status in (N'OPEN', N'WACHTENOPDERDEN') then 0 else 1 end,
+  case
+    when status in (N'OPEN', N'PLANNING_NODIG', N'WACHTENOPDERDEN') then 0
+    when status = N'GEPLAND' then 1
+    else 2
+  end,
   created_at desc,
   follow_up_action_id desc
 `;
@@ -301,7 +305,11 @@ from dbo.FormFollowUpAction fua
 join chain_forms cf
   on cf.form_instance_id = fua.form_instance_id
 order by
-  case when fua.status in (N'OPEN', N'WACHTENOPDERDEN') then 0 else 1 end,
+  case
+    when fua.status in (N'OPEN', N'PLANNING_NODIG', N'WACHTENOPDERDEN') then 0
+    when fua.status = N'GEPLAND' then 1
+    else 2
+  end,
   case cf.source_relation when N'current' then 0 when N'parent' then 1 else 2 end,
   fua.created_at desc,
   fua.follow_up_action_id desc

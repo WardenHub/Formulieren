@@ -181,6 +181,14 @@ function getFollowUpStatusButtonClass(currentStatus, buttonStatus) {
     return `${baseClass} monitor-followup-status-btn--active monitor-followup-status-btn--warning`;
   }
 
+  if (buttonStatus === "PLANNING_NODIG") {
+    return `${baseClass} monitor-followup-status-btn--active monitor-followup-status-btn--warning`;
+  }
+
+  if (buttonStatus === "GEPLAND") {
+    return `${baseClass} monitor-followup-status-btn--active monitor-followup-status-btn--info`;
+  }
+
   if (buttonStatus === "AFGEWEZEN") {
     return `${baseClass} monitor-followup-status-btn--active monitor-followup-status-btn--danger`;
   }
@@ -1287,7 +1295,9 @@ export default function FormsMonitorDetailPage() {
   const [statusOpenMap, setStatusOpenMap] = useState(
     storedUiState?.statusOpenMap ?? {
       OPEN: true,
+      PLANNING_NODIG: true,
       WACHTENOPDERDEN: true,
+      GEPLAND: true,
       AFGEHANDELD: true,
       AFGEWEZEN: true,
       VERVALLEN: true,
@@ -1335,7 +1345,10 @@ export default function FormsMonitorDetailPage() {
 
   const relationRows = useMemo(() => buildRelationRows(item), [item]);
   const followUpCounts = useMemo(() => buildFollowUpStatusCounts(followUps), [followUps]);
-  const openLikeCount = Number(followUpCounts.OPEN ?? 0) + Number(followUpCounts.WACHTENOPDERDEN ?? 0);
+  const openLikeCount =
+    Number(followUpCounts.OPEN ?? 0) +
+    Number(followUpCounts.PLANNING_NODIG ?? 0) +
+    Number(followUpCounts.WACHTENOPDERDEN ?? 0);
   const viewerUserObjectId = String(detail?.viewer?.user_object_id || "").trim() || null;
   const complimentPoints = Array.isArray(detail?.compliment_points) ? detail.compliment_points : [];
   const currentViewerCompliment = useMemo(() => {
@@ -1351,7 +1364,11 @@ export default function FormsMonitorDetailPage() {
     if (activeStatusFilters.length > 0) {
       groups = groups.filter((group) => {
         if (activeStatusFilters.includes("OPEN_GROUP")) {
-          if (group.status === "OPEN" || group.status === "WACHTENOPDERDEN") return true;
+          if (
+            group.status === "OPEN" ||
+            group.status === "PLANNING_NODIG" ||
+            group.status === "WACHTENOPDERDEN"
+          ) return true;
         }
 
         return activeStatusFilters.includes(group.status);
@@ -2322,12 +2339,21 @@ export default function FormsMonitorDetailPage() {
 
               <div className="monitor-inline-totals">
                 <SummaryTag
-                  title="Filter op openstaande actiepunten; inclusief wachten op derden"
+                  title="Filter op openstaande actiepunten; inclusief planning nodig en wachten op derden"
                   tone="active"
                   active={activeStatusFilters.includes("OPEN_GROUP")}
                   onClick={() => toggleStatusFilter("OPEN_GROUP")}
                 >
                   Open {openLikeCount}
+                </SummaryTag>
+
+                <SummaryTag
+                  title="Filter op actiepunten waarvoor planning nodig is"
+                  tone="warning"
+                  active={activeStatusFilters.includes("PLANNING_NODIG")}
+                  onClick={() => toggleStatusFilter("PLANNING_NODIG")}
+                >
+                  Planning nodig {followUpCounts.PLANNING_NODIG}
                 </SummaryTag>
 
                 <SummaryTag
@@ -2364,6 +2390,15 @@ export default function FormsMonitorDetailPage() {
                   onClick={() => toggleStatusFilter("VERVALLEN")}
                 >
                   Vervallen {followUpCounts.VERVALLEN}
+                </SummaryTag>
+
+                <SummaryTag
+                  title="Filter op geplande actiepunten"
+                  tone="neutral"
+                  active={activeStatusFilters.includes("GEPLAND")}
+                  onClick={() => toggleStatusFilter("GEPLAND")}
+                >
+                  Gepland {followUpCounts.GEPLAND}
                 </SummaryTag>
 
                 <SummaryTag
@@ -2708,9 +2743,11 @@ export default function FormsMonitorDetailPage() {
                                     )
                                       .trim()
                                       .toLowerCase();
-                                    const isOpenFollowUpStatus = ["OPEN", "WACHTENOPDERDEN"].includes(
-                                      String(row.status || "").trim()
-                                    );
+                                    const isOpenFollowUpStatus = [
+                                      "OPEN",
+                                      "PLANNING_NODIG",
+                                      "WACHTENOPDERDEN",
+                                    ].includes(String(row.status || "").trim());
                                     const rowStatus = String(row.status || "").trim().toUpperCase();
                                     const rowSourceId = row.source_form_instance_id ?? row.form_instance_id;
                                     const rowSourceIsCurrent =
@@ -2933,6 +2970,21 @@ export default function FormsMonitorDetailPage() {
 
                                               <button
                                                 type="button"
+                                                className={getFollowUpStatusButtonClass(rowStatus, "PLANNING_NODIG")}
+                                                aria-pressed={rowStatus === "PLANNING_NODIG"}
+                                                disabled={followUpBusyId === row.follow_up_action_id}
+                                                onClick={() =>
+                                                  handleFollowUpAction(
+                                                    row.follow_up_action_id,
+                                                    "set_planning_needed"
+                                                  )
+                                                }
+                                              >
+                                                Planning nodig
+                                              </button>
+
+                                              <button
+                                                type="button"
                                                 className={getFollowUpStatusButtonClass(rowStatus, "WACHTENOPDERDEN")}
                                                 aria-pressed={rowStatus === "WACHTENOPDERDEN"}
                                                 disabled={followUpBusyId === row.follow_up_action_id}
@@ -2944,6 +2996,18 @@ export default function FormsMonitorDetailPage() {
                                                 }
                                               >
                                                 Wachten op derden
+                                              </button>
+
+                                              <button
+                                                type="button"
+                                                className={getFollowUpStatusButtonClass(rowStatus, "GEPLAND")}
+                                                aria-pressed={rowStatus === "GEPLAND"}
+                                                disabled={followUpBusyId === row.follow_up_action_id}
+                                                onClick={() =>
+                                                  handleFollowUpAction(row.follow_up_action_id, "set_planned")
+                                                }
+                                              >
+                                                Gepland
                                               </button>
 
                                               <button

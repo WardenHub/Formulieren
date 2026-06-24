@@ -267,7 +267,9 @@ async function loadProfileParts(user: any) {
       follow_ups: {
         total: Number(statsRow?.total_follow_ups ?? 0),
         open: Number(statsRow?.open_count ?? 0),
+        planning_needed: Number(statsRow?.planning_needed_count ?? 0),
         waiting: Number(statsRow?.waiting_count ?? 0),
+        planned: Number(statsRow?.planned_count ?? 0),
         done: Number(statsRow?.done_count ?? 0),
         rejected: Number(statsRow?.rejected_count ?? 0),
         expired: Number(statsRow?.expired_count ?? 0),

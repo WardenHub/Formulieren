@@ -267,7 +267,9 @@ function assertFollowUpActionAllowed(followUpRow: any, action: string, roles: st
   const valid = [
     "mark_done",
     "set_open",
+    "set_planning_needed",
     "set_waiting_third_party",
+    "set_planned",
     "set_rejected",
     "set_vervallen",
   ];
@@ -290,12 +292,26 @@ function mapFollowUpAction(action: string) {
       isResolved: false,
     };
   }
+  if (action === "set_planning_needed") {
+    return {
+      nextStatus: "PLANNING_NODIG",
+      isResolved: false,
+    };
+  }
+
   if (action === "set_waiting_third_party") {
     return {
       nextStatus: "WACHTENOPDERDEN",
       isResolved: false,
     };
   }
+  if (action === "set_planned") {
+    return {
+      nextStatus: "GEPLAND",
+      isResolved: false,
+    };
+  }
+
   if (action === "set_rejected") {
     return {
       nextStatus: "AFGEWEZEN",
@@ -382,13 +398,15 @@ export async function getMonitorList(input: {
 
     follow_up_summary: {
       total_count: Number(r.follow_up_total_count ?? 0),
-      open_count: Number(r.follow_up_open_count ?? 0),
+      open_count: Number(r.follow_up_actionable_count ?? 0),
       terminal_count: Number(r.follow_up_terminal_count ?? 0),
     },
     follow_up_counts: {
       total_count: Number(r.follow_up_total_count ?? 0),
       open_count: Number(r.follow_up_open_count ?? 0),
+      planning_needed_count: Number(r.follow_up_planning_needed_count ?? 0),
       waiting_count: Number(r.follow_up_waiting_count ?? 0),
+      planned_count: Number(r.follow_up_planned_count ?? 0),
       done_count: Number(r.follow_up_done_count ?? 0),
       rejected_count: Number(r.follow_up_rejected_count ?? 0),
       expired_count: Number(r.follow_up_expired_count ?? 0),

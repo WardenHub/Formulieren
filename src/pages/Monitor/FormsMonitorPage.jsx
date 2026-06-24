@@ -57,6 +57,11 @@ function getOpenCount(row) {
   return Number(s?.open_count ?? 0);
 }
 
+function getPlanningNeededCount(row) {
+  const s = getRowFollowUpSummary(row);
+  return Number(s?.planning_needed_count ?? 0);
+}
+
 function getWaitingCount(row) {
   const s = getRowFollowUpSummary(row);
   return Number(s?.waiting_count ?? 0);
@@ -70,7 +75,7 @@ function getDoneCount(row) {
 }
 
 function getRemainingOpenActionCount(row) {
-  return getOpenCount(row) + getWaitingCount(row);
+  return getOpenCount(row) + getPlanningNeededCount(row) + getWaitingCount(row);
 }
 
 function hasNoRemainingOpenActionPoints(row) {
@@ -681,14 +686,21 @@ export default function FormsMonitorPage() {
               <FilterChip
                 active={Boolean(filters.onlyActionable)}
                 label="Open actiepunten"
-                title="Toon alleen formulieren met openstaande actiepunten; inclusief wachten op derden"
+                title="Toon alleen formulieren met openstaande actiepunten; inclusief planning nodig en wachten op derden"
                 onClick={toggleOnlyActionable}
+              />
+
+              <FilterChip
+                active={filters.actionStatusFilter === "PLANNING_NODIG"}
+                label="Planning nodig"
+                title="Toon alleen formulieren met actiepunten waarvoor planning nodig is"
+                onClick={() => setActionStatusFilter("PLANNING_NODIG")}
               />
 
               <FilterChip
                 active={Boolean(filters.noRemainingOpenActionPoints)}
                 label="Geen resterende openstaande actiepunten"
-                title="Formulieren zonder open of wachtende actiepunten"
+                title="Formulieren zonder open, planning-nodige of wachtende actiepunten"
                 onClick={toggleNoRemainingOpenActionPoints}
               />
             </FilterGroup>
@@ -799,12 +811,21 @@ export default function FormsMonitorPage() {
           {!listLoading && visibleItems.length > 0 && (
             <div className="monitor-summary-chips">
               <SummaryTag
-                title="Toon formulieren met openstaande actiepunten; inclusief wachten op derden"
+                title="Toon formulieren met openstaande actiepunten; inclusief planning nodig en wachten op derden"
                 tone="active"
                 active={filters.actionStatusFilter === "OPEN"}
                 onClick={() => setActionStatusFilter("OPEN")}
               >
-                Open {visibleTotals.open + visibleTotals.waiting}
+                Open {visibleTotals.open + visibleTotals.planningNeeded + visibleTotals.waiting}
+              </SummaryTag>
+
+              <SummaryTag
+                title="Toon formulieren met actiepunten waarvoor planning nodig is"
+                tone="warning"
+                active={filters.actionStatusFilter === "PLANNING_NODIG"}
+                onClick={() => setActionStatusFilter("PLANNING_NODIG")}
+              >
+                Planning nodig {visibleTotals.planningNeeded}
               </SummaryTag>
 
               <SummaryTag

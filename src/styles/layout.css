@@ -2513,7 +2513,7 @@ html[data-appearance="light"] .type-telefonie{
 .monitor-followup-card--warning{ border-color: var(--warning-border); background: var(--warning-bg-soft); }
 .monitor-followup-card--success{ border-color: var(--success-border); background: var(--success-bg-soft); }
 .monitor-followup-card--danger{ border-color: var(--danger-border); background: var(--danger-bg-soft); }
-.monitor-followup-card--muted{ border-color: var(--border); background: var(--surface-2); }
+.monitor-followup-card--muted{ border-color: rgba(100, 116, 139, 0.34); background: rgba(148, 163, 184, 0.22); }
 
 .monitor-followup-note-box{
   padding: 10px;
@@ -2560,9 +2560,9 @@ html[data-appearance="light"] .type-telefonie{
 }
 
 .monitor-followup-status-btn--muted{
-  border-color: var(--border);
-  background: var(--surface-3);
-  color: var(--muted);
+  border-color: rgba(100, 116, 139, 0.42);
+  background: rgba(148, 163, 184, 0.28);
+  color: var(--text);
 }
 
 .monitor-followup-status-btn--success{

@@ -134,7 +134,10 @@ fu as (
     f.form_instance_id,
     count(*) as follow_up_total_count,
     sum(case when f.status = N'OPEN' then 1 else 0 end) as follow_up_open_count,
+    sum(case when f.status = N'PLANNING_NODIG' then 1 else 0 end) as follow_up_planning_needed_count,
     sum(case when f.status = N'WACHTENOPDERDEN' then 1 else 0 end) as follow_up_waiting_count,
+    sum(case when f.status = N'GEPLAND' then 1 else 0 end) as follow_up_planned_count,
+    sum(case when f.status in (N'OPEN', N'PLANNING_NODIG', N'WACHTENOPDERDEN') then 1 else 0 end) as follow_up_actionable_count,
     sum(case when f.status = N'AFGEHANDELD' then 1 else 0 end) as follow_up_done_count,
     sum(case when f.status = N'AFGEWEZEN' then 1 else 0 end) as follow_up_rejected_count,
     sum(case when f.status = N'VERVALLEN' then 1 else 0 end) as follow_up_expired_count,
@@ -148,7 +151,10 @@ filtered as (
     b.*,
     isnull(fu.follow_up_total_count, 0) as follow_up_total_count,
     isnull(fu.follow_up_open_count, 0) as follow_up_open_count,
+    isnull(fu.follow_up_planning_needed_count, 0) as follow_up_planning_needed_count,
     isnull(fu.follow_up_waiting_count, 0) as follow_up_waiting_count,
+    isnull(fu.follow_up_planned_count, 0) as follow_up_planned_count,
+    isnull(fu.follow_up_actionable_count, 0) as follow_up_actionable_count,
     isnull(fu.follow_up_done_count, 0) as follow_up_done_count,
     isnull(fu.follow_up_rejected_count, 0) as follow_up_rejected_count,
     isnull(fu.follow_up_expired_count, 0) as follow_up_expired_count,
@@ -160,7 +166,7 @@ filtered as (
   cross join params p
   where
     p.only_actionable_n = 0
-    or isnull(fu.follow_up_open_count, 0) > 0
+    or isnull(fu.follow_up_actionable_count, 0) > 0
 ),
 numbered as (
   select
@@ -207,7 +213,10 @@ select
   n.latest_child_form_instance_id,
   n.follow_up_total_count,
   n.follow_up_open_count,
+  n.follow_up_planning_needed_count,
   n.follow_up_waiting_count,
+  n.follow_up_planned_count,
+  n.follow_up_actionable_count,
   n.follow_up_done_count,
   n.follow_up_rejected_count,
   n.follow_up_expired_count,

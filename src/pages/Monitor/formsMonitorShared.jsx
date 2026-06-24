@@ -19,7 +19,9 @@ export const DEFAULT_SELECTED_STATUSES = ["INGEDIEND", "IN_BEHANDELING"];
 
 export const FOLLOW_UP_STATUS_ORDER = [
   "OPEN",
+  "PLANNING_NODIG",
   "WACHTENOPDERDEN",
+  "GEPLAND",
   "AFGEHANDELD",
   "AFGEWEZEN",
   "VERVALLEN",
@@ -40,7 +42,9 @@ export function statusLabel(status) {
   if (status === "AFGEHANDELD") return "Definitief";
   if (status === "INGETROKKEN") return "Ingetrokken";
   if (status === "OPEN") return "Open";
+  if (status === "PLANNING_NODIG") return "Planning nodig";
   if (status === "WACHTENOPDERDEN") return "Wachten op derden";
+  if (status === "GEPLAND") return "Gepland";
   if (status === "AFGEWEZEN") return "Afgewezen";
   if (status === "VERVALLEN") return "Vervallen";
   if (status === "INFORMATIEF") return "Informatief";
@@ -54,7 +58,9 @@ export function getStatusTone(status) {
   if (status === "INGETROKKEN") return "muted";
   if (status === "CONCEPT") return "muted";
   if (status === "OPEN") return "active";
+  if (status === "PLANNING_NODIG") return "warning";
   if (status === "WACHTENOPDERDEN") return "warning";
+  if (status === "GEPLAND") return "neutral";
   if (status === "AFGEWEZEN") return "danger";
   if (status === "VERVALLEN") return "muted";
   if (status === "INFORMATIEF") return "neutral";
@@ -206,7 +212,9 @@ export function buildFollowUpStatusCounts(rows) {
   const counts = {
     total: 0,
     OPEN: 0,
+    PLANNING_NODIG: 0,
     WACHTENOPDERDEN: 0,
+    GEPLAND: 0,
     AFGEHANDELD: 0,
     AFGEWEZEN: 0,
     VERVALLEN: 0,
@@ -226,26 +234,32 @@ export function buildFollowUpStatusCounts(rows) {
 
 export function buildMonitorRowActionCounts(row) {
   const open = Number(row?.follow_up_counts?.open_count ?? 0);
+  const planningNeeded = Number(row?.follow_up_counts?.planning_needed_count ?? 0);
   const waiting = Number(row?.follow_up_counts?.waiting_count ?? 0);
+  const planned = Number(row?.follow_up_counts?.planned_count ?? 0);
   const done =
     Number(row?.follow_up_counts?.done_count ?? 0) +
     Number(row?.follow_up_counts?.rejected_count ?? 0) +
     Number(row?.follow_up_counts?.expired_count ?? 0);
 
-  return { open, waiting, done };
+  return { open, planningNeeded, waiting, planned, done };
 }
 
 export function buildMonitorVisibleTotals(rows) {
   const totals = {
     open: 0,
+    planningNeeded: 0,
     waiting: 0,
+    planned: 0,
     done: 0,
   };
 
   for (const row of rows || []) {
     const counts = buildMonitorRowActionCounts(row);
     totals.open += counts.open;
+    totals.planningNeeded += counts.planningNeeded;
     totals.waiting += counts.waiting;
+    totals.planned += counts.planned;
     totals.done += counts.done;
   }
 
@@ -254,8 +268,9 @@ export function buildMonitorVisibleTotals(rows) {
 
 export function getRemainingOpenActionCount(row) {
   const open = Number(row?.follow_up_counts?.open_count ?? row?.follow_up_summary?.open_count ?? 0);
+  const planningNeeded = Number(row?.follow_up_counts?.planning_needed_count ?? 0);
   const waiting = Number(row?.follow_up_counts?.waiting_count ?? 0);
-  return open + waiting;
+  return open + planningNeeded + waiting;
 }
 
 export function matchesNoRemainingOpenActionPoints(row) {
@@ -265,8 +280,12 @@ export function matchesNoRemainingOpenActionPoints(row) {
 
 export function rowHasMonitorActionFilter(row, actionFilterKey) {
   const counts = buildMonitorRowActionCounts(row);
-  if (actionFilterKey === "OPEN") return counts.open > 0;
+  if (actionFilterKey === "OPEN") {
+    return counts.open + counts.planningNeeded + counts.waiting > 0;
+  }
+  if (actionFilterKey === "PLANNING_NODIG") return counts.planningNeeded > 0;
   if (actionFilterKey === "WACHTENOPDERDEN") return counts.waiting > 0;
+  if (actionFilterKey === "GEPLAND") return counts.planned > 0;
   if (actionFilterKey === "DONE") return counts.done > 0;
   return true;
 }

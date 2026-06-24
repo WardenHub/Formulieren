@@ -368,7 +368,9 @@ function renderSummaryBand(model: any) {
 function normalizedStatusLabel(value: any) {
   const token = normalizeToken(value);
   if (token === "OPEN") return "Open";
+  if (token === "PLANNING_NODIG") return "Planning nodig";
   if (token === "WACHTENOPDERDEN") return "Wachten op derden";
+  if (token === "GEPLAND") return "Gepland";
   if (token === "AFGEHANDELD") return "Afgehandeld";
   if (token === "AFGEWEZEN") return "Afgewezen";
   if (token === "VERVALLEN") return "Vervallen";
@@ -392,7 +394,10 @@ function isReportOnly(item: any) {
 
 function isOpenWorkflow(item: any) {
   const status = normalizeToken(item?.status);
-  return isWorkflow(item) && (status === "OPEN" || status === "WACHTENOPDERDEN");
+  return (
+    isWorkflow(item) &&
+    (status === "OPEN" || status === "PLANNING_NODIG" || status === "WACHTENOPDERDEN")
+  );
 }
 
 function isResolvedWorkflow(item: any) {
@@ -400,7 +405,14 @@ function isResolvedWorkflow(item: any) {
   const status = normalizeToken(item?.status);
   const outcome = normalizeToken(item?.resolution_outcome);
 
-  if (status === "OPEN" || status === "WACHTENOPDERDEN") return false;
+  if (
+    status === "OPEN" ||
+    status === "PLANNING_NODIG" ||
+    status === "WACHTENOPDERDEN" ||
+    status === "GEPLAND"
+  ) {
+    return false;
+  }
   if (outcome === "OPGELOST") return true;
 
   return false;

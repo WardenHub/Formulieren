@@ -442,8 +442,10 @@ export const getUserProfileStatsSql = `
 follow_up_stats as (
   select
     count(*) as total_follow_ups,
-    sum(case when status = N'OPEN' then 1 else 0 end) as open_count,
+    sum(case when status in (N'OPEN', N'PLANNING_NODIG', N'WACHTENOPDERDEN') then 1 else 0 end) as open_count,
+    sum(case when status = N'PLANNING_NODIG' then 1 else 0 end) as planning_needed_count,
     sum(case when status = N'WACHTENOPDERDEN' then 1 else 0 end) as waiting_count,
+    sum(case when status = N'GEPLAND' then 1 else 0 end) as planned_count,
     sum(case when status = N'AFGEHANDELD' then 1 else 0 end) as done_count,
     sum(case when status = N'AFGEWEZEN' then 1 else 0 end) as rejected_count,
     sum(case when status = N'VERVALLEN' then 1 else 0 end) as expired_count,
@@ -469,7 +471,9 @@ select
   fs.ingetrokken_count,
   fu.total_follow_ups,
   fu.open_count,
+  fu.planning_needed_count,
   fu.waiting_count,
+  fu.planned_count,
   fu.done_count,
   fu.rejected_count,
   fu.expired_count,
@@ -490,7 +494,7 @@ follow_up_counts as (
   select
     fi.created_by,
     count(*) as total_follow_ups,
-    sum(case when fua.status = N'OPEN' then 1 else 0 end) as open_follow_ups,
+    sum(case when fua.status in (N'OPEN', N'PLANNING_NODIG', N'WACHTENOPDERDEN') then 1 else 0 end) as open_follow_ups,
     sum(case when fua.status = N'AFGEHANDELD' then 1 else 0 end) as done_follow_ups
   from dbo.FormInstance fi
   left join dbo.FormFollowUpAction fua
