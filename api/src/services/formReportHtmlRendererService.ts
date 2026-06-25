@@ -1,3 +1,5 @@
+import fs from "node:fs";
+import path from "node:path";
 import type { Browser } from "playwright";
 import { chromium } from "playwright";
 import { PDFDocument } from "pdf-lib";
@@ -5,6 +7,60 @@ import { PDFDocument } from "pdf-lib";
 import { buildFormReportResult, formatExportDate } from "./formReportExportModelService.js";
 
 let browserPromise: Promise<Browser> | null = null;
+
+function existingPath(value: any) {
+  const candidate = normalizeText(value);
+  if (!candidate) return "";
+  return fs.existsSync(candidate) ? candidate : "";
+}
+
+function resolvePlaywrightExecutablePath() {
+  const explicit =
+    existingPath(process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH) ||
+    existingPath(process.env.PLAYWRIGHT_EXECUTABLE_PATH) ||
+    existingPath(process.env.CHROME_EXECUTABLE_PATH);
+  if (explicit) return explicit;
+
+  const browserRoots = [
+    normalizeText(process.env.PLAYWRIGHT_BROWSERS_PATH),
+    "/home/site/wwwroot/playwright-browsers",
+    path.join(process.cwd(), "playwright-browsers"),
+  ].filter(Boolean);
+
+  for (const root of browserRoots) {
+    const directCandidates = [
+      path.join(root, "chromium", "chrome-linux64", "chrome"),
+      path.join(root, "chromium", "chrome-win", "chrome.exe"),
+      path.join(root, "chromium", "chrome-mac", "Chromium.app", "Contents", "MacOS", "Chromium"),
+    ];
+    for (const candidate of directCandidates) {
+      if (fs.existsSync(candidate)) return candidate;
+    }
+
+    try {
+      const entries = fs
+        .readdirSync(root, { withFileTypes: true })
+        .filter((entry) => entry.isDirectory() && entry.name.startsWith("chromium-"))
+        .sort((a, b) => b.name.localeCompare(a.name));
+
+      for (const entry of entries) {
+        const base = path.join(root, entry.name);
+        const nestedCandidates = [
+          path.join(base, "chrome-linux64", "chrome"),
+          path.join(base, "chrome-win", "chrome.exe"),
+          path.join(base, "chrome-mac", "Chromium.app", "Contents", "MacOS", "Chromium"),
+        ];
+        for (const candidate of nestedCandidates) {
+          if (fs.existsSync(candidate)) return candidate;
+        }
+      }
+    } catch {
+      // ignore lookup failures; launch will fall back to Playwright defaults
+    }
+  }
+
+  return "";
+}
 
 function escapeHtml(value: any) {
   return String(value ?? "")
@@ -3316,7 +3372,18 @@ function renderBodyHtmlDocument(model: any) {
 
 async function getBrowser() {
   if (!browserPromise) {
-    browserPromise = chromium.launch({ headless: true });
+    const executablePath = resolvePlaywrightExecutablePath();
+    const launchOptions: any = {
+      headless: true,
+      args: ["--no-sandbox", "--disable-setuid-sandbox"],
+    };
+    if (executablePath) {
+      launchOptions.executablePath = executablePath;
+    }
+    browserPromise = chromium.launch(launchOptions).catch((error) => {
+      browserPromise = null;
+      throw error;
+    });
   }
   return browserPromise;
 }
