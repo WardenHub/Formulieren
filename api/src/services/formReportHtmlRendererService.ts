@@ -1,13 +1,18 @@
+<<<<<<< HEAD
 import fs from "node:fs";
 import path from "node:path";
+=======
+import path from "node:path";
+
+>>>>>>> 02e2c7e473b7996015c10714cff35e2fb89f9e20
 import type { Browser } from "playwright";
-import { chromium } from "playwright";
 import { PDFDocument } from "pdf-lib";
 
 import { buildFormReportResult, formatExportDate } from "./formReportExportModelService.js";
 
 let browserPromise: Promise<Browser> | null = null;
 
+<<<<<<< HEAD
 function existingPath(value: any) {
   const candidate = normalizeText(value);
   if (!candidate) return "";
@@ -60,6 +65,10 @@ function resolvePlaywrightExecutablePath() {
   }
 
   return "";
+=======
+function getPlaywrightBrowsersPath() {
+  return path.resolve(process.cwd(), "playwright-browsers");
+>>>>>>> 02e2c7e473b7996015c10714cff35e2fb89f9e20
 }
 
 function escapeHtml(value: any) {
@@ -3372,6 +3381,7 @@ function renderBodyHtmlDocument(model: any) {
 
 async function getBrowser() {
   if (!browserPromise) {
+<<<<<<< HEAD
     const executablePath = resolvePlaywrightExecutablePath();
     const launchOptions: any = {
       headless: true,
@@ -3383,6 +3393,25 @@ async function getBrowser() {
     browserPromise = chromium.launch(launchOptions).catch((error) => {
       browserPromise = null;
       throw error;
+=======
+    const launchPromise = (async () => {
+      process.env.PLAYWRIGHT_BROWSERS_PATH = getPlaywrightBrowsersPath();
+
+      const { chromium } = await import("playwright");
+      const executablePath = chromium.executablePath();
+
+      console.log("[form report pdf] launching playwright chromium", {
+        browsersPath: process.env.PLAYWRIGHT_BROWSERS_PATH,
+        executablePath,
+      });
+
+      return chromium.launch({ headless: true });
+    })();
+
+    browserPromise = launchPromise.catch((err) => {
+      browserPromise = null;
+      throw err;
+>>>>>>> 02e2c7e473b7996015c10714cff35e2fb89f9e20
     });
   }
   return browserPromise;
