@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const rootDir = path.resolve(__dirname, "..");
+const playwrightBrowsersPath = path.join(rootDir, "playwright-browsers");
 const tsxCliPath = path.join(rootDir, "node_modules", "tsx", "dist", "cli.mjs");
 const playwrightCliPath = path.join(rootDir, "node_modules", "playwright", "cli.js");
 const typescriptCliPath = path.join(rootDir, "node_modules", "typescript", "bin", "tsc");
@@ -45,7 +46,7 @@ async function ensureApiDependencies() {
 async function ensurePlaywrightChromium() {
   const browserEnv = {
     ...process.env,
-    PLAYWRIGHT_BROWSERS_PATH: "0",
+    PLAYWRIGHT_BROWSERS_PATH: playwrightBrowsersPath,
   };
 
   const { chromium } = await import("playwright");
@@ -89,7 +90,7 @@ const child = spawn(process.execPath, [tsxCliPath, "watch", "src/server.ts"], {
   env: {
     ...process.env,
     NODE_ENV: "development",
-    PLAYWRIGHT_BROWSERS_PATH: "0",
+    PLAYWRIGHT_BROWSERS_PATH: playwrightBrowsersPath,
   },
 });
 

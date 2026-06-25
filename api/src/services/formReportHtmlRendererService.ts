@@ -1,9 +1,15 @@
+import path from "node:path";
+
 import type { Browser } from "playwright";
 import { PDFDocument } from "pdf-lib";
 
 import { buildFormReportResult, formatExportDate } from "./formReportExportModelService.js";
 
 let browserPromise: Promise<Browser> | null = null;
+
+function getPlaywrightBrowsersPath() {
+  return path.resolve(process.cwd(), "playwright-browsers");
+}
 
 function escapeHtml(value: any) {
   return String(value ?? "")
@@ -3316,9 +3322,7 @@ function renderBodyHtmlDocument(model: any) {
 async function getBrowser() {
   if (!browserPromise) {
     const launchPromise = (async () => {
-      if (!process.env.PLAYWRIGHT_BROWSERS_PATH) {
-        process.env.PLAYWRIGHT_BROWSERS_PATH = "0";
-      }
+      process.env.PLAYWRIGHT_BROWSERS_PATH = getPlaywrightBrowsersPath();
 
       const { chromium } = await import("playwright");
       const executablePath = chromium.executablePath();

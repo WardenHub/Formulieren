@@ -35,8 +35,6 @@ jobs:
 
       - name: install playwright chromium
         working-directory: api
-        env:
-          PLAYWRIGHT_BROWSERS_PATH: 0
         run: npm run playwright:install
 
       - name: build (optional)

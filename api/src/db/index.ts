@@ -8,6 +8,7 @@ import sql from "mssql";
 import { DefaultAzureCredential } from "@azure/identity";
 
 let pool: sql.ConnectionPool | undefined;
+let poolPromise: Promise<sql.ConnectionPool> | undefined;
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -58,6 +59,7 @@ async function connectWithRetry(config: any) {
           // ignore
         }
         pool = undefined;
+        poolPromise = undefined;
       });
 
       return pool;
@@ -124,6 +126,7 @@ export async function getDbConnection() {
   if (!database) throw new Error("missing SQL_DATABASE");
 
   if (pool?.connected) return pool;
+  if (poolPromise) return poolPromise;
 
   const isAzure = !!process.env.WEBSITE_INSTANCE_ID;
   const authMode = (process.env.DB_AUTH || "sql").toLowerCase();
@@ -157,15 +160,21 @@ export async function getDbConnection() {
     console.log("[SQL] auth mode: sql login (local)");
   }
 
-  try {
-    // Use retrying connect to survive serverless resume / transient network resets.
-    pool = await connectWithRetry(config);
-    return pool;
-  } catch (e) {
-    // Ensure callers don't get stuck with a bad pool reference
-    pool = undefined;
-    throw e;
-  }
+  poolPromise = (async () => {
+    try {
+      // Use retrying connect to survive serverless resume / transient network resets.
+      pool = await connectWithRetry(config);
+      return pool;
+    } catch (e) {
+      // Ensure callers don't get stuck with a bad pool reference
+      pool = undefined;
+      throw e;
+    } finally {
+      poolPromise = undefined;
+    }
+  })();
+
+  return poolPromise;
 }
 
 function applyParams(req: sql.Request, params?: Record<string, any>) {
@@ -199,4 +208,3 @@ export async function sqlQueryRaw<T = any>(queryText: string, params?: Record<st
   const result = await req.query<T>(queryText);
   return result;
 }
-

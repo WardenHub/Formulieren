@@ -12,9 +12,23 @@ import {
   getActiveUserProfileSignatureSql,
   getUserProfileSql,
 } from "../db/queries/profile.sql.js";
-import { DefaultAzureCredential } from "@azure/identity";
+import {
+  AzureCliCredential,
+  ChainedTokenCredential,
+  ManagedIdentityCredential,
+} from "@azure/identity";
 
-const graphCredential = new DefaultAzureCredential();
+const graphCredential = (() => {
+  const isAzure = Boolean(process.env.WEBSITE_INSTANCE_ID);
+
+  if (isAzure) {
+    return new ManagedIdentityCredential();
+  }
+
+  return new ChainedTokenCredential(
+    new AzureCliCredential()
+  );
+})();
 
 function safeDecodeJwtPayload(token: string | null | undefined) {
   const raw = String(token || "").trim();
@@ -98,7 +112,11 @@ async function tryDownloadMicrosoftUserPhoto(identifier: string | null | undefin
   try {
     token = await graphCredential.getToken("https://graph.microsoft.com/.default");
   } catch (err) {
-    console.error("[profile microsoft photo] graph token acquisition failed", err);
+    console.error("[profile microsoft photo] graph token acquisition failed", {
+      identifier: clean,
+      message: err instanceof Error ? err.message : String(err),
+      credential: getGraphCredentialDebugContext(),
+    });
     return null;
   }
 
