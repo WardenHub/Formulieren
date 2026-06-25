@@ -1,5 +1,4 @@
 import type { Browser } from "playwright";
-import { chromium } from "playwright";
 import { PDFDocument } from "pdf-lib";
 
 import { buildFormReportResult, formatExportDate } from "./formReportExportModelService.js";
@@ -3316,7 +3315,26 @@ function renderBodyHtmlDocument(model: any) {
 
 async function getBrowser() {
   if (!browserPromise) {
-    browserPromise = chromium.launch({ headless: true });
+    const launchPromise = (async () => {
+      if (!process.env.PLAYWRIGHT_BROWSERS_PATH) {
+        process.env.PLAYWRIGHT_BROWSERS_PATH = "0";
+      }
+
+      const { chromium } = await import("playwright");
+      const executablePath = chromium.executablePath();
+
+      console.log("[form report pdf] launching playwright chromium", {
+        browsersPath: process.env.PLAYWRIGHT_BROWSERS_PATH,
+        executablePath,
+      });
+
+      return chromium.launch({ headless: true });
+    })();
+
+    browserPromise = launchPromise.catch((err) => {
+      browserPromise = null;
+      throw err;
+    });
   }
   return browserPromise;
 }
