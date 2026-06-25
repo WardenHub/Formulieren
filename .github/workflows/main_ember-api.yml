@@ -72,6 +72,13 @@ jobs:
           tenant-id: ${{ secrets.AZUREAPPSERVICE_TENANTID_D3D77769A6BA4D048343E3649FDF9157 }}
           subscription-id: ${{ secrets.AZUREAPPSERVICE_SUBSCRIPTIONID_92204967630B4F8DBB48662DA954AF63 }}
 
+      - name: configure azure startup command
+        run: >
+          az webapp config set
+          --resource-group Formulieren-API
+          --name ember-api
+          --startup-file "bash /home/site/wwwroot/scripts/startup-azure.sh"
+
       - name: deploy to azure web app
         uses: azure/webapps-deploy@v3
         with:
