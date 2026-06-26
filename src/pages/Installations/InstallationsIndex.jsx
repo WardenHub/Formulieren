@@ -16,14 +16,43 @@ export default function InstallationsIndex() {
   const [q, setQ] = useState("");
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [showSlowLoadingHint, setShowSlowLoadingHint] = useState(false);
+  const [loadingElapsedSeconds, setLoadingElapsedSeconds] = useState(0);
   const [err, setErr] = useState(null);
   const [onlyCurrent, setOnlyCurrent] = useState(true);
 
   const loaderRef = useRef(null);
+  const loadingStartRef = useRef(0);
 
   useEffect(() => {
     if (loading) loaderRef.current?.startAnimation?.();
     else loaderRef.current?.stopAnimation?.();
+  }, [loading]);
+
+  useEffect(() => {
+    if (!loading) {
+      loadingStartRef.current = 0;
+      setShowSlowLoadingHint(false);
+      setLoadingElapsedSeconds(0);
+      return undefined;
+    }
+
+    loadingStartRef.current = Date.now();
+    setLoadingElapsedSeconds(0);
+    const slowHintTimer = window.setTimeout(() => {
+      setShowSlowLoadingHint(true);
+    }, 5000);
+
+    const elapsedTimer = window.setInterval(() => {
+      const startedAt = loadingStartRef.current;
+      if (!startedAt) return;
+      setLoadingElapsedSeconds(Math.max(0, Math.floor((Date.now() - startedAt) / 1000)));
+    }, 250);
+
+    return () => {
+      window.clearTimeout(slowHintTimer);
+      window.clearInterval(elapsedTimer);
+    };
   }, [loading]);
 
   useEffect(() => {
@@ -97,10 +126,40 @@ export default function InstallationsIndex() {
 
       {err && <p className="doc-error">{err}</p>}
 
-      {loading && (
+      {loading && !showSlowLoadingHint && (
         <div className="inline-status muted">
           <LoaderPinwheelIcon ref={loaderRef} size={18} aria-label="laden" />
           <span>laden</span>
+        </div>
+      )}
+
+      {loading && showSlowLoadingHint && (
+        <div className="ember-loading-card installations-startup-card" aria-live="polite">
+          <div className="ember-loading-card-inner installations-startup-card__inner">
+            <div className="ember-loading-icon installations-startup-card__icon">
+              <LoaderPinwheelIcon ref={loaderRef} size={30} aria-label="api wordt opgestart" />
+            </div>
+
+            <div className="ember-loading-title">Ember start de API op</div>
+
+            <div className="ember-page-subtitle installations-startup-card__copy">
+              Dit duurt soms eenmalig iets langer als de web API even in rust was. Daarna reageert Ember weer op normale snelheid.
+            </div>
+
+            <div className="installations-startup-card__meta">
+              <span className="ember-label ember-label--success">Groene slaapstand actief</span>
+              <span className="ember-label ember-label--muted">
+                {loadingElapsedSeconds}s bezig
+              </span>
+            </div>
+
+            <div className="installations-startup-card__progress" aria-hidden="true">
+              <span
+                className="installations-startup-card__progress-bar"
+                style={{ width: `${Math.min(92, 18 + loadingElapsedSeconds * 6)}%` }}
+              />
+            </div>
+          </div>
         </div>
       )}
 

@@ -32,3 +32,6 @@ api/playwright-browsers/
 *.njsproj
 *.sln
 *.sw?
+
+# Local agent instructions
+AGENTS.md

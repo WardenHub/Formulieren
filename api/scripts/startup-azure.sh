@@ -2,11 +2,21 @@
 set -eu
 
 PLAYWRIGHT_DEPS="libglib2.0-0 libnspr4 libnss3 libdbus-1-3 libatk1.0-0 libatk-bridge2.0-0 libcups2 libdrm2 libxcb1 libxkbcommon0 libatspi2.0-0 libxcomposite1 libxdamage1 libxfixes3 libxrandr2 libgbm1 libasound2"
+APP_ROOT="/home/site/wwwroot"
 
 echo "[startup] ember-api bootstrap"
 
+deps_ready=0
+if command -v ldconfig >/dev/null 2>&1 && ldconfig -p 2>/dev/null | grep -q "libglib-2.0.so.0"; then
+  deps_ready=1
+elif [ -f "/usr/lib/x86_64-linux-gnu/libglib-2.0.so.0" ]; then
+  deps_ready=1
+fi
+
 if [ "${PLAYWRIGHT_SKIP_SYSTEM_DEPS:-0}" = "1" ]; then
   echo "[startup] skipping playwright system dependencies by configuration"
+elif [ "$deps_ready" = "1" ]; then
+  echo "[startup] playwright system dependencies already available"
 else
   if command -v apt-get >/dev/null 2>&1; then
     if [ "$(id -u)" = "0" ]; then
@@ -23,11 +33,6 @@ else
   fi
 fi
 
-if [ -x /opt/startup/startup.sh ]; then
-  echo "[startup] handing off to generated Oryx startup script"
-  exec /opt/startup/startup.sh
-fi
-
-echo "[startup] generated Oryx startup script not found; starting app directly"
-cd /home/site/wwwroot
+echo "[startup] starting Ember API directly"
+cd "$APP_ROOT"
 exec npm start
