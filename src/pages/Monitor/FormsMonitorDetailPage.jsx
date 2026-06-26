@@ -1565,7 +1565,18 @@ export default function FormsMonitorDetailPage() {
       let readyJob = null;
 
       for (let attempt = 0; attempt < 180; attempt += 1) {
-        const currentJob = await getFormsMonitorPdfJob(jobId);
+        let currentJob = null;
+        try {
+          currentJob = await getFormsMonitorPdfJob(jobId);
+        } catch (pollErr) {
+          if (isTransientPdfJobPollError(pollErr) && attempt < 20) {
+            setPdfExportPhase("polling");
+            setPdfExportMessage("Ember wacht op status van de pdf-export.");
+            await sleep(1000);
+            continue;
+          }
+          throw pollErr;
+        }
         const job = currentJob?.job || currentJob;
 
         setPdfExportPhase(String(job?.status || "queued"));
@@ -1704,6 +1715,20 @@ export default function FormsMonitorDetailPage() {
 
   function sleep(ms) {
     return new Promise((resolve) => window.setTimeout(resolve, ms));
+  }
+
+  function isTransientPdfJobPollError(err) {
+    const message = String(err?.message || err || "").toLowerCase();
+    if (!message) return false;
+
+    return (
+      message.includes("lege api-respons") ||
+      message.includes("expected json") ||
+      message.includes("request failed (502)") ||
+      message.includes("request failed (503)") ||
+      message.includes("request failed (504)") ||
+      message.includes("failed to fetch")
+    );
   }
 
   function normalizeRuntimeSnapshot(snapshot) {

@@ -65,18 +65,40 @@ export async function httpJson(path, options = {}) {
     throw new Error("unauthorized");
   }
 
+  if (!res.ok) {
+    const ct = res.headers.get("content-type") || "";
+    if (ct.includes("application/json")) {
+      const data = await res.json().catch(() => null);
+      throw new Error(data?.error || `Request failed (${res.status})`);
+    }
+
+    const text = await res.text().catch(() => "");
+    throw new Error(text || `Request failed (${res.status})`);
+  }
+
+  if (res.status === 204) {
+    return null;
+  }
+
   const ct = res.headers.get("content-type") || "";
+  const text = await res.text();
+
   if (!ct.includes("application/json")) {
-    const text = await res.text();
+    if (!String(text || "").trim()) {
+      throw new Error(`Lege API-respons van ${url}`);
+    }
     throw new Error(`Expected JSON from ${url}, got: ${ct}. First chars: ${text.slice(0, 80)}`);
   }
 
-  if (!res.ok) {
-    const data = await res.json().catch(() => null);
-    throw new Error(data?.error || `Request failed (${res.status})`);
+  if (!String(text || "").trim()) {
+    return null;
   }
 
-  return res.json();
+  try {
+    return JSON.parse(text);
+  } catch {
+    throw new Error(`Ongeldige JSON van ${url}. First chars: ${text.slice(0, 80)}`);
+  }
 }
 
 export async function httpUpload(path, formData, options = {}) {

@@ -37,6 +37,10 @@ jobs:
         working-directory: api
         run: npm run playwright:install
 
+      - name: bundle playwright linux libs
+        working-directory: api
+        run: npm run playwright:bundle-linux-libs
+
       - name: build (optional)
         working-directory: api
         run: npm run build --if-present

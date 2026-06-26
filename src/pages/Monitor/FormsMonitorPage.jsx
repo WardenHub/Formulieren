@@ -2,8 +2,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
-import { getFormsMonitorList } from "../../api/emberApi.js";
-import { getUserDirectory } from "../../api/emberApi.js";
+import { getFormsMonitorList, getRuntimeStatus, getUserDirectory } from "../../api/emberApi.js";
 import UserAvatar from "../../components/UserAvatar.jsx";
 import {
   buildInitials,
@@ -11,6 +10,7 @@ import {
   getDirectoryDisplayName,
   resolveDirectoryAvatarPath,
 } from "../../lib/avatar.js";
+import { LoaderPinwheelIcon } from "@/components/ui/loader-pinwheel";
 
 import { SearchIcon } from "@/components/ui/search";
 import { ArrowBigRightIcon } from "@/components/ui/arrow-big-right";
@@ -245,8 +245,13 @@ export default function FormsMonitorPage() {
   const statusInfoIconRef = useRef(null);
   const statusInfoBtnRef = useRef(null);
   const statusInfoPopupRef = useRef(null);
+  const listLoaderRef = useRef(null);
+  const listLoadingStartRef = useRef(0);
 
   const [listLoading, setListLoading] = useState(true);
+  const [showSlowLoadingHint, setShowSlowLoadingHint] = useState(false);
+  const [listLoadingElapsedSeconds, setListLoadingElapsedSeconds] = useState(0);
+  const [runtimeSnapshot, setRuntimeSnapshot] = useState(null);
   const [error, setError] = useState(null);
   const [infoOpen, setInfoOpen] = useState(false);
   const [infoPopupStyle, setInfoPopupStyle] = useState(null);
@@ -331,9 +336,110 @@ export default function FormsMonitorPage() {
 
   const actorLookup = useMemo(() => buildDirectoryActorLookup(directoryItems), [directoryItems]);
 
+  function sleep(ms) {
+    return new Promise((resolve) => window.setTimeout(resolve, ms));
+  }
+
+  function normalizeRuntimeSnapshot(snapshot) {
+    if (!snapshot || typeof snapshot !== "object") return null;
+    return snapshot;
+  }
+
+  function getRuntimeBadgeLabel(snapshot) {
+    if (!snapshot) return null;
+    return String(snapshot.api_status || snapshot.status || (snapshot.ready ? "healthy" : snapshot.startup_phase) || "starting");
+  }
+
+  function getRuntimeStatusCopy(snapshot) {
+    if (!snapshot) {
+      return "Dit duurt eenmalig langer als de web API in rust was. Daarna reageert Ember weer op normale snelheid.";
+    }
+
+    if (String(snapshot.api_status || "").trim().toLowerCase() === "starting") {
+      return (
+        snapshot.startup_message ||
+        "Dit duurt eenmalig langer als de web API in rust was. Daarna reageert Ember weer op normale snelheid."
+      );
+    }
+
+    if (String(snapshot.api_status || "").trim().toLowerCase() === "degraded") {
+      return "Ember reageert weer; een achtergrondonderdeel is nog niet volledig beschikbaar.";
+    }
+
+    return "De aanvraag wordt geladen.";
+  }
+
+  function isRetryableListLoadError(e) {
+    const message = String(e?.message || e || "").toLowerCase();
+    if (!message) return true;
+    if (message.includes("not found")) return false;
+    if (message.includes("forbidden")) return false;
+    if (message.includes("unauthorized")) return false;
+    if (message.includes("ongeldig")) return false;
+    return true;
+  }
+
   useEffect(() => {
     saveStateToStorage(OVERVIEW_LS_KEY, { filters, autoRefreshEnabled });
   }, [filters, autoRefreshEnabled]);
+
+  useEffect(() => {
+    if (listLoading || showSlowLoadingHint) listLoaderRef.current?.startAnimation?.();
+    else listLoaderRef.current?.stopAnimation?.();
+  }, [listLoading, showSlowLoadingHint]);
+
+  useEffect(() => {
+    if (!listLoading) {
+      listLoadingStartRef.current = 0;
+      setShowSlowLoadingHint(false);
+      setListLoadingElapsedSeconds(0);
+      setRuntimeSnapshot(null);
+      return undefined;
+    }
+
+    listLoadingStartRef.current = Date.now();
+    setListLoadingElapsedSeconds(0);
+
+    const slowHintTimer = window.setTimeout(() => {
+      setShowSlowLoadingHint(true);
+    }, 5000);
+
+    const elapsedTimer = window.setInterval(() => {
+      const startedAt = listLoadingStartRef.current;
+      if (!startedAt) return;
+      setListLoadingElapsedSeconds(Math.max(0, Math.floor((Date.now() - startedAt) / 1000)));
+    }, 250);
+
+    return () => {
+      window.clearTimeout(slowHintTimer);
+      window.clearInterval(elapsedTimer);
+    };
+  }, [listLoading]);
+
+  useEffect(() => {
+    if (!listLoading) return undefined;
+
+    let cancelled = false;
+
+    async function pollRuntimeStatus() {
+      while (!cancelled && listLoading) {
+        try {
+          const snapshot = normalizeRuntimeSnapshot(await getRuntimeStatus());
+          if (!cancelled) setRuntimeSnapshot(snapshot);
+        } catch {
+          if (!cancelled) setRuntimeSnapshot(null);
+        }
+
+        await sleep(2000);
+      }
+    }
+
+    pollRuntimeStatus();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [listLoading]);
 
   useEffect(() => {
     function onDocMouseDown(e) {
@@ -385,27 +491,37 @@ export default function FormsMonitorPage() {
   async function loadList(nextFilters = filters) {
     setListLoading(true);
     setError(null);
+    const maxAttempts = 20;
 
-    try {
-      const res = await getFormsMonitorList({
-        q: nextFilters.q,
-        mine: nextFilters.mine,
-        assignedUserObjectId: nextFilters.assignedUserObjectId,
-        assignedSearch: nextFilters.assignedSearch,
-        unassignedOnly: nextFilters.unassignedOnly,
-        onlyActionable: nextFilters.onlyActionable,
-        includeWithdrawn: true,
-        take: nextFilters.take,
-        skip: nextFilters.skip,
-      });
+    for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+      try {
+        const res = await getFormsMonitorList({
+          q: nextFilters.q,
+          mine: nextFilters.mine,
+          assignedUserObjectId: nextFilters.assignedUserObjectId,
+          assignedSearch: nextFilters.assignedSearch,
+          unassignedOnly: nextFilters.unassignedOnly,
+          onlyActionable: nextFilters.onlyActionable,
+          includeWithdrawn: true,
+          take: nextFilters.take,
+          skip: nextFilters.skip,
+        });
 
-      setItems(Array.isArray(res?.items) ? res.items : []);
-      setViewerUserObjectId(String(res?.meta?.viewer?.user_object_id || "").trim() || null);
-    } catch (e) {
-      setError(e?.message || String(e));
-      setItems([]);
-    } finally {
-      setListLoading(false);
+        setItems(Array.isArray(res?.items) ? res.items : []);
+        setViewerUserObjectId(String(res?.meta?.viewer?.user_object_id || "").trim() || null);
+        setListLoading(false);
+        return;
+      } catch (e) {
+        if (attempt >= maxAttempts || !isRetryableListLoadError(e)) {
+          setError(e?.message || String(e));
+          setItems([]);
+          setListLoading(false);
+          return;
+        }
+
+        setError(null);
+        await sleep(attempt <= 2 ? 1500 : 3000);
+      }
     }
   }
 
@@ -870,7 +986,41 @@ export default function FormsMonitorPage() {
           )}
 
           {listLoading ? (
-            <div className="muted">laden; monitorlijst</div>
+            <div className="ember-loading-card installations-startup-card" aria-live="polite">
+              <div className="ember-loading-card-inner installations-startup-card__inner">
+                <div className="ember-loading-icon installations-startup-card__icon">
+                  <LoaderPinwheelIcon ref={listLoaderRef} size={30} aria-label="api wordt opgestart" />
+                </div>
+
+                <div className="ember-loading-title">
+                  {showSlowLoadingHint || String(runtimeSnapshot?.api_status || "").toLowerCase() === "starting"
+                    ? "Ember start de API op"
+                    : "Monitor wordt geladen"}
+                </div>
+
+                <div className="ember-page-subtitle installations-startup-card__copy">
+                  {showSlowLoadingHint || String(runtimeSnapshot?.api_status || "").toLowerCase() === "starting"
+                    ? getRuntimeStatusCopy(runtimeSnapshot)
+                    : "De monitor wordt geladen."}
+                </div>
+
+                <div className="installations-startup-card__meta">
+                  <span className="ember-label ember-label--muted">
+                    {getRuntimeBadgeLabel(runtimeSnapshot) || "laden"}
+                  </span>
+                  <span className="ember-label ember-label--muted">
+                    {listLoadingElapsedSeconds}s bezig
+                  </span>
+                </div>
+
+                <div className="installations-startup-card__progress" aria-hidden="true">
+                  <span
+                    className="installations-startup-card__progress-bar"
+                    style={{ width: `${Math.min(94, 8 + (listLoadingElapsedSeconds / 30) * 86)}%` }}
+                  />
+                </div>
+              </div>
+            </div>
           ) : visibleItems.length === 0 ? (
             <div className="muted">Geen formulieren gevonden.</div>
           ) : (

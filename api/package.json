@@ -8,7 +8,8 @@
     "build": "node ./node_modules/typescript/bin/tsc",
     "start": "node dist/server.js",
     "playwright:install": "node ./scripts/playwright-install.mjs",
-    "playwright:check": "node ./scripts/playwright-check.mjs"
+    "playwright:check": "node ./scripts/playwright-check.mjs",
+    "playwright:bundle-linux-libs": "bash ./scripts/playwright-bundle-linux-libs.sh"
   },
   "dependencies": {
     "@azure/identity": "^4.13.0",

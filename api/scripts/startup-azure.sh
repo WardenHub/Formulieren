@@ -13,6 +13,11 @@ cd "$APP_ROOT"
 export FORM_REPORT_PREWARM_DISABLED=1
 export PLAYWRIGHT_SKIP_SYSTEM_DEPS=1
 
+if [ -d "$APP_ROOT/playwright-runtime/lib" ]; then
+  export LD_LIBRARY_PATH="$APP_ROOT/playwright-runtime/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+  echo "[startup] using bundled playwright runtime libs"
+fi
+
 echo "[startup] playwright prewarm disabled on Azure startup"
 echo "[startup] starting Ember API directly"
 exec npm start

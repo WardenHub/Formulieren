@@ -63,13 +63,33 @@ if ((process.env.DB_AUTH || "aad") === "sql") {
 }
 
 app.get("/", (req, res) => {
+  const runtime = getRuntimeStatusSnapshot();
+  const status =
+    runtime.api_status === "starting"
+      ? "starting"
+      : runtime.api_status === "degraded"
+        ? "degraded"
+        : "healthy";
+
   console.log(
     "hit /",
     new Date().toISOString(),
     "auth",
     req.headers.authorization ? "yes" : "no"
   );
-  res.json({ ok: true, service: "ember-api", blij: "Jesse" });
+  res.json({
+    ok: runtime.api_status === "healthy",
+    service: "ember-api",
+    api: runtime.api_status === "healthy" ? "ok" : runtime.api_status,
+    status,
+    db: null,
+    runtime: {
+      ready: runtime.ready,
+      startup_phase: runtime.startup_phase,
+      startup_message: runtime.startup_message,
+      renderer_status: runtime.renderer_status,
+    },
+  });
 });
 
 app.get("/health", async (req, res) => {
@@ -80,23 +100,22 @@ app.get("/health", async (req, res) => {
     const status = runtime.api_status === "starting" ? "starting" : runtime.api_status === "degraded" ? "degraded" : "healthy";
 
     return res.json({
+      ok: runtime.api_status === "healthy" && !!pool?.connected,
+      service: "ember-api",
       api: runtime.api_status === "healthy" ? "ok" : runtime.api_status,
       status,
       db: pool?.connected ? 1 : 0,
-      ...(runtime.api_status === "healthy"
-        ? {}
-        : {
-            runtime: {
-              ready: runtime.ready,
-              startup_phase: runtime.startup_phase,
-              startup_message: runtime.startup_message,
-              renderer_status: runtime.renderer_status,
-            },
-          }),
-      Jesse: "Blij 😁",
+      runtime: {
+        ready: runtime.ready,
+        startup_phase: runtime.startup_phase,
+        startup_message: runtime.startup_message,
+        renderer_status: runtime.renderer_status,
+      },
     });
   } catch {
     return res.status(500).json({
+      ok: false,
+      service: "ember-api",
       api: runtime.api_status === "healthy" ? "ok" : runtime.api_status,
       status: "degraded",
       db: "error",
