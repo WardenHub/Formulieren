@@ -1713,8 +1713,7 @@ export default function FormsMonitorDetailPage() {
 
   function getRuntimeBadgeLabel(snapshot) {
     if (!snapshot) return null;
-    if (snapshot.ready) return "healthy";
-    return String(snapshot.api_status || snapshot.status || snapshot.startup_phase || "starting");
+    return String(snapshot.api_status || snapshot.status || (snapshot.ready ? "healthy" : snapshot.startup_phase) || "starting");
   }
 
   function getRuntimeStatusCopy(snapshot) {
@@ -1722,14 +1721,18 @@ export default function FormsMonitorDetailPage() {
       return "Dit duurt eenmalig langer als de web API in rust was. Daarna reageert Ember weer op normale snelheid.";
     }
 
-    if (snapshot.ready) {
-      return "De web API is weer gestart. Ember rondt de aanvraag nu af.";
+    if (String(snapshot.api_status || "").trim().toLowerCase() === "starting") {
+      return (
+        snapshot.startup_message ||
+        "Dit duurt eenmalig langer als de web API in rust was. Daarna reageert Ember weer op normale snelheid."
+      );
     }
 
-    return (
-      snapshot.startup_message ||
-      "Dit duurt eenmalig langer als de web API in rust was. Daarna reageert Ember weer op normale snelheid."
-    );
+    if (String(snapshot.api_status || "").trim().toLowerCase() === "degraded") {
+      return "Ember reageert weer; een achtergrondonderdeel is nog niet volledig beschikbaar.";
+    }
+
+    return "De aanvraag wordt geladen.";
   }
 
   function isRetryableDetailLoadError(e) {

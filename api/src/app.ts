@@ -77,11 +77,13 @@ app.get("/health", async (req, res) => {
 
   try {
     const pool = await getDbConnection();
+    const status = runtime.api_status === "starting" ? "starting" : runtime.api_status === "degraded" ? "degraded" : "healthy";
+
     return res.json({
-      api: runtime.ready ? "ok" : runtime.api_status,
-      status: runtime.ready ? "healthy" : runtime.api_status,
+      api: runtime.api_status === "healthy" ? "ok" : runtime.api_status,
+      status,
       db: pool?.connected ? 1 : 0,
-      ...(runtime.ready
+      ...(runtime.api_status === "healthy"
         ? {}
         : {
             runtime: {
@@ -95,7 +97,7 @@ app.get("/health", async (req, res) => {
     });
   } catch {
     return res.status(500).json({
-      api: runtime.ready ? "ok" : runtime.api_status,
+      api: runtime.api_status === "healthy" ? "ok" : runtime.api_status,
       status: "degraded",
       db: "error",
       runtime: {

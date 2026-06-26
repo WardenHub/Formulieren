@@ -34,30 +34,33 @@ function updateRuntimeState(patch: Partial<RuntimeStatusState>) {
 
 export function markRuntimeServerListening() {
   updateRuntimeState({
-    api_status: "starting",
-    startup_phase: "server_listening",
-    startup_message: "Ember API reageert en laadt exportonderdelen",
+    api_status: "healthy",
+    ready: true,
+    startup_phase: "ready",
+    startup_message: "healthy",
   });
 }
 
 export function markRuntimeRendererWarmUp(source = "startup") {
   updateRuntimeState({
-    api_status: "starting",
     renderer_status: "warming",
-    ready: false,
-    startup_phase: `renderer_warming:${source}`,
-    startup_message: "PDF-engine wordt geladen",
     last_error: null,
+    ...(runtimeState.api_status === "starting"
+      ? {
+          startup_phase: `renderer_warming:${source}`,
+          startup_message: "PDF-engine wordt geladen",
+        }
+      : {}),
   });
 }
 
 export function markRuntimeRendererReady() {
   updateRuntimeState({
-    api_status: "healthy",
     renderer_status: "ready",
     ready: true,
-    startup_phase: "ready",
-    startup_message: "healthy",
+    api_status: runtimeState.api_status === "starting" ? "healthy" : runtimeState.api_status,
+    startup_phase: runtimeState.api_status === "starting" ? "ready" : runtimeState.startup_phase,
+    startup_message: runtimeState.api_status === "starting" ? "healthy" : runtimeState.startup_message,
     last_error: null,
   });
 }
@@ -65,11 +68,14 @@ export function markRuntimeRendererReady() {
 export function markRuntimeRendererFailed(error: unknown) {
   const message = String((error as any)?.message || error || "renderer warm-up failed");
   updateRuntimeState({
-    api_status: "degraded",
     renderer_status: "error",
-    ready: false,
-    startup_phase: "renderer_failed",
-    startup_message: "PDF-engine kon niet worden geladen",
+    ready: runtimeState.api_status !== "starting",
+    api_status: runtimeState.api_status === "starting" ? "degraded" : runtimeState.api_status,
+    startup_phase: runtimeState.api_status === "starting" ? "renderer_failed" : runtimeState.startup_phase,
+    startup_message:
+      runtimeState.api_status === "starting"
+        ? "PDF-engine kon niet worden geladen"
+        : runtimeState.startup_message,
     last_error: message,
   });
 }
