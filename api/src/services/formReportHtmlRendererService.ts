@@ -51,12 +51,35 @@ function existingPath(value: any) {
   return fs.existsSync(candidate) ? candidate : "";
 }
 
+function readPlaywrightExecutablePathFile() {
+  const candidateFiles = [
+    normalizeText(process.env.PLAYWRIGHT_EXECUTABLE_PATH_FILE),
+    "/home/site/wwwroot/playwright-runtime/browser-executable.txt",
+    path.join(process.cwd(), "playwright-runtime", "browser-executable.txt"),
+  ].filter(Boolean);
+
+  for (const candidateFile of candidateFiles) {
+    try {
+      if (!fs.existsSync(candidateFile)) continue;
+      const executablePath = existingPath(fs.readFileSync(candidateFile, "utf8"));
+      if (executablePath) return executablePath;
+    } catch {
+      // ignore read failures; other candidates may still work
+    }
+  }
+
+  return "";
+}
+
 function resolvePlaywrightExecutablePath() {
   const explicit =
     existingPath(process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH) ||
     existingPath(process.env.PLAYWRIGHT_EXECUTABLE_PATH) ||
     existingPath(process.env.CHROME_EXECUTABLE_PATH);
   if (explicit) return explicit;
+
+  const bundledExecutable = readPlaywrightExecutablePathFile();
+  if (bundledExecutable) return bundledExecutable;
 
   return resolvePlaywrightExecutablePathFromRoots([
     normalizeText(process.env.PLAYWRIGHT_BROWSERS_PATH),
@@ -190,6 +213,27 @@ function resolvePlaywrightExecutablePathFromRoots(roots: any[]) {
   }
 
   return "";
+}
+
+function clearBrowserPromise() {
+  browserPromise = null;
+}
+
+function buildPlaywrightLaunchEnv(runtimeLibPath: string) {
+  const env: Record<string, string> = {
+    ...process.env,
+  } as Record<string, string>;
+
+  if (runtimeLibPath) {
+    env.LD_LIBRARY_PATH = `${runtimeLibPath}${process.env.LD_LIBRARY_PATH ? `:${process.env.LD_LIBRARY_PATH}` : ""}`;
+  }
+
+  env.FONTCONFIG_PATH = normalizeText(process.env.FONTCONFIG_PATH) || "/etc/fonts";
+  env.FONTCONFIG_FILE = normalizeText(process.env.FONTCONFIG_FILE) || "/etc/fonts/fonts.conf";
+  env.XDG_CACHE_HOME = normalizeText(process.env.XDG_CACHE_HOME) || "/tmp/.cache";
+  env.HOME = normalizeText(process.env.HOME) || "/home";
+
+  return env;
 }
 
 function escapeHtml(value: any) {
@@ -3537,11 +3581,8 @@ async function getBrowser(reportProgress?: RenderProgressReporter) {
         ],
       };
       const runtimeLibPath = resolvePlaywrightRuntimeLibPath();
+      launchOptions.env = buildPlaywrightLaunchEnv(runtimeLibPath);
       if (runtimeLibPath) {
-        launchOptions.env = {
-          ...process.env,
-          LD_LIBRARY_PATH: `${runtimeLibPath}${process.env.LD_LIBRARY_PATH ? `:${process.env.LD_LIBRARY_PATH}` : ""}`,
-        };
         console.log("[form report pdf] using scoped playwright runtime libs", { runtimeLibPath });
       }
       if (executablePath) {
@@ -3554,13 +3595,29 @@ async function getBrowser(reportProgress?: RenderProgressReporter) {
         PLAYWRIGHT_LAUNCH_TIMEOUT_MS + 5000
       );
       console.log("[form report pdf] playwright chromium launched");
+      browser.on("disconnected", () => {
+        clearBrowserPromise();
+        const err = new Error("Playwright browser disconnected");
+        markRuntimeRendererFailed(err);
+        console.warn("[form report pdf] playwright browser disconnected");
+      });
+      const probePage = await withTimeout(
+        "playwright probe page creation",
+        browser.newPage(),
+        FORM_REPORT_RENDER_STEP_TIMEOUT_MS
+      );
+      await withTimeout(
+        "playwright probe page close",
+        probePage.close(),
+        FORM_REPORT_RENDER_STEP_TIMEOUT_MS
+      );
       markRuntimeRendererReady();
       reportProgress?.("renderer_ready", "PDF-engine is klaar", 18);
       return browser;
     })();
 
     browserPromise = launchPromise.catch((err) => {
-      browserPromise = null;
+      clearBrowserPromise();
       markRuntimeRendererFailed(err);
       throw err;
     });
