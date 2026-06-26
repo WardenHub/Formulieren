@@ -14,7 +14,7 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     permissions:
       contents: read
 
@@ -39,7 +39,18 @@ jobs:
 
       - name: bundle playwright linux libs
         working-directory: api
+        env:
+          PLAYWRIGHT_RUNTIME_MAX_GLIBC: "2.35"
         run: npm run playwright:bundle-linux-libs
+
+      - name: log linux runtime versions
+        working-directory: api
+        run: |
+          ldd --version | head -n 1
+          getconf GNU_LIBC_VERSION || true
+          cat /etc/os-release
+          echo "Playwright runtime manifest:"
+          cat playwright-runtime/manifest.txt
 
       - name: build (optional)
         working-directory: api
@@ -56,7 +67,7 @@ jobs:
           path: api
 
   deploy:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     needs: build
     permissions:
       id-token: write

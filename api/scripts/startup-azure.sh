@@ -17,6 +17,11 @@ if [ -d "$APP_ROOT/playwright-runtime/lib" ]; then
   echo "[startup] bundled playwright runtime libs available"
 fi
 
+if [ -f "$APP_ROOT/playwright-runtime/manifest.txt" ]; then
+  echo "[startup] bundled playwright runtime manifest"
+  cat "$APP_ROOT/playwright-runtime/manifest.txt"
+fi
+
 echo "[startup] playwright prewarm disabled on Azure startup"
 echo "[startup] starting Ember API directly"
 exec node dist/server.js
