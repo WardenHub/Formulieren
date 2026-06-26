@@ -156,6 +156,40 @@ function getCertificateImpactChoiceLabel(value) {
   return "Normale workflow";
 }
 
+function getPdfExportPhaseLabel(phase) {
+  const token = String(phase || "").trim().toLowerCase();
+  if (token === "queued") return "wachtrij";
+  if (token === "polling") return "status ophalen";
+  if (token === "building_model") return "rapportdata";
+  if (token === "warming_renderer") return "pdf-engine";
+  if (token === "renderer_ready") return "engine klaar";
+  if (token === "creating_pages") return "werkbladen";
+  if (token === "rendering_html") return "opmaak";
+  if (token === "rendering_cover") return "voorblad";
+  if (token === "rendering_body") return "pdf-pagina's";
+  if (token === "merging_pdf") return "samenvoegen";
+  if (token === "ready") return "klaar";
+  if (token === "failed") return "mislukt";
+  return token || "bezig";
+}
+
+function getPdfExportFallbackMessage(phase) {
+  const token = String(phase || "").trim().toLowerCase();
+  if (token === "queued") return "Pdf-aanvraag wordt klaargezet.";
+  if (token === "polling") return "Ember wacht op status van de pdf-export.";
+  if (token === "building_model") return "Rapportdata wordt verzameld.";
+  if (token === "warming_renderer") return "Pdf-engine wordt geladen.";
+  if (token === "renderer_ready") return "Pdf-engine is klaar.";
+  if (token === "creating_pages") return "Werkbladen worden voorbereid.";
+  if (token === "rendering_html") return "Rapportopmaak wordt opgebouwd.";
+  if (token === "rendering_cover") return "Voorblad wordt gerenderd.";
+  if (token === "rendering_body") return "Pdf-pagina's worden gerenderd.";
+  if (token === "merging_pdf") return "Pagina's worden samengevoegd.";
+  if (token === "ready") return "Download wordt klaargezet.";
+  if (token === "failed") return "Pdf-export is mislukt.";
+  return "Ember bouwt het rapport op en maakt de download klaar.";
+}
+
 function getFollowUpSourceLabel(row, currentFormInstanceId) {
   const sourceId = row?.source_form_instance_id ?? row?.form_instance_id;
   const relation = String(row?.source_form_relation || "").trim().toLowerCase();
@@ -209,11 +243,12 @@ function ActionFooter({
   finishBusy,
   pdfExporting,
   pdfExportElapsedSeconds,
+  pdfExportPhase,
   onFinish,
   onOpenForm,
   onDownloadPdf,
   footerOpenIconRef,
-  footerPdfLoaderRef,
+  footerPdfButtonLoaderRef,
   footerPdfIconRef,
   footerFinishIconRef,
 }) {
@@ -245,11 +280,13 @@ function ActionFooter({
         }}
       >
         {pdfExporting ? (
-          <LoaderPinwheelIcon ref={footerPdfLoaderRef} size={18} className="nav-anim-icon" aria-label="pdf wordt gemaakt" />
+          <LoaderPinwheelIcon ref={footerPdfButtonLoaderRef} size={18} active={pdfExporting} className="nav-anim-icon" aria-label="pdf wordt gemaakt" />
         ) : (
           <DownloadIcon ref={footerPdfIconRef} size={18} className="nav-anim-icon" />
         )}
-        {pdfExporting ? `PDF bezig${pdfExportElapsedSeconds > 0 ? ` ; ${pdfExportElapsedSeconds}s` : ""}` : "PDF"}
+        {pdfExporting
+          ? `${getPdfExportPhaseLabel(pdfExportPhase || "queued")}${pdfExportElapsedSeconds > 0 ? ` ; ${pdfExportElapsedSeconds}s` : ""}`
+          : "PDF"}
       </button>
 
       {canFinish && (
@@ -1298,7 +1335,8 @@ export default function FormsMonitorDetailPage() {
   const ownerPopupRef = useRef(null);
   const detailLoaderRef = useRef(null);
   const detailLoadingStartRef = useRef(0);
-  const pdfExportLoaderRef = useRef(null);
+  const pdfExportStatusLoaderRef = useRef(null);
+  const pdfExportButtonLoaderRef = useRef(null);
   const pdfExportStartRef = useRef(0);
 
   const noteSaveTimersRef = useRef({});
@@ -1313,7 +1351,7 @@ export default function FormsMonitorDetailPage() {
   const [showSlowPdfExportHint, setShowSlowPdfExportHint] = useState(false);
   const [pdfExportElapsedSeconds, setPdfExportElapsedSeconds] = useState(0);
   const [pdfExportPhase, setPdfExportPhase] = useState("idle");
-  const [pdfExportMessage, setPdfExportMessage] = useState("Ember bouwt het rapport op en maakt de download klaar.");
+  const [pdfExportMessage, setPdfExportMessage] = useState(getPdfExportFallbackMessage("idle"));
   const [followUpsLoading, setFollowUpsLoading] = useState(true);
   const [error, setError] = useState(null);
 
@@ -1371,8 +1409,13 @@ export default function FormsMonitorDetailPage() {
   }, [detailLoading, showSlowLoadingHint]);
 
   useEffect(() => {
-    if (pdfExporting || showSlowPdfExportHint) pdfExportLoaderRef.current?.startAnimation?.();
-    else pdfExportLoaderRef.current?.stopAnimation?.();
+    if (pdfExporting || showSlowPdfExportHint) {
+      pdfExportStatusLoaderRef.current?.startAnimation?.();
+      pdfExportButtonLoaderRef.current?.startAnimation?.();
+    } else {
+      pdfExportStatusLoaderRef.current?.stopAnimation?.();
+      pdfExportButtonLoaderRef.current?.stopAnimation?.();
+    }
   }, [pdfExporting, showSlowPdfExportHint]);
 
   useEffect(() => {
@@ -1434,7 +1477,7 @@ export default function FormsMonitorDetailPage() {
       setShowSlowPdfExportHint(false);
       setPdfExportElapsedSeconds(0);
       setPdfExportPhase("idle");
-      setPdfExportMessage("Ember bouwt het rapport op en maakt de download klaar.");
+      setPdfExportMessage(getPdfExportFallbackMessage("idle"));
       return undefined;
     }
 
@@ -1552,7 +1595,7 @@ export default function FormsMonitorDetailPage() {
     setError(null);
     setPdfExporting(true);
     setPdfExportPhase("queued");
-    setPdfExportMessage("Pdf-aanvraag wordt klaargezet.");
+    setPdfExportMessage(getPdfExportFallbackMessage("queued"));
 
     try {
       const startedJob = await startFormsMonitorPdfJob(item.form_instance_id);
@@ -1571,7 +1614,7 @@ export default function FormsMonitorDetailPage() {
         } catch (pollErr) {
           if (isTransientPdfJobPollError(pollErr) && attempt < 20) {
             setPdfExportPhase("polling");
-            setPdfExportMessage("Ember wacht op status van de pdf-export.");
+            setPdfExportMessage(getPdfExportFallbackMessage("polling"));
             await sleep(1000);
             continue;
           }
@@ -1581,7 +1624,7 @@ export default function FormsMonitorDetailPage() {
 
         setPdfExportPhase(String(job?.status || "queued"));
         setPdfExportMessage(
-          String(job?.message || "Ember bouwt het rapport op en maakt de download klaar.")
+          String(job?.message || getPdfExportFallbackMessage(job?.status || "queued"))
         );
 
         if (String(job?.status || "").toLowerCase() === "ready") {
@@ -2292,7 +2335,7 @@ export default function FormsMonitorDetailPage() {
             <div className="ember-loading-card installations-startup-card" aria-live="polite">
               <div className="ember-loading-card-inner installations-startup-card__inner">
                 <div className="ember-loading-icon installations-startup-card__icon">
-                  <LoaderPinwheelIcon ref={detailLoaderRef} size={30} aria-label="api wordt opgestart" />
+                  <LoaderPinwheelIcon ref={detailLoaderRef} size={30} active={detailLoading || showSlowLoadingHint} aria-label="api wordt opgestart" />
                 </div>
 
                 <div className="ember-loading-title">Ember start de API op</div>
@@ -2320,7 +2363,7 @@ export default function FormsMonitorDetailPage() {
             </div>
           ) : (
             <div className="inline-status muted">
-              <LoaderPinwheelIcon ref={detailLoaderRef} size={18} aria-label="laden" />
+              <LoaderPinwheelIcon ref={detailLoaderRef} size={18} active={detailLoading || showSlowLoadingHint} aria-label="laden" />
               <span>laden</span>
             </div>
           )
@@ -2334,7 +2377,7 @@ export default function FormsMonitorDetailPage() {
                 aria-live="polite"
               >
                 <div className="monitor-pdf-export-status__icon">
-                  <LoaderPinwheelIcon ref={pdfExportLoaderRef} size={22} aria-label="pdf wordt gemaakt" />
+                  <LoaderPinwheelIcon ref={pdfExportStatusLoaderRef} size={22} active={pdfExporting || showSlowPdfExportHint} aria-label="pdf wordt gemaakt" />
                 </div>
 
                 <div className="monitor-pdf-export-status__body">
@@ -2344,7 +2387,7 @@ export default function FormsMonitorDetailPage() {
 
                 <div className="monitor-pdf-export-status__meta">
                   <span className="ember-label ember-label--muted">
-                    {String(pdfExportPhase || "queued")}
+                    {getPdfExportPhaseLabel(pdfExportPhase || "queued")}
                   </span>
                   <span className="ember-label ember-label--muted">{pdfExportElapsedSeconds}s bezig</span>
                 </div>
@@ -2455,11 +2498,13 @@ export default function FormsMonitorDetailPage() {
                       }}
                     >
                       {pdfExporting ? (
-                        <LoaderPinwheelIcon ref={pdfExportLoaderRef} size={18} className="nav-anim-icon" aria-label="pdf wordt gemaakt" />
+                        <LoaderPinwheelIcon ref={pdfExportButtonLoaderRef} size={18} active={pdfExporting || showSlowPdfExportHint} className="nav-anim-icon" aria-label="pdf wordt gemaakt" />
                       ) : (
                         <DownloadIcon ref={pdfIconRef} size={18} className="nav-anim-icon" />
                       )}
-                      {pdfExporting ? `PDF bezig${pdfExportElapsedSeconds > 0 ? ` ; ${pdfExportElapsedSeconds}s` : ""}` : "PDF"}
+                      {pdfExporting
+                        ? `${getPdfExportPhaseLabel(pdfExportPhase || "queued")}${pdfExportElapsedSeconds > 0 ? ` ; ${pdfExportElapsedSeconds}s` : ""}`
+                        : "PDF"}
                     </button>
 
                     {allowedActions.set_afgehandeld && (
@@ -3389,14 +3434,15 @@ export default function FormsMonitorDetailPage() {
                 const url = `/installaties/${encodeURIComponent(item.atrium_installation_code)}/formulieren/${encodeURIComponent(item.form_instance_id)}`;
                 window.open(url, "_blank", "noopener");
               }}
-                onDownloadPdf={handleDownloadPdf}
-                pdfExporting={pdfExporting}
-                pdfExportElapsedSeconds={pdfExportElapsedSeconds}
-                footerOpenIconRef={footerOpenIconRef}
-                footerPdfLoaderRef={pdfExportLoaderRef}
-                footerPdfIconRef={footerPdfIconRef}
-                footerFinishIconRef={footerFinishIconRef}
-              />
+              onDownloadPdf={handleDownloadPdf}
+              pdfExporting={pdfExporting}
+              pdfExportElapsedSeconds={pdfExportElapsedSeconds}
+              pdfExportPhase={pdfExportPhase}
+              footerOpenIconRef={footerOpenIconRef}
+              footerPdfButtonLoaderRef={pdfExportButtonLoaderRef}
+              footerPdfIconRef={footerPdfIconRef}
+              footerFinishIconRef={footerFinishIconRef}
+            />
           </>
         )}
       </div>

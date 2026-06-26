@@ -5,6 +5,7 @@ ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 BROWSERS_DIR="$ROOT_DIR/playwright-browsers"
 RUNTIME_DIR="$ROOT_DIR/playwright-runtime"
 LIB_DIR="$RUNTIME_DIR/lib"
+FONTCONFIG_ROOT="$RUNTIME_DIR/fontconfig"
 MANIFEST_PATH="$RUNTIME_DIR/manifest.txt"
 MAX_GLIBC_VERSION="${PLAYWRIGHT_RUNTIME_MAX_GLIBC:-2.35}"
 
@@ -33,6 +34,7 @@ fi
 
 mkdir -p "$LIB_DIR"
 rm -f "$LIB_DIR"/*
+rm -rf "$FONTCONFIG_ROOT"
 rm -f "$MANIFEST_PATH"
 
 echo "[playwright-runtime] bundling shared libraries for $BROWSER_EXECUTABLE"
@@ -60,32 +62,108 @@ highest_required_glibc_version() {
     | tail -n 1
 }
 
-mapfile -t LIBRARIES < <(
-  ldd "$BROWSER_EXECUTABLE" \
+declare -A SEEN_LIBRARIES=()
+declare -a LIBRARY_QUEUE=("$BROWSER_EXECUTABLE")
+
+enqueue_library() {
+  local candidate="$1"
+  [[ -n "${candidate:-}" ]] || return 0
+  [[ -f "$candidate" ]] || return 0
+  [[ -n "${SEEN_LIBRARIES[$candidate]+x}" ]] && return 0
+  SEEN_LIBRARIES["$candidate"]=1
+  LIBRARY_QUEUE+=("$candidate")
+}
+
+copy_library_if_needed() {
+  local library_path="$1"
+  [[ -f "$library_path" ]] || return 0
+
+  local library_name
+  library_name="$(basename "$library_path")"
+
+  case "$library_name" in
+    libc.so.*|libpthread.so.*|libdl.so.*|librt.so.*|libm.so.*|ld-linux*.so.*|ld-musl*.so.*)
+      echo "[playwright-runtime] skip system loader/core libc library $library_name"
+      return 0
+      ;;
+  esac
+
+  cp -Lf "$library_path" "$LIB_DIR/"
+  enqueue_library "$library_path"
+}
+
+resolve_ldd_libraries() {
+  local file_path="$1"
+  ldd "$file_path" 2>/dev/null \
     | awk '
         $3 ~ /^\// { print $3 }
         $1 ~ /^\// { print $1 }
       ' \
     | sort -u
-)
+}
 
-if [[ "${#LIBRARIES[@]}" -eq 0 ]]; then
+while [[ "${#LIBRARY_QUEUE[@]}" -gt 0 ]]; do
+  current="${LIBRARY_QUEUE[0]}"
+  LIBRARY_QUEUE=("${LIBRARY_QUEUE[@]:1}")
+
+  mapfile -t RESOLVED_LIBRARIES < <(resolve_ldd_libraries "$current")
+  for library_path in "${RESOLVED_LIBRARIES[@]}"; do
+    copy_library_if_needed "$library_path"
+  done
+done
+
+bundle_extra_support_library() {
+  local library_name="$1"
+  local extra_library_path=""
+
+  while IFS= read -r candidate; do
+    extra_library_path="$candidate"
+    break
+  done < <(
+    find /usr/lib /lib -type f -name "$library_name" 2>/dev/null | sort -u
+  )
+
+  if [[ -n "${extra_library_path:-}" ]]; then
+    cp -Lf "$extra_library_path" "$LIB_DIR/"
+    enqueue_library "$extra_library_path"
+  fi
+}
+
+for extra_library_name in \
+  libsoftokn3.so \
+  libfreeblpriv3.so \
+  libnssckbi.so \
+  libnssdbm3.so \
+  libsmime3.so \
+  libssl3.so \
+  libplc4.so \
+  libplds4.so
+do
+  bundle_extra_support_library "$extra_library_name"
+done
+
+while [[ "${#LIBRARY_QUEUE[@]}" -gt 0 ]]; do
+  current="${LIBRARY_QUEUE[0]}"
+  LIBRARY_QUEUE=("${LIBRARY_QUEUE[@]:1}")
+
+  mapfile -t RESOLVED_LIBRARIES < <(resolve_ldd_libraries "$current")
+  for library_path in "${RESOLVED_LIBRARIES[@]}"; do
+    copy_library_if_needed "$library_path"
+  done
+done
+
+if [[ "$(find "$LIB_DIR" -maxdepth 1 -type f | wc -l | tr -d ' ')" -eq 0 ]]; then
   echo "[playwright-runtime] no shared libraries resolved by ldd"
   exit 1
 fi
 
-for library_path in "${LIBRARIES[@]}"; do
-  if [[ -f "$library_path" ]]; then
-    library_name="$(basename "$library_path")"
-    case "$library_name" in
-      libc.so.*|libpthread.so.*|libdl.so.*|librt.so.*|libm.so.*|ld-linux*.so.*|ld-musl*.so.*)
-        echo "[playwright-runtime] skip system loader/core libc library $library_name"
-        continue
-        ;;
-    esac
-    cp -Lf "$library_path" "$LIB_DIR/"
-  fi
-done
+mkdir -p "$FONTCONFIG_ROOT/etc" "$FONTCONFIG_ROOT/usr/share"
+if [[ -d /etc/fonts ]]; then
+  cp -a /etc/fonts "$FONTCONFIG_ROOT/etc/"
+fi
+if [[ -d /usr/share/fontconfig ]]; then
+  cp -a /usr/share/fontconfig "$FONTCONFIG_ROOT/usr/share/"
+fi
 
 HIGHEST_GLIBC="$(highest_required_glibc_version || true)"
 
@@ -96,7 +174,9 @@ HIGHEST_GLIBC="$(highest_required_glibc_version || true)"
   echo "max_allowed_glibc=$MAX_GLIBC_VERSION"
   echo "highest_bundled_required_glibc=${HIGHEST_GLIBC:-none}"
   echo "browser_executable=$BROWSER_EXECUTABLE"
+  echo "browser_executable_relative=${BROWSER_EXECUTABLE#"$ROOT_DIR"/}"
   echo "library_count=$(find "$LIB_DIR" -maxdepth 1 -type f | wc -l | tr -d ' ')"
+  echo "fontconfig_bundled=$([[ -f "$FONTCONFIG_ROOT/etc/fonts/fonts.conf" ]] && echo yes || echo no)"
 } > "$MANIFEST_PATH"
 
 if [[ -n "${HIGHEST_GLIBC:-}" ]] && version_gt "$HIGHEST_GLIBC" "$MAX_GLIBC_VERSION"; then
@@ -106,7 +186,11 @@ if [[ -n "${HIGHEST_GLIBC:-}" ]] && version_gt "$HIGHEST_GLIBC" "$MAX_GLIBC_VERS
   exit 1
 fi
 
-printf '%s\n' "$BROWSER_EXECUTABLE" > "$RUNTIME_DIR/browser-executable.txt"
+if [[ "$BROWSER_EXECUTABLE" == "$ROOT_DIR/"* ]]; then
+  printf '%s\n' "${BROWSER_EXECUTABLE#"$ROOT_DIR"/}" > "$RUNTIME_DIR/browser-executable.txt"
+else
+  printf '%s\n' "$BROWSER_EXECUTABLE" > "$RUNTIME_DIR/browser-executable.txt"
+fi
 date -u +"%Y-%m-%dT%H:%M:%SZ" > "$RUNTIME_DIR/.ready"
 
 echo "[playwright-runtime] bundled $(find "$LIB_DIR" -maxdepth 1 -type f | wc -l | tr -d ' ') libraries"

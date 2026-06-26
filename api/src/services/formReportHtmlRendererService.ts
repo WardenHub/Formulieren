@@ -51,6 +51,53 @@ function existingPath(value: any) {
   return fs.existsSync(candidate) ? candidate : "";
 }
 
+function resolveBundledRuntimeRoot() {
+  const candidates = [
+    normalizeText(process.env.PLAYWRIGHT_RUNTIME_ROOT),
+    "/home/site/wwwroot/playwright-runtime",
+    path.join(process.cwd(), "playwright-runtime"),
+  ].filter(Boolean);
+
+  for (const candidate of candidates) {
+    if (fs.existsSync(candidate)) return candidate;
+  }
+
+  return "";
+}
+
+function remapBundledExecutablePath(value: any) {
+  const candidate = normalizeText(value);
+  if (!candidate) return "";
+
+  const direct = existingPath(candidate);
+  if (direct) return direct;
+
+  const runtimeRoot = resolveBundledRuntimeRoot();
+  const browsersRootCandidates = [
+    normalizeText(process.env.PLAYWRIGHT_BROWSERS_PATH),
+    "/home/site/wwwroot/playwright-browsers",
+    path.join(process.cwd(), "playwright-browsers"),
+  ].filter(Boolean);
+
+  if (runtimeRoot && !path.isAbsolute(candidate)) {
+    const rootedCandidate = existingPath(path.join(process.cwd(), candidate));
+    if (rootedCandidate) return rootedCandidate;
+  }
+
+  const normalizedCandidate = candidate.replace(/\\/g, "/");
+  const marker = "/playwright-browsers/";
+  const markerIndex = normalizedCandidate.indexOf(marker);
+  if (markerIndex >= 0) {
+    const suffix = normalizedCandidate.slice(markerIndex + marker.length);
+    for (const browsersRoot of browsersRootCandidates) {
+      const remapped = existingPath(path.join(browsersRoot, ...suffix.split("/")));
+      if (remapped) return remapped;
+    }
+  }
+
+  return "";
+}
+
 function readPlaywrightExecutablePathFile() {
   const candidateFiles = [
     normalizeText(process.env.PLAYWRIGHT_EXECUTABLE_PATH_FILE),
@@ -61,7 +108,7 @@ function readPlaywrightExecutablePathFile() {
   for (const candidateFile of candidateFiles) {
     try {
       if (!fs.existsSync(candidateFile)) continue;
-      const executablePath = existingPath(fs.readFileSync(candidateFile, "utf8"));
+      const executablePath = remapBundledExecutablePath(fs.readFileSync(candidateFile, "utf8"));
       if (executablePath) return executablePath;
     } catch {
       // ignore read failures; other candidates may still work
@@ -173,14 +220,16 @@ function resolvePlaywrightExecutablePathFromRoots(roots: any[]) {
   const browserRoots = roots.filter(Boolean);
 
   for (const root of browserRoots) {
-    const directCandidates = [
+    const directHeadlessShellCandidates = [
       path.join(root, "chromium_headless_shell", "chrome-headless-shell-linux64", "chrome-headless-shell"),
+    ];
+    const directChromeCandidates = [
       path.join(root, "chromium", "chrome-linux64", "chrome"),
       path.join(root, "chromium", "chrome-win", "chrome.exe"),
       path.join(root, "chromium", "chrome-win64", "chrome.exe"),
       path.join(root, "chromium", "chrome-mac", "Chromium.app", "Contents", "MacOS", "Chromium"),
     ];
-    for (const candidate of directCandidates) {
+    for (const candidate of [...directHeadlessShellCandidates, ...directChromeCandidates]) {
       if (fs.existsSync(candidate)) return candidate;
     }
 
@@ -196,14 +245,16 @@ function resolvePlaywrightExecutablePathFromRoots(roots: any[]) {
 
       for (const entry of entries) {
         const base = path.join(root, entry.name);
-        const nestedCandidates = [
+        const nestedHeadlessShellCandidates = [
           path.join(base, "chrome-headless-shell-linux64", "chrome-headless-shell"),
+        ];
+        const nestedChromeCandidates = [
           path.join(base, "chrome-linux64", "chrome"),
           path.join(base, "chrome-win", "chrome.exe"),
           path.join(base, "chrome-win64", "chrome.exe"),
           path.join(base, "chrome-mac", "Chromium.app", "Contents", "MacOS", "Chromium"),
         ];
-        for (const candidate of nestedCandidates) {
+        for (const candidate of [...nestedHeadlessShellCandidates, ...nestedChromeCandidates]) {
           if (fs.existsSync(candidate)) return candidate;
         }
       }
@@ -219,19 +270,61 @@ function clearBrowserPromise() {
   browserPromise = null;
 }
 
+function resolveBundledFontconfigRoot() {
+  const runtimeRoot = resolveBundledRuntimeRoot();
+  if (!runtimeRoot) return "";
+
+  const candidate = path.join(runtimeRoot, "fontconfig");
+  return fs.existsSync(path.join(candidate, "etc", "fonts", "fonts.conf")) ? candidate : "";
+}
+
+function ensurePlaywrightRuntimeHome() {
+  const baseDir = path.join(
+    process.env.TMPDIR || process.env.TEMP || process.env.TMP || "/tmp",
+    "ember-playwright-home"
+  );
+
+  for (const candidate of [
+    baseDir,
+    path.join(baseDir, ".cache"),
+    path.join(baseDir, ".config"),
+    path.join(baseDir, ".runtime"),
+    path.join(baseDir, ".local"),
+    path.join(baseDir, ".local", "share"),
+    path.join(baseDir, ".local", "share", "pki"),
+    path.join(baseDir, ".local", "share", "pki", "nssdb"),
+  ]) {
+    fs.mkdirSync(candidate, { recursive: true });
+  }
+
+  return baseDir;
+}
+
 function buildPlaywrightLaunchEnv(runtimeLibPath: string) {
   const env: Record<string, string> = {
     ...process.env,
   } as Record<string, string>;
 
+  const runtimeHome = ensurePlaywrightRuntimeHome();
   if (runtimeLibPath) {
     env.LD_LIBRARY_PATH = `${runtimeLibPath}${process.env.LD_LIBRARY_PATH ? `:${process.env.LD_LIBRARY_PATH}` : ""}`;
   }
 
-  env.FONTCONFIG_PATH = normalizeText(process.env.FONTCONFIG_PATH) || "/etc/fonts";
-  env.FONTCONFIG_FILE = normalizeText(process.env.FONTCONFIG_FILE) || "/etc/fonts/fonts.conf";
-  env.XDG_CACHE_HOME = normalizeText(process.env.XDG_CACHE_HOME) || "/tmp/.cache";
-  env.HOME = normalizeText(process.env.HOME) || "/home";
+  const fontconfigRoot = resolveBundledFontconfigRoot();
+  if (fontconfigRoot) {
+    env.FONTCONFIG_SYSROOT = fontconfigRoot;
+    env.FONTCONFIG_PATH = path.join(fontconfigRoot, "etc", "fonts");
+    env.FONTCONFIG_FILE = path.join(fontconfigRoot, "etc", "fonts", "fonts.conf");
+  } else {
+    env.FONTCONFIG_PATH = normalizeText(process.env.FONTCONFIG_PATH) || "/etc/fonts";
+    env.FONTCONFIG_FILE = normalizeText(process.env.FONTCONFIG_FILE) || "/etc/fonts/fonts.conf";
+  }
+
+  env.HOME = runtimeHome;
+  env.XDG_CACHE_HOME = path.join(runtimeHome, ".cache");
+  env.XDG_CONFIG_HOME = path.join(runtimeHome, ".config");
+  env.XDG_RUNTIME_DIR = path.join(runtimeHome, ".runtime");
+  env.XDG_DATA_HOME = path.join(runtimeHome, ".local", "share");
 
   return env;
 }

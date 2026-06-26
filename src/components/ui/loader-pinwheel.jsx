@@ -1,6 +1,6 @@
 "use client";;
 import { motion, useAnimation } from "motion/react";
-import { forwardRef, useCallback, useImperativeHandle, useRef } from "react";
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef } from "react";
 
 import { cn } from "@/lib/utils";
 
@@ -22,9 +22,13 @@ const DEFAULT_TRANSITION = {
   damping: 10,
 };
 
-const LoaderPinwheelIcon = forwardRef(({ onMouseEnter, onMouseLeave, className, size = 28, ...props }, ref) => {
+const LoaderPinwheelIcon = forwardRef(({ onMouseEnter, onMouseLeave, className, size = 28, active = false, ...props }, ref) => {
   const controls = useAnimation();
   const isControlledRef = useRef(false);
+
+  useEffect(() => {
+    controls.start(active ? "animate" : "normal");
+  }, [active, controls]);
 
   useImperativeHandle(ref, () => {
     isControlledRef.current = true;

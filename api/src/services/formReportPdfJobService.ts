@@ -126,7 +126,7 @@ async function runPdfJob(jobId: string, formInstanceId: string, user: any) {
     console.error("[form report pdf] job failed", { jobId, formInstanceId, error: err });
     updateJob(jobId, {
       status: "failed",
-      message: message.includes("timed out") ? message : "PDF export mislukt",
+      message,
       progress: 100,
       error: message,
     });
