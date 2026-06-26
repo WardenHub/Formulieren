@@ -19,4 +19,4 @@ fi
 
 echo "[startup] playwright prewarm disabled on Azure startup"
 echo "[startup] starting Ember API directly"
-exec npm start
+exec node dist/server.js

@@ -72,7 +72,25 @@ function hasUsablePlaywrightBrowserRoot(rootPath: any) {
   return Boolean(resolvePlaywrightExecutablePathFromRoots([root]));
 }
 
+let preparedPlaywrightRuntimeLibPath = "";
+
+function isUnsafePlaywrightRuntimeLibrary(fileName: string) {
+  return [
+    /^libc\.so(\..+)?$/i,
+    /^libpthread\.so(\..+)?$/i,
+    /^libdl\.so(\..+)?$/i,
+    /^librt\.so(\..+)?$/i,
+    /^libm\.so(\..+)?$/i,
+    /^ld-linux.*\.so(\..+)?$/i,
+    /^ld-musl.*\.so(\..+)?$/i,
+  ].some((pattern) => pattern.test(fileName));
+}
+
 function resolvePlaywrightRuntimeLibPath() {
+  if (preparedPlaywrightRuntimeLibPath && fs.existsSync(preparedPlaywrightRuntimeLibPath)) {
+    return preparedPlaywrightRuntimeLibPath;
+  }
+
   const candidates = [
     normalizeText(process.env.PLAYWRIGHT_RUNTIME_LIB_PATH),
     "/home/site/wwwroot/playwright-runtime/lib",
@@ -81,21 +99,48 @@ function resolvePlaywrightRuntimeLibPath() {
 
   for (const candidate of candidates) {
     if (!fs.existsSync(candidate)) continue;
-    const unsafeCoreLibs = [
-      "libc.so.6",
-      "libpthread.so.0",
-      "libdl.so.2",
-      "librt.so.1",
-      "libm.so.6",
-    ];
-    const hasUnsafeCoreLib = unsafeCoreLibs.some((name) => fs.existsSync(path.join(candidate, name)));
-    if (hasUnsafeCoreLib) {
-      console.warn("[form report pdf] ignoring playwright runtime lib path with core glibc libraries", {
-        runtimeLibPath: candidate,
-      });
+
+    const fileNames = fs
+      .readdirSync(candidate, { withFileTypes: true })
+      .filter((entry) => entry.isFile())
+      .map((entry) => entry.name);
+    const safeFileNames = fileNames.filter((fileName) => !isUnsafePlaywrightRuntimeLibrary(fileName));
+    const ignoredFileNames = fileNames.filter((fileName) => isUnsafePlaywrightRuntimeLibrary(fileName));
+
+    if (!safeFileNames.length) {
+      if (ignoredFileNames.length) {
+        console.warn("[form report pdf] playwright runtime lib path only contains ignored core libraries", {
+          runtimeLibPath: candidate,
+          ignoredFiles: ignoredFileNames,
+        });
+      }
       continue;
     }
-    return candidate;
+
+    const sanitizedRuntimeDir = path.join(
+      process.env.TMPDIR || process.env.TEMP || process.env.TMP || "/tmp",
+      "ember-playwright-runtime-libs"
+    );
+    fs.mkdirSync(sanitizedRuntimeDir, { recursive: true });
+
+    for (const existingEntry of fs.readdirSync(sanitizedRuntimeDir, { withFileTypes: true })) {
+      if (!existingEntry.isFile()) continue;
+      fs.rmSync(path.join(sanitizedRuntimeDir, existingEntry.name), { force: true });
+    }
+
+    for (const fileName of safeFileNames) {
+      fs.copyFileSync(path.join(candidate, fileName), path.join(sanitizedRuntimeDir, fileName));
+    }
+
+    if (ignoredFileNames.length) {
+      console.warn("[form report pdf] playwright runtime lib path contained ignored core libraries", {
+        runtimeLibPath: candidate,
+        ignoredFiles: ignoredFileNames,
+      });
+    }
+
+    preparedPlaywrightRuntimeLibPath = sanitizedRuntimeDir;
+    return preparedPlaywrightRuntimeLibPath;
   }
 
   return "";
