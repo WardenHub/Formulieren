@@ -1522,6 +1522,13 @@ html[data-appearance="light"] .type-telefonie{
   flex-wrap: wrap;
 }
 
+.installations-startup-card__eco{
+  padding: 0 8px;
+  color: #b7791f;
+  background: #fff7d6;
+  border-color: #f5d36a;
+}
+
 .installations-startup-card__progress{
   width: 100%;
   height: 10px;

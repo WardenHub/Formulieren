@@ -6,6 +6,8 @@ import { Link } from "react-router-dom";
 import { searchInstallations } from "@/api/emberApi.js";
 import { SearchIcon } from "@/components/ui/search";
 import { LoaderPinwheelIcon } from "@/components/ui/loader-pinwheel";
+import { HourglassIcon } from "@/components/ui/hourglass";
+import { HandCoinsIcon } from "@/components/ui/hand-coins";
 import InstallationTypeTag from "@/components/InstallationTypeTag.jsx";
 import {
   getInstallationStatusClassName,
@@ -137,17 +139,19 @@ export default function InstallationsIndex() {
         <div className="ember-loading-card installations-startup-card" aria-live="polite">
           <div className="ember-loading-card-inner installations-startup-card__inner">
             <div className="ember-loading-icon installations-startup-card__icon">
-              <LoaderPinwheelIcon ref={loaderRef} size={30} aria-label="api wordt opgestart" />
+              <HourglassIcon ref={loaderRef} size={30} aria-label="api wordt opgestart" />
             </div>
 
             <div className="ember-loading-title">Ember start de API op</div>
 
             <div className="ember-page-subtitle installations-startup-card__copy">
-              Dit duurt soms eenmalig iets langer als de web API even in rust was. Daarna reageert Ember weer op normale snelheid.
+              Dit duurt eenmalig langer als de web API in rust was. Daarna reageert Ember weer op normale snelheid.
             </div>
 
             <div className="installations-startup-card__meta">
-              <span className="ember-label ember-label--success">Groene slaapstand actief</span>
+              <span className="ember-label ember-label--warning installations-startup-card__eco">
+                <HandCoinsIcon size={16} aria-hidden="true" />
+              </span>
               <span className="ember-label ember-label--muted">
                 {loadingElapsedSeconds}s bezig
               </span>
@@ -156,7 +160,7 @@ export default function InstallationsIndex() {
             <div className="installations-startup-card__progress" aria-hidden="true">
               <span
                 className="installations-startup-card__progress-bar"
-                style={{ width: `${Math.min(92, 18 + loadingElapsedSeconds * 6)}%` }}
+                style={{ width: `${Math.min(94, 8 + (loadingElapsedSeconds / 30) * 86)}%` }}
               />
             </div>
           </div>

@@ -1,7 +1,7 @@
 #!/bin/sh
 set -eu
 
-PLAYWRIGHT_DEPS="libglib2.0-0 libnspr4 libnss3 libdbus-1-3 libatk1.0-0 libatk-bridge2.0-0 libcups2 libdrm2 libxcb1 libxkbcommon0 libatspi2.0-0 libxcomposite1 libxdamage1 libxfixes3 libxrandr2 libgbm1 libasound2"
+PLAYWRIGHT_DEPS="libglib2.0-0 libnspr4 libnss3 libdbus-1-3 libatk1.0-0 libatk-bridge2.0-0 libcups2 libdrm2 libxcb1 libxkbcommon0 libatspi2.0-0 libxcomposite1 libxdamage1 libxfixes3 libxrandr2 libgbm1 libasound2 libcairo2 libpango-1.0-0 libpangocairo-1.0-0 libgtk-3-0"
 APP_ROOT="/home/site/wwwroot"
 
 echo "[startup] ember-api bootstrap"

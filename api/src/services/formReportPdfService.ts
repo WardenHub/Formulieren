@@ -1657,20 +1657,6 @@ function formReportRendererMode() {
   return "html";
 }
 
-function isHtmlRendererInfrastructureError(err: any) {
-  const message = String(err?.message || err || "").toLowerCase();
-  const logText = Array.isArray(err?.log) ? err.log.join("\n").toLowerCase() : "";
-  const stack = String(err?.stack || "").toLowerCase();
-  const combined = `${message}\n${logText}\n${stack}`;
-  return (
-    combined.includes("error while loading shared libraries") ||
-    combined.includes("libglib-2.0.so.0") ||
-    combined.includes("chrome-headless-shell") ||
-    combined.includes("browsertype.launch") ||
-    combined.includes("target page, context or browser has been closed")
-  );
-}
-
 export async function buildFormReportPdf(formInstanceIdRaw: any, user: any) {
   const mode = formReportRendererMode();
 
@@ -1689,7 +1675,7 @@ export async function buildFormReportPdf(formInstanceIdRaw: any, user: any) {
         throw new Error("HTML PDF renderer does not support this document profile yet");
       }
     } catch (err) {
-      if (mode === "html" && !isHtmlRendererInfrastructureError(err)) {
+      if (mode === "html") {
         throw err;
       }
 
