@@ -72,6 +72,35 @@ function hasUsablePlaywrightBrowserRoot(rootPath: any) {
   return Boolean(resolvePlaywrightExecutablePathFromRoots([root]));
 }
 
+function resolvePlaywrightRuntimeLibPath() {
+  const candidates = [
+    normalizeText(process.env.PLAYWRIGHT_RUNTIME_LIB_PATH),
+    "/home/site/wwwroot/playwright-runtime/lib",
+    path.join(process.cwd(), "playwright-runtime", "lib"),
+  ].filter(Boolean);
+
+  for (const candidate of candidates) {
+    if (!fs.existsSync(candidate)) continue;
+    const unsafeCoreLibs = [
+      "libc.so.6",
+      "libpthread.so.0",
+      "libdl.so.2",
+      "librt.so.1",
+      "libm.so.6",
+    ];
+    const hasUnsafeCoreLib = unsafeCoreLibs.some((name) => fs.existsSync(path.join(candidate, name)));
+    if (hasUnsafeCoreLib) {
+      console.warn("[form report pdf] ignoring playwright runtime lib path with core glibc libraries", {
+        runtimeLibPath: candidate,
+      });
+      continue;
+    }
+    return candidate;
+  }
+
+  return "";
+}
+
 function resolvePlaywrightExecutablePathFromRoots(roots: any[]) {
   const browserRoots = roots.filter(Boolean);
 
@@ -3445,6 +3474,14 @@ async function getBrowser(reportProgress?: RenderProgressReporter) {
         timeout: PLAYWRIGHT_LAUNCH_TIMEOUT_MS,
         args: ["--no-sandbox", "--disable-setuid-sandbox"],
       };
+      const runtimeLibPath = resolvePlaywrightRuntimeLibPath();
+      if (runtimeLibPath) {
+        launchOptions.env = {
+          ...process.env,
+          LD_LIBRARY_PATH: `${runtimeLibPath}${process.env.LD_LIBRARY_PATH ? `:${process.env.LD_LIBRARY_PATH}` : ""}`,
+        };
+        console.log("[form report pdf] using scoped playwright runtime libs", { runtimeLibPath });
+      }
       if (executablePath) {
         launchOptions.executablePath = executablePath;
       }

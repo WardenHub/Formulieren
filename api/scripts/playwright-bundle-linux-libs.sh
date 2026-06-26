@@ -46,6 +46,13 @@ fi
 
 for library_path in "${LIBRARIES[@]}"; do
   if [[ -f "$library_path" ]]; then
+    library_name="$(basename "$library_path")"
+    case "$library_name" in
+      libc.so.*|libpthread.so.*|libdl.so.*|librt.so.*|libm.so.*|ld-linux*.so.*|ld-musl*.so.*)
+        echo "[playwright-runtime] skip system loader/core libc library $library_name"
+        continue
+        ;;
+    esac
     cp -Lf "$library_path" "$LIB_DIR/"
   fi
 done
