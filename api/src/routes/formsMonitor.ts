@@ -10,6 +10,9 @@ import {
   putFormsMonitorFollowUpNote,
   putFormsMonitorFollowUpCertificateImpact,
   downloadFormsMonitorPdf,
+  postFormsMonitorPdfJob,
+  getFormsMonitorPdfJob,
+  downloadFormsMonitorPdfJob,
   putFormsMonitorAssignment,
   putFormsMonitorComplimentPoint,
 } from "../controllers/formsMonitorController.js";
@@ -18,6 +21,9 @@ import { requireRole } from "../middleware/roleMiddleware.js";
 const router = Router();
 
 router.get("/", requireRole("admin", "gebruiker", "documentbeheerder"), getFormsMonitorList);
+router.post("/:formInstanceId/pdf-jobs", requireRole("admin", "gebruiker", "documentbeheerder"), postFormsMonitorPdfJob);
+router.get("/pdf-jobs/:jobId", requireRole("admin", "gebruiker", "documentbeheerder"), getFormsMonitorPdfJob);
+router.get("/pdf-jobs/:jobId/download", requireRole("admin", "gebruiker", "documentbeheerder"), downloadFormsMonitorPdfJob);
 router.get("/:formInstanceId/pdf", requireRole("admin", "gebruiker", "documentbeheerder"), downloadFormsMonitorPdf);
 router.get("/:formInstanceId/follow-ups", requireRole("admin", "gebruiker", "documentbeheerder"), getFormsMonitorFollowUps);
 router.get("/:formInstanceId", requireRole("admin", "gebruiker", "documentbeheerder"), getFormsMonitorDetail);

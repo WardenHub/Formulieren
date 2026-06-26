@@ -2,6 +2,11 @@
 import type { Request, Response } from "express";
 import * as service from "../services/formsMonitorService.js";
 import { buildFormReportPdf } from "../services/formReportPdfService.js";
+import {
+  createFormReportPdfJob,
+  getFormReportPdfJob,
+  getFormReportPdfJobDownload,
+} from "../services/formReportPdfJobService.js";
 
 function isHistoricalReadOnlyMessage(msg: string) {
   return String(msg || "").toLowerCase().includes("historical installation read-only");
@@ -22,8 +27,59 @@ export async function downloadFormsMonitorPdf(req: any, res: any) {
 
     return res.status(200).send(result.buffer);
   } catch (err) {
-    console.error(err);
-    return res.status(500).json({ error: "downloadFormsMonitorPdf failed" });
+    const message = String((err as any)?.message || err || "downloadFormsMonitorPdf failed");
+    console.error("[form report pdf] failed", err);
+    return res.status(500).json({
+      error: message.includes("timed out") ? message : "downloadFormsMonitorPdf failed",
+    });
+  }
+}
+
+export async function postFormsMonitorPdfJob(req: any, res: any) {
+  try {
+    const formInstanceId = String(req.params.formInstanceId || "");
+    const job = createFormReportPdfJob(formInstanceId, req.user);
+    return res.status(202).json(job);
+  } catch (err) {
+    console.error("[form report pdf] could not create job", err);
+    return res.status(500).json({ error: "createFormsMonitorPdfJob failed" });
+  }
+}
+
+export async function getFormsMonitorPdfJob(req: any, res: any) {
+  try {
+    const job = getFormReportPdfJob(String(req.params.jobId || ""));
+    if (!job) {
+      return res.status(404).json({ error: "not found" });
+    }
+    return res.json(job);
+  } catch (err) {
+    console.error("[form report pdf] could not read job", err);
+    return res.status(500).json({ error: "getFormsMonitorPdfJob failed" });
+  }
+}
+
+export async function downloadFormsMonitorPdfJob(req: any, res: any) {
+  try {
+    const result = getFormReportPdfJobDownload(String(req.params.jobId || ""));
+    if ((result as any)?.error === "not found") {
+      return res.status(404).json({ error: "not found" });
+    }
+    if ((result as any)?.error === "not ready") {
+      return res.status(409).json({
+        error: "not ready",
+        job: (result as any).job,
+      });
+    }
+
+    res.setHeader("Content-Type", (result as any).contentType);
+    res.setHeader("Content-Length", String((result as any).contentLength));
+    res.setHeader("Content-Disposition", (result as any).contentDisposition);
+    res.setHeader("Cache-Control", "no-store");
+    return res.status(200).send((result as any).buffer);
+  } catch (err) {
+    console.error("[form report pdf] could not download job result", err);
+    return res.status(500).json({ error: "downloadFormsMonitorPdfJob failed" });
   }
 }
 

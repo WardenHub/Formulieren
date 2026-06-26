@@ -14,6 +14,8 @@ import { downloadUserProfileSignatureBlob } from "./blobStorageService.js";
 import { buildFormReportExportModel } from "./formReportExportModelService.js";
 import { tryBuildHtmlFormReportPdf } from "./formReportHtmlRendererService.js";
 
+type PdfProgressReporter = (phase: string, message: string, progress?: number) => void;
+
 const BRAND_RED = "#ed1c24";
 const DARK = "#222222";
 const MID = "#555555";
@@ -1658,7 +1660,7 @@ function formReportRendererMode() {
   return "html";
 }
 
-export async function buildFormReportPdf(formInstanceIdRaw: any, user: any) {
+export async function buildFormReportPdf(formInstanceIdRaw: any, user: any, reportProgress?: PdfProgressReporter) {
   const mode = formReportRendererMode();
   console.log("[form report pdf] renderer mode", mode);
 
@@ -1667,10 +1669,11 @@ export async function buildFormReportPdf(formInstanceIdRaw: any, user: any) {
   }
 
   {
+    reportProgress?.("building_model", "Rapportdata wordt verzameld", 12);
     const exportModelResult: any = await buildFormReportExportModel(formInstanceIdRaw, user);
     if (exportModelResult?.error === "not found") return exportModelResult;
 
-    const htmlResult: any = await tryBuildHtmlFormReportPdf(exportModelResult.model);
+    const htmlResult: any = await tryBuildHtmlFormReportPdf(exportModelResult.model, reportProgress);
 
     if (!htmlResult?.unsupported) {
       return htmlResult;

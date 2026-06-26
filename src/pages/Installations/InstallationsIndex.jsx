@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 
-import { searchInstallations } from "@/api/emberApi.js";
+import { getRuntimeStatus, searchInstallations } from "@/api/emberApi.js";
 import { SearchIcon } from "@/components/ui/search";
 import { LoaderPinwheelIcon } from "@/components/ui/loader-pinwheel";
 import InstallationTypeTag from "@/components/InstallationTypeTag.jsx";
@@ -18,11 +18,37 @@ export default function InstallationsIndex() {
   const [loading, setLoading] = useState(false);
   const [showSlowLoadingHint, setShowSlowLoadingHint] = useState(false);
   const [loadingElapsedSeconds, setLoadingElapsedSeconds] = useState(0);
+  const [runtimeSnapshot, setRuntimeSnapshot] = useState(null);
   const [err, setErr] = useState(null);
   const [onlyCurrent, setOnlyCurrent] = useState(true);
 
   const loaderRef = useRef(null);
   const loadingStartRef = useRef(0);
+
+  function getRuntimeBadgeLabel(snapshot) {
+    if (!snapshot || typeof snapshot !== "object") return "starting";
+    if (snapshot.ready) return "healthy";
+    return String(snapshot.api_status || snapshot.status || snapshot.startup_phase || "starting");
+  }
+
+  function getRuntimeStatusCopy(snapshot) {
+    if (!snapshot || typeof snapshot !== "object") {
+      return "Dit duurt eenmalig langer als de web API in rust was. Daarna reageert Ember weer op normale snelheid.";
+    }
+
+    if (snapshot.ready) {
+      return "De web API is weer gestart. Ember rondt de aanvraag nu af.";
+    }
+
+    return (
+      snapshot.startup_message ||
+      "Dit duurt eenmalig langer als de web API in rust was. Daarna reageert Ember weer op normale snelheid."
+    );
+  }
+
+  function sleep(ms) {
+    return new Promise((resolve) => window.setTimeout(resolve, ms));
+  }
 
   useEffect(() => {
     if (loading || showSlowLoadingHint) loaderRef.current?.startAnimation?.();
@@ -34,6 +60,7 @@ export default function InstallationsIndex() {
       loadingStartRef.current = 0;
       setShowSlowLoadingHint(false);
       setLoadingElapsedSeconds(0);
+      setRuntimeSnapshot(null);
       return undefined;
     }
 
@@ -54,6 +81,31 @@ export default function InstallationsIndex() {
       window.clearInterval(elapsedTimer);
     };
   }, [loading]);
+
+  useEffect(() => {
+    if (!loading || !showSlowLoadingHint) return undefined;
+
+    let cancelled = false;
+
+    async function pollRuntimeStatus() {
+      while (!cancelled && loading) {
+        try {
+          const snapshot = await getRuntimeStatus();
+          if (!cancelled) setRuntimeSnapshot(snapshot && typeof snapshot === "object" ? snapshot : null);
+        } catch {
+          if (!cancelled) setRuntimeSnapshot(null);
+        }
+
+        await sleep(2000);
+      }
+    }
+
+    pollRuntimeStatus();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [loading, showSlowLoadingHint]);
 
   useEffect(() => {
     let cancelled = false;
@@ -143,10 +195,13 @@ export default function InstallationsIndex() {
             <div className="ember-loading-title">Ember start de API op</div>
 
             <div className="ember-page-subtitle installations-startup-card__copy">
-              Dit duurt eenmalig langer als de web API in rust was. Daarna reageert Ember weer op normale snelheid.
+              {getRuntimeStatusCopy(runtimeSnapshot)}
             </div>
 
             <div className="installations-startup-card__meta">
+              <span className="ember-label ember-label--muted">
+                {getRuntimeBadgeLabel(runtimeSnapshot)}
+              </span>
               <span className="ember-label ember-label--muted">
                 {loadingElapsedSeconds}s bezig
               </span>

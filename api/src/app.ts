@@ -14,6 +14,7 @@ import internalMaintenanceRouter from "./routes/internalMaintenance.js";
 import homeRouter from "./routes/home.js";
 import profileRouter from "./routes/profile.js";
 import * as profileService from "./services/profileService.js";
+import { getRuntimeStatusSnapshot } from "./services/runtimeStatusService.js";
 
 const app = express();
 const RAW_ORIGINS = (process.env.CORS_ORIGINS || "")
@@ -72,16 +73,44 @@ app.get("/", (req, res) => {
 });
 
 app.get("/health", async (req, res) => {
+  const runtime = getRuntimeStatusSnapshot();
+
   try {
     const pool = await getDbConnection();
-    res.json({
-      api: "ok",
+    return res.json({
+      api: runtime.ready ? "ok" : runtime.api_status,
+      status: runtime.ready ? "healthy" : runtime.api_status,
       db: pool?.connected ? 1 : 0,
+      ...(runtime.ready
+        ? {}
+        : {
+            runtime: {
+              ready: runtime.ready,
+              startup_phase: runtime.startup_phase,
+              startup_message: runtime.startup_message,
+              renderer_status: runtime.renderer_status,
+            },
+          }),
       Jesse: "Blij 😁",
     });
   } catch {
-    res.status(500).json({ api: "ok", db: "error" });
+    return res.status(500).json({
+      api: runtime.ready ? "ok" : runtime.api_status,
+      status: "degraded",
+      db: "error",
+      runtime: {
+        ready: runtime.ready,
+        startup_phase: runtime.startup_phase,
+        startup_message: runtime.startup_message,
+        renderer_status: runtime.renderer_status,
+      },
+    });
   }
+});
+
+app.get("/runtime/status", (req, res) => {
+  const runtime = getRuntimeStatusSnapshot();
+  return res.json(runtime);
 });
 
 app.use("/home", homeRouter);

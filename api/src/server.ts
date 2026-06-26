@@ -1,6 +1,8 @@
 // api/src/server.ts
 import "./env.js";
 import app from "./app.js";
+import { warmUpHtmlFormReportRenderer } from "./services/formReportHtmlRendererService.js";
+import { markRuntimeRendererWarmUp, markRuntimeServerListening } from "./services/runtimeStatusService.js";
 
 const port = Number(process.env.PORT) || 8080;
 
@@ -12,4 +14,17 @@ process.on("uncaughtException", (err) => {
   console.error("[uncaughtException]", err);
 });
 
-app.listen(port, () => console.log(`ember-api listening on ${port}`));
+app.listen(port, () => {
+  console.log(`ember-api listening on ${port}`);
+  markRuntimeServerListening();
+
+  if (String(process.env.FORM_REPORT_PREWARM_DISABLED || "").trim() === "1") return;
+
+  const delays = [10000, 45000, 90000];
+  for (const delay of delays) {
+    setTimeout(() => {
+      markRuntimeRendererWarmUp("startup");
+      warmUpHtmlFormReportRenderer();
+    }, delay);
+  }
+});

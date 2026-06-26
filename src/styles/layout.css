@@ -2504,6 +2504,56 @@ html[data-appearance="light"] .type-telefonie{
   position: relative;
 }
 
+.monitor-pdf-export-status{
+  margin-bottom: 14px;
+  padding: 14px 16px;
+  border: 1px solid var(--border-soft);
+  border-radius: 16px;
+  background: var(--card-bg);
+  box-shadow: var(--shadow-soft);
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.monitor-pdf-export-status--slow{
+  border-color: color-mix(in srgb, var(--accent) 24%, var(--border-soft));
+  background: color-mix(in srgb, var(--card-bg) 92%, var(--accent-soft) 8%);
+}
+
+.monitor-pdf-export-status__icon{
+  width: 42px;
+  height: 42px;
+  border-radius: 999px;
+  display: grid;
+  place-items: center;
+  background: color-mix(in srgb, var(--accent-soft) 60%, transparent);
+  color: var(--accent-strong);
+  flex: 0 0 auto;
+}
+
+.monitor-pdf-export-status__body{
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+  flex: 1 1 auto;
+}
+
+.monitor-pdf-export-status__title{
+  font-size: 15px;
+  font-weight: 800;
+  color: var(--text);
+}
+
+.monitor-pdf-export-status__copy{
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.monitor-pdf-export-status__meta{
+  flex: 0 0 auto;
+}
+
 .monitor-detail-popup-menu{
   position: absolute;
   top: calc(100% + 8px);
@@ -4174,6 +4224,17 @@ button.monitor-tag{
   justify-content: flex-end;
   gap: 8px;
   flex-wrap: wrap;
+}
+
+@media (max-width: 900px){
+  .monitor-pdf-export-status{
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .monitor-pdf-export-status__meta{
+    width: 100%;
+  }
 }
 
 .monitor-detail-status-block{

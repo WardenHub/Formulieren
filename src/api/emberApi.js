@@ -692,8 +692,24 @@ export function getUserDirectory() {
   return apiGet("/me/profile/directory");
 }
 
+export function getRuntimeStatus() {
+  return apiGet("/runtime/status");
+}
+
 export function downloadFormsMonitorPdf(formInstanceId) {
   return httpDownload(`/forms-monitor/${encodeURIComponent(formInstanceId)}/pdf`);
+}
+
+export function startFormsMonitorPdfJob(formInstanceId) {
+  return apiPost(`/forms-monitor/${encodeURIComponent(formInstanceId)}/pdf-jobs`, {});
+}
+
+export function getFormsMonitorPdfJob(jobId) {
+  return apiGet(`/forms-monitor/pdf-jobs/${encodeURIComponent(jobId)}`);
+}
+
+export function downloadFormsMonitorPdfJob(jobId) {
+  return httpDownload(`/forms-monitor/pdf-jobs/${encodeURIComponent(jobId)}/download`);
 }
 
 export function getFormsMonitorPdfUrl(formInstanceId) {

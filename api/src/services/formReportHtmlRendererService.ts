@@ -1,11 +1,49 @@
 import fs from "node:fs";
 import path from "node:path";
 import type { Browser } from "playwright";
+import {
+  markRuntimeRendererFailed,
+  markRuntimeRendererReady,
+  markRuntimeRendererWarmUp,
+} from "./runtimeStatusService.js";
 import { PDFDocument } from "pdf-lib";
 
 import { buildFormReportResult, formatExportDate } from "./formReportExportModelService.js";
 
 let browserPromise: Promise<Browser> | null = null;
+
+type RenderProgressReporter = (phase: string, message: string, progress?: number) => void;
+
+function positiveNumber(value: any, fallback: number) {
+  const n = Number(value);
+  return Number.isFinite(n) && n > 0 ? n : fallback;
+}
+
+const PLAYWRIGHT_LAUNCH_TIMEOUT_MS = positiveNumber(
+  process.env.FORM_REPORT_PLAYWRIGHT_LAUNCH_TIMEOUT_MS,
+  30000
+);
+const FORM_REPORT_RENDER_STEP_TIMEOUT_MS = positiveNumber(
+  process.env.FORM_REPORT_RENDER_STEP_TIMEOUT_MS,
+  30000
+);
+
+async function withTimeout<T>(label: string, promise: Promise<T>, ms: number): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | null = null;
+
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<T>((_, reject) => {
+        timer = setTimeout(() => {
+          reject(new Error(`${label} timed out after ${ms}ms`));
+        }, ms);
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
 
 function existingPath(value: any) {
   const candidate = normalizeText(value);
@@ -3382,7 +3420,7 @@ function renderBodyHtmlDocument(model: any) {
   `;
 }
 
-async function getBrowser() {
+async function getBrowser(reportProgress?: RenderProgressReporter) {
   if (!browserPromise) {
     const launchPromise = (async () => {
       const configuredBrowsersPath = normalizeText(process.env.PLAYWRIGHT_BROWSERS_PATH);
@@ -3395,6 +3433,8 @@ async function getBrowser() {
       const executablePath = explicitExecutablePath || chromium.executablePath();
       const activeBrowsersPath = normalizeText(process.env.PLAYWRIGHT_BROWSERS_PATH) || null;
 
+      markRuntimeRendererWarmUp("playwright");
+      reportProgress?.("warming_renderer", "PDF-engine wordt geladen", 8);
       console.log("[form report pdf] launching playwright chromium", {
         browsersPath: activeBrowsersPath,
         executablePath,
@@ -3402,72 +3442,133 @@ async function getBrowser() {
 
       const launchOptions: any = {
         headless: true,
+        timeout: PLAYWRIGHT_LAUNCH_TIMEOUT_MS,
         args: ["--no-sandbox", "--disable-setuid-sandbox"],
       };
       if (executablePath) {
         launchOptions.executablePath = executablePath;
       }
 
-      return chromium.launch(launchOptions);
+      const browser = await withTimeout(
+        "playwright chromium launch",
+        chromium.launch(launchOptions),
+        PLAYWRIGHT_LAUNCH_TIMEOUT_MS + 5000
+      );
+      console.log("[form report pdf] playwright chromium launched");
+      markRuntimeRendererReady();
+      reportProgress?.("renderer_ready", "PDF-engine is klaar", 18);
+      return browser;
     })();
 
     browserPromise = launchPromise.catch((err) => {
       browserPromise = null;
+      markRuntimeRendererFailed(err);
       throw err;
     });
   }
   return browserPromise;
 }
 
-export async function tryBuildHtmlFormReportPdf(model: any): Promise<any> {
-  const browser = await getBrowser();
-  const coverPage = await browser.newPage();
-  const bodyPage = await browser.newPage();
+export function warmUpHtmlFormReportRenderer() {
+  void getBrowser()
+    .then(() => {
+      console.log("[form report pdf] html renderer warm-up ready");
+    })
+    .catch((err) => {
+      console.warn("[form report pdf] html renderer warm-up failed", err);
+    });
+}
+
+export async function tryBuildHtmlFormReportPdf(model: any, reportProgress?: RenderProgressReporter): Promise<any> {
+  const browser = await getBrowser(reportProgress);
+  reportProgress?.("creating_pages", "Werkbladen worden voorbereid", 24);
+  console.log("[form report pdf] creating playwright pages");
+  const coverPage = await withTimeout(
+    "playwright cover page creation",
+    browser.newPage(),
+    FORM_REPORT_RENDER_STEP_TIMEOUT_MS
+  );
+  const bodyPage = await withTimeout(
+    "playwright body page creation",
+    browser.newPage(),
+    FORM_REPORT_RENDER_STEP_TIMEOUT_MS
+  );
+
+  coverPage.setDefaultTimeout(FORM_REPORT_RENDER_STEP_TIMEOUT_MS);
+  coverPage.setDefaultNavigationTimeout(FORM_REPORT_RENDER_STEP_TIMEOUT_MS);
+  bodyPage.setDefaultTimeout(FORM_REPORT_RENDER_STEP_TIMEOUT_MS);
+  bodyPage.setDefaultNavigationTimeout(FORM_REPORT_RENDER_STEP_TIMEOUT_MS);
 
   try {
+    console.log("[form report pdf] rendering html strings");
+    reportProgress?.("rendering_html", "Rapportopmaak wordt opgebouwd", 36);
     const coverHtml = renderHtmlDocument(model);
     const bodyHtml = renderBodyHtmlDocument(model);
-    await coverPage.setContent(coverHtml, { waitUntil: "load" });
-    await bodyPage.setContent(bodyHtml, { waitUntil: "load" });
+    console.log("[form report pdf] setting cover html");
+    await withTimeout(
+      "cover html content",
+      coverPage.setContent(coverHtml, { waitUntil: "domcontentloaded" }),
+      FORM_REPORT_RENDER_STEP_TIMEOUT_MS
+    );
+    console.log("[form report pdf] setting body html");
+    await withTimeout(
+      "body html content",
+      bodyPage.setContent(bodyHtml, { waitUntil: "domcontentloaded" }),
+      FORM_REPORT_RENDER_STEP_TIMEOUT_MS
+    );
 
+    console.log("[form report pdf] rendering cover pdf");
+    reportProgress?.("rendering_cover", "Voorblad wordt gerenderd", 54);
     const coverBuffer = Buffer.from(
-      await coverPage.pdf({
-        format: "A4",
-        printBackground: true,
-        displayHeaderFooter: false,
-        margin: {
-          top: "0mm",
-          right: "0mm",
-          bottom: "0mm",
-          left: "0mm",
-        },
-        pageRanges: "1",
-      })
+      await withTimeout(
+        "cover pdf render",
+        coverPage.pdf({
+          format: "A4",
+          printBackground: true,
+          displayHeaderFooter: false,
+          margin: {
+            top: "0mm",
+            right: "0mm",
+            bottom: "0mm",
+            left: "0mm",
+          },
+          pageRanges: "1",
+        }),
+        FORM_REPORT_RENDER_STEP_TIMEOUT_MS
+      )
     );
 
+    console.log("[form report pdf] rendering body pdf");
+    reportProgress?.("rendering_body", "Pdf-pagina's worden gerenderd", 74);
     const bodyBuffer = Buffer.from(
-      await bodyPage.pdf({
-        format: "A4",
-        printBackground: true,
-        displayHeaderFooter: true,
-        margin: {
-          top: "18mm",
-          right: "12mm",
-          bottom: "16mm",
-          left: "12mm",
-        },
-        headerTemplate: buildPdfHeaderTemplate(model),
-        footerTemplate: `
-          <div style="width:100%;padding:0 12mm;font-size:8pt;color:#52627a;font-family:Calibri,Arial,sans-serif;box-sizing:border-box;">
-            <div style="width:100%;display:flex;justify-content:space-between;align-items:center;">
-              <span>${escapeHtml(footerLeftLabel(model))}</span>
-              <span>Pagina <span class="pageNumber"></span> / <span class="totalPages"></span></span>
+      await withTimeout(
+        "body pdf render",
+        bodyPage.pdf({
+          format: "A4",
+          printBackground: true,
+          displayHeaderFooter: true,
+          margin: {
+            top: "18mm",
+            right: "12mm",
+            bottom: "16mm",
+            left: "12mm",
+          },
+          headerTemplate: buildPdfHeaderTemplate(model),
+          footerTemplate: `
+            <div style="width:100%;padding:0 12mm;font-size:8pt;color:#52627a;font-family:Calibri,Arial,sans-serif;box-sizing:border-box;">
+              <div style="width:100%;display:flex;justify-content:space-between;align-items:center;">
+                <span>${escapeHtml(footerLeftLabel(model))}</span>
+                <span>Pagina <span class="pageNumber"></span> / <span class="totalPages"></span></span>
+              </div>
             </div>
-          </div>
-        `,
-      })
+          `,
+        }),
+        FORM_REPORT_RENDER_STEP_TIMEOUT_MS
+      )
     );
 
+    console.log("[form report pdf] merging pdf pages");
+    reportProgress?.("merging_pdf", "Pagina's worden samengevoegd", 90);
     const mergedPdf = await PDFDocument.create();
     for (const sourceBuffer of [coverBuffer, bodyBuffer]) {
       const sourcePdf = await PDFDocument.load(sourceBuffer);
@@ -3478,6 +3579,8 @@ export async function tryBuildHtmlFormReportPdf(model: any): Promise<any> {
     }
 
     const buffer = Buffer.from(await mergedPdf.save());
+    console.log("[form report pdf] html pdf ready", { bytes: buffer.length });
+    reportProgress?.("ready", "Download wordt klaargezet", 100);
 
     return buildFormReportResult(buffer, model);
   } finally {
