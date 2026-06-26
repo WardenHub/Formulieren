@@ -14,10 +14,14 @@ if [[ "$(uname -s)" != "Linux" ]]; then
 fi
 
 find_browser_executable() {
-  find "$BROWSERS_DIR" \
-    \( -path "*/chrome-linux64/chrome" -o -path "*/chrome-headless-shell-linux64/chrome-headless-shell" \) \
-    -type f \
-    | head -n 1
+  local headless_shell
+  headless_shell="$(find "$BROWSERS_DIR" -path "*/chrome-headless-shell-linux64/chrome-headless-shell" -type f | head -n 1)"
+  if [[ -n "${headless_shell:-}" ]]; then
+    printf '%s\n' "$headless_shell"
+    return
+  fi
+
+  find "$BROWSERS_DIR" -path "*/chrome-linux64/chrome" -type f | head -n 1
 }
 
 BROWSER_EXECUTABLE="$(find_browser_executable || true)"

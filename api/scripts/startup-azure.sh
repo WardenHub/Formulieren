@@ -6,11 +6,8 @@ APP_ROOT="/home/site/wwwroot"
 echo "[startup] ember-api bootstrap"
 cd "$APP_ROOT"
 
-# Azure App Service mag de API-start niet blokkeren met Playwright warm-up.
-# De HTML-export probeert Playwright later expliciet te gebruiken; als de host
-# daarvoor nog niet geschikt is, moet dat een snelle, duidelijke exportfout zijn
-# en geen trage of kapotte API-start.
-export FORM_REPORT_PREWARM_DISABLED=1
+# De API luistert eerst; daarna mag de HTML PDF-engine op de achtergrond warmdraaien.
+# Zo blijft de healthcheck snel, terwijl de eerste echte PDF-export meestal al warm is.
 export PLAYWRIGHT_SKIP_SYSTEM_DEPS=1
 
 if [ -d "$APP_ROOT/playwright-runtime/lib" ]; then
@@ -22,6 +19,5 @@ if [ -f "$APP_ROOT/playwright-runtime/manifest.txt" ]; then
   cat "$APP_ROOT/playwright-runtime/manifest.txt"
 fi
 
-echo "[startup] playwright prewarm disabled on Azure startup"
 echo "[startup] starting Ember API directly"
 exec node dist/server.js

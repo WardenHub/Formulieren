@@ -21,7 +21,7 @@ function positiveNumber(value: any, fallback: number) {
 
 const PLAYWRIGHT_LAUNCH_TIMEOUT_MS = positiveNumber(
   process.env.FORM_REPORT_PLAYWRIGHT_LAUNCH_TIMEOUT_MS,
-  30000
+  12000
 );
 const FORM_REPORT_RENDER_STEP_TIMEOUT_MS = positiveNumber(
   process.env.FORM_REPORT_RENDER_STEP_TIMEOUT_MS,
@@ -151,6 +151,7 @@ function resolvePlaywrightExecutablePathFromRoots(roots: any[]) {
 
   for (const root of browserRoots) {
     const directCandidates = [
+      path.join(root, "chromium_headless_shell", "chrome-headless-shell-linux64", "chrome-headless-shell"),
       path.join(root, "chromium", "chrome-linux64", "chrome"),
       path.join(root, "chromium", "chrome-win", "chrome.exe"),
       path.join(root, "chromium", "chrome-win64", "chrome.exe"),
@@ -163,12 +164,17 @@ function resolvePlaywrightExecutablePathFromRoots(roots: any[]) {
     try {
       const entries = fs
         .readdirSync(root, { withFileTypes: true })
-        .filter((entry) => entry.isDirectory() && entry.name.startsWith("chromium-"))
+        .filter(
+          (entry) =>
+            entry.isDirectory() &&
+            (entry.name.startsWith("chromium_headless_shell-") || entry.name.startsWith("chromium-"))
+        )
         .sort((a, b) => b.name.localeCompare(a.name));
 
       for (const entry of entries) {
         const base = path.join(root, entry.name);
         const nestedCandidates = [
+          path.join(base, "chrome-headless-shell-linux64", "chrome-headless-shell"),
           path.join(base, "chrome-linux64", "chrome"),
           path.join(base, "chrome-win", "chrome.exe"),
           path.join(base, "chrome-win64", "chrome.exe"),
@@ -3517,7 +3523,18 @@ async function getBrowser(reportProgress?: RenderProgressReporter) {
       const launchOptions: any = {
         headless: true,
         timeout: PLAYWRIGHT_LAUNCH_TIMEOUT_MS,
-        args: ["--no-sandbox", "--disable-setuid-sandbox"],
+        dumpio: true,
+        args: [
+          "--no-sandbox",
+          "--disable-setuid-sandbox",
+          "--disable-dev-shm-usage",
+          "--disable-gpu",
+          "--no-zygote",
+          "--disable-extensions",
+          "--disable-background-networking",
+          "--disable-default-apps",
+          "--disable-sync",
+        ],
       };
       const runtimeLibPath = resolvePlaywrightRuntimeLibPath();
       if (runtimeLibPath) {
