@@ -7,12 +7,30 @@ BROWSERS_ROOT="$APP_ROOT/playwright-browsers"
 
 echo "[startup] ember-api bootstrap"
 
-deps_ready=0
-if command -v ldconfig >/dev/null 2>&1 && ldconfig -p 2>/dev/null | grep -q "libglib-2.0.so.0"; then
-  deps_ready=1
-elif [ -f "/usr/lib/x86_64-linux-gnu/libglib-2.0.so.0" ]; then
-  deps_ready=1
-fi
+has_library() {
+  lib_name="$1"
+  if command -v ldconfig >/dev/null 2>&1 && ldconfig -p 2>/dev/null | grep -q "$lib_name"; then
+    return 0
+  fi
+
+  if find /usr/lib /lib -name "$lib_name" -print -quit 2>/dev/null | grep -q .; then
+    return 0
+  fi
+
+  return 1
+}
+
+find_chromium() {
+  find "$BROWSERS_ROOT" -type f \( -path "*/chrome-linux64/chrome" -o -path "*/chrome-linux/chrome" \) -print -quit 2>/dev/null || true
+}
+
+deps_ready=1
+for lib_name in libglib-2.0.so.0 libnss3.so libcairo.so.2 libgtk-3.so.0 libasound.so.2; do
+  if ! has_library "$lib_name"; then
+    deps_ready=0
+    break
+  fi
+done
 
 if [ "${PLAYWRIGHT_SKIP_SYSTEM_DEPS:-0}" = "1" ]; then
   echo "[startup] skipping playwright system dependencies by configuration"
@@ -34,7 +52,7 @@ else
   fi
 fi
 
-if PLAYWRIGHT_BROWSERS_PATH="$BROWSERS_ROOT" npm run playwright:check >/dev/null 2>&1; then
+if [ -n "$(find_chromium)" ]; then
   echo "[startup] playwright chromium already available"
 else
   echo "[startup] installing playwright chromium"

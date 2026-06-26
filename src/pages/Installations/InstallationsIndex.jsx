@@ -6,8 +6,6 @@ import { Link } from "react-router-dom";
 import { searchInstallations } from "@/api/emberApi.js";
 import { SearchIcon } from "@/components/ui/search";
 import { LoaderPinwheelIcon } from "@/components/ui/loader-pinwheel";
-import { HourglassIcon } from "@/components/ui/hourglass";
-import { HandCoinsIcon } from "@/components/ui/hand-coins";
 import InstallationTypeTag from "@/components/InstallationTypeTag.jsx";
 import {
   getInstallationStatusClassName,
@@ -27,9 +25,9 @@ export default function InstallationsIndex() {
   const loadingStartRef = useRef(0);
 
   useEffect(() => {
-    if (loading) loaderRef.current?.startAnimation?.();
+    if (loading || showSlowLoadingHint) loaderRef.current?.startAnimation?.();
     else loaderRef.current?.stopAnimation?.();
-  }, [loading]);
+  }, [loading, showSlowLoadingHint]);
 
   useEffect(() => {
     if (!loading) {
@@ -139,7 +137,7 @@ export default function InstallationsIndex() {
         <div className="ember-loading-card installations-startup-card" aria-live="polite">
           <div className="ember-loading-card-inner installations-startup-card__inner">
             <div className="ember-loading-icon installations-startup-card__icon">
-              <HourglassIcon ref={loaderRef} size={30} aria-label="api wordt opgestart" />
+              <LoaderPinwheelIcon ref={loaderRef} size={30} aria-label="api wordt opgestart" />
             </div>
 
             <div className="ember-loading-title">Ember start de API op</div>
@@ -149,9 +147,6 @@ export default function InstallationsIndex() {
             </div>
 
             <div className="installations-startup-card__meta">
-              <span className="ember-label ember-label--warning installations-startup-card__eco">
-                <HandCoinsIcon size={16} aria-hidden="true" />
-              </span>
               <span className="ember-label ember-label--muted">
                 {loadingElapsedSeconds}s bezig
               </span>

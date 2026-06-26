@@ -42,8 +42,6 @@ import { PartyPopperIcon } from "@/components/ui/party-popper";
 import { GavelIcon } from "@/components/ui/gavel";
 import { MenuIcon } from "@/components/ui/menu";
 import { LoaderPinwheelIcon } from "@/components/ui/loader-pinwheel";
-import { HourglassIcon } from "@/components/ui/hourglass";
-import { HandCoinsIcon } from "@/components/ui/hand-coins";
 import { pushRecentHomeItem } from "../../lib/recentHomeItems.js";
 import Tabs from "../../components/Tabs.jsx";
 import UserAvatar from "../../components/UserAvatar.jsx";
@@ -1343,9 +1341,9 @@ export default function FormsMonitorDetailPage() {
   const [showFinishCelebration, setShowFinishCelebration] = useState(false);
 
   useEffect(() => {
-    if (detailLoading) detailLoaderRef.current?.startAnimation?.();
+    if (detailLoading || showSlowLoadingHint) detailLoaderRef.current?.startAnimation?.();
     else detailLoaderRef.current?.stopAnimation?.();
-  }, [detailLoading]);
+  }, [detailLoading, showSlowLoadingHint]);
 
   useEffect(() => {
     if (!detailLoading) {
@@ -2087,7 +2085,7 @@ export default function FormsMonitorDetailPage() {
             <div className="ember-loading-card installations-startup-card" aria-live="polite">
               <div className="ember-loading-card-inner installations-startup-card__inner">
                 <div className="ember-loading-icon installations-startup-card__icon">
-                  <HourglassIcon ref={detailLoaderRef} size={30} aria-label="api wordt opgestart" />
+                  <LoaderPinwheelIcon ref={detailLoaderRef} size={30} aria-label="api wordt opgestart" />
                 </div>
 
                 <div className="ember-loading-title">Ember start de API op</div>
@@ -2097,9 +2095,6 @@ export default function FormsMonitorDetailPage() {
                 </div>
 
                 <div className="installations-startup-card__meta">
-                  <span className="ember-label ember-label--warning installations-startup-card__eco">
-                    <HandCoinsIcon size={16} aria-hidden="true" />
-                  </span>
                   <span className="ember-label ember-label--muted">
                     {detailLoadingElapsedSeconds}s bezig
                   </span>
