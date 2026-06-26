@@ -44,11 +44,6 @@ async function ensureApiDependencies() {
 }
 
 async function ensurePlaywrightChromium() {
-  const browserEnv = {
-    ...process.env,
-    PLAYWRIGHT_BROWSERS_PATH: playwrightBrowsersPath,
-  };
-
   const { chromium } = await import("playwright");
   const executablePath = chromium.executablePath();
 
@@ -62,7 +57,10 @@ async function ensurePlaywrightChromium() {
     const installer = spawn(process.execPath, [playwrightCliPath, "install", "chromium"], {
       cwd: rootDir,
       stdio: "inherit",
-      env: browserEnv,
+      env: {
+        ...process.env,
+        PLAYWRIGHT_BROWSERS_PATH: playwrightBrowsersPath,
+      },
     });
 
     installer.on("exit", (code, signal) => {
@@ -90,7 +88,6 @@ const child = spawn(process.execPath, [tsxCliPath, "watch", "src/server.ts"], {
   env: {
     ...process.env,
     NODE_ENV: "development",
-    PLAYWRIGHT_BROWSERS_PATH: playwrightBrowsersPath,
   },
 });
 

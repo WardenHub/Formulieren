@@ -41,6 +41,9 @@ import { BadgeAlertIcon } from "@/components/ui/badge-alert";
 import { PartyPopperIcon } from "@/components/ui/party-popper";
 import { GavelIcon } from "@/components/ui/gavel";
 import { MenuIcon } from "@/components/ui/menu";
+import { LoaderPinwheelIcon } from "@/components/ui/loader-pinwheel";
+import { HourglassIcon } from "@/components/ui/hourglass";
+import { HandCoinsIcon } from "@/components/ui/hand-coins";
 import { pushRecentHomeItem } from "../../lib/recentHomeItems.js";
 import Tabs from "../../components/Tabs.jsx";
 import UserAvatar from "../../components/UserAvatar.jsx";
@@ -1278,12 +1281,16 @@ export default function FormsMonitorDetailPage() {
   const actionMenuPopupRef = useRef(null);
   const ownerBtnRef = useRef(null);
   const ownerPopupRef = useRef(null);
+  const detailLoaderRef = useRef(null);
+  const detailLoadingStartRef = useRef(0);
 
   const noteSaveTimersRef = useRef({});
   const copyResetTimersRef = useRef({});
   const successTimerRef = useRef(null);
 
   const [detailLoading, setDetailLoading] = useState(true);
+  const [showSlowLoadingHint, setShowSlowLoadingHint] = useState(false);
+  const [detailLoadingElapsedSeconds, setDetailLoadingElapsedSeconds] = useState(0);
   const [followUpsLoading, setFollowUpsLoading] = useState(true);
   const [error, setError] = useState(null);
 
@@ -1334,6 +1341,38 @@ export default function FormsMonitorDetailPage() {
   const [noteSavedById, setNoteSavedById] = useState({});
   const [copiedById, setCopiedById] = useState({});
   const [showFinishCelebration, setShowFinishCelebration] = useState(false);
+
+  useEffect(() => {
+    if (detailLoading) detailLoaderRef.current?.startAnimation?.();
+    else detailLoaderRef.current?.stopAnimation?.();
+  }, [detailLoading]);
+
+  useEffect(() => {
+    if (!detailLoading) {
+      detailLoadingStartRef.current = 0;
+      setShowSlowLoadingHint(false);
+      setDetailLoadingElapsedSeconds(0);
+      return undefined;
+    }
+
+    detailLoadingStartRef.current = Date.now();
+    setDetailLoadingElapsedSeconds(0);
+
+    const slowHintTimer = window.setTimeout(() => {
+      setShowSlowLoadingHint(true);
+    }, 5000);
+
+    const elapsedTimer = window.setInterval(() => {
+      const startedAt = detailLoadingStartRef.current;
+      if (!startedAt) return;
+      setDetailLoadingElapsedSeconds(Math.max(0, Math.floor((Date.now() - startedAt) / 1000)));
+    }, 250);
+
+    return () => {
+      window.clearTimeout(slowHintTimer);
+      window.clearInterval(elapsedTimer);
+    };
+  }, [detailLoading]);
 
   const allowedActions = detail?.allowed_actions || {};
   const permissions = detail?.permissions || {};
@@ -2044,7 +2083,42 @@ export default function FormsMonitorDetailPage() {
         {!instanceId ? (
           <div className="muted">Geen formulierafhandeling geselecteerd.</div>
         ) : detailLoading ? (
-          <div className="muted">laden; detail</div>
+          showSlowLoadingHint ? (
+            <div className="ember-loading-card installations-startup-card" aria-live="polite">
+              <div className="ember-loading-card-inner installations-startup-card__inner">
+                <div className="ember-loading-icon installations-startup-card__icon">
+                  <HourglassIcon ref={detailLoaderRef} size={30} aria-label="api wordt opgestart" />
+                </div>
+
+                <div className="ember-loading-title">Ember start de API op</div>
+
+                <div className="ember-page-subtitle installations-startup-card__copy">
+                  Dit duurt eenmalig langer als de web API in rust was. Daarna reageert Ember weer op normale snelheid.
+                </div>
+
+                <div className="installations-startup-card__meta">
+                  <span className="ember-label ember-label--warning installations-startup-card__eco">
+                    <HandCoinsIcon size={16} aria-hidden="true" />
+                  </span>
+                  <span className="ember-label ember-label--muted">
+                    {detailLoadingElapsedSeconds}s bezig
+                  </span>
+                </div>
+
+                <div className="installations-startup-card__progress" aria-hidden="true">
+                  <span
+                    className="installations-startup-card__progress-bar"
+                    style={{ width: `${Math.min(94, 8 + (detailLoadingElapsedSeconds / 30) * 86)}%` }}
+                  />
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div className="inline-status muted">
+              <LoaderPinwheelIcon ref={detailLoaderRef} size={18} aria-label="laden" />
+              <span>laden</span>
+            </div>
+          )
         ) : !item ? (
           <div className="muted">Detail niet beschikbaar.</div>
         ) : (

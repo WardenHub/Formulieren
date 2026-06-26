@@ -1660,28 +1660,20 @@ function formReportRendererMode() {
 export async function buildFormReportPdf(formInstanceIdRaw: any, user: any) {
   const mode = formReportRendererMode();
 
-  if (mode !== "legacy") {
+  if (mode === "legacy") {
+    return buildLegacyFormReportPdf(formInstanceIdRaw, user);
+  }
+
+  {
     const exportModelResult: any = await buildFormReportExportModel(formInstanceIdRaw, user);
     if (exportModelResult?.error === "not found") return exportModelResult;
 
-    try {
-      const htmlResult: any = await tryBuildHtmlFormReportPdf(exportModelResult.model);
+    const htmlResult: any = await tryBuildHtmlFormReportPdf(exportModelResult.model);
 
-      if (!htmlResult?.unsupported) {
-        return htmlResult;
-      }
-
-      if (mode === "html") {
-        throw new Error("HTML PDF renderer does not support this document profile yet");
-      }
-    } catch (err) {
-      if (mode === "html") {
-        throw err;
-      }
-
-      console.warn("[form report pdf] html renderer failed; falling back to legacy pdfmake renderer", err);
+    if (!htmlResult?.unsupported) {
+      return htmlResult;
     }
-  }
 
-  return buildLegacyFormReportPdf(formInstanceIdRaw, user);
+    throw new Error("HTML PDF renderer does not support this document profile yet");
+  }
 }

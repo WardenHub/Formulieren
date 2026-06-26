@@ -20,16 +20,28 @@ function resolvePlaywrightExecutablePath() {
     existingPath(process.env.CHROME_EXECUTABLE_PATH);
   if (explicit) return explicit;
 
-  const browserRoots = [
+  return resolvePlaywrightExecutablePathFromRoots([
     normalizeText(process.env.PLAYWRIGHT_BROWSERS_PATH),
     "/home/site/wwwroot/playwright-browsers",
     path.join(process.cwd(), "playwright-browsers"),
-  ].filter(Boolean);
+  ]);
+}
+
+function hasUsablePlaywrightBrowserRoot(rootPath: any) {
+  const root = normalizeText(rootPath);
+  if (!root) return false;
+  if (!fs.existsSync(root)) return false;
+  return Boolean(resolvePlaywrightExecutablePathFromRoots([root]));
+}
+
+function resolvePlaywrightExecutablePathFromRoots(roots: any[]) {
+  const browserRoots = roots.filter(Boolean);
 
   for (const root of browserRoots) {
     const directCandidates = [
       path.join(root, "chromium", "chrome-linux64", "chrome"),
       path.join(root, "chromium", "chrome-win", "chrome.exe"),
+      path.join(root, "chromium", "chrome-win64", "chrome.exe"),
       path.join(root, "chromium", "chrome-mac", "Chromium.app", "Contents", "MacOS", "Chromium"),
     ];
     for (const candidate of directCandidates) {
@@ -47,6 +59,7 @@ function resolvePlaywrightExecutablePath() {
         const nestedCandidates = [
           path.join(base, "chrome-linux64", "chrome"),
           path.join(base, "chrome-win", "chrome.exe"),
+          path.join(base, "chrome-win64", "chrome.exe"),
           path.join(base, "chrome-mac", "Chromium.app", "Contents", "MacOS", "Chromium"),
         ];
         for (const candidate of nestedCandidates) {
@@ -3372,15 +3385,18 @@ function renderBodyHtmlDocument(model: any) {
 async function getBrowser() {
   if (!browserPromise) {
     const launchPromise = (async () => {
-      const { chromium } = await import("playwright");
-      if (!normalizeText(process.env.PLAYWRIGHT_BROWSERS_PATH)) {
-        process.env.PLAYWRIGHT_BROWSERS_PATH = path.resolve(process.cwd(), "playwright-browsers");
+      const configuredBrowsersPath = normalizeText(process.env.PLAYWRIGHT_BROWSERS_PATH);
+      if (configuredBrowsersPath && !hasUsablePlaywrightBrowserRoot(configuredBrowsersPath)) {
+        delete process.env.PLAYWRIGHT_BROWSERS_PATH;
       }
 
-      const executablePath = resolvePlaywrightExecutablePath() || chromium.executablePath();
+      const explicitExecutablePath = resolvePlaywrightExecutablePath();
+      const { chromium } = await import("playwright");
+      const executablePath = explicitExecutablePath || chromium.executablePath();
+      const activeBrowsersPath = normalizeText(process.env.PLAYWRIGHT_BROWSERS_PATH) || null;
 
       console.log("[form report pdf] launching playwright chromium", {
-        browsersPath: process.env.PLAYWRIGHT_BROWSERS_PATH,
+        browsersPath: activeBrowsersPath,
         executablePath,
       });
 
