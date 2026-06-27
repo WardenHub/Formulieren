@@ -1643,7 +1643,27 @@ export default function FormsMonitorDetailPage() {
         throw new Error("Pdf-export duurt langer dan verwacht.");
       }
 
-      const result = await downloadFormsMonitorPdfJob(jobId);
+      let result = null;
+
+      for (let attempt = 0; attempt < 10; attempt += 1) {
+        try {
+          result = await downloadFormsMonitorPdfJob(jobId);
+          break;
+        } catch (downloadErr) {
+          if (isTransientPdfJobDownloadError(downloadErr) && attempt < 9) {
+            setPdfExportPhase("ready");
+            setPdfExportMessage("Pdf staat bijna klaar voor download.");
+            await sleep(500);
+            continue;
+          }
+          throw downloadErr;
+        }
+      }
+
+      if (!result) {
+        throw new Error("Pdf-download kon niet worden afgerond.");
+      }
+
       triggerBrowserDownload(
         result.blob,
         result.fileName ||
@@ -1771,6 +1791,17 @@ export default function FormsMonitorDetailPage() {
       message.includes("request failed (503)") ||
       message.includes("request failed (504)") ||
       message.includes("failed to fetch")
+    );
+  }
+
+  function isTransientPdfJobDownloadError(err) {
+    const message = String(err?.message || err || "").toLowerCase();
+    if (!message) return false;
+
+    return (
+      message.includes("not ready") ||
+      message.includes("request failed (409)") ||
+      isTransientPdfJobPollError(err)
     );
   }
 

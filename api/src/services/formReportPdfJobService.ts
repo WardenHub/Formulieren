@@ -93,8 +93,9 @@ function updateJob(jobId: string, patch: Partial<PdfJobRecord>) {
 async function runPdfJob(jobId: string, formInstanceId: string, user: any) {
   try {
     const result: any = await buildFormReportPdf(formInstanceId, user, (phase, message, progress) => {
+      const normalizedPhase = String(phase || "").trim().toLowerCase();
       updateJob(jobId, {
-        status: phase === "ready" ? "ready" : (phase as PdfJobStatus),
+        status: normalizedPhase === "ready" ? "merging_pdf" : (phase as PdfJobStatus),
         message,
         progress: Number.isFinite(Number(progress)) ? Number(progress) : 0,
       });
