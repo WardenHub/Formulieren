@@ -157,12 +157,18 @@ if [[ "$(find "$LIB_DIR" -maxdepth 1 -type f | wc -l | tr -d ' ')" -eq 0 ]]; the
   exit 1
 fi
 
-mkdir -p "$FONTCONFIG_ROOT/etc" "$FONTCONFIG_ROOT/usr/share"
+mkdir -p "$FONTCONFIG_ROOT/etc" "$FONTCONFIG_ROOT/usr/share" "$FONTCONFIG_ROOT/usr/local/share"
 if [[ -d /etc/fonts ]]; then
   cp -a /etc/fonts "$FONTCONFIG_ROOT/etc/"
 fi
 if [[ -d /usr/share/fontconfig ]]; then
   cp -a /usr/share/fontconfig "$FONTCONFIG_ROOT/usr/share/"
+fi
+if [[ -d /usr/share/fonts ]]; then
+  cp -a /usr/share/fonts "$FONTCONFIG_ROOT/usr/share/"
+fi
+if [[ -d /usr/local/share/fonts ]]; then
+  cp -a /usr/local/share/fonts "$FONTCONFIG_ROOT/usr/local/share/"
 fi
 
 HIGHEST_GLIBC="$(highest_required_glibc_version || true)"
@@ -177,6 +183,7 @@ HIGHEST_GLIBC="$(highest_required_glibc_version || true)"
   echo "browser_executable_relative=${BROWSER_EXECUTABLE#"$ROOT_DIR"/}"
   echo "library_count=$(find "$LIB_DIR" -maxdepth 1 -type f | wc -l | tr -d ' ')"
   echo "fontconfig_bundled=$([[ -f "$FONTCONFIG_ROOT/etc/fonts/fonts.conf" ]] && echo yes || echo no)"
+  echo "font_file_count=$(find "$FONTCONFIG_ROOT" -path '*/fonts/*' -type f | wc -l | tr -d ' ')"
 } > "$MANIFEST_PATH"
 
 if [[ -n "${HIGHEST_GLIBC:-}" ]] && version_gt "$HIGHEST_GLIBC" "$MAX_GLIBC_VERSION"; then

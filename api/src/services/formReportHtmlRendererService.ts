@@ -3718,6 +3718,20 @@ async function getBrowser(reportProgress?: RenderProgressReporter) {
   return browserPromise;
 }
 
+async function waitForDocumentFonts(page: any, label: string) {
+  await withTimeout(
+    `${label} fonts ready`,
+    page.evaluate(async () => {
+      const maybeFonts = (document as any).fonts;
+      if (maybeFonts?.ready) {
+        await maybeFonts.ready;
+      }
+      await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    }),
+    FORM_REPORT_RENDER_STEP_TIMEOUT_MS
+  );
+}
+
 export function warmUpHtmlFormReportRenderer() {
   void getBrowser()
     .then(() => {
@@ -3759,12 +3773,14 @@ export async function tryBuildHtmlFormReportPdf(model: any, reportProgress?: Ren
       coverPage.setContent(coverHtml, { waitUntil: "domcontentloaded" }),
       FORM_REPORT_RENDER_STEP_TIMEOUT_MS
     );
+    await waitForDocumentFonts(coverPage, "cover");
     console.log("[form report pdf] setting body html");
     await withTimeout(
       "body html content",
       bodyPage.setContent(bodyHtml, { waitUntil: "domcontentloaded" }),
       FORM_REPORT_RENDER_STEP_TIMEOUT_MS
     );
+    await waitForDocumentFonts(bodyPage, "body");
 
     console.log("[form report pdf] rendering cover pdf");
     reportProgress?.("rendering_cover", "Voorblad wordt gerenderd", 54);
