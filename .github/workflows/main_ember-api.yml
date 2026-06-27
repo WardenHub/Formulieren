@@ -43,6 +43,10 @@ jobs:
           PLAYWRIGHT_RUNTIME_MAX_GLIBC: "2.35"
         run: npm run playwright:bundle-linux-libs
 
+      - name: verify bundled playwright runtime
+        working-directory: api
+        run: npm run playwright:check
+
       - name: log linux runtime versions
         working-directory: api
         run: |

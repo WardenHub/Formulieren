@@ -11,6 +11,7 @@ import { PDFDocument } from "pdf-lib";
 import { buildFormReportResult, formatExportDate } from "./formReportExportModelService.js";
 
 let browserPromise: Promise<Browser> | null = null;
+let browserWarmUpPromise: Promise<void> | null = null;
 
 type RenderProgressReporter = (phase: string, message: string, progress?: number) => void;
 
@@ -19,13 +20,15 @@ function positiveNumber(value: any, fallback: number) {
   return Number.isFinite(n) && n > 0 ? n : fallback;
 }
 
+const runtimeNodeEnv = String(process.env.NODE_ENV || "").trim().toLowerCase();
+const isLocalDevelopmentRuntime = runtimeNodeEnv === "development" || runtimeNodeEnv === "dev" || !!process.env.TSX_WATCH;
 const PLAYWRIGHT_LAUNCH_TIMEOUT_MS = positiveNumber(
   process.env.FORM_REPORT_PLAYWRIGHT_LAUNCH_TIMEOUT_MS,
-  12000
+  isLocalDevelopmentRuntime ? 12000 : 30000
 );
 const FORM_REPORT_RENDER_STEP_TIMEOUT_MS = positiveNumber(
   process.env.FORM_REPORT_RENDER_STEP_TIMEOUT_MS,
-  30000
+  isLocalDevelopmentRuntime ? 30000 : 45000
 );
 
 async function withTimeout<T>(label: string, promise: Promise<T>, ms: number): Promise<T> {
@@ -3640,6 +3643,7 @@ function renderBodyHtmlDocument(model: any) {
 async function getBrowser(reportProgress?: RenderProgressReporter) {
   if (!browserPromise) {
     const launchPromise = (async () => {
+      const launchStartedAt = Date.now();
       const configuredBrowsersPath = normalizeText(process.env.PLAYWRIGHT_BROWSERS_PATH);
       if (configuredBrowsersPath && !hasUsablePlaywrightBrowserRoot(configuredBrowsersPath)) {
         delete process.env.PLAYWRIGHT_BROWSERS_PATH;
@@ -3687,7 +3691,9 @@ async function getBrowser(reportProgress?: RenderProgressReporter) {
         chromium.launch(launchOptions),
         PLAYWRIGHT_LAUNCH_TIMEOUT_MS + 5000
       );
-      console.log("[form report pdf] playwright chromium launched");
+      console.log("[form report pdf] playwright chromium launched", {
+        elapsedMs: Date.now() - launchStartedAt,
+      });
       browser.on("disconnected", () => {
         clearBrowserPromise();
         const err = new Error("Playwright browser disconnected");
@@ -3733,13 +3739,24 @@ async function waitForDocumentFonts(page: any, label: string) {
 }
 
 export function warmUpHtmlFormReportRenderer() {
-  void getBrowser()
+  if (browserWarmUpPromise) return browserWarmUpPromise;
+
+  const warmUpStartedAt = Date.now();
+  browserWarmUpPromise = getBrowser()
     .then(() => {
-      console.log("[form report pdf] html renderer warm-up ready");
+      console.log("[form report pdf] html renderer warm-up ready", {
+        elapsedMs: Date.now() - warmUpStartedAt,
+      });
     })
     .catch((err) => {
       console.warn("[form report pdf] html renderer warm-up failed", err);
+      throw err;
+    })
+    .finally(() => {
+      browserWarmUpPromise = null;
     });
+
+  return browserWarmUpPromise;
 }
 
 export async function tryBuildHtmlFormReportPdf(model: any, reportProgress?: RenderProgressReporter): Promise<any> {

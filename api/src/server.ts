@@ -20,11 +20,11 @@ app.listen(port, () => {
 
   if (String(process.env.FORM_REPORT_PREWARM_DISABLED || "").trim() === "1") return;
 
-  const delays = [10000, 45000, 90000];
+  const delays = [1500, 20000, 45000];
   for (const delay of delays) {
     setTimeout(() => {
       markRuntimeRendererWarmUp("startup");
-      warmUpHtmlFormReportRenderer();
+      void warmUpHtmlFormReportRenderer();
     }, delay);
   }
 });
