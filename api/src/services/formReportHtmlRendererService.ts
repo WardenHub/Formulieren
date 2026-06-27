@@ -12,6 +12,7 @@ import { buildFormReportResult, formatExportDate } from "./formReportExportModel
 
 let browserPromise: Promise<Browser> | null = null;
 let browserWarmUpPromise: Promise<void> | null = null;
+let rendererPrimePromise: Promise<void> | null = null;
 
 type RenderProgressReporter = (phase: string, message: string, progress?: number) => void;
 
@@ -3738,12 +3739,103 @@ async function waitForDocumentFonts(page: any, label: string) {
   );
 }
 
+function buildWarmUpHtmlDocument() {
+  return `<!doctype html>
+    <html lang="nl">
+      <head>
+        <meta charset="utf-8" />
+        <style>
+          @page { size: A4; margin: 0; }
+          html, body {
+            margin: 0;
+            padding: 0;
+            font-family: Calibri, Arial, sans-serif;
+            color: #18233a;
+            background: #ffffff;
+          }
+          body {
+            padding: 12mm;
+          }
+          .warmup-card {
+            border: 1px solid #d3dae6;
+            background: #f7f9fc;
+            padding: 8mm;
+          }
+          .warmup-title {
+            font-size: 18pt;
+            font-weight: 700;
+            margin: 0 0 3mm;
+          }
+          .warmup-copy {
+            font-size: 10pt;
+            margin: 0;
+          }
+        </style>
+      </head>
+      <body>
+        <section class="warmup-card">
+          <h1 class="warmup-title">Ember PDF warm-up</h1>
+          <p class="warmup-copy">Deze pagina primeert de HTML renderer voor de eerste echte export.</p>
+        </section>
+      </body>
+    </html>`;
+}
+
+async function primeHtmlFormReportRenderer(browser: Browser) {
+  if (rendererPrimePromise) return rendererPrimePromise;
+
+  rendererPrimePromise = (async () => {
+    const warmPage = await withTimeout(
+      "playwright warm-up page creation",
+      browser.newPage(),
+      FORM_REPORT_RENDER_STEP_TIMEOUT_MS
+    );
+
+    warmPage.setDefaultTimeout(FORM_REPORT_RENDER_STEP_TIMEOUT_MS);
+    warmPage.setDefaultNavigationTimeout(FORM_REPORT_RENDER_STEP_TIMEOUT_MS);
+
+    try {
+      const warmHtml = buildWarmUpHtmlDocument();
+      await withTimeout(
+        "warm-up html content",
+        warmPage.setContent(warmHtml, { waitUntil: "domcontentloaded" }),
+        FORM_REPORT_RENDER_STEP_TIMEOUT_MS
+      );
+      await waitForDocumentFonts(warmPage, "warm-up");
+      await withTimeout(
+        "warm-up pdf render",
+        warmPage.pdf({
+          format: "A4",
+          printBackground: true,
+          displayHeaderFooter: false,
+          margin: {
+            top: "0mm",
+            right: "0mm",
+            bottom: "0mm",
+            left: "0mm",
+          },
+          pageRanges: "1",
+        }),
+        FORM_REPORT_RENDER_STEP_TIMEOUT_MS
+      );
+    } finally {
+      await warmPage.close().catch(() => {});
+    }
+  })()
+    .finally(() => {
+      rendererPrimePromise = null;
+    });
+
+  return rendererPrimePromise;
+}
+
 export function warmUpHtmlFormReportRenderer() {
   if (browserWarmUpPromise) return browserWarmUpPromise;
 
   const warmUpStartedAt = Date.now();
   browserWarmUpPromise = getBrowser()
-    .then(() => {
+    .then(async (browser) => {
+      await primeHtmlFormReportRenderer(browser);
       console.log("[form report pdf] html renderer warm-up ready", {
         elapsedMs: Date.now() - warmUpStartedAt,
       });
@@ -3761,6 +3853,7 @@ export function warmUpHtmlFormReportRenderer() {
 
 export async function tryBuildHtmlFormReportPdf(model: any, reportProgress?: RenderProgressReporter): Promise<any> {
   const browser = await getBrowser(reportProgress);
+  await primeHtmlFormReportRenderer(browser);
   reportProgress?.("creating_pages", "Werkbladen worden voorbereid", 24);
   console.log("[form report pdf] creating playwright pages");
   const coverPage = await withTimeout(
