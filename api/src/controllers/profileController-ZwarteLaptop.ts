@@ -2,7 +2,6 @@
 
 import type { Response } from "express";
 import * as service from "../services/profileService.js";
-import * as notificationsService from "../services/userNotificationsService.js";
 import {
   downloadUserProfileAvatarBlob,
   downloadUserProfileSignatureBlob,
@@ -31,6 +30,66 @@ const graphCredential = (() => {
   );
 })();
 
+function safeDecodeJwtPayload(token: string | null | undefined) {
+  const raw = String(token || "").trim();
+  if (!raw) return null;
+
+  try {
+    const parts = raw.split(".");
+    if (parts.length < 2) return null;
+    const normalized = parts[1]
+      .replace(/-/g, "+")
+      .replace(/_/g, "/")
+      .padEnd(Math.ceil(parts[1].length / 4) * 4, "=");
+    return JSON.parse(Buffer.from(normalized, "base64").toString("utf-8"));
+  } catch {
+    return null;
+  }
+}
+
+function summarizeGraphToken(token: string | null | undefined) {
+  const payload = safeDecodeJwtPayload(token);
+  const roles = Array.isArray(payload?.roles)
+    ? payload.roles.map((value: any) => String(value)).filter(Boolean)
+    : payload?.roles
+      ? [String(payload.roles)]
+      : [];
+
+  return {
+    aud: payload?.aud || null,
+    appid: payload?.appid || payload?.azp || null,
+    oid: payload?.oid || payload?.sub || null,
+    tid: payload?.tid || null,
+    roles,
+    scp: payload?.scp || null,
+    hasProfilePhotoReadPermission: roles.some((role) =>
+      [
+        "ProfilePhoto.Read.All",
+        "ProfilePhoto.ReadWrite.All",
+        "User.Read.All",
+        "User.ReadWrite.All",
+      ].includes(role)
+    ),
+  };
+}
+
+function getGraphCredentialDebugContext() {
+  return {
+    nodeEnv: process.env.NODE_ENV || null,
+    websiteSiteName: process.env.WEBSITE_SITE_NAME || null,
+    websiteInstanceId: process.env.WEBSITE_INSTANCE_ID || null,
+    azureClientId: process.env.AZURE_CLIENT_ID || process.env.MANAGED_IDENTITY_CLIENT_ID || null,
+    azureTenantId:
+      process.env.AAD_TENANT_ID ||
+      process.env.VITE_AAD_TENANT_ID ||
+      process.env.AZURE_TENANT_ID ||
+      null,
+    hasAzureClientSecret: Boolean(String(process.env.AZURE_CLIENT_SECRET || "").trim()),
+    hasIdentityEndpoint: Boolean(String(process.env.IDENTITY_ENDPOINT || "").trim()),
+    hasMsiEndpoint: Boolean(String(process.env.MSI_ENDPOINT || "").trim()),
+  };
+}
+
 function looksLikeGuid(value: string) {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
     String(value || "").trim()
@@ -53,10 +112,16 @@ async function tryDownloadMicrosoftUserPhoto(identifier: string | null | undefin
   try {
     token = await graphCredential.getToken("https://graph.microsoft.com/.default");
   } catch (err) {
+    console.error("[profile microsoft photo] graph token acquisition failed", {
+      identifier: clean,
+      message: err instanceof Error ? err.message : String(err),
+      credential: getGraphCredentialDebugContext(),
+    });
     return null;
   }
 
   if (!token?.token) {
+    console.error("[profile microsoft photo] no graph token");
     return null;
   }
 
@@ -77,6 +142,18 @@ async function tryDownloadMicrosoftUserPhoto(identifier: string | null | undefin
   }
 
   if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    console.error("[profile microsoft photo] graph failed", {
+      identifier: clean,
+      status: res.status,
+      wwwAuthenticate: res.headers.get("www-authenticate") || null,
+      requestId: res.headers.get("request-id") || null,
+      clientRequestId: res.headers.get("client-request-id") || null,
+      xMsAgsDiagnostic: res.headers.get("x-ms-ags-diagnostic") || null,
+      token: summarizeGraphToken(token.token),
+      credential: getGraphCredentialDebugContext(),
+      body: text,
+    });
     return null;
   }
 
@@ -117,6 +194,7 @@ export async function getMyMicrosoftAvatarFile(req: any, res: Response) {
       email,
     });
   } catch (err) {
+    console.error("[profile microsoft photo] failed", err);
     return res.status(404).json({ error: "microsoft avatar not available" });
   }
 }
@@ -144,40 +222,8 @@ export async function getDirectoryMicrosoftAvatarFile(req: any, res: Response) {
     res.setHeader("Content-Length", String(photo.buffer.length));
     return res.send(photo.buffer);
   } catch (err) {
+    console.error("[directory microsoft photo] failed", err);
     return res.status(404).end();
-  }
-}
-
-export async function getMyNotifications(req: any, res: Response) {
-  try {
-    const data = await notificationsService.getMyNotifications(req.query || {}, req.user);
-    return res.json(data);
-  } catch (err) {
-    console.error(err);
-    return res.status(500).json({ error: "getMyNotifications failed" });
-  }
-}
-
-export async function postMyNotificationRead(req: any, res: Response) {
-  try {
-    const data = await notificationsService.markMyNotificationRead(
-      String(req.params?.notificationEventId || "").trim(),
-      req.user
-    );
-    return res.json(data);
-  } catch (err: any) {
-    console.error(err);
-    return res.status(500).json({ error: err?.message || "postMyNotificationRead failed" });
-  }
-}
-
-export async function postMyNotificationsReadAll(req: any, res: Response) {
-  try {
-    const data = await notificationsService.markAllMyNotificationsRead(req.user);
-    return res.json(data);
-  } catch (err: any) {
-    console.error(err);
-    return res.status(500).json({ error: err?.message || "postMyNotificationsReadAll failed" });
   }
 }
 

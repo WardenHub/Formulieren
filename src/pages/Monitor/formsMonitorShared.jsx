@@ -238,6 +238,7 @@ export function buildMonitorRowActionCounts(row) {
   const waiting = Number(row?.follow_up_counts?.waiting_count ?? 0);
   const planned = Number(row?.follow_up_counts?.planned_count ?? 0);
   const done =
+    planned +
     Number(row?.follow_up_counts?.done_count ?? 0) +
     Number(row?.follow_up_counts?.rejected_count ?? 0) +
     Number(row?.follow_up_counts?.expired_count ?? 0);

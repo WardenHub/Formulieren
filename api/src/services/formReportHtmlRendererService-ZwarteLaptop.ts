@@ -1,344 +1,14 @@
-import fs from "node:fs";
 import path from "node:path";
+
 import type { Browser } from "playwright";
-import {
-  markRuntimeRendererFailed,
-  markRuntimeRendererReady,
-  markRuntimeRendererWarmUp,
-} from "./runtimeStatusService.js";
 import { PDFDocument } from "pdf-lib";
 
 import { buildFormReportResult, formatExportDate } from "./formReportExportModelService.js";
 
 let browserPromise: Promise<Browser> | null = null;
-let browserWarmUpPromise: Promise<void> | null = null;
-let rendererPrimePromise: Promise<void> | null = null;
 
-type RenderProgressReporter = (phase: string, message: string, progress?: number) => void;
-
-function positiveNumber(value: any, fallback: number) {
-  const n = Number(value);
-  return Number.isFinite(n) && n > 0 ? n : fallback;
-}
-
-const runtimeNodeEnv = String(process.env.NODE_ENV || "").trim().toLowerCase();
-const isLocalDevelopmentRuntime = runtimeNodeEnv === "development" || runtimeNodeEnv === "dev" || !!process.env.TSX_WATCH;
-const isHostedRuntime =
-  !!normalizeText(process.env.WEBSITE_INSTANCE_ID) ||
-  !!normalizeText(process.env.WEBSITE_SITE_NAME) ||
-  !!normalizeText(process.env.WEBSITE_HOSTNAME);
-const PLAYWRIGHT_LAUNCH_TIMEOUT_MS = positiveNumber(
-  process.env.FORM_REPORT_PLAYWRIGHT_LAUNCH_TIMEOUT_MS,
-  isLocalDevelopmentRuntime ? 12000 : 30000
-);
-const FORM_REPORT_RENDER_STEP_TIMEOUT_MS = positiveNumber(
-  process.env.FORM_REPORT_RENDER_STEP_TIMEOUT_MS,
-  isLocalDevelopmentRuntime ? 30000 : 45000
-);
-
-async function withTimeout<T>(label: string, promise: Promise<T>, ms: number): Promise<T> {
-  let timer: ReturnType<typeof setTimeout> | null = null;
-
-  try {
-    return await Promise.race([
-      promise,
-      new Promise<T>((_, reject) => {
-        timer = setTimeout(() => {
-          reject(new Error(`${label} timed out after ${ms}ms`));
-        }, ms);
-      }),
-    ]);
-  } finally {
-    if (timer) clearTimeout(timer);
-  }
-}
-
-function existingPath(value: any) {
-  const candidate = normalizeText(value);
-  if (!candidate) return "";
-  return fs.existsSync(candidate) ? candidate : "";
-}
-
-function resolveBundledRuntimeRoot() {
-  const candidates = [
-    normalizeText(process.env.PLAYWRIGHT_RUNTIME_ROOT),
-    "/home/site/wwwroot/playwright-runtime",
-    path.join(process.cwd(), "playwright-runtime"),
-  ].filter(Boolean);
-
-  for (const candidate of candidates) {
-    if (fs.existsSync(candidate)) return candidate;
-  }
-
-  return "";
-}
-
-function remapBundledExecutablePath(value: any) {
-  const candidate = normalizeText(value);
-  if (!candidate) return "";
-
-  const direct = existingPath(candidate);
-  if (direct) return direct;
-
-  const runtimeRoot = resolveBundledRuntimeRoot();
-  const browsersRootCandidates = [
-    normalizeText(process.env.PLAYWRIGHT_BROWSERS_PATH),
-    "/home/site/wwwroot/playwright-browsers",
-    path.join(process.cwd(), "playwright-browsers"),
-  ].filter(Boolean);
-
-  if (runtimeRoot && !path.isAbsolute(candidate)) {
-    const rootedCandidate = existingPath(path.join(process.cwd(), candidate));
-    if (rootedCandidate) return rootedCandidate;
-  }
-
-  const normalizedCandidate = candidate.replace(/\\/g, "/");
-  const marker = "/playwright-browsers/";
-  const markerIndex = normalizedCandidate.indexOf(marker);
-  if (markerIndex >= 0) {
-    const suffix = normalizedCandidate.slice(markerIndex + marker.length);
-    for (const browsersRoot of browsersRootCandidates) {
-      const remapped = existingPath(path.join(browsersRoot, ...suffix.split("/")));
-      if (remapped) return remapped;
-    }
-  }
-
-  return "";
-}
-
-function readPlaywrightExecutablePathFile() {
-  const candidateFiles = [
-    normalizeText(process.env.PLAYWRIGHT_EXECUTABLE_PATH_FILE),
-    "/home/site/wwwroot/playwright-runtime/browser-executable.txt",
-    path.join(process.cwd(), "playwright-runtime", "browser-executable.txt"),
-  ].filter(Boolean);
-
-  for (const candidateFile of candidateFiles) {
-    try {
-      if (!fs.existsSync(candidateFile)) continue;
-      const executablePath = remapBundledExecutablePath(fs.readFileSync(candidateFile, "utf8"));
-      if (executablePath) return executablePath;
-    } catch {
-      // ignore read failures; other candidates may still work
-    }
-  }
-
-  return "";
-}
-
-function resolvePlaywrightExecutablePath() {
-  const explicit =
-    existingPath(process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH) ||
-    existingPath(process.env.PLAYWRIGHT_EXECUTABLE_PATH) ||
-    existingPath(process.env.CHROME_EXECUTABLE_PATH);
-  if (explicit) return explicit;
-
-  const bundledExecutable = readPlaywrightExecutablePathFile();
-  const rootedExecutable = resolvePlaywrightExecutablePathFromRoots([
-    normalizeText(process.env.PLAYWRIGHT_BROWSERS_PATH),
-    "/home/site/wwwroot/playwright-browsers",
-    path.join(process.cwd(), "playwright-browsers"),
-  ]);
-
-  if (isHostedRuntime) {
-    return bundledExecutable || rootedExecutable;
-  }
-
-  return "";
-}
-
-function hasUsablePlaywrightBrowserRoot(rootPath: any) {
-  const root = normalizeText(rootPath);
-  if (!root) return false;
-  if (!fs.existsSync(root)) return false;
-  return Boolean(resolvePlaywrightExecutablePathFromRoots([root]));
-}
-
-let preparedPlaywrightRuntimeLibPath = "";
-
-function isUnsafePlaywrightRuntimeLibrary(fileName: string) {
-  return [
-    /^libc\.so(\..+)?$/i,
-    /^libpthread\.so(\..+)?$/i,
-    /^libdl\.so(\..+)?$/i,
-    /^librt\.so(\..+)?$/i,
-    /^libm\.so(\..+)?$/i,
-    /^ld-linux.*\.so(\..+)?$/i,
-    /^ld-musl.*\.so(\..+)?$/i,
-  ].some((pattern) => pattern.test(fileName));
-}
-
-function resolvePlaywrightRuntimeLibPath() {
-  if (preparedPlaywrightRuntimeLibPath && fs.existsSync(preparedPlaywrightRuntimeLibPath)) {
-    return preparedPlaywrightRuntimeLibPath;
-  }
-
-  const candidates = [
-    normalizeText(process.env.PLAYWRIGHT_RUNTIME_LIB_PATH),
-    "/home/site/wwwroot/playwright-runtime/lib",
-    path.join(process.cwd(), "playwright-runtime", "lib"),
-  ].filter(Boolean);
-
-  for (const candidate of candidates) {
-    if (!fs.existsSync(candidate)) continue;
-
-    const fileNames = fs
-      .readdirSync(candidate, { withFileTypes: true })
-      .filter((entry) => entry.isFile())
-      .map((entry) => entry.name);
-    const safeFileNames = fileNames.filter((fileName) => !isUnsafePlaywrightRuntimeLibrary(fileName));
-    const ignoredFileNames = fileNames.filter((fileName) => isUnsafePlaywrightRuntimeLibrary(fileName));
-
-    if (!safeFileNames.length) {
-      if (ignoredFileNames.length) {
-        console.warn("[form report pdf] playwright runtime lib path only contains ignored core libraries", {
-          runtimeLibPath: candidate,
-          ignoredFiles: ignoredFileNames,
-        });
-      }
-      continue;
-    }
-
-    const sanitizedRuntimeDir = path.join(
-      process.env.TMPDIR || process.env.TEMP || process.env.TMP || "/tmp",
-      "ember-playwright-runtime-libs"
-    );
-    fs.mkdirSync(sanitizedRuntimeDir, { recursive: true });
-
-    for (const existingEntry of fs.readdirSync(sanitizedRuntimeDir, { withFileTypes: true })) {
-      if (!existingEntry.isFile()) continue;
-      fs.rmSync(path.join(sanitizedRuntimeDir, existingEntry.name), { force: true });
-    }
-
-    for (const fileName of safeFileNames) {
-      fs.copyFileSync(path.join(candidate, fileName), path.join(sanitizedRuntimeDir, fileName));
-    }
-
-    if (ignoredFileNames.length) {
-      console.warn("[form report pdf] playwright runtime lib path contained ignored core libraries", {
-        runtimeLibPath: candidate,
-        ignoredFiles: ignoredFileNames,
-      });
-    }
-
-    preparedPlaywrightRuntimeLibPath = sanitizedRuntimeDir;
-    return preparedPlaywrightRuntimeLibPath;
-  }
-
-  return "";
-}
-
-function resolvePlaywrightExecutablePathFromRoots(roots: any[]) {
-  const browserRoots = roots.filter(Boolean);
-
-  for (const root of browserRoots) {
-    const directHeadlessShellCandidates = [
-      path.join(root, "chromium_headless_shell", "chrome-headless-shell-linux64", "chrome-headless-shell"),
-    ];
-    const directChromeCandidates = [
-      path.join(root, "chromium", "chrome-linux64", "chrome"),
-      path.join(root, "chromium", "chrome-win", "chrome.exe"),
-      path.join(root, "chromium", "chrome-win64", "chrome.exe"),
-      path.join(root, "chromium", "chrome-mac", "Chromium.app", "Contents", "MacOS", "Chromium"),
-    ];
-    for (const candidate of [...directHeadlessShellCandidates, ...directChromeCandidates]) {
-      if (fs.existsSync(candidate)) return candidate;
-    }
-
-    try {
-      const entries = fs
-        .readdirSync(root, { withFileTypes: true })
-        .filter(
-          (entry) =>
-            entry.isDirectory() &&
-            (entry.name.startsWith("chromium_headless_shell-") || entry.name.startsWith("chromium-"))
-        )
-        .sort((a, b) => b.name.localeCompare(a.name));
-
-      for (const entry of entries) {
-        const base = path.join(root, entry.name);
-        const nestedHeadlessShellCandidates = [
-          path.join(base, "chrome-headless-shell-linux64", "chrome-headless-shell"),
-        ];
-        const nestedChromeCandidates = [
-          path.join(base, "chrome-linux64", "chrome"),
-          path.join(base, "chrome-win", "chrome.exe"),
-          path.join(base, "chrome-win64", "chrome.exe"),
-          path.join(base, "chrome-mac", "Chromium.app", "Contents", "MacOS", "Chromium"),
-        ];
-        for (const candidate of [...nestedHeadlessShellCandidates, ...nestedChromeCandidates]) {
-          if (fs.existsSync(candidate)) return candidate;
-        }
-      }
-    } catch {
-      // ignore lookup failures; launch will fall back to Playwright defaults
-    }
-  }
-
-  return "";
-}
-
-function clearBrowserPromise() {
-  browserPromise = null;
-}
-
-function resolveBundledFontconfigRoot() {
-  const runtimeRoot = resolveBundledRuntimeRoot();
-  if (!runtimeRoot) return "";
-
-  const candidate = path.join(runtimeRoot, "fontconfig");
-  return fs.existsSync(path.join(candidate, "etc", "fonts", "fonts.conf")) ? candidate : "";
-}
-
-function ensurePlaywrightRuntimeHome() {
-  const baseDir = path.join(
-    process.env.TMPDIR || process.env.TEMP || process.env.TMP || "/tmp",
-    "ember-playwright-home"
-  );
-
-  for (const candidate of [
-    baseDir,
-    path.join(baseDir, ".cache"),
-    path.join(baseDir, ".config"),
-    path.join(baseDir, ".runtime"),
-    path.join(baseDir, ".local"),
-    path.join(baseDir, ".local", "share"),
-    path.join(baseDir, ".local", "share", "pki"),
-    path.join(baseDir, ".local", "share", "pki", "nssdb"),
-  ]) {
-    fs.mkdirSync(candidate, { recursive: true });
-  }
-
-  return baseDir;
-}
-
-function buildPlaywrightLaunchEnv(runtimeLibPath: string) {
-  const env: Record<string, string> = {
-    ...process.env,
-  } as Record<string, string>;
-
-  const runtimeHome = ensurePlaywrightRuntimeHome();
-  if (runtimeLibPath) {
-    env.LD_LIBRARY_PATH = `${runtimeLibPath}${process.env.LD_LIBRARY_PATH ? `:${process.env.LD_LIBRARY_PATH}` : ""}`;
-  }
-
-  const fontconfigRoot = resolveBundledFontconfigRoot();
-  if (fontconfigRoot) {
-    env.FONTCONFIG_SYSROOT = fontconfigRoot;
-    env.FONTCONFIG_PATH = path.join(fontconfigRoot, "etc", "fonts");
-    env.FONTCONFIG_FILE = path.join(fontconfigRoot, "etc", "fonts", "fonts.conf");
-  } else {
-    env.FONTCONFIG_PATH = normalizeText(process.env.FONTCONFIG_PATH) || "/etc/fonts";
-    env.FONTCONFIG_FILE = normalizeText(process.env.FONTCONFIG_FILE) || "/etc/fonts/fonts.conf";
-  }
-
-  env.HOME = runtimeHome;
-  env.XDG_CACHE_HOME = path.join(runtimeHome, ".cache");
-  env.XDG_CONFIG_HOME = path.join(runtimeHome, ".config");
-  env.XDG_RUNTIME_DIR = path.join(runtimeHome, ".runtime");
-  env.XDG_DATA_HOME = path.join(runtimeHome, ".local", "share");
-
-  return env;
+function getPlaywrightBrowsersPath() {
+  return path.resolve(process.cwd(), "playwright-browsers");
 }
 
 function escapeHtml(value: any) {
@@ -3649,311 +3319,79 @@ function renderBodyHtmlDocument(model: any) {
   `;
 }
 
-async function getBrowser(reportProgress?: RenderProgressReporter) {
+async function getBrowser() {
   if (!browserPromise) {
     const launchPromise = (async () => {
-      const launchStartedAt = Date.now();
-      const configuredBrowsersPath = normalizeText(process.env.PLAYWRIGHT_BROWSERS_PATH);
-      if (configuredBrowsersPath && !hasUsablePlaywrightBrowserRoot(configuredBrowsersPath)) {
-        delete process.env.PLAYWRIGHT_BROWSERS_PATH;
-      }
+      process.env.PLAYWRIGHT_BROWSERS_PATH = getPlaywrightBrowsersPath();
 
       const { chromium } = await import("playwright");
-      const explicitExecutablePath = resolvePlaywrightExecutablePath();
-      const playwrightExecutablePath =
-        typeof chromium.executablePath === "function" ? chromium.executablePath() : "";
-      const executablePath = explicitExecutablePath || playwrightExecutablePath;
-      const activeBrowsersPath = normalizeText(process.env.PLAYWRIGHT_BROWSERS_PATH) || null;
+      const executablePath = chromium.executablePath();
 
-      markRuntimeRendererWarmUp("playwright");
-      reportProgress?.("warming_renderer", "PDF-engine wordt geladen", 8);
       console.log("[form report pdf] launching playwright chromium", {
-        browsersPath: activeBrowsersPath,
+        browsersPath: process.env.PLAYWRIGHT_BROWSERS_PATH,
         executablePath,
       });
 
-      const launchOptions: any = {
-        headless: true,
-        timeout: PLAYWRIGHT_LAUNCH_TIMEOUT_MS,
-        dumpio: true,
-        args: [
-          "--no-sandbox",
-          "--disable-setuid-sandbox",
-          "--disable-dev-shm-usage",
-          "--disable-gpu",
-          "--no-zygote",
-          "--disable-extensions",
-          "--disable-background-networking",
-          "--disable-default-apps",
-          "--disable-sync",
-        ],
-      };
-      const runtimeLibPath = resolvePlaywrightRuntimeLibPath();
-      launchOptions.env = buildPlaywrightLaunchEnv(runtimeLibPath);
-      if (runtimeLibPath) {
-        console.log("[form report pdf] using scoped playwright runtime libs", { runtimeLibPath });
-      }
-      if (executablePath) {
-        launchOptions.executablePath = executablePath;
-      }
-
-      const browser = await withTimeout(
-        "playwright chromium launch",
-        chromium.launch(launchOptions),
-        PLAYWRIGHT_LAUNCH_TIMEOUT_MS + 5000
-      );
-      console.log("[form report pdf] playwright chromium launched", {
-        elapsedMs: Date.now() - launchStartedAt,
-      });
-      browser.on("disconnected", () => {
-        clearBrowserPromise();
-        const err = new Error("Playwright browser disconnected");
-        markRuntimeRendererFailed(err);
-        console.warn("[form report pdf] playwright browser disconnected");
-      });
-      const probePage = await withTimeout(
-        "playwright probe page creation",
-        browser.newPage(),
-        FORM_REPORT_RENDER_STEP_TIMEOUT_MS
-      );
-      await withTimeout(
-        "playwright probe page close",
-        probePage.close(),
-        FORM_REPORT_RENDER_STEP_TIMEOUT_MS
-      );
-      markRuntimeRendererReady();
-      reportProgress?.("renderer_ready", "PDF-engine is klaar", 18);
-      return browser;
+      return chromium.launch({ headless: true });
     })();
 
     browserPromise = launchPromise.catch((err) => {
-      clearBrowserPromise();
-      markRuntimeRendererFailed(err);
+      browserPromise = null;
       throw err;
     });
   }
   return browserPromise;
 }
 
-async function waitForDocumentFonts(page: any, label: string) {
-  await withTimeout(
-    `${label} fonts ready`,
-    page.evaluate(async () => {
-      const maybeFonts = (document as any).fonts;
-      if (maybeFonts?.ready) {
-        await maybeFonts.ready;
-      }
-      await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
-    }),
-    FORM_REPORT_RENDER_STEP_TIMEOUT_MS
-  );
-}
-
-function buildWarmUpHtmlDocument() {
-  return `<!doctype html>
-    <html lang="nl">
-      <head>
-        <meta charset="utf-8" />
-        <style>
-          @page { size: A4; margin: 0; }
-          html, body {
-            margin: 0;
-            padding: 0;
-            font-family: Calibri, Arial, sans-serif;
-            color: #18233a;
-            background: #ffffff;
-          }
-          body {
-            padding: 12mm;
-          }
-          .warmup-card {
-            border: 1px solid #d3dae6;
-            background: #f7f9fc;
-            padding: 8mm;
-          }
-          .warmup-title {
-            font-size: 18pt;
-            font-weight: 700;
-            margin: 0 0 3mm;
-          }
-          .warmup-copy {
-            font-size: 10pt;
-            margin: 0;
-          }
-        </style>
-      </head>
-      <body>
-        <section class="warmup-card">
-          <h1 class="warmup-title">Ember PDF warm-up</h1>
-          <p class="warmup-copy">Deze pagina primeert de HTML renderer voor de eerste echte export.</p>
-        </section>
-      </body>
-    </html>`;
-}
-
-async function primeHtmlFormReportRenderer(browser: Browser) {
-  if (rendererPrimePromise) return rendererPrimePromise;
-
-  rendererPrimePromise = (async () => {
-    const warmPage = await withTimeout(
-      "playwright warm-up page creation",
-      browser.newPage(),
-      FORM_REPORT_RENDER_STEP_TIMEOUT_MS
-    );
-
-    warmPage.setDefaultTimeout(FORM_REPORT_RENDER_STEP_TIMEOUT_MS);
-    warmPage.setDefaultNavigationTimeout(FORM_REPORT_RENDER_STEP_TIMEOUT_MS);
-
-    try {
-      const warmHtml = buildWarmUpHtmlDocument();
-      await withTimeout(
-        "warm-up html content",
-        warmPage.setContent(warmHtml, { waitUntil: "domcontentloaded" }),
-        FORM_REPORT_RENDER_STEP_TIMEOUT_MS
-      );
-      await waitForDocumentFonts(warmPage, "warm-up");
-      await withTimeout(
-        "warm-up pdf render",
-        warmPage.pdf({
-          format: "A4",
-          printBackground: true,
-          displayHeaderFooter: false,
-          margin: {
-            top: "0mm",
-            right: "0mm",
-            bottom: "0mm",
-            left: "0mm",
-          },
-          pageRanges: "1",
-        }),
-        FORM_REPORT_RENDER_STEP_TIMEOUT_MS
-      );
-    } finally {
-      await warmPage.close().catch(() => {});
-    }
-  })()
-    .finally(() => {
-      rendererPrimePromise = null;
-    });
-
-  return rendererPrimePromise;
-}
-
-export function warmUpHtmlFormReportRenderer() {
-  if (browserWarmUpPromise) return browserWarmUpPromise;
-
-  const warmUpStartedAt = Date.now();
-  browserWarmUpPromise = getBrowser()
-    .then(async (browser) => {
-      await primeHtmlFormReportRenderer(browser);
-      console.log("[form report pdf] html renderer warm-up ready", {
-        elapsedMs: Date.now() - warmUpStartedAt,
-      });
-    })
-    .catch((err) => {
-      console.warn("[form report pdf] html renderer warm-up failed", err);
-      throw err;
-    })
-    .finally(() => {
-      browserWarmUpPromise = null;
-    });
-
-  return browserWarmUpPromise;
-}
-
-export async function tryBuildHtmlFormReportPdf(model: any, reportProgress?: RenderProgressReporter): Promise<any> {
-  const browser = await getBrowser(reportProgress);
-  await primeHtmlFormReportRenderer(browser);
-  reportProgress?.("creating_pages", "Werkbladen worden voorbereid", 24);
-  console.log("[form report pdf] creating playwright pages");
-  const coverPage = await withTimeout(
-    "playwright cover page creation",
-    browser.newPage(),
-    FORM_REPORT_RENDER_STEP_TIMEOUT_MS
-  );
-  const bodyPage = await withTimeout(
-    "playwright body page creation",
-    browser.newPage(),
-    FORM_REPORT_RENDER_STEP_TIMEOUT_MS
-  );
-
-  coverPage.setDefaultTimeout(FORM_REPORT_RENDER_STEP_TIMEOUT_MS);
-  coverPage.setDefaultNavigationTimeout(FORM_REPORT_RENDER_STEP_TIMEOUT_MS);
-  bodyPage.setDefaultTimeout(FORM_REPORT_RENDER_STEP_TIMEOUT_MS);
-  bodyPage.setDefaultNavigationTimeout(FORM_REPORT_RENDER_STEP_TIMEOUT_MS);
+export async function tryBuildHtmlFormReportPdf(model: any): Promise<any> {
+  const browser = await getBrowser();
+  const coverPage = await browser.newPage();
+  const bodyPage = await browser.newPage();
 
   try {
-    console.log("[form report pdf] rendering html strings");
-    reportProgress?.("rendering_html", "Rapportopmaak wordt opgebouwd", 36);
     const coverHtml = renderHtmlDocument(model);
     const bodyHtml = renderBodyHtmlDocument(model);
-    console.log("[form report pdf] setting cover html");
-    await withTimeout(
-      "cover html content",
-      coverPage.setContent(coverHtml, { waitUntil: "domcontentloaded" }),
-      FORM_REPORT_RENDER_STEP_TIMEOUT_MS
-    );
-    await waitForDocumentFonts(coverPage, "cover");
-    console.log("[form report pdf] setting body html");
-    await withTimeout(
-      "body html content",
-      bodyPage.setContent(bodyHtml, { waitUntil: "domcontentloaded" }),
-      FORM_REPORT_RENDER_STEP_TIMEOUT_MS
-    );
-    await waitForDocumentFonts(bodyPage, "body");
+    await coverPage.setContent(coverHtml, { waitUntil: "load" });
+    await bodyPage.setContent(bodyHtml, { waitUntil: "load" });
 
-    console.log("[form report pdf] rendering cover pdf");
-    reportProgress?.("rendering_cover", "Voorblad wordt gerenderd", 54);
     const coverBuffer = Buffer.from(
-      await withTimeout(
-        "cover pdf render",
-        coverPage.pdf({
-          format: "A4",
-          printBackground: true,
-          displayHeaderFooter: false,
-          margin: {
-            top: "0mm",
-            right: "0mm",
-            bottom: "0mm",
-            left: "0mm",
-          },
-          pageRanges: "1",
-        }),
-        FORM_REPORT_RENDER_STEP_TIMEOUT_MS
-      )
+      await coverPage.pdf({
+        format: "A4",
+        printBackground: true,
+        displayHeaderFooter: false,
+        margin: {
+          top: "0mm",
+          right: "0mm",
+          bottom: "0mm",
+          left: "0mm",
+        },
+        pageRanges: "1",
+      })
     );
 
-    console.log("[form report pdf] rendering body pdf");
-    reportProgress?.("rendering_body", "Pdf-pagina's worden gerenderd", 74);
     const bodyBuffer = Buffer.from(
-      await withTimeout(
-        "body pdf render",
-        bodyPage.pdf({
-          format: "A4",
-          printBackground: true,
-          displayHeaderFooter: true,
-          margin: {
-            top: "18mm",
-            right: "12mm",
-            bottom: "16mm",
-            left: "12mm",
-          },
-          headerTemplate: buildPdfHeaderTemplate(model),
-          footerTemplate: `
-            <div style="width:100%;padding:0 12mm;font-size:8pt;color:#52627a;font-family:Calibri,Arial,sans-serif;box-sizing:border-box;">
-              <div style="width:100%;display:flex;justify-content:space-between;align-items:center;">
-                <span>${escapeHtml(footerLeftLabel(model))}</span>
-                <span>Pagina <span class="pageNumber"></span> / <span class="totalPages"></span></span>
-              </div>
+      await bodyPage.pdf({
+        format: "A4",
+        printBackground: true,
+        displayHeaderFooter: true,
+        margin: {
+          top: "18mm",
+          right: "12mm",
+          bottom: "16mm",
+          left: "12mm",
+        },
+        headerTemplate: buildPdfHeaderTemplate(model),
+        footerTemplate: `
+          <div style="width:100%;padding:0 12mm;font-size:8pt;color:#52627a;font-family:Calibri,Arial,sans-serif;box-sizing:border-box;">
+            <div style="width:100%;display:flex;justify-content:space-between;align-items:center;">
+              <span>${escapeHtml(footerLeftLabel(model))}</span>
+              <span>Pagina <span class="pageNumber"></span> / <span class="totalPages"></span></span>
             </div>
-          `,
-        }),
-        FORM_REPORT_RENDER_STEP_TIMEOUT_MS
-      )
+          </div>
+        `,
+      })
     );
 
-    console.log("[form report pdf] merging pdf pages");
-    reportProgress?.("merging_pdf", "Pagina's worden samengevoegd", 90);
     const mergedPdf = await PDFDocument.create();
     for (const sourceBuffer of [coverBuffer, bodyBuffer]) {
       const sourcePdf = await PDFDocument.load(sourceBuffer);
@@ -3964,8 +3402,6 @@ export async function tryBuildHtmlFormReportPdf(model: any, reportProgress?: Ren
     }
 
     const buffer = Buffer.from(await mergedPdf.save());
-    console.log("[form report pdf] html pdf ready", { bytes: buffer.length });
-    reportProgress?.("ready", "Download wordt klaargezet", 100);
 
     return buildFormReportResult(buffer, model);
   } finally {

@@ -15,6 +15,9 @@ import {
   getDirectoryAvatarFile,
   getMyMicrosoftAvatarFile,
   getDirectoryMicrosoftAvatarFile,
+  getMyNotifications,
+  postMyNotificationRead,
+  postMyNotificationsReadAll,
 } from "../controllers/profileController.js";
 
 const router = Router();
@@ -39,6 +42,9 @@ router.post("/signature", upload.single("file"), uploadMySignature);
 
 router.get("/directory", getDirectory);
 router.get("/directory/:userObjectId/avatar/file", getDirectoryAvatarFile);
+router.get("/notifications", getMyNotifications);
+router.post("/notifications/read-all", postMyNotificationsReadAll);
+router.post("/notifications/:notificationEventId/read", postMyNotificationRead);
 
 router.get("/avatar/microsoft/file", getMyMicrosoftAvatarFile);
 router.get("/directory/:userObjectId/avatar/microsoft/file", getDirectoryMicrosoftAvatarFile);

@@ -51,6 +51,52 @@ export function getDocuments(code) {
   return apiGet(`/installations/${code}/documents`);
 }
 
+export function getInstallationNotes(code, params = {}) {
+  const qs = new URLSearchParams();
+  if (params.includeArchived) qs.set("includeArchived", "1");
+  if (params.markRead) qs.set("markRead", "1");
+  if (params.noteKind && String(params.noteKind).trim()) {
+    qs.set("noteKind", String(params.noteKind).trim());
+  }
+  const suffix = qs.toString() ? `?${qs.toString()}` : "";
+  return apiGet(`/installations/${encodeURIComponent(code)}/notes${suffix}`);
+}
+
+export function createInstallationNote(code, payload = {}) {
+  return apiPost(`/installations/${encodeURIComponent(code)}/notes`, payload ?? {});
+}
+
+export function updateInstallationNote(code, installationNoteId, payload = {}) {
+  return apiPut(
+    `/installations/${encodeURIComponent(code)}/notes/${encodeURIComponent(installationNoteId)}`,
+    payload ?? {}
+  );
+}
+
+export function archiveInstallationNote(code, installationNoteId, isArchived = true) {
+  return apiPost(
+    `/installations/${encodeURIComponent(code)}/notes/${encodeURIComponent(installationNoteId)}/archive`,
+    { is_archived: Boolean(isArchived) }
+  );
+}
+
+export function deleteInstallationNote(code, installationNoteId) {
+  return apiDelete(
+    `/installations/${encodeURIComponent(code)}/notes/${encodeURIComponent(installationNoteId)}`
+  );
+}
+
+export function toggleInstallationNoteReaction(code, installationNoteId, reactionKey) {
+  return apiPost(
+    `/installations/${encodeURIComponent(code)}/notes/${encodeURIComponent(installationNoteId)}/reactions`,
+    { reaction_key: reactionKey }
+  );
+}
+
+export function getInstallationWorkflowItems(code) {
+  return apiGet(`/installations/${encodeURIComponent(code)}/workflow-items`);
+}
+
 export function getInstallationTypes() {
   return apiGet("/installation-types");
 }
@@ -690,6 +736,36 @@ export function getMe() {
 
 export function getUserDirectory() {
   return apiGet("/me/profile/directory");
+}
+
+export function getMyNotifications(params = {}) {
+  const qs = new URLSearchParams();
+
+  if (params.take != null) {
+    qs.set("take", String(params.take));
+  }
+
+  if (params.skip != null) {
+    qs.set("skip", String(params.skip));
+  }
+
+  if (params.unread != null) {
+    qs.set("unread", String(params.unread));
+  }
+
+  const suffix = qs.toString() ? `?${qs.toString()}` : "";
+  return apiGet(`/me/profile/notifications${suffix}`);
+}
+
+export function markMyNotificationRead(notificationEventId) {
+  return apiPost(
+    `/me/profile/notifications/${encodeURIComponent(notificationEventId)}/read`,
+    {}
+  );
+}
+
+export function markAllMyNotificationsRead() {
+  return apiPost("/me/profile/notifications/read-all", {});
 }
 
 export function getRuntimeStatus() {

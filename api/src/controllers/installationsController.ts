@@ -89,6 +89,151 @@ export async function getDocuments(req: any, res: Response) {
   }
 }
 
+export async function getInstallationNotes(req: any, res: Response) {
+  try {
+    const code = String(req.params.code || "");
+    const includeArchived = String(req.query?.includeArchived || "").trim() === "1";
+    const noteKind = req.query?.noteKind ? String(req.query.noteKind) : null;
+    const markRead = String(req.query?.markRead || "").trim() === "1";
+
+    const data = await service.getInstallationNotes(code, {
+      includeArchived,
+      noteKind,
+      markReadUser: markRead ? req.user : null,
+    });
+    return res.json(data);
+  } catch (err: any) {
+    const msg = String(err?.message || err).toLowerCase();
+    if (msg.includes("installation note kind invalid")) {
+      return res.status(400).json({ error: "installation note kind invalid" });
+    }
+    console.error(err);
+    return res.status(500).json({ error: "getInstallationNotes failed" });
+  }
+}
+
+export async function postInstallationNote(req: any, res: Response) {
+  try {
+    const code = String(req.params.code || "");
+    const data = await service.createInstallationNote(code, req.body || {}, req.user);
+    return res.json(data);
+  } catch (err: any) {
+    const msg = String(err?.message || err).toLowerCase();
+    if (isHistoricalReadOnlyMessage(msg)) {
+      return res.status(409).json({ error: "historical installation read-only" });
+    }
+    if (msg.includes("installation note body required")) {
+      return res.status(400).json({ error: "installation note body required" });
+    }
+    if (msg.includes("installation note kind invalid")) {
+      return res.status(400).json({ error: "installation note kind invalid" });
+    }
+    if (msg.includes("user object id missing")) {
+      return res.status(400).json({ error: "user object id missing" });
+    }
+    console.error(err);
+    return res.status(500).json({ error: "postInstallationNote failed" });
+  }
+}
+
+export async function putInstallationNote(req: any, res: Response) {
+  try {
+    const code = String(req.params.code || "");
+    const installationNoteId = String(req.params.installationNoteId || "");
+    const data = await service.updateInstallationNote(code, installationNoteId, req.body || {}, req.user);
+    return res.json(data);
+  } catch (err: any) {
+    const msg = String(err?.message || err).toLowerCase();
+    if (msg.includes("installation note not found")) {
+      return res.status(404).json({ error: "installation note not found" });
+    }
+    if (msg.includes("installation note forbidden")) {
+      return res.status(403).json({ error: "installation note forbidden" });
+    }
+    if (msg.includes("installation note body required")) {
+      return res.status(400).json({ error: "installation note body required" });
+    }
+    if (msg.includes("installation note kind invalid")) {
+      return res.status(400).json({ error: "installation note kind invalid" });
+    }
+    console.error(err);
+    return res.status(500).json({ error: "putInstallationNote failed" });
+  }
+}
+
+export async function postArchiveInstallationNote(req: any, res: Response) {
+  try {
+    const code = String(req.params.code || "");
+    const installationNoteId = String(req.params.installationNoteId || "");
+    const archiveState = req.body?.is_archived !== false;
+    const data = await service.archiveInstallationNote(code, installationNoteId, archiveState, req.user);
+    return res.json(data);
+  } catch (err: any) {
+    const msg = String(err?.message || err).toLowerCase();
+    if (msg.includes("installation note not found")) {
+      return res.status(404).json({ error: "installation note not found" });
+    }
+    if (msg.includes("installation note forbidden")) {
+      return res.status(403).json({ error: "installation note forbidden" });
+    }
+    console.error(err);
+    return res.status(500).json({ error: "postArchiveInstallationNote failed" });
+  }
+}
+
+export async function deleteInstallationNote(req: any, res: Response) {
+  try {
+    const code = String(req.params.code || "");
+    const installationNoteId = String(req.params.installationNoteId || "");
+    const data = await service.deleteInstallationNote(code, installationNoteId, req.user);
+    return res.json(data);
+  } catch (err: any) {
+    const msg = String(err?.message || err).toLowerCase();
+    if (msg.includes("installation note not found")) {
+      return res.status(404).json({ error: "installation note not found" });
+    }
+    if (msg.includes("installation note forbidden")) {
+      return res.status(403).json({ error: "installation note forbidden" });
+    }
+    console.error(err);
+    return res.status(500).json({ error: "deleteInstallationNote failed" });
+  }
+}
+
+export async function postInstallationNoteReaction(req: any, res: Response) {
+  try {
+    const code = String(req.params.code || "");
+    const installationNoteId = String(req.params.installationNoteId || "");
+    const reactionKey = String(req.body?.reaction_key || "");
+    const data = await service.toggleInstallationNoteReaction(code, installationNoteId, reactionKey, req.user);
+    return res.json(data);
+  } catch (err: any) {
+    const msg = String(err?.message || err).toLowerCase();
+    if (msg.includes("installation note not found")) {
+      return res.status(404).json({ error: "installation note not found" });
+    }
+    if (msg.includes("reaction key required")) {
+      return res.status(400).json({ error: "reaction key required" });
+    }
+    if (msg.includes("user object id missing")) {
+      return res.status(400).json({ error: "user object id missing" });
+    }
+    console.error(err);
+    return res.status(500).json({ error: "postInstallationNoteReaction failed" });
+  }
+}
+
+export async function getInstallationWorkflowItems(req: any, res: Response) {
+  try {
+    const code = String(req.params.code || "");
+    const data = await service.getInstallationWorkflowItems(code);
+    return res.json(data);
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ error: "getInstallationWorkflowItems failed" });
+  }
+}
+
 export async function getInstallationTypes(req: Request, res: Response) {
   try {
     const data = await service.getInstallationTypes();

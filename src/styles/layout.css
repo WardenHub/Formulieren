@@ -848,6 +848,191 @@ select.input option{
   background: var(--pill-bg);
 }
 
+.notification-wrap{
+  position: relative;
+}
+
+.topbar-notification-btn{
+  position: relative;
+}
+
+.topbar-notification-count{
+  position: absolute;
+  top: -5px;
+  right: -5px;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-pill);
+  background: var(--brand-red);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 800;
+  border: 1px solid rgba(255,255,255,.18);
+  box-shadow: var(--shadow-soft);
+}
+
+.notification-menu{
+  position: absolute;
+  right: 0;
+  top: 48px;
+  width: min(420px, calc(100vw - 24px));
+  max-height: min(70vh, 720px);
+  overflow: hidden;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  background: var(--surface);
+  border: 1px solid var(--border-soft);
+  border-radius: 18px;
+  box-shadow: var(--shadow-panel);
+  z-index: 90;
+}
+
+.notification-menu-header{
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-4);
+  padding: 14px;
+  border-bottom: 1px solid var(--border-soft);
+}
+
+.notification-menu-title{
+  font-size: 15px;
+  font-weight: 850;
+  color: var(--text-strong);
+}
+
+.notification-menu-actions{
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.notification-menu-body{
+  min-height: 0;
+  overflow: auto;
+  padding: 10px;
+}
+
+.notification-list{
+  display: grid;
+  gap: 8px;
+}
+
+.notification-item{
+  width: 100%;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--border-soft);
+  border-radius: 14px;
+  background: var(--row-bg);
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.notification-item:hover{
+  background: var(--row-bg-hover);
+  border-color: var(--border);
+}
+
+.notification-item.is-unread{
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--brand-red) 10%, transparent);
+}
+
+.notification-item-avatar{
+  width: 34px;
+  height: 34px;
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--border-soft);
+  background: var(--pill-bg);
+  color: var(--text-strong);
+  display: grid;
+  place-items: center;
+  font-size: 12px;
+  font-weight: 850;
+  flex: 0 0 auto;
+}
+
+.notification-item-main{
+  min-width: 0;
+  display: grid;
+  gap: 6px;
+}
+
+.notification-item-top{
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.notification-item-kind{
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.notification-item-kind__content{
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.notification-item-time,
+.notification-item-meta{
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.notification-item-summary{
+  font-size: 14px;
+  line-height: 1.4;
+  color: var(--text-strong);
+  font-weight: 650;
+}
+
+.notification-item-side{
+  display: grid;
+  justify-items: end;
+  gap: 8px;
+}
+
+.notification-item-dot{
+  width: 10px;
+  height: 10px;
+  border-radius: var(--radius-pill);
+  background: var(--brand-red);
+  box-shadow: 0 0 0 3px rgba(230,43,39,.12);
+}
+
+.notification-empty{
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.notification-empty-icon{
+  color: var(--muted);
+}
+
+.notification-empty-title{
+  font-size: 13px;
+  font-weight: 800;
+  color: var(--text-strong);
+}
+
 .backdrop{
   position: fixed;
   inset: 56px 0 0 0;
@@ -1540,10 +1725,12 @@ html[data-appearance="light"] .type-telefonie{
 
 .installations-startup-card__progress-bar{
   display: block;
+  width: 100%;
   height: 100%;
   border-radius: inherit;
   background: linear-gradient(90deg, var(--success-border), var(--success-text));
-  transition: width .3s ease;
+  transform-origin: left center;
+  transition: transform .08s linear;
 }
 
 .doc-section-shell{
@@ -2608,6 +2795,14 @@ html[data-appearance="light"] .type-telefonie{
   padding: 14px;
   display: grid;
   gap: 10px;
+  position: relative;
+  overflow: visible;
+  z-index: 1;
+}
+
+.monitor-followup-card--menu-open{
+  z-index: 12;
+  isolation: isolate;
 }
 
 .monitor-followup-card--active{ border-color: var(--info-border); background: var(--info-bg-soft); }
@@ -2630,6 +2825,8 @@ html[data-appearance="light"] .type-telefonie{
   flex-wrap: wrap;
   gap: 10px;
   align-items: flex-start;
+  position: relative;
+  z-index: 2;
 }
 
 .monitor-followup-status-btn{
@@ -2674,6 +2871,7 @@ html[data-appearance="light"] .type-telefonie{
 
 .monitor-certificate-menu{
   position: relative;
+  z-index: 40;
 }
 
 .monitor-certificate-menu__trigger--open{
@@ -2689,8 +2887,9 @@ html[data-appearance="light"] .type-telefonie{
   padding: 6px;
   display: grid;
   gap: 4px;
-  z-index: 60;
+  z-index: 240;
   box-shadow: var(--shadow-panel);
+  pointer-events: auto;
 }
 
 .monitor-certificate-menu__option{
@@ -2710,6 +2909,29 @@ html[data-appearance="light"] .type-telefonie{
 .monitor-certificate-menu__option:focus-visible{
   background: var(--surface-3);
   outline: none;
+}
+
+.ember-inline-assist-panel{
+  padding: 8px;
+  display: grid;
+  gap: 6px;
+  justify-items: stretch;
+}
+
+.ember-inline-assist-panel--editor{
+  padding: 12px;
+  gap: 10px;
+}
+
+.ember-inline-assist-option{
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.ember-inline-assist-option__meta{
+  color: var(--muted);
+  font-size: 12px;
+  text-align: right;
 }
 
 .monitor-empty-state{
@@ -3878,6 +4100,11 @@ html[data-appearance="light"] .type-telefonie{
     width: min(320px, calc(100vw - 24px));
   }
 
+  .notification-menu{
+    right: -48px;
+    width: min(420px, calc(100vw - 18px));
+  }
+
   .page-hero__title{
     font-size: 28px;
   }
@@ -4158,7 +4385,7 @@ button.monitor-tag{
   border-radius: 16px;
   background: var(--card-bg);
   box-shadow: var(--shadow-soft);
-  overflow: hidden;
+  overflow: visible;
 }
 
 .monitor-detail-section__toggle{
@@ -4242,7 +4469,13 @@ button.monitor-tag{
   border-radius: 16px;
   background: var(--card-bg);
   box-shadow: var(--shadow-soft);
-  overflow: hidden;
+  overflow: visible;
+  position: relative;
+}
+
+.monitor-detail-status-block--menu-open{
+  z-index: 18;
+  isolation: isolate;
 }
 
 .monitor-section-toggle{

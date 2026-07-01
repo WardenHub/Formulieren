@@ -11,6 +11,7 @@ import PerformanceRequirementsTab from "./PerformanceRequirementsTab.jsx";
 import FormsTab from "./FormsTab.jsx";
 import ComponentsTab from "./ComponentsTab.jsx";
 import SoftwareTab from "./SoftwareTab.jsx";
+import NotesTab from "./NotesTab.jsx";
 
 import SaveButton from "../../components/SaveButton.jsx";
 import Tabs from "../../components/Tabs.jsx";
@@ -29,6 +30,7 @@ import { ChevronsUpDownIcon } from "@/components/ui/chevrons-up-down";
 import { CogIcon } from "@/components/ui/cog";
 import { MonitorCheckIcon } from "@/components/ui/monitor-check";
 import { RefreshCWIcon } from "@/components/ui/refresh-cw";
+import { MessageSquareText } from "lucide-react";
 import { pushRecentHomeItem } from "../../lib/recentHomeItems.js";
 import {
   getInstallationStatusClassName,
@@ -41,8 +43,10 @@ import {
   getCatalog,
   getCustomValues,
   getDocuments,
+  getInstallationNotes,
   getInstallationSoftware,
   getInstallationTypes,
+  getInstallationWorkflowItems,
   setInstallationType,
   getEnergySupplies,
   getEnergySupplyBrandTypes,
@@ -102,6 +106,72 @@ function BusyOverlay({ iconRef, title, label, fixed = false }) {
 
         <div className="muted" style={{ fontSize: 13 }}>
           {label || "Bezig met gegevens laden."}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function InstallationWarningPopup({ note, onOpen, onDismiss, progressPercent }) {
+  if (!note) return null;
+
+  return (
+    <div
+      style={{
+        position: "fixed",
+        inset: 0,
+        zIndex: 95,
+        display: "flex",
+        alignItems: "flex-start",
+        justifyContent: "center",
+        paddingTop: 96,
+        pointerEvents: "none",
+      }}
+    >
+      <div
+        className="card monitor-surface--danger"
+        style={{
+          width: "min(720px, calc(100vw - 32px))",
+          padding: 18,
+          display: "grid",
+          gap: 12,
+          pointerEvents: "auto",
+          boxShadow: "0 22px 60px rgba(0,0,0,.22)",
+        }}
+      >
+        <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center" }}>
+          <div style={{ display: "grid", gap: 4 }}>
+            <div className="ember-label ember-label--danger" style={{ justifySelf: "start" }}>
+              Waarschuwing
+            </div>
+            <div style={{ fontWeight: 900, fontSize: 20 }}>Actieve installatiewaarschuwing</div>
+          </div>
+          <button type="button" className="icon-btn" onClick={onDismiss} title="Sluiten">
+            ×
+          </button>
+        </div>
+
+        <div style={{ fontSize: 15, lineHeight: 1.6 }}>{String(note.body_markdown || "").trim()}</div>
+
+        <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+            <button type="button" className="btn" onClick={onOpen}>
+              Open waarschuwing
+            </button>
+            <button type="button" className="btn" onClick={onDismiss}>
+              Sluiten
+            </button>
+          </div>
+        </div>
+
+        <div className="installations-startup-card__progress">
+          <span
+            className="installations-startup-card__progress-bar"
+            style={{
+              transform: `scaleX(${Math.max(0, Math.min(100, progressPercent || 0)) / 100})`,
+              background: "linear-gradient(90deg, var(--danger-border), var(--danger-text))",
+            }}
+          />
         </div>
       </div>
     </div>
@@ -254,6 +324,13 @@ export default function InstallationDetails() {
 
   const [formsBusy, setFormsBusy] = useState(false);
   const [formsBusyLabel, setFormsBusyLabel] = useState("");
+  const [notesWorkflowOpenCount, setNotesWorkflowOpenCount] = useState(0);
+  const [warningNotes, setWarningNotes] = useState([]);
+  const [warningPopupVisible, setWarningPopupVisible] = useState(false);
+  const [warningPopupProgress, setWarningPopupProgress] = useState(100);
+  const warningPopupTimerRef = useRef(null);
+  const warningPopupIntervalRef = useRef(null);
+  const warningPopupShownRef = useRef("");
 
   const [anyOpenByTab, setAnyOpenByTab] = useState({
     atrium: false,
@@ -264,6 +341,7 @@ export default function InstallationDetails() {
     performance: false,
     forms: false,
     components: false,
+    notes: false,
   });
 
   function setAnyOpen(tabKey, value) {
@@ -305,7 +383,7 @@ export default function InstallationDetails() {
     setActiveTab(nextTabKey);
   }
 
-  const showCollapseAllToggle = activeTab !== "forms";
+  const showCollapseAllToggle = activeTab !== "forms" && activeTab !== "notes";
   const anyOpenInActiveTab = Boolean(anyOpenByTab[activeTab]);
   const collapseBtnTitle = anyOpenInActiveTab ? "Alles inklappen" : "Alles uitklappen";
   const CollapseIcon = anyOpenInActiveTab ? ChevronsDownUpIcon : ChevronsUpDownIcon;
@@ -437,6 +515,11 @@ export default function InstallationDetails() {
     let cancelled = false;
     setError(null);
     setPageLoading(true);
+    setWarningNotes([]);
+    setNotesWorkflowOpenCount(0);
+    setWarningPopupVisible(false);
+    setWarningPopupProgress(100);
+    warningPopupShownRef.current = "";
 
     getInstallationTypes()
       .then((res) => {
@@ -484,10 +567,92 @@ export default function InstallationDetails() {
   }, [code]);
 
   useEffect(() => {
+    let cancelled = false;
+
+    Promise.allSettled([
+      getInstallationNotes(code, { noteKind: "WARNING" }),
+      getInstallationWorkflowItems(code),
+    ]).then((results) => {
+      if (cancelled) return;
+
+      const [notesResult, workflowResult] = results;
+
+      if (notesResult.status === "fulfilled") {
+        const nextWarnings = Array.isArray(notesResult.value?.activeNotes)
+          ? notesResult.value.activeNotes.filter((item) => item?.note_kind === "WARNING")
+          : [];
+        setWarningNotes(nextWarnings);
+      }
+
+      if (workflowResult.status === "fulfilled") {
+        setNotesWorkflowOpenCount(Number(workflowResult.value?.counts?.open || 0));
+      }
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [code]);
+
+  useEffect(() => {
+    const nextWarning = Array.isArray(warningNotes) ? warningNotes[0] : null;
+    const warningId = String(nextWarning?.installation_note_id || "").trim();
+    if (!warningId) return;
+    if (warningPopupShownRef.current === warningId) return;
+
+    warningPopupShownRef.current = warningId;
+    setWarningPopupVisible(true);
+    setWarningPopupProgress(100);
+
+    if (warningPopupTimerRef.current) clearTimeout(warningPopupTimerRef.current);
+    if (warningPopupIntervalRef.current) clearInterval(warningPopupIntervalRef.current);
+
+    const startedAt = Date.now();
+    warningPopupIntervalRef.current = window.setInterval(() => {
+      const elapsed = Date.now() - startedAt;
+      const remaining = Math.max(0, 5000 - elapsed);
+      setWarningPopupProgress((remaining / 5000) * 100);
+    }, 80);
+
+    warningPopupTimerRef.current = window.setTimeout(() => {
+      setWarningPopupVisible(false);
+      setWarningPopupProgress(0);
+      if (warningPopupIntervalRef.current) {
+        clearInterval(warningPopupIntervalRef.current);
+        warningPopupIntervalRef.current = null;
+      }
+    }, 5000);
+
+    return () => {
+      if (warningPopupTimerRef.current) {
+        clearTimeout(warningPopupTimerRef.current);
+        warningPopupTimerRef.current = null;
+      }
+      if (warningPopupIntervalRef.current) {
+        clearInterval(warningPopupIntervalRef.current);
+        warningPopupIntervalRef.current = null;
+      }
+    };
+  }, [warningNotes]);
+
+  useEffect(() => {
     return () => {
       if (saveOkTimerRef.current) {
         clearTimeout(saveOkTimerRef.current);
         saveOkTimerRef.current = null;
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (warningPopupTimerRef.current) {
+        clearTimeout(warningPopupTimerRef.current);
+        warningPopupTimerRef.current = null;
+      }
+      if (warningPopupIntervalRef.current) {
+        clearInterval(warningPopupIntervalRef.current);
+        warningPopupIntervalRef.current = null;
       }
     };
   }, []);
@@ -636,6 +801,30 @@ export default function InstallationDetails() {
     const customLabel = typeIsSet ? "Eigenschappen" : "Eigenschappen (kies type)";
 
     return [
+      {
+        key: "notes",
+        label: (
+          <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+            <span>Notities</span>
+            {notesWorkflowOpenCount > 0 ? (
+              <span className="monitor-tag monitor-tag--warning">{notesWorkflowOpenCount}</span>
+            ) : null}
+          </span>
+        ),
+        Icon: MessageSquareText,
+        content: (
+          <NotesTab
+            code={code}
+            installation={installation}
+            readOnly={isHistorical}
+            readOnlyReason={historicalReason}
+            isActive={activeTab === "notes"}
+            activationToken={activeTab === "notes" ? formsActivationToken : 0}
+            onWorkflowCountChange={setNotesWorkflowOpenCount}
+            onWarningNotesChange={setWarningNotes}
+          />
+        ),
+      },
       {
         key: "atrium",
         label: "Atriumdata",
@@ -900,6 +1089,7 @@ export default function InstallationDetails() {
     isAdmin,
     activeTab,
     formsActivationToken,
+    notesWorkflowOpenCount,
     selectedFormCode,
     preflight,
     preflightLoading,
@@ -935,6 +1125,43 @@ export default function InstallationDetails() {
           label={formsBusyLabel || "Bezig met formulieren verwerken."}
         />
       )}
+
+      {warningPopupVisible && warningNotes[0] ? (
+        <InstallationWarningPopup
+          note={warningNotes[0]}
+          progressPercent={warningPopupProgress}
+          onDismiss={() => {
+            setWarningPopupVisible(false);
+            if (warningPopupTimerRef.current) {
+              clearTimeout(warningPopupTimerRef.current);
+              warningPopupTimerRef.current = null;
+            }
+            if (warningPopupIntervalRef.current) {
+              clearInterval(warningPopupIntervalRef.current);
+              warningPopupIntervalRef.current = null;
+            }
+          }}
+          onOpen={() => {
+            setWarningPopupVisible(false);
+            if (warningPopupTimerRef.current) {
+              clearTimeout(warningPopupTimerRef.current);
+              warningPopupTimerRef.current = null;
+            }
+            if (warningPopupIntervalRef.current) {
+              clearInterval(warningPopupIntervalRef.current);
+              warningPopupIntervalRef.current = null;
+            }
+
+            setActiveTab("notes");
+
+            const nextParams = new URLSearchParams(searchParams);
+            nextParams.set("tab", "notes");
+            nextParams.set("subtab", "notes");
+            nextParams.set("note", String(warningNotes[0]?.installation_note_id || ""));
+            setSearchParams(nextParams, { replace: false });
+          }}
+        />
+      ) : null}
 
       <div className="inst-sticky">
         <div className="inst-sticky-row">

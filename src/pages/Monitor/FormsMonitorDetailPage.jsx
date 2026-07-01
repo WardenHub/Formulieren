@@ -23,7 +23,6 @@ import {
   putFormInstanceDocumentFollowUps,
   deleteFormInstanceDocument,
   getUserDirectory,
-  getRuntimeStatus,
 } from "../../api/emberApi.js";
 
 import { ArrowBigRightIcon } from "@/components/ui/arrow-big-right";
@@ -45,6 +44,8 @@ import { PartyPopperIcon } from "@/components/ui/party-popper";
 import { GavelIcon } from "@/components/ui/gavel";
 import { MenuIcon } from "@/components/ui/menu";
 import { LoaderPinwheelIcon } from "@/components/ui/loader-pinwheel";
+import { Link2 } from "lucide-react";
+import ApiStartupLoader, { useApiStartupLoader } from "../../components/ApiStartupLoader.jsx";
 import { pushRecentHomeItem } from "../../lib/recentHomeItems.js";
 import Tabs from "../../components/Tabs.jsx";
 import UserAvatar from "../../components/UserAvatar.jsx";
@@ -188,6 +189,98 @@ function getPdfExportFallbackMessage(phase) {
   if (token === "ready") return "Download wordt klaargezet.";
   if (token === "failed") return "Pdf-export is mislukt.";
   return "Ember bouwt het rapport op en maakt de download klaar.";
+}
+
+function normalizeHttpUrl(value) {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+  if (!/^https?:\/\//i.test(raw)) {
+    return `https://${raw}`;
+  }
+  return raw;
+}
+
+function isHttpUrl(value) {
+  const raw = String(value || "").trim();
+  return /^https?:\/\/\S+$/i.test(raw);
+}
+
+function buildMarkdownLink(label, href) {
+  const safeHref = normalizeHttpUrl(href);
+  const safeLabel = String(label || "").trim() || safeHref;
+  return `[${safeLabel}](${safeHref})`;
+}
+
+function applyMarkdownLink(currentValue, selectionStart, selectionEnd, href, labelOverride = "") {
+  const source = String(currentValue || "");
+  const start = Math.max(0, Number(selectionStart ?? 0));
+  const end = Math.max(start, Number(selectionEnd ?? start));
+  const selectedText = source.slice(start, end);
+  const label = String(labelOverride || "").trim() || selectedText || "link";
+  const linkMarkup = buildMarkdownLink(label, href);
+  const nextValue = source.slice(0, start) + linkMarkup + source.slice(end);
+
+  return {
+    value: nextValue,
+    caretStart: start + linkMarkup.length,
+    caretEnd: start + linkMarkup.length,
+    selectedText,
+  };
+}
+
+function renderLinkedNoteText(text) {
+  const source = String(text || "");
+  if (!source.trim()) return null;
+  const parts = [];
+  const pattern = /\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)|(https?:\/\/[^\s]+)/gi;
+  let lastIndex = 0;
+  let match;
+  let key = 0;
+
+  while ((match = pattern.exec(source)) !== null) {
+    if (match.index > lastIndex) {
+      parts.push(source.slice(lastIndex, match.index));
+    }
+
+    const label = match[1] || match[3] || match[2];
+    const href = match[2] || match[3];
+    parts.push(
+      <a key={`note-link-${key += 1}`} href={href} target="_blank" rel="noreferrer noopener">
+        {label}
+      </a>
+    );
+    lastIndex = pattern.lastIndex;
+  }
+
+  if (lastIndex < source.length) {
+    parts.push(source.slice(lastIndex));
+  }
+
+  return parts.map((part, index) =>
+    typeof part === "string" ? <span key={`note-text-${index}`}>{part}</span> : part
+  );
+}
+
+function NoteEditorToolbar({ disabled = false, onInsertLink }) {
+  return (
+    <div className="ember-toolbar" style={{ justifyContent: "flex-start", gap: 12, flexWrap: "wrap" }}>
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+        <button
+          type="button"
+          className="btn btn-secondary"
+          disabled={disabled}
+          onClick={onInsertLink}
+          title="Voeg een hyperlink toe"
+        >
+          <Link2 size={16} />
+          Link invoegen
+        </button>
+      </div>
+      <div className="muted" style={{ fontSize: 13 }}>
+        Selecteer tekst en druk op Ctrl+K ; links openen standaard in een nieuw tabblad.
+      </div>
+    </div>
+  );
 }
 
 function getFollowUpSourceLabel(row, currentFormInstanceId) {
@@ -1333,20 +1426,16 @@ export default function FormsMonitorDetailPage() {
   const actionMenuPopupRef = useRef(null);
   const ownerBtnRef = useRef(null);
   const ownerPopupRef = useRef(null);
-  const detailLoaderRef = useRef(null);
-  const detailLoadingStartRef = useRef(0);
   const pdfExportStatusLoaderRef = useRef(null);
   const pdfExportButtonLoaderRef = useRef(null);
   const pdfExportStartRef = useRef(0);
+  const noteTextareaRefs = useRef({});
 
   const noteSaveTimersRef = useRef({});
   const copyResetTimersRef = useRef({});
   const successTimerRef = useRef(null);
 
   const [detailLoading, setDetailLoading] = useState(true);
-  const [showSlowLoadingHint, setShowSlowLoadingHint] = useState(false);
-  const [detailLoadingElapsedSeconds, setDetailLoadingElapsedSeconds] = useState(0);
-  const [runtimeSnapshot, setRuntimeSnapshot] = useState(null);
   const [pdfExporting, setPdfExporting] = useState(false);
   const [showSlowPdfExportHint, setShowSlowPdfExportHint] = useState(false);
   const [pdfExportElapsedSeconds, setPdfExportElapsedSeconds] = useState(0);
@@ -1401,12 +1490,17 @@ export default function FormsMonitorDetailPage() {
   const [noteSavingById, setNoteSavingById] = useState({});
   const [noteSavedById, setNoteSavedById] = useState({});
   const [copiedById, setCopiedById] = useState({});
+  const [noteLinkDraft, setNoteLinkDraft] = useState({
+    openFor: null,
+    url: "",
+    label: "",
+    selectionStart: 0,
+    selectionEnd: 0,
+  });
   const [showFinishCelebration, setShowFinishCelebration] = useState(false);
-
-  useEffect(() => {
-    if (detailLoading || showSlowLoadingHint) detailLoaderRef.current?.startAnimation?.();
-    else detailLoaderRef.current?.stopAnimation?.();
-  }, [detailLoading, showSlowLoadingHint]);
+  const startupLoader = useApiStartupLoader(detailLoading, {
+    loadingCopy: "De formulierafhandeling wordt geladen.",
+  });
 
   useEffect(() => {
     if (pdfExporting || showSlowPdfExportHint) {
@@ -1417,59 +1511,6 @@ export default function FormsMonitorDetailPage() {
       pdfExportButtonLoaderRef.current?.stopAnimation?.();
     }
   }, [pdfExporting, showSlowPdfExportHint]);
-
-  useEffect(() => {
-    if (!detailLoading) {
-      detailLoadingStartRef.current = 0;
-      setShowSlowLoadingHint(false);
-      setDetailLoadingElapsedSeconds(0);
-      setRuntimeSnapshot(null);
-      return undefined;
-    }
-
-    detailLoadingStartRef.current = Date.now();
-    setDetailLoadingElapsedSeconds(0);
-
-    const slowHintTimer = window.setTimeout(() => {
-      setShowSlowLoadingHint(true);
-    }, 5000);
-
-    const elapsedTimer = window.setInterval(() => {
-      const startedAt = detailLoadingStartRef.current;
-      if (!startedAt) return;
-      setDetailLoadingElapsedSeconds(Math.max(0, Math.floor((Date.now() - startedAt) / 1000)));
-    }, 250);
-
-    return () => {
-      window.clearTimeout(slowHintTimer);
-      window.clearInterval(elapsedTimer);
-    };
-  }, [detailLoading]);
-
-  useEffect(() => {
-    if (!detailLoading || !showSlowLoadingHint) return undefined;
-
-    let cancelled = false;
-
-    async function pollRuntimeStatus() {
-      while (!cancelled && detailLoading) {
-        try {
-          const snapshot = normalizeRuntimeSnapshot(await getRuntimeStatus());
-          if (!cancelled) setRuntimeSnapshot(snapshot);
-        } catch {
-          if (!cancelled) setRuntimeSnapshot(null);
-        }
-
-        await sleep(2000);
-      }
-    }
-
-    pollRuntimeStatus();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [detailLoading, showSlowLoadingHint]);
 
   useEffect(() => {
     if (!pdfExporting) {
@@ -1699,6 +1740,12 @@ export default function FormsMonitorDetailPage() {
   }, [noteDrafts]);
 
   useEffect(() => {
+    if (activeSectionKey !== "action_points" && noteLinkDraft.openFor) {
+      closeNoteLinkEditor();
+    }
+  }, [activeSectionKey, noteLinkDraft.openFor]);
+
+  useEffect(() => {
     return () => {
       Object.values(noteSaveTimersRef.current).forEach((timerId) => {
         if (timerId) window.clearTimeout(timerId);
@@ -1803,35 +1850,6 @@ export default function FormsMonitorDetailPage() {
       message.includes("request failed (409)") ||
       isTransientPdfJobPollError(err)
     );
-  }
-
-  function normalizeRuntimeSnapshot(snapshot) {
-    if (!snapshot || typeof snapshot !== "object") return null;
-    return snapshot;
-  }
-
-  function getRuntimeBadgeLabel(snapshot) {
-    if (!snapshot) return null;
-    return String(snapshot.api_status || snapshot.status || (snapshot.ready ? "healthy" : snapshot.startup_phase) || "starting");
-  }
-
-  function getRuntimeStatusCopy(snapshot) {
-    if (!snapshot) {
-      return "Dit duurt eenmalig langer als de web API in rust was. Daarna reageert Ember weer op normale snelheid.";
-    }
-
-    if (String(snapshot.api_status || "").trim().toLowerCase() === "starting") {
-      return (
-        snapshot.startup_message ||
-        "Dit duurt eenmalig langer als de web API in rust was. Daarna reageert Ember weer op normale snelheid."
-      );
-    }
-
-    if (String(snapshot.api_status || "").trim().toLowerCase() === "degraded") {
-      return "Ember reageert weer; een achtergrondonderdeel is nog niet volledig beschikbaar.";
-    }
-
-    return "De aanvraag wordt geladen.";
   }
 
   function isRetryableDetailLoadError(e) {
@@ -2204,6 +2222,115 @@ export default function FormsMonitorDetailPage() {
     scheduleNoteSave(followUpActionId, nextValue);
   }
 
+  function closeNoteLinkEditor() {
+    setNoteLinkDraft({
+      openFor: null,
+      url: "",
+      label: "",
+      selectionStart: 0,
+      selectionEnd: 0,
+    });
+  }
+
+  function openNoteLinkEditor(followUpActionId) {
+    const textarea = noteTextareaRefs.current[followUpActionId];
+    const currentValue = noteDrafts[followUpActionId] ?? "";
+    const selectionStart = textarea?.selectionStart ?? currentValue.length;
+    const selectionEnd = textarea?.selectionEnd ?? selectionStart;
+    const selectedText = String(currentValue || "").slice(selectionStart, selectionEnd);
+
+    setNoteLinkDraft({
+      openFor: followUpActionId,
+      url: "",
+      label: selectedText,
+      selectionStart,
+      selectionEnd,
+    });
+
+    window.setTimeout(() => {
+      textarea?.focus?.();
+    }, 0);
+  }
+
+  function handleNoteLinkInsert() {
+    if (!noteLinkDraft.openFor || !noteLinkDraft.url.trim()) return;
+    const followUpActionId = noteLinkDraft.openFor;
+    const currentValue = noteDrafts[followUpActionId] ?? "";
+    const result = applyMarkdownLink(
+      currentValue,
+      noteLinkDraft.selectionStart,
+      noteLinkDraft.selectionEnd,
+      noteLinkDraft.url,
+      noteLinkDraft.label
+    );
+
+    setNoteDrafts((prev) => ({
+      ...prev,
+      [followUpActionId]: result.value,
+    }));
+    scheduleNoteSave(followUpActionId, result.value);
+
+    closeNoteLinkEditor();
+
+    window.setTimeout(() => {
+      const textarea = noteTextareaRefs.current[followUpActionId];
+      if (!textarea) return;
+      textarea.focus();
+      textarea.setSelectionRange(result.caretStart, result.caretEnd);
+    }, 0);
+  }
+
+  function handleNoteKeyDown(followUpActionId, event) {
+    if (event.altKey && String(event.key).toLowerCase() === "s") {
+      event.preventDefault();
+      const currentValue = noteDrafts[followUpActionId] ?? "";
+      void saveNoteNow(followUpActionId, currentValue);
+      return;
+    }
+
+    if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "k") {
+      event.preventDefault();
+      openNoteLinkEditor(followUpActionId);
+      return;
+    }
+
+    if (noteLinkDraft.openFor === followUpActionId && event.key === "Escape") {
+      event.preventDefault();
+      closeNoteLinkEditor();
+    }
+  }
+
+  function handleNotePaste(followUpActionId, event) {
+    const pastedText = event.clipboardData?.getData("text") || "";
+    if (!isHttpUrl(pastedText)) return;
+
+    const textarea = noteTextareaRefs.current[followUpActionId];
+    if (!textarea) return;
+    const selectionStart = textarea.selectionStart ?? 0;
+    const selectionEnd = textarea.selectionEnd ?? selectionStart;
+    if (selectionStart === selectionEnd) return;
+
+    event.preventDefault();
+    const currentValue = noteDrafts[followUpActionId] ?? "";
+    const result = applyMarkdownLink(
+      currentValue,
+      selectionStart,
+      selectionEnd,
+      pastedText
+    );
+
+    setNoteDrafts((prev) => ({
+      ...prev,
+      [followUpActionId]: result.value,
+    }));
+    scheduleNoteSave(followUpActionId, result.value);
+
+    window.setTimeout(() => {
+      textarea.focus();
+      textarea.setSelectionRange(result.caretStart, result.caretEnd);
+    }, 0);
+  }
+
   function toggleStatusSection(status) {
     setStatusOpenMap((prev) => ({
       ...prev,
@@ -2362,42 +2489,7 @@ export default function FormsMonitorDetailPage() {
         {!instanceId ? (
           <div className="muted">Geen formulierafhandeling geselecteerd.</div>
         ) : detailLoading ? (
-          showSlowLoadingHint ? (
-            <div className="ember-loading-card installations-startup-card" aria-live="polite">
-              <div className="ember-loading-card-inner installations-startup-card__inner">
-                <div className="ember-loading-icon installations-startup-card__icon">
-                  <LoaderPinwheelIcon ref={detailLoaderRef} size={30} active={detailLoading || showSlowLoadingHint} aria-label="api wordt opgestart" />
-                </div>
-
-                <div className="ember-loading-title">Ember start de API op</div>
-
-                <div className="ember-page-subtitle installations-startup-card__copy">
-                  {getRuntimeStatusCopy(runtimeSnapshot)}
-                </div>
-
-                <div className="installations-startup-card__meta">
-                  <span className="ember-label ember-label--muted">
-                    {getRuntimeBadgeLabel(runtimeSnapshot) || "starting"}
-                  </span>
-                  <span className="ember-label ember-label--muted">
-                    {detailLoadingElapsedSeconds}s bezig
-                  </span>
-                </div>
-
-                <div className="installations-startup-card__progress" aria-hidden="true">
-                  <span
-                    className="installations-startup-card__progress-bar"
-                    style={{ width: `${Math.min(94, 8 + (detailLoadingElapsedSeconds / 30) * 86)}%` }}
-                  />
-                </div>
-              </div>
-            </div>
-          ) : (
-            <div className="inline-status muted">
-              <LoaderPinwheelIcon ref={detailLoaderRef} size={18} active={detailLoading || showSlowLoadingHint} aria-label="laden" />
-              <span>laden</span>
-            </div>
-          )
+          <ApiStartupLoader state={startupLoader} inlineLabel="laden; detail" />
         ) : !item ? (
           <div className="muted">Detail niet beschikbaar.</div>
         ) : (
@@ -3092,7 +3184,13 @@ export default function FormsMonitorDetailPage() {
                           return (
                             <div
                               key={group.status}
-                              className={`${getCardToneClass(group.status)} monitor-detail-status-block`}
+                              className={`${getCardToneClass(group.status)} monitor-detail-status-block${
+                                group.items.some(
+                                  (row) => certificateMenuOpenId === row.follow_up_action_id
+                                )
+                                  ? " monitor-detail-status-block--menu-open"
+                                  : ""
+                              }`}
                             >
                               <button
                                 type="button"
@@ -3147,7 +3245,10 @@ export default function FormsMonitorDetailPage() {
                                     );
 
                                     return (
-                                      <div key={row.follow_up_action_id} className={getFollowUpCardClass(row.status)}>
+                                      <div
+                                        key={row.follow_up_action_id}
+                                        className={`${getFollowUpCardClass(row.status)}${certificateMenuOpenId === row.follow_up_action_id ? " monitor-followup-card--menu-open" : ""}`}
+                                      >
                                         <div className="ui-row-between">
                                           <div className="ui-stack-sm ui-min-0">
                                             <div className="ember-label-row">
@@ -3254,8 +3355,80 @@ export default function FormsMonitorDetailPage() {
                                             data-note-id={noteKey}
                                             placeholder="Werknotitie of interne toelichting"
                                             value={noteValue}
+                                            ref={(element) => {
+                                              if (element) noteTextareaRefs.current[noteKey] = element;
+                                              else delete noteTextareaRefs.current[noteKey];
+                                            }}
                                             onChange={(e) => handleNoteChange(noteKey, e.target.value)}
+                                            onKeyDown={(event) => handleNoteKeyDown(noteKey, event)}
+                                            onPaste={(event) => handleNotePaste(noteKey, event)}
                                           />
+
+                                          {String(noteValue || "").trim() ? (
+                                            <div className="ember-page-subtitle" style={{ marginTop: 8 }}>
+                                              <strong style={{ color: "var(--ink-700)" }}>Klikbare preview:</strong>{" "}
+                                              <span style={{ wordBreak: "break-word" }}>
+                                                {renderLinkedNoteText(noteValue)}
+                                              </span>
+                                            </div>
+                                          ) : null}
+
+                                          <NoteEditorToolbar
+                                            disabled={noteSaving}
+                                            onInsertLink={() => openNoteLinkEditor(noteKey)}
+                                          />
+
+                                          {noteLinkDraft.openFor === noteKey ? (
+                                            <div className="card ember-inline-assist-panel ember-inline-assist-panel--editor">
+                                              <div className="ember-page-subtitle">
+                                                Hyperlink invoegen
+                                              </div>
+                                              <input
+                                                className="cf-input"
+                                                value={noteLinkDraft.label}
+                                                onChange={(event) =>
+                                                  setNoteLinkDraft((prev) => ({ ...prev, label: event.target.value }))
+                                                }
+                                                placeholder="Tekst van de link"
+                                              />
+                                              <input
+                                                className="cf-input"
+                                                autoFocus
+                                                value={noteLinkDraft.url}
+                                                onChange={(event) =>
+                                                  setNoteLinkDraft((prev) => ({ ...prev, url: event.target.value }))
+                                                }
+                                                onKeyDown={(event) => {
+                                                  if (event.key === "Enter") {
+                                                    event.preventDefault();
+                                                    handleNoteLinkInsert();
+                                                  }
+                                                  if (event.key === "Escape") {
+                                                    event.preventDefault();
+                                                    closeNoteLinkEditor();
+                                                  }
+                                                }}
+                                                placeholder="https://..."
+                                              />
+                                              <div className="ember-toolbar">
+                                                <button
+                                                  type="button"
+                                                  className="btn btn-secondary"
+                                                  onClick={closeNoteLinkEditor}
+                                                >
+                                                  Annuleren
+                                                </button>
+                                                <button
+                                                  type="button"
+                                                  className="btn btn-secondary"
+                                                  disabled={!noteLinkDraft.url.trim()}
+                                                  onClick={handleNoteLinkInsert}
+                                                >
+                                                  Link invoegen
+                                                </button>
+                                              </div>
+                                            </div>
+                                          ) : null}
 
                                           <div className="ember-page-subtitle">
                                             {noteSaving

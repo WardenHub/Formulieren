@@ -7,7 +7,14 @@ import {
   getCustomValues,
   putCustomValues,
   getDocuments,
+  getInstallationNotes,
+  getInstallationWorkflowItems,
   putInstallationType,
+  postInstallationNote,
+  putInstallationNote,
+  postArchiveInstallationNote,
+  postInstallationNoteReaction,
+  deleteInstallationNote,
   putDocuments,
   uploadDocumentFile,
   getDocumentDownloadUrl,
@@ -135,6 +142,21 @@ router.get("/:code", getInstallation);
 router.get("/:code/catalog", getCatalog);
 router.get("/:code/custom-values", getCustomValues);
 router.get("/:code/components", requireRole("admin", "gebruiker"), getInstallationComponents);
+router.get("/:code/notes", requireRole(...documentRoles), getInstallationNotes);
+router.post("/:code/notes", requireRole(...documentRoles), postInstallationNote);
+router.put("/:code/notes/:installationNoteId", requireRole(...documentRoles), putInstallationNote);
+router.post(
+  "/:code/notes/:installationNoteId/archive",
+  requireRole(...documentRoles),
+  postArchiveInstallationNote
+);
+router.delete("/:code/notes/:installationNoteId", requireRole(...documentRoles), deleteInstallationNote);
+router.post(
+  "/:code/notes/:installationNoteId/reactions",
+  requireRole(...documentRoles),
+  postInstallationNoteReaction
+);
+router.get("/:code/workflow-items", requireRole(...documentRoles), getInstallationWorkflowItems);
 router.put("/:code/custom-values", requireRole("admin", "gebruiker"), putCustomValues);
 
 router.get("/:code/documents", requireRole(...documentRoles), getDocuments);

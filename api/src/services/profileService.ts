@@ -92,6 +92,12 @@ function normalizeSignatureSourcePreference(value: any) {
   return "uploaded";
 }
 
+function normalizeNotificationReminderFrequency(value: any) {
+  const v = String(value || "").trim().toLowerCase();
+  if (v === "daily" || v === "weekly" || v === "monthly" || v === "none") return v;
+  return "none";
+}
+
 function mapProfileRow(row: any, user: any) {
   const preferredDisplayName = row?.preferred_display_name ?? null;
   const snapshotName = row?.display_name_snapshot ?? user?.name ?? null;
@@ -106,6 +112,7 @@ function mapProfileRow(row: any, user: any) {
     profile_note: row?.profile_note ?? null,
     appearance_preference: row?.appearance_preference ?? "system",
     avatar_source_preference: row?.avatar_source_preference ?? "microsoft",
+    notification_reminder_frequency: row?.notification_reminder_frequency ?? "none",
     signature_source_preference: row?.signature_source_preference ?? "uploaded",
     created_at: row?.created_at ?? null,
     created_by: row?.created_by ?? null,
@@ -372,6 +379,9 @@ export async function updateMyProfile(payload: any, user: any) {
     profileNote: toNullableString(payload?.profile_note),
     appearancePreference: normalizeAppearancePreference(payload?.appearance_preference),
     avatarSourcePreference: normalizeAvatarSourcePreference(payload?.avatar_source_preference),
+    notificationReminderFrequency: normalizeNotificationReminderFrequency(
+      payload?.notification_reminder_frequency
+    ),
     signatureSourcePreference: normalizeSignatureSourcePreference(payload?.signature_source_preference),
     actor: getUserAuditActor(user),
   });
@@ -429,6 +439,8 @@ export async function uploadMyAvatar(file: Express.Multer.File, user: any) {
       profileNote: currentBefore?.profile_note ?? null,
       appearancePreference: currentBefore?.appearance_preference ?? "system",
       avatarSourcePreference: "uploaded",
+      notificationReminderFrequency:
+        currentBefore?.notification_reminder_frequency ?? "none",
       signatureSourcePreference: currentBefore?.signature_source_preference ?? "uploaded",
       actor: getUserAuditActor(user),
     });
@@ -473,6 +485,8 @@ export async function deleteMyAvatar(user: any) {
     profileNote: currentProfile?.profile_note ?? null,
     appearancePreference: currentProfile?.appearance_preference ?? "system",
     avatarSourcePreference: "microsoft",
+    notificationReminderFrequency:
+      currentProfile?.notification_reminder_frequency ?? "none",
     signatureSourcePreference: currentProfile?.signature_source_preference ?? "uploaded",
     actor: getUserAuditActor(user),
   });
@@ -532,6 +546,8 @@ export async function uploadMySignature(file: Express.Multer.File, user: any) {
       profileNote: currentBefore?.profile_note ?? null,
       appearancePreference: currentBefore?.appearance_preference ?? "system",
       avatarSourcePreference: currentBefore?.avatar_source_preference ?? "microsoft",
+      notificationReminderFrequency:
+        currentBefore?.notification_reminder_frequency ?? "none",
       signatureSourcePreference: "uploaded",
       actor: getUserAuditActor(user),
     });
@@ -576,6 +592,8 @@ export async function deleteMySignature(user: any) {
     profileNote: currentProfile?.profile_note ?? null,
     appearancePreference: currentProfile?.appearance_preference ?? "system",
     avatarSourcePreference: currentProfile?.avatar_source_preference ?? "microsoft",
+    notificationReminderFrequency:
+      currentProfile?.notification_reminder_frequency ?? "none",
     signatureSourcePreference: "none",
     actor: getUserAuditActor(user),
   });

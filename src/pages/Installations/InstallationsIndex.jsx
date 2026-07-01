@@ -1,11 +1,11 @@
 // /src/pages/Installations/InstallationsIndex.jsx
 // /src/pages/Installations/InstallationsIndex.jsx
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 
-import { getRuntimeStatus, searchInstallations } from "@/api/emberApi.js";
+import { searchInstallations } from "@/api/emberApi.js";
+import ApiStartupLoader, { useApiStartupLoader } from "@/components/ApiStartupLoader.jsx";
 import { SearchIcon } from "@/components/ui/search";
-import { LoaderPinwheelIcon } from "@/components/ui/loader-pinwheel";
 import InstallationTypeTag from "@/components/InstallationTypeTag.jsx";
 import {
   getInstallationStatusClassName,
@@ -16,99 +16,9 @@ export default function InstallationsIndex() {
   const [q, setQ] = useState("");
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(false);
-  const [showSlowLoadingHint, setShowSlowLoadingHint] = useState(false);
-  const [loadingElapsedSeconds, setLoadingElapsedSeconds] = useState(0);
-  const [runtimeSnapshot, setRuntimeSnapshot] = useState(null);
   const [err, setErr] = useState(null);
   const [onlyCurrent, setOnlyCurrent] = useState(true);
-
-  const loaderRef = useRef(null);
-  const loadingStartRef = useRef(0);
-
-  function getRuntimeBadgeLabel(snapshot) {
-    if (!snapshot || typeof snapshot !== "object") return "starting";
-    return String(snapshot.api_status || snapshot.status || (snapshot.ready ? "healthy" : snapshot.startup_phase) || "starting");
-  }
-
-  function getRuntimeStatusCopy(snapshot) {
-    if (!snapshot || typeof snapshot !== "object") {
-      return "Dit duurt eenmalig langer als de web API in rust was. Daarna reageert Ember weer op normale snelheid.";
-    }
-
-    if (String(snapshot.api_status || "").trim().toLowerCase() === "starting") {
-      return (
-        snapshot.startup_message ||
-        "Dit duurt eenmalig langer als de web API in rust was. Daarna reageert Ember weer op normale snelheid."
-      );
-    }
-
-    if (String(snapshot.api_status || "").trim().toLowerCase() === "degraded") {
-      return "Ember reageert weer; een achtergrondonderdeel is nog niet volledig beschikbaar.";
-    }
-
-    return "De aanvraag wordt geladen.";
-  }
-
-  function sleep(ms) {
-    return new Promise((resolve) => window.setTimeout(resolve, ms));
-  }
-
-  useEffect(() => {
-    if (loading || showSlowLoadingHint) loaderRef.current?.startAnimation?.();
-    else loaderRef.current?.stopAnimation?.();
-  }, [loading, showSlowLoadingHint]);
-
-  useEffect(() => {
-    if (!loading) {
-      loadingStartRef.current = 0;
-      setShowSlowLoadingHint(false);
-      setLoadingElapsedSeconds(0);
-      setRuntimeSnapshot(null);
-      return undefined;
-    }
-
-    loadingStartRef.current = Date.now();
-    setLoadingElapsedSeconds(0);
-    const slowHintTimer = window.setTimeout(() => {
-      setShowSlowLoadingHint(true);
-    }, 5000);
-
-    const elapsedTimer = window.setInterval(() => {
-      const startedAt = loadingStartRef.current;
-      if (!startedAt) return;
-      setLoadingElapsedSeconds(Math.max(0, Math.floor((Date.now() - startedAt) / 1000)));
-    }, 250);
-
-    return () => {
-      window.clearTimeout(slowHintTimer);
-      window.clearInterval(elapsedTimer);
-    };
-  }, [loading]);
-
-  useEffect(() => {
-    if (!loading || !showSlowLoadingHint) return undefined;
-
-    let cancelled = false;
-
-    async function pollRuntimeStatus() {
-      while (!cancelled && loading) {
-        try {
-          const snapshot = await getRuntimeStatus();
-          if (!cancelled) setRuntimeSnapshot(snapshot && typeof snapshot === "object" ? snapshot : null);
-        } catch {
-          if (!cancelled) setRuntimeSnapshot(null);
-        }
-
-        await sleep(2000);
-      }
-    }
-
-    pollRuntimeStatus();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [loading, showSlowLoadingHint]);
+  const startupLoader = useApiStartupLoader(loading);
 
   useEffect(() => {
     let cancelled = false;
@@ -181,44 +91,7 @@ export default function InstallationsIndex() {
 
       {err && <p className="doc-error">{err}</p>}
 
-      {loading && !showSlowLoadingHint && (
-        <div className="inline-status muted">
-          <LoaderPinwheelIcon ref={loaderRef} size={18} aria-label="laden" />
-          <span>laden</span>
-        </div>
-      )}
-
-      {loading && showSlowLoadingHint && (
-        <div className="ember-loading-card installations-startup-card" aria-live="polite">
-          <div className="ember-loading-card-inner installations-startup-card__inner">
-            <div className="ember-loading-icon installations-startup-card__icon">
-              <LoaderPinwheelIcon ref={loaderRef} size={30} aria-label="api wordt opgestart" />
-            </div>
-
-            <div className="ember-loading-title">Ember start de API op</div>
-
-            <div className="ember-page-subtitle installations-startup-card__copy">
-              {getRuntimeStatusCopy(runtimeSnapshot)}
-            </div>
-
-            <div className="installations-startup-card__meta">
-              <span className="ember-label ember-label--muted">
-                {getRuntimeBadgeLabel(runtimeSnapshot)}
-              </span>
-              <span className="ember-label ember-label--muted">
-                {loadingElapsedSeconds}s bezig
-              </span>
-            </div>
-
-            <div className="installations-startup-card__progress" aria-hidden="true">
-              <span
-                className="installations-startup-card__progress-bar"
-                style={{ width: `${Math.min(94, 8 + (loadingElapsedSeconds / 30) * 86)}%` }}
-              />
-            </div>
-          </div>
-        </div>
-      )}
+      <ApiStartupLoader state={startupLoader} />
 
       {!loading && !hasQuery && (
         <div className="ui-empty">typ een code om te zoeken</div>

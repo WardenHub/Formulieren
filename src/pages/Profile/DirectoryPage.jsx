@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { getUserDirectory } from "../../api/emberApi.js";
 import teamsLogo from "../../assets/teams-logo.png";
+import ApiStartupLoader, { useApiStartupLoader } from "../../components/ApiStartupLoader.jsx";
 import UserAvatar from "../../components/UserAvatar.jsx";
 import {
   buildInitials,
@@ -32,6 +33,9 @@ export default function DirectoryPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [items, setItems] = useState([]);
+  const startupLoader = useApiStartupLoader(loading, {
+    loadingCopy: "Het smoelenboek wordt geladen.",
+  });
 
   useEffect(() => {
     let cancelled = false;
@@ -119,7 +123,7 @@ export default function DirectoryPage() {
       </div>
 
       <div className="inst-body ui-stack">
-        {loading ? <div className="muted">laden; smoelenboek</div> : null}
+        {loading ? <ApiStartupLoader state={startupLoader} inlineLabel="laden; smoelenboek" /> : null}
         {error ? <div className="ember-error-text">{error}</div> : null}
 
         {!loading && !error ? (

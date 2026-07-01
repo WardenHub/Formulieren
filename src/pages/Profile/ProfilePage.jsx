@@ -95,6 +95,7 @@ export default function ProfilePage() {
     profile_note: "",
     appearance_preference: "system",
     avatar_source_preference: "microsoft",
+    notification_reminder_frequency: "none",
     signature_source_preference: "uploaded",
   });
 
@@ -124,6 +125,7 @@ export default function ProfilePage() {
         profile_note: res?.profile?.profile_note || "",
         appearance_preference: res?.profile?.appearance_preference || "system",
         avatar_source_preference: res?.profile?.avatar_source_preference || "microsoft",
+        notification_reminder_frequency: res?.profile?.notification_reminder_frequency || "none",
         signature_source_preference: res?.profile?.signature_source_preference || "uploaded",
       });
 
@@ -242,6 +244,8 @@ export default function ProfilePage() {
       (draft.profile_note || "") !== (data.profile.profile_note || "") ||
       (draft.appearance_preference || "system") !== (data.profile.appearance_preference || "system") ||
       (draft.avatar_source_preference || "microsoft") !== (data.profile.avatar_source_preference || "microsoft") ||
+      (draft.notification_reminder_frequency || "none") !==
+        (data.profile.notification_reminder_frequency || "none") ||
       (draft.signature_source_preference || "uploaded") !== (data.profile.signature_source_preference || "uploaded")
     );
   }, [draft, data]);
@@ -274,6 +278,7 @@ export default function ProfilePage() {
         profile_note: res?.profile?.profile_note || "",
         appearance_preference: res?.profile?.appearance_preference || "system",
         avatar_source_preference: res?.profile?.avatar_source_preference || "microsoft",
+        notification_reminder_frequency: res?.profile?.notification_reminder_frequency || "none",
         signature_source_preference: res?.profile?.signature_source_preference || "uploaded",
       });
 
@@ -603,7 +608,7 @@ export default function ProfilePage() {
               <section className="card">
                 <div className="card-head">
                   <div className="profile-section-title">Weergave</div>
-                  <div className="ember-page-subtitle">Persoonlijke themavoorkeur voor Ember</div>
+                  <div className="ember-page-subtitle">Persoonlijke thema- en reminderinstellingen voor Ember</div>
                 </div>
 
                 <div className="card-body">
@@ -622,6 +627,25 @@ export default function ProfilePage() {
                       <option value="system">Systeem</option>
                       <option value="dark">Donker</option>
                       <option value="light">Licht</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <div className="label">Herinnering openstaande items</div>
+                    <select
+                      className="input"
+                      value={draft.notification_reminder_frequency}
+                      onChange={(e) =>
+                        setDraft((prev) => ({
+                          ...prev,
+                          notification_reminder_frequency: e.target.value,
+                        }))
+                      }
+                    >
+                      <option value="none">Niet</option>
+                      <option value="daily">Dagelijks</option>
+                      <option value="weekly">Wekelijks</option>
+                      <option value="monthly">Maandelijks</option>
                     </select>
                   </div>
                 </div>

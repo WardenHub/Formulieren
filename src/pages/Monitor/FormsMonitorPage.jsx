@@ -2,7 +2,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
-import { getFormsMonitorList, getRuntimeStatus, getUserDirectory } from "../../api/emberApi.js";
+import { getFormsMonitorList, getUserDirectory } from "../../api/emberApi.js";
+import ApiStartupLoader, { useApiStartupLoader } from "../../components/ApiStartupLoader.jsx";
 import UserAvatar from "../../components/UserAvatar.jsx";
 import {
   buildInitials,
@@ -10,8 +11,6 @@ import {
   getDirectoryDisplayName,
   resolveDirectoryAvatarPath,
 } from "../../lib/avatar.js";
-import { LoaderPinwheelIcon } from "@/components/ui/loader-pinwheel";
-
 import { SearchIcon } from "@/components/ui/search";
 import { ArrowBigRightIcon } from "@/components/ui/arrow-big-right";
 import { RefreshCWIcon } from "@/components/ui/refresh-cw";
@@ -43,6 +42,26 @@ const STATUS_GROUP_OPTIONS = [
 ];
 
 const DEFAULT_SELECTED_STATUS_GROUPS = ["TODO"];
+
+function buildDefaultFilters(storedState) {
+  return {
+    q: storedState?.filters?.q ?? "",
+    mine: storedState?.filters?.mine ?? true,
+    assignedUserObjectId: storedState?.filters?.assignedUserObjectId ?? "",
+    assignedSearch: storedState?.filters?.assignedSearch ?? "",
+    unassignedOnly: storedState?.filters?.unassignedOnly ?? false,
+    onlyActionable: storedState?.filters?.onlyActionable ?? false,
+    noRemainingOpenActionPoints: storedState?.filters?.noRemainingOpenActionPoints ?? false,
+    selectedStatusGroups: Array.isArray(storedState?.filters?.selectedStatusGroups)
+      ? storedState.filters.selectedStatusGroups
+      : Array.isArray(storedState?.filters?.selectedStatuses) && storedState.filters.selectedStatuses.length > 0
+        ? ["TODO"]
+        : DEFAULT_SELECTED_STATUS_GROUPS,
+    actionStatusFilter: storedState?.filters?.actionStatusFilter ?? "ALL",
+    take: 200,
+    skip: 0,
+  };
+}
 
 function cx(...parts) {
   return parts.filter(Boolean).join(" ");
@@ -245,36 +264,14 @@ export default function FormsMonitorPage() {
   const statusInfoIconRef = useRef(null);
   const statusInfoBtnRef = useRef(null);
   const statusInfoPopupRef = useRef(null);
-  const listLoaderRef = useRef(null);
-  const listLoadingStartRef = useRef(0);
-
   const [listLoading, setListLoading] = useState(true);
-  const [showSlowLoadingHint, setShowSlowLoadingHint] = useState(false);
-  const [listLoadingElapsedSeconds, setListLoadingElapsedSeconds] = useState(0);
-  const [runtimeSnapshot, setRuntimeSnapshot] = useState(null);
   const [error, setError] = useState(null);
   const [infoOpen, setInfoOpen] = useState(false);
   const [infoPopupStyle, setInfoPopupStyle] = useState(null);
   const [statusInfoOpen, setStatusInfoOpen] = useState(false);
   const [statusInfoPopupStyle, setStatusInfoPopupStyle] = useState(null);
 
-  const [filters, setFilters] = useState({
-    q: storedState?.filters?.q ?? "",
-    mine: storedState?.filters?.mine ?? true,
-    assignedUserObjectId: storedState?.filters?.assignedUserObjectId ?? "",
-    assignedSearch: storedState?.filters?.assignedSearch ?? "",
-    unassignedOnly: storedState?.filters?.unassignedOnly ?? false,
-    onlyActionable: storedState?.filters?.onlyActionable ?? false,
-    noRemainingOpenActionPoints: storedState?.filters?.noRemainingOpenActionPoints ?? false,
-    selectedStatusGroups: Array.isArray(storedState?.filters?.selectedStatusGroups)
-      ? storedState.filters.selectedStatusGroups
-      : Array.isArray(storedState?.filters?.selectedStatuses) && storedState.filters.selectedStatuses.length > 0
-        ? ["TODO"]
-        : DEFAULT_SELECTED_STATUS_GROUPS,
-    actionStatusFilter: storedState?.filters?.actionStatusFilter ?? "ALL",
-    take: 200,
-    skip: 0,
-  });
+  const [filters, setFilters] = useState(buildDefaultFilters(storedState));
 
   const [items, setItems] = useState([]);
   const [autoRefreshEnabled, setAutoRefreshEnabled] = useState(storedState?.autoRefreshEnabled ?? false);
@@ -285,7 +282,7 @@ export default function FormsMonitorPage() {
     return buildEffectiveStatuses(filters.selectedStatusGroups);
   }, [filters.selectedStatusGroups]);
 
-  const visibleItems = useMemo(() => {
+  const baseVisibleItems = useMemo(() => {
     const selectedStatusesSet = new Set(effectiveSelectedStatuses || []);
 
     return (items || [])
@@ -299,30 +296,53 @@ export default function FormsMonitorPage() {
         return getRemainingOpenActionCount(x) > 0;
       })
       .filter((x) => {
-        if (!filters.actionStatusFilter || filters.actionStatusFilter === "ALL") return true;
-        if (filters.actionStatusFilter === "OPEN") return getRemainingOpenActionCount(x) > 0;
-        return rowHasMonitorActionFilter(x, filters.actionStatusFilter);
+        return true;
       });
   }, [items, filters, effectiveSelectedStatuses]);
 
+  const visibleItems = useMemo(() => {
+    return baseVisibleItems.filter((x) => {
+      if (!filters.actionStatusFilter || filters.actionStatusFilter === "ALL") return true;
+      if (filters.actionStatusFilter === "OPEN") return getRemainingOpenActionCount(x) > 0;
+      return rowHasMonitorActionFilter(x, filters.actionStatusFilter);
+    });
+  }, [baseVisibleItems, filters.actionStatusFilter]);
+
   const visibleTotals = useMemo(() => {
-    const base = buildMonitorVisibleTotals(visibleItems);
-    const fallback = visibleItems.reduce(
+    const base = buildMonitorVisibleTotals(baseVisibleItems);
+    const fallback = baseVisibleItems.reduce(
       (acc, row) => {
+        acc.planningNeeded += getPlanningNeededCount(row);
         acc.open += getOpenCount(row);
         acc.waiting += getWaitingCount(row);
         acc.done += getDoneCount(row);
         return acc;
       },
-      { open: 0, waiting: 0, done: 0 }
+      { planningNeeded: 0, open: 0, waiting: 0, done: 0 }
     );
 
     return {
+      planningNeeded: Number(base?.planningNeeded ?? fallback.planningNeeded),
       open: Number(base?.open ?? fallback.open),
       waiting: Number(base?.waiting ?? fallback.waiting),
       done: Number(base?.done ?? fallback.done),
     };
-  }, [visibleItems]);
+  }, [baseVisibleItems]);
+
+  const hasActiveFilters = useMemo(() => {
+    const defaults = buildDefaultFilters(storedState);
+    return (
+      filters.q !== defaults.q ||
+      filters.mine !== defaults.mine ||
+      filters.assignedUserObjectId !== defaults.assignedUserObjectId ||
+      filters.assignedSearch !== defaults.assignedSearch ||
+      filters.unassignedOnly !== defaults.unassignedOnly ||
+      filters.onlyActionable !== defaults.onlyActionable ||
+      filters.noRemainingOpenActionPoints !== defaults.noRemainingOpenActionPoints ||
+      JSON.stringify(filters.selectedStatusGroups || []) !== JSON.stringify(defaults.selectedStatusGroups || []) ||
+      filters.actionStatusFilter !== defaults.actionStatusFilter
+    );
+  }, [filters, storedState]);
 
   const directoryByUserObjectId = useMemo(() => {
     const next = new Map();
@@ -335,39 +355,9 @@ export default function FormsMonitorPage() {
   }, [directoryItems]);
 
   const actorLookup = useMemo(() => buildDirectoryActorLookup(directoryItems), [directoryItems]);
-
-  function sleep(ms) {
-    return new Promise((resolve) => window.setTimeout(resolve, ms));
-  }
-
-  function normalizeRuntimeSnapshot(snapshot) {
-    if (!snapshot || typeof snapshot !== "object") return null;
-    return snapshot;
-  }
-
-  function getRuntimeBadgeLabel(snapshot) {
-    if (!snapshot) return null;
-    return String(snapshot.api_status || snapshot.status || (snapshot.ready ? "healthy" : snapshot.startup_phase) || "starting");
-  }
-
-  function getRuntimeStatusCopy(snapshot) {
-    if (!snapshot) {
-      return "Dit duurt eenmalig langer als de web API in rust was. Daarna reageert Ember weer op normale snelheid.";
-    }
-
-    if (String(snapshot.api_status || "").trim().toLowerCase() === "starting") {
-      return (
-        snapshot.startup_message ||
-        "Dit duurt eenmalig langer als de web API in rust was. Daarna reageert Ember weer op normale snelheid."
-      );
-    }
-
-    if (String(snapshot.api_status || "").trim().toLowerCase() === "degraded") {
-      return "Ember reageert weer; een achtergrondonderdeel is nog niet volledig beschikbaar.";
-    }
-
-    return "De aanvraag wordt geladen.";
-  }
+  const startupLoader = useApiStartupLoader(listLoading, {
+    loadingCopy: "De monitor wordt geladen.",
+  });
 
   function isRetryableListLoadError(e) {
     const message = String(e?.message || e || "").toLowerCase();
@@ -382,64 +372,6 @@ export default function FormsMonitorPage() {
   useEffect(() => {
     saveStateToStorage(OVERVIEW_LS_KEY, { filters, autoRefreshEnabled });
   }, [filters, autoRefreshEnabled]);
-
-  useEffect(() => {
-    if (listLoading || showSlowLoadingHint) listLoaderRef.current?.startAnimation?.();
-    else listLoaderRef.current?.stopAnimation?.();
-  }, [listLoading, showSlowLoadingHint]);
-
-  useEffect(() => {
-    if (!listLoading) {
-      listLoadingStartRef.current = 0;
-      setShowSlowLoadingHint(false);
-      setListLoadingElapsedSeconds(0);
-      setRuntimeSnapshot(null);
-      return undefined;
-    }
-
-    listLoadingStartRef.current = Date.now();
-    setListLoadingElapsedSeconds(0);
-
-    const slowHintTimer = window.setTimeout(() => {
-      setShowSlowLoadingHint(true);
-    }, 5000);
-
-    const elapsedTimer = window.setInterval(() => {
-      const startedAt = listLoadingStartRef.current;
-      if (!startedAt) return;
-      setListLoadingElapsedSeconds(Math.max(0, Math.floor((Date.now() - startedAt) / 1000)));
-    }, 250);
-
-    return () => {
-      window.clearTimeout(slowHintTimer);
-      window.clearInterval(elapsedTimer);
-    };
-  }, [listLoading]);
-
-  useEffect(() => {
-    if (!listLoading) return undefined;
-
-    let cancelled = false;
-
-    async function pollRuntimeStatus() {
-      while (!cancelled && listLoading) {
-        try {
-          const snapshot = normalizeRuntimeSnapshot(await getRuntimeStatus());
-          if (!cancelled) setRuntimeSnapshot(snapshot);
-        } catch {
-          if (!cancelled) setRuntimeSnapshot(null);
-        }
-
-        await sleep(2000);
-      }
-    }
-
-    pollRuntimeStatus();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [listLoading]);
 
   useEffect(() => {
     function onDocMouseDown(e) {
@@ -520,7 +452,7 @@ export default function FormsMonitorPage() {
         }
 
         setError(null);
-        await sleep(attempt <= 2 ? 1500 : 3000);
+        await new Promise((resolve) => window.setTimeout(resolve, attempt <= 2 ? 1500 : 3000));
       }
     }
   }
@@ -577,6 +509,12 @@ export default function FormsMonitorPage() {
 
   function clearSearch() {
     setFilters((prev) => ({ ...prev, q: "" }));
+  }
+
+  async function clearAllFilters() {
+    const next = buildDefaultFilters(storedState);
+    setFilters(next);
+    await loadList(next);
   }
 
   function openRow(row) {
@@ -895,6 +833,12 @@ export default function FormsMonitorPage() {
                   Zoektekst wissen
                 </button>
               ) : null}
+
+              {hasActiveFilters ? (
+                <button type="button" className="btn btn-secondary" onClick={() => void clearAllFilters()}>
+                  Filters wissen
+                </button>
+              ) : null}
             </div>
           </div>
         </section>
@@ -924,15 +868,15 @@ export default function FormsMonitorPage() {
             </div>
           </div>
 
-          {!listLoading && visibleItems.length > 0 && (
+          {!listLoading && (
             <div className="monitor-summary-chips">
               <SummaryTag
-                title="Toon formulieren met openstaande actiepunten; inclusief planning nodig en wachten op derden"
+                title="Toon formulieren met openstaande workflowacties"
                 tone="active"
                 active={filters.actionStatusFilter === "OPEN"}
                 onClick={() => setActionStatusFilter("OPEN")}
               >
-                Open {visibleTotals.open + visibleTotals.planningNeeded + visibleTotals.waiting}
+                Open {visibleTotals.open}
               </SummaryTag>
 
               <SummaryTag
@@ -954,7 +898,7 @@ export default function FormsMonitorPage() {
               </SummaryTag>
 
               <SummaryTag
-                title="Toon formulieren met afgehandelde actiepunten"
+                title="Toon formulieren met afgehandelde of geplande actiepunten"
                 tone="success"
                 active={filters.actionStatusFilter === "DONE"}
                 onClick={() => setActionStatusFilter("DONE")}
@@ -986,41 +930,7 @@ export default function FormsMonitorPage() {
           )}
 
           {listLoading ? (
-            <div className="ember-loading-card installations-startup-card" aria-live="polite">
-              <div className="ember-loading-card-inner installations-startup-card__inner">
-                <div className="ember-loading-icon installations-startup-card__icon">
-                  <LoaderPinwheelIcon ref={listLoaderRef} size={30} aria-label="api wordt opgestart" />
-                </div>
-
-                <div className="ember-loading-title">
-                  {showSlowLoadingHint || String(runtimeSnapshot?.api_status || "").toLowerCase() === "starting"
-                    ? "Ember start de API op"
-                    : "Monitor wordt geladen"}
-                </div>
-
-                <div className="ember-page-subtitle installations-startup-card__copy">
-                  {showSlowLoadingHint || String(runtimeSnapshot?.api_status || "").toLowerCase() === "starting"
-                    ? getRuntimeStatusCopy(runtimeSnapshot)
-                    : "De monitor wordt geladen."}
-                </div>
-
-                <div className="installations-startup-card__meta">
-                  <span className="ember-label ember-label--muted">
-                    {getRuntimeBadgeLabel(runtimeSnapshot) || "laden"}
-                  </span>
-                  <span className="ember-label ember-label--muted">
-                    {listLoadingElapsedSeconds}s bezig
-                  </span>
-                </div>
-
-                <div className="installations-startup-card__progress" aria-hidden="true">
-                  <span
-                    className="installations-startup-card__progress-bar"
-                    style={{ width: `${Math.min(94, 8 + (listLoadingElapsedSeconds / 30) * 86)}%` }}
-                  />
-                </div>
-              </div>
-            </div>
+            <ApiStartupLoader state={startupLoader} inlineLabel="laden; monitor" />
           ) : visibleItems.length === 0 ? (
             <div className="muted">Geen formulieren gevonden.</div>
           ) : (
@@ -1032,6 +942,9 @@ export default function FormsMonitorPage() {
                 const actionCountsRaw = buildMonitorRowActionCounts(row);
                 const actionCounts = {
                   open: Number(actionCountsRaw?.open ?? getOpenCount(row)),
+                  planningNeeded: Number(
+                    actionCountsRaw?.planningNeeded ?? getPlanningNeededCount(row)
+                  ),
                   waiting: Number(actionCountsRaw?.waiting ?? getWaitingCount(row)),
                   done: Number(actionCountsRaw?.done ?? getDoneCount(row)),
                 };
@@ -1114,15 +1027,19 @@ export default function FormsMonitorPage() {
                       ) : null}
 
                       <div className="monitor-row-action-chips">
-                        <SummaryTag title="Aantal openstaande actiepunten; inclusief wachten op derden" tone="active">
-                          Open {actionCounts.open + actionCounts.waiting}
+                        <SummaryTag title="Aantal openstaande workflowacties" tone="active">
+                          Open {actionCounts.open}
+                        </SummaryTag>
+
+                        <SummaryTag title="Aantal actiepunten waarvoor planning nodig is" tone="warning">
+                          Planning nodig {actionCounts.planningNeeded}
                         </SummaryTag>
 
                         <SummaryTag title="Aantal wacht op derden" tone="warning">
                           Wachten op derden {actionCounts.waiting}
                         </SummaryTag>
 
-                        <SummaryTag title="Aantal afgehandelde actiepunten" tone="success">
+                        <SummaryTag title="Aantal afgehandelde of geplande actiepunten" tone="success">
                           Afgehandeld {actionCounts.done}
                         </SummaryTag>
                       </div>

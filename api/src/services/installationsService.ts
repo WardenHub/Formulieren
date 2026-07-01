@@ -1,5 +1,6 @@
 // api/src/services/installationsService.ts
 import { sqlQuery, sqlQueryRaw } from "../db/index.js";
+import { randomUUID } from "node:crypto";
 
 import {
   getInstallationSql,
@@ -47,7 +48,251 @@ import {
 import { 
   getInstallationComponentsSql
  } from "../db/queries/installationComponents.sql.js";
-import { getUserAuditActor } from "../utils/userIdentity.js";
+import {
+  archiveInstallationNoteSql,
+  deleteInstallationNoteSql,
+  getInstallationNoteByIdSql,
+  getInstallationNotesSql,
+  getInstallationWorkflowItemsSql,
+  insertInstallationNoteSql,
+  insertUserNotificationEventSql,
+  markInstallationNoteNotificationsReadSql,
+  replaceInstallationNoteMentionsSql,
+  toggleInstallationNoteReactionSql,
+  updateInstallationNoteSql,
+} from "../db/queries/installationNotes.sql.js";
+import {
+  getUserAuditActor,
+  getUserDisplayNameSnapshot,
+  getUserEmail,
+  getUserObjectId,
+} from "../utils/userIdentity.js";
+
+const INSTALLATION_NOTE_KINDS = new Set(["NOTE", "HANDOVER", "WARNING"]);
+const WORKFLOW_ACTIVE_STATUSES = new Set(["OPEN", "PLANNING_NODIG", "WACHTENOPDERDEN", "GEPLAND"]);
+const WORKFLOW_OPEN_STATUSES = new Set(["OPEN", "PLANNING_NODIG", "WACHTENOPDERDEN"]);
+const WORKFLOW_HISTORY_STATUSES = new Set(["AFGEHANDELD", "VERVALLEN", "AFGEWEZEN", "INFORMATIEF"]);
+
+function normalizeOptionalString(value: any) {
+  if (value == null) return null;
+  const text = String(value).trim();
+  return text.length ? text : null;
+}
+
+function normalizeInstallationNoteKind(value: any) {
+  const normalized = String(value || "NOTE").trim().toUpperCase();
+  if (!INSTALLATION_NOTE_KINDS.has(normalized)) {
+    throw new Error("installation note kind invalid");
+  }
+  return normalized;
+}
+
+function normalizeInstallationNoteBody(value: any) {
+  const body = String(value ?? "").trim();
+  if (!body) {
+    throw new Error("installation note body required");
+  }
+  return body;
+}
+
+function normalizeInstallationNoteMentions(value: any[]) {
+  const seen = new Set<string>();
+  const items = Array.isArray(value) ? value : [];
+  const result: Array<{
+    mentioned_user_object_id: string;
+    mentioned_display_name_snapshot: string | null;
+    mentioned_email_snapshot: string | null;
+  }> = [];
+
+  for (const item of items) {
+    const userObjectId = normalizeOptionalString(item?.mentioned_user_object_id ?? item?.user_object_id ?? item?.id);
+    if (!userObjectId || seen.has(userObjectId)) continue;
+    seen.add(userObjectId);
+    result.push({
+      mentioned_user_object_id: userObjectId,
+      mentioned_display_name_snapshot: normalizeOptionalString(
+        item?.mentioned_display_name_snapshot ?? item?.display_name_snapshot ?? item?.display_name ?? item?.label ?? item?.name
+      ),
+      mentioned_email_snapshot: normalizeOptionalString(
+        item?.mentioned_email_snapshot ?? item?.email_snapshot ?? item?.email
+      ),
+    });
+  }
+
+  return result;
+}
+
+function mapInstallationNoteRecord(row: any) {
+  return {
+    installation_note_id: row.installation_note_id,
+    installation_id: row.installation_id,
+    atrium_installation_code: row.atrium_installation_code,
+    note_kind: row.note_kind ?? "NOTE",
+    body_markdown: row.body_markdown ?? "",
+    author_user_object_id: row.author_user_object_id ?? null,
+    author_display_name_snapshot: row.author_display_name_snapshot ?? null,
+    author_email_snapshot: row.author_email_snapshot ?? null,
+    is_archived: row.is_archived === true || row.is_archived === 1,
+    archived_at: row.archived_at ?? null,
+    archived_by: row.archived_by ?? null,
+    created_at: row.created_at ?? null,
+    created_by: row.created_by ?? null,
+    updated_at: row.updated_at ?? null,
+    updated_by: row.updated_by ?? null,
+  };
+}
+
+function mapInstallationNoteMention(row: any) {
+  return {
+    installation_note_mention_id: row.installation_note_mention_id,
+    installation_note_id: row.installation_note_id,
+    mentioned_user_object_id: row.mentioned_user_object_id ?? null,
+    mentioned_display_name_snapshot: row.mentioned_display_name_snapshot ?? null,
+    mentioned_email_snapshot: row.mentioned_email_snapshot ?? null,
+    created_at: row.created_at ?? null,
+    created_by: row.created_by ?? null,
+  };
+}
+
+function mapInstallationNoteReaction(row: any) {
+  return {
+    installation_note_reaction_id: row.installation_note_reaction_id,
+    installation_note_id: row.installation_note_id,
+    reaction_key: row.reaction_key ?? null,
+    reactor_user_object_id: row.reactor_user_object_id ?? null,
+    reactor_display_name_snapshot: row.reactor_display_name_snapshot ?? null,
+    reactor_email_snapshot: row.reactor_email_snapshot ?? null,
+    created_at: row.created_at ?? null,
+    created_by: row.created_by ?? null,
+  };
+}
+
+function mapInstallationNotesRecordsets(recordsets: any[]) {
+  const noteRows = Array.isArray(recordsets?.[0]) ? recordsets[0] : [];
+  const mentionRows = Array.isArray(recordsets?.[1]) ? recordsets[1] : [];
+  const reactionRows = Array.isArray(recordsets?.[2]) ? recordsets[2] : [];
+
+  const byId = new Map<string, any>();
+  for (const row of noteRows) {
+    const note = mapInstallationNoteRecord(row);
+    byId.set(String(note.installation_note_id), {
+      ...note,
+      mentions: [],
+      reactions: [],
+    });
+  }
+
+  for (const row of mentionRows) {
+    const noteId = String(row.installation_note_id || "");
+    const target = byId.get(noteId);
+    if (!target) continue;
+    target.mentions.push(mapInstallationNoteMention(row));
+  }
+
+  for (const row of reactionRows) {
+    const noteId = String(row.installation_note_id || "");
+    const target = byId.get(noteId);
+    if (!target) continue;
+    target.reactions.push(mapInstallationNoteReaction(row));
+  }
+
+  const notes = [...byId.values()];
+  return {
+    notes,
+    activeNotes: notes.filter((note) => !note.is_archived),
+    archivedNotes: notes.filter((note) => note.is_archived),
+  };
+}
+
+function normalizeUserRoles(user: any) {
+  const roles = Array.isArray(user?.roles) ? user.roles : [];
+  return roles.map((role) => String(role || "").trim().toLowerCase()).filter(Boolean);
+}
+
+function canModerateInstallationNotes(user: any) {
+  const roles = normalizeUserRoles(user);
+  return roles.includes("admin") || roles.includes("documentbeheerder");
+}
+
+function canDeleteInstallationNotes(user: any) {
+  const roles = normalizeUserRoles(user);
+  return roles.includes("admin");
+}
+
+function canEditOwnOrModerateInstallationNote(note: any, user: any) {
+  const userObjectId = normalizeOptionalString(getUserObjectId(user));
+  if (userObjectId && userObjectId === normalizeOptionalString(note?.author_user_object_id)) {
+    return true;
+  }
+  return canModerateInstallationNotes(user);
+}
+
+async function ensureInstallationOverlay(code: string, user: any) {
+  const actor = getUserAuditActor(user);
+  await sqlQuery(ensureInstallationSql, {
+    code,
+    createdBy: actor,
+  });
+
+  const rows = await sqlQuery(
+    `select top 1 installation_id, atrium_installation_code from dbo.Installation where atrium_installation_code = @code`,
+    { code }
+  );
+  const row: any = rows?.[0] ?? null;
+  if (!row?.installation_id) {
+    throw new Error("installation not found");
+  }
+  return row;
+}
+
+async function getInstallationNoteOrThrow(code: string, installationNoteId: string) {
+  const rows = await sqlQuery(getInstallationNoteByIdSql, {
+    code,
+    installationNoteId,
+  });
+  const row: any = rows?.[0] ?? null;
+  if (!row) {
+    throw new Error("installation note not found");
+  }
+  return mapInstallationNoteRecord(row);
+}
+
+async function insertNotificationEvent(params: {
+  eventType: string;
+  recipientUserObjectId: string;
+  recipientDisplayNameSnapshot?: string | null;
+  recipientEmailSnapshot?: string | null;
+  actorUserObjectId?: string | null;
+  actorDisplayNameSnapshot?: string | null;
+  actorEmailSnapshot?: string | null;
+  installationId?: string | null;
+  code: string;
+  formInstanceId?: number | null;
+  followUpActionId?: string | null;
+  installationNoteId?: string | null;
+  reactionKey?: string | null;
+  summaryText: string;
+  targetPath?: string | null;
+}) {
+  await sqlQuery(insertUserNotificationEventSql, {
+    notificationEventId: randomUUID(),
+    eventType: params.eventType,
+    recipientUserObjectId: params.recipientUserObjectId,
+    recipientDisplayNameSnapshot: params.recipientDisplayNameSnapshot ?? null,
+    recipientEmailSnapshot: params.recipientEmailSnapshot ?? null,
+    actorUserObjectId: params.actorUserObjectId ?? null,
+    actorDisplayNameSnapshot: params.actorDisplayNameSnapshot ?? null,
+    actorEmailSnapshot: params.actorEmailSnapshot ?? null,
+    installationId: params.installationId ?? null,
+    code: params.code,
+    formInstanceId: params.formInstanceId ?? null,
+    followUpActionId: params.followUpActionId ?? null,
+    installationNoteId: params.installationNoteId ?? null,
+    reactionKey: params.reactionKey ?? null,
+    summaryText: params.summaryText,
+    targetPath: params.targetPath ?? null,
+  });
+}
 
 
 
@@ -382,6 +627,369 @@ export async function getInstallationDocuments(code: string) {
   return {
     code,
     documentTypes: Array.from(byType.values()),
+  };
+}
+
+export async function getInstallationNotes(
+  code: string,
+  options: {
+    includeArchived?: boolean;
+    noteKind?: string | null;
+    markReadUser?: any;
+  } = {}
+) {
+  const cleanCode = String(code || "").trim();
+  const includeArchived = options.includeArchived === true;
+  const noteKind = normalizeOptionalString(options.noteKind)
+    ? normalizeInstallationNoteKind(options.noteKind)
+    : null;
+  const markReadUserObjectId = normalizeOptionalString(getUserObjectId(options.markReadUser));
+
+  if (markReadUserObjectId) {
+    await sqlQuery(markInstallationNoteNotificationsReadSql, {
+      code: cleanCode,
+      recipientUserObjectId: markReadUserObjectId,
+    });
+  }
+
+  const result: any = await sqlQueryRaw(getInstallationNotesSql, {
+    code: cleanCode,
+    includeArchived: includeArchived ? 1 : 0,
+    noteKind,
+  });
+
+  const mapped = mapInstallationNotesRecordsets(result?.recordsets ?? []);
+  return {
+    code: cleanCode,
+    note_kind: noteKind,
+    include_archived: includeArchived,
+    ...mapped,
+    counts: {
+      total: mapped.notes.length,
+      active: mapped.activeNotes.length,
+      archived: mapped.archivedNotes.length,
+      warnings: mapped.notes.filter((item) => item.note_kind === "WARNING" && !item.is_archived).length,
+      handovers: mapped.notes.filter((item) => item.note_kind === "HANDOVER" && !item.is_archived).length,
+    },
+  };
+}
+
+export async function createInstallationNote(code: string, payload: any, user: any) {
+  const cleanCode = String(code || "").trim();
+  await assertInstallationWritable(cleanCode);
+
+  const actor = getUserAuditActor(user);
+  const authorUserObjectId = normalizeOptionalString(getUserObjectId(user));
+  if (!authorUserObjectId) {
+    throw new Error("user object id missing");
+  }
+
+  const installation = await ensureInstallationOverlay(cleanCode, user);
+  const installationNoteId = randomUUID();
+  const noteKind = normalizeInstallationNoteKind(payload?.note_kind);
+  const bodyMarkdown = normalizeInstallationNoteBody(payload?.body_markdown ?? payload?.body);
+  const mentions = normalizeInstallationNoteMentions(payload?.mentions);
+
+  const insertedRows = await sqlQuery(insertInstallationNoteSql, {
+    installationNoteId,
+    installationId: installation.installation_id,
+    code: cleanCode,
+    noteKind,
+    bodyMarkdown,
+    authorUserObjectId,
+    authorDisplayNameSnapshot: normalizeOptionalString(getUserDisplayNameSnapshot(user)),
+    authorEmailSnapshot: normalizeOptionalString(getUserEmail(user)),
+    actor,
+  });
+
+  const mentionRows = await sqlQuery(replaceInstallationNoteMentionsSql, {
+    installationNoteId,
+    mentionsJson: JSON.stringify(mentions),
+    actor,
+  });
+
+  for (const mention of mentions) {
+    if (mention.mentioned_user_object_id === authorUserObjectId) continue;
+
+    await insertNotificationEvent({
+      eventType: "INSTALLATION_NOTE_MENTION",
+      recipientUserObjectId: mention.mentioned_user_object_id,
+      recipientDisplayNameSnapshot: mention.mentioned_display_name_snapshot,
+      recipientEmailSnapshot: mention.mentioned_email_snapshot,
+      actorUserObjectId: authorUserObjectId,
+      actorDisplayNameSnapshot: normalizeOptionalString(getUserDisplayNameSnapshot(user)),
+      actorEmailSnapshot: normalizeOptionalString(getUserEmail(user)),
+      installationId: installation.installation_id,
+      code: cleanCode,
+      installationNoteId,
+      summaryText:
+        noteKind === "WARNING"
+          ? "Je bent genoemd in een waarschuwing op de installatie."
+          : "Je bent genoemd in een installatienotitie.",
+      targetPath: `/installaties/${encodeURIComponent(cleanCode)}?tab=notes&subtab=notes&note=${encodeURIComponent(installationNoteId)}`,
+    });
+  }
+
+  return {
+    ok: true,
+    note: {
+      ...mapInstallationNoteRecord(insertedRows?.[0] ?? {}),
+      mentions: (mentionRows || []).map(mapInstallationNoteMention),
+      reactions: [],
+    },
+  };
+}
+
+export async function updateInstallationNote(
+  code: string,
+  installationNoteId: string,
+  payload: any,
+  user: any
+) {
+  const cleanCode = String(code || "").trim();
+  const cleanNoteId = String(installationNoteId || "").trim();
+  const existing = await getInstallationNoteOrThrow(cleanCode, cleanNoteId);
+
+  if (!canEditOwnOrModerateInstallationNote(existing, user)) {
+    throw new Error("installation note forbidden");
+  }
+
+  const actor = getUserAuditActor(user);
+  const actorUserObjectId = normalizeOptionalString(getUserObjectId(user));
+  const noteKind = normalizeInstallationNoteKind(payload?.note_kind ?? existing.note_kind);
+  const bodyMarkdown = normalizeInstallationNoteBody(payload?.body_markdown ?? payload?.body ?? existing.body_markdown);
+  const mentions = normalizeInstallationNoteMentions(payload?.mentions);
+
+  const updatedRows = await sqlQuery(updateInstallationNoteSql, {
+    installationNoteId: cleanNoteId,
+    code: cleanCode,
+    noteKind,
+    bodyMarkdown,
+    actor,
+  });
+
+  await sqlQuery(
+    `delete from dbo.UserNotificationEvent
+     where installation_note_id = @installationNoteId
+       and event_type = N'INSTALLATION_NOTE_MENTION'`,
+    { installationNoteId: cleanNoteId }
+  );
+
+  const mentionRows = await sqlQuery(replaceInstallationNoteMentionsSql, {
+    installationNoteId: cleanNoteId,
+    mentionsJson: JSON.stringify(mentions),
+    actor,
+  });
+
+  for (const mention of mentions) {
+    if (mention.mentioned_user_object_id === actorUserObjectId) continue;
+
+    await insertNotificationEvent({
+      eventType: "INSTALLATION_NOTE_MENTION",
+      recipientUserObjectId: mention.mentioned_user_object_id,
+      recipientDisplayNameSnapshot: mention.mentioned_display_name_snapshot,
+      recipientEmailSnapshot: mention.mentioned_email_snapshot,
+      actorUserObjectId,
+      actorDisplayNameSnapshot: normalizeOptionalString(getUserDisplayNameSnapshot(user)),
+      actorEmailSnapshot: normalizeOptionalString(getUserEmail(user)),
+      installationId: existing.installation_id,
+      code: cleanCode,
+      installationNoteId: cleanNoteId,
+      summaryText:
+        noteKind === "WARNING"
+          ? "Je bent genoemd in een bijgewerkte waarschuwing op de installatie."
+          : "Je bent genoemd in een bijgewerkte installatienotitie.",
+      targetPath: `/installaties/${encodeURIComponent(cleanCode)}?tab=notes&subtab=notes&note=${encodeURIComponent(cleanNoteId)}`,
+    });
+  }
+
+  const reactionData = await getInstallationNotes(cleanCode, {
+    includeArchived: true,
+    markReadUser: null,
+  });
+  const updatedNote = (reactionData.notes || []).find(
+    (item: any) => String(item.installation_note_id) === cleanNoteId
+  );
+
+  return {
+    ok: true,
+    note:
+      updatedNote || {
+        ...mapInstallationNoteRecord(updatedRows?.[0] ?? {}),
+        mentions: (mentionRows || []).map(mapInstallationNoteMention),
+        reactions: [],
+      },
+  };
+}
+
+export async function archiveInstallationNote(
+  code: string,
+  installationNoteId: string,
+  archiveState: boolean,
+  user: any
+) {
+  const cleanCode = String(code || "").trim();
+  const cleanNoteId = String(installationNoteId || "").trim();
+  const existing = await getInstallationNoteOrThrow(cleanCode, cleanNoteId);
+
+  if (!canEditOwnOrModerateInstallationNote(existing, user)) {
+    throw new Error("installation note forbidden");
+  }
+
+  const rows = await sqlQuery(archiveInstallationNoteSql, {
+    installationNoteId: cleanNoteId,
+    code: cleanCode,
+    archiveState: archiveState ? 1 : 0,
+    actor: getUserAuditActor(user),
+  });
+
+  return {
+    ok: true,
+    note: mapInstallationNoteRecord(rows?.[0] ?? {}),
+  };
+}
+
+export async function deleteInstallationNote(code: string, installationNoteId: string, user: any) {
+  const cleanCode = String(code || "").trim();
+  const cleanNoteId = String(installationNoteId || "").trim();
+  const existing = await getInstallationNoteOrThrow(cleanCode, cleanNoteId);
+
+  const isOwner =
+    normalizeOptionalString(existing.author_user_object_id) ===
+    normalizeOptionalString(getUserObjectId(user));
+
+  if (!isOwner && !canDeleteInstallationNotes(user)) {
+    throw new Error("installation note forbidden");
+  }
+
+  await sqlQuery(deleteInstallationNoteSql, {
+    installationNoteId: cleanNoteId,
+    code: cleanCode,
+  });
+
+  return {
+    ok: true,
+    installation_note_id: cleanNoteId,
+  };
+}
+
+export async function toggleInstallationNoteReaction(
+  code: string,
+  installationNoteId: string,
+  reactionKey: string,
+  user: any
+) {
+  const cleanCode = String(code || "").trim();
+  const cleanNoteId = String(installationNoteId || "").trim();
+  const cleanReactionKey = String(reactionKey || "").trim();
+  if (!cleanReactionKey) {
+    throw new Error("reaction key required");
+  }
+
+  const existing = await getInstallationNoteOrThrow(cleanCode, cleanNoteId);
+  const reactorUserObjectId = normalizeOptionalString(getUserObjectId(user));
+  if (!reactorUserObjectId) {
+    throw new Error("user object id missing");
+  }
+
+  const result: any = await sqlQueryRaw(toggleInstallationNoteReactionSql, {
+    installationNoteId: cleanNoteId,
+    reactionKey: cleanReactionKey,
+    reactorUserObjectId,
+    reactorDisplayNameSnapshot: normalizeOptionalString(getUserDisplayNameSnapshot(user)),
+    reactorEmailSnapshot: normalizeOptionalString(getUserEmail(user)),
+    actor: getUserAuditActor(user),
+  });
+
+  const stateRow = result?.recordsets?.[0]?.[0] ?? result?.recordset?.[0] ?? null;
+  const reactions = (result?.recordsets?.[1] || []).map(mapInstallationNoteReaction);
+  const isActive = Boolean(stateRow?.is_active);
+
+  if (
+    isActive &&
+    normalizeOptionalString(existing.author_user_object_id) &&
+    normalizeOptionalString(existing.author_user_object_id) !== reactorUserObjectId
+  ) {
+    await insertNotificationEvent({
+      eventType: "INSTALLATION_NOTE_REACTION",
+      recipientUserObjectId: String(existing.author_user_object_id),
+      recipientDisplayNameSnapshot: existing.author_display_name_snapshot,
+      recipientEmailSnapshot: existing.author_email_snapshot,
+      actorUserObjectId: reactorUserObjectId,
+      actorDisplayNameSnapshot: normalizeOptionalString(getUserDisplayNameSnapshot(user)),
+      actorEmailSnapshot: normalizeOptionalString(getUserEmail(user)),
+      installationId: existing.installation_id,
+      code: cleanCode,
+      installationNoteId: cleanNoteId,
+      reactionKey: cleanReactionKey,
+      summaryText: "Iemand reageerde op je installatienotitie.",
+      targetPath: `/installaties/${encodeURIComponent(cleanCode)}?tab=notes&subtab=notes&note=${encodeURIComponent(cleanNoteId)}`,
+    });
+  }
+
+  return {
+    ok: true,
+    installation_note_id: cleanNoteId,
+    reaction_key: cleanReactionKey,
+    is_active: isActive,
+    reactions,
+  };
+}
+
+export async function getInstallationWorkflowItems(code: string) {
+  const cleanCode = String(code || "").trim();
+  const rows = await sqlQuery(getInstallationWorkflowItemsSql, { code: cleanCode });
+  const items = (rows || []).map((row: any) => ({
+    follow_up_action_id: row.follow_up_action_id,
+    form_instance_id: row.form_instance_id,
+    installation_id: row.installation_id,
+    atrium_installation_code: row.atrium_installation_code,
+    source_question_name: row.source_question_name ?? null,
+    source_question_type: row.source_question_type ?? null,
+    source_row_index: row.source_row_index ?? null,
+    source_item_code: row.source_item_code ?? null,
+    kind: row.kind ?? null,
+    workflow_title: row.workflow_title ?? "",
+    workflow_description: row.workflow_description ?? "",
+    category: row.category ?? null,
+    certificate_impact: row.certificate_impact ?? null,
+    certificate_impact_override: row.certificate_impact_override ?? null,
+    status: row.status ?? "OPEN",
+    status_set_at: row.status_set_at ?? null,
+    status_set_by: row.status_set_by ?? null,
+    assigned_to: row.assigned_to ?? null,
+    due_date: row.due_date ?? null,
+    note: row.note ?? "",
+    resolution_note: row.resolution_note ?? "",
+    resolution_outcome: row.resolution_outcome ?? null,
+    resolved_at: row.resolved_at ?? null,
+    resolved_by: row.resolved_by ?? null,
+    created_at: row.created_at ?? null,
+    created_by: row.created_by ?? null,
+    updated_at: row.updated_at ?? null,
+    updated_by: row.updated_by ?? null,
+    instance_number: row.instance_number ?? null,
+    form_code: row.form_code ?? null,
+    form_status: row.form_status ?? null,
+    parent_instance_id: row.parent_instance_id ?? null,
+    form_title: row.form_title ?? row.form_code ?? "Formulier",
+  }));
+
+  const activeItems = items.filter((item) => WORKFLOW_ACTIVE_STATUSES.has(String(item.status || "").trim().toUpperCase()));
+  const historicalItems = items.filter((item) => WORKFLOW_HISTORY_STATUSES.has(String(item.status || "").trim().toUpperCase()));
+
+  return {
+    code: cleanCode,
+    items,
+    activeItems,
+    historicalItems,
+    counts: {
+      total: items.length,
+      active: activeItems.length,
+      open: items.filter((item) => WORKFLOW_OPEN_STATUSES.has(String(item.status || "").trim().toUpperCase())).length,
+      planned: items.filter((item) => String(item.status || "").trim().toUpperCase() === "GEPLAND").length,
+      historical: historicalItems.length,
+    },
   };
 }
 

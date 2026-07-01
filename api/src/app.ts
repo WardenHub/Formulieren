@@ -28,6 +28,40 @@ function norm(o: string | undefined | null) {
 
 const ALLOWED = new Set(RAW_ORIGINS.map(norm));
 
+function mapRuntimeHealthStatus(apiStatus: string | undefined) {
+  if (apiStatus === "starting") return "starting";
+  if (apiStatus === "degraded") return "degraded";
+  return "healthy";
+}
+
+function buildHealthPayload({
+  runtime,
+  db,
+  dbConnected,
+}: {
+  runtime: ReturnType<typeof getRuntimeStatusSnapshot>;
+  db: number | "error";
+  dbConnected: boolean;
+}) {
+  const status = mapRuntimeHealthStatus(runtime.api_status);
+  const healthy = runtime.api_status === "healthy" && dbConnected;
+
+  return {
+    ok: healthy,
+    service: "ember-api",
+    api: runtime.api_status === "healthy" ? "ok" : runtime.api_status,
+    status,
+    db,
+    Jesse: healthy ? ":)" : ":(",
+    runtime: {
+      ready: runtime.ready,
+      startup_phase: runtime.startup_phase,
+      startup_message: runtime.startup_message,
+      renderer_status: runtime.renderer_status,
+    },
+  };
+}
+
 app.use(express.json({ limit: process.env.JSON_BODY_LIMIT || "10mb" }));
 app.use(
   cors({
@@ -62,14 +96,8 @@ if ((process.env.DB_AUTH || "aad") === "sql") {
   }
 }
 
-app.get("/", (req, res) => {
+app.get("/", async (req, res) => {
   const runtime = getRuntimeStatusSnapshot();
-  const status =
-    runtime.api_status === "starting"
-      ? "starting"
-      : runtime.api_status === "degraded"
-        ? "degraded"
-        : "healthy";
 
   console.log(
     "hit /",
@@ -77,19 +105,25 @@ app.get("/", (req, res) => {
     "auth",
     req.headers.authorization ? "yes" : "no"
   );
-  res.json({
-    ok: runtime.api_status === "healthy",
-    service: "ember-api",
-    api: runtime.api_status === "healthy" ? "ok" : runtime.api_status,
-    status,
-    db: null,
-    runtime: {
-      ready: runtime.ready,
-      startup_phase: runtime.startup_phase,
-      startup_message: runtime.startup_message,
-      renderer_status: runtime.renderer_status,
-    },
-  });
+
+  try {
+    const pool = await getDbConnection();
+    return res.json(
+      buildHealthPayload({
+        runtime,
+        db: pool?.connected ? 1 : 0,
+        dbConnected: !!pool?.connected,
+      })
+    );
+  } catch {
+    return res.status(500).json(
+      buildHealthPayload({
+        runtime,
+        db: "error",
+        dbConnected: false,
+      })
+    );
+  }
 });
 
 app.get("/health", async (req, res) => {
@@ -97,35 +131,21 @@ app.get("/health", async (req, res) => {
 
   try {
     const pool = await getDbConnection();
-    const status = runtime.api_status === "starting" ? "starting" : runtime.api_status === "degraded" ? "degraded" : "healthy";
-
-    return res.json({
-      ok: runtime.api_status === "healthy" && !!pool?.connected,
-      service: "ember-api",
-      api: runtime.api_status === "healthy" ? "ok" : runtime.api_status,
-      status,
-      db: pool?.connected ? 1 : 0,
-      runtime: {
-        ready: runtime.ready,
-        startup_phase: runtime.startup_phase,
-        startup_message: runtime.startup_message,
-        renderer_status: runtime.renderer_status,
-      },
-    });
+    return res.json(
+      buildHealthPayload({
+        runtime,
+        db: pool?.connected ? 1 : 0,
+        dbConnected: !!pool?.connected,
+      })
+    );
   } catch {
-    return res.status(500).json({
-      ok: false,
-      service: "ember-api",
-      api: runtime.api_status === "healthy" ? "ok" : runtime.api_status,
-      status: "degraded",
-      db: "error",
-      runtime: {
-        ready: runtime.ready,
-        startup_phase: runtime.startup_phase,
-        startup_message: runtime.startup_message,
-        renderer_status: runtime.renderer_status,
-      },
-    });
+    return res.status(500).json(
+      buildHealthPayload({
+        runtime,
+        db: "error",
+        dbConnected: false,
+      })
+    );
   }
 });
 

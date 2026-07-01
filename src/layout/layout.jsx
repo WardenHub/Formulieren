@@ -14,6 +14,7 @@ import { IdCardIcon } from "@/components/ui/id-card";
 import { MenuIcon } from "@/components/ui/menu";
 import { BookTextIcon } from "@/components/ui/book-text";
 import { buildInitials, resolveProfileAvatarPath } from "../lib/avatar.js";
+import NotificationCenter from "../components/NotificationCenter.jsx";
 
 function initialsFromProfilePayload(profileData, meData) {
   return buildInitials(
@@ -262,6 +263,8 @@ export default function Layout() {
         </div>
 
         <div className="topbar-spacer" />
+
+        <NotificationCenter refreshToken={profileRefreshToken} />
 
         <div className="avatar-wrap" ref={menuRef}>
           <button
