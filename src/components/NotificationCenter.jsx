@@ -5,7 +5,7 @@ import {
   markAllMyNotificationsRead,
   markMyNotificationRead,
 } from "../api/emberApi.js";
-import { BadgeAlertIcon } from "@/components/ui/badge-alert";
+import { BellIcon } from "@/components/ui/bell";
 import { MessageCircleMoreIcon } from "@/components/ui/message-circle-more";
 import {
   BellRing,
@@ -207,7 +207,7 @@ export default function NotificationCenter({ refreshToken = 0 }) {
         onMouseEnter={() => buttonIconRef.current?.startAnimation?.()}
         onMouseLeave={() => buttonIconRef.current?.stopAnimation?.()}
       >
-        <BadgeAlertIcon ref={buttonIconRef} size={19} className="nav-anim-icon" />
+        <BellIcon ref={buttonIconRef} size={19} className="nav-anim-icon" />
         {unreadCount > 0 ? <span className="topbar-notification-count">{unreadCount}</span> : null}
       </button>
 

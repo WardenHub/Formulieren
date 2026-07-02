@@ -44,11 +44,17 @@ import { PartyPopperIcon } from "@/components/ui/party-popper";
 import { GavelIcon } from "@/components/ui/gavel";
 import { MenuIcon } from "@/components/ui/menu";
 import { LoaderPinwheelIcon } from "@/components/ui/loader-pinwheel";
-import { Link2 } from "lucide-react";
 import ApiStartupLoader, { useApiStartupLoader } from "../../components/ApiStartupLoader.jsx";
 import { pushRecentHomeItem } from "../../lib/recentHomeItems.js";
 import Tabs from "../../components/Tabs.jsx";
 import UserAvatar from "../../components/UserAvatar.jsx";
+import {
+  NoteEditorToolbar,
+  NoteRichTextContent,
+  applyMarkdownLink,
+  insertRawText,
+  isHttpUrl,
+} from "../../components/notes/NoteRichText.jsx";
 import {
   buildInitials,
   buildDirectoryActorLookup,
@@ -189,98 +195,6 @@ function getPdfExportFallbackMessage(phase) {
   if (token === "ready") return "Download wordt klaargezet.";
   if (token === "failed") return "Pdf-export is mislukt.";
   return "Ember bouwt het rapport op en maakt de download klaar.";
-}
-
-function normalizeHttpUrl(value) {
-  const raw = String(value || "").trim();
-  if (!raw) return "";
-  if (!/^https?:\/\//i.test(raw)) {
-    return `https://${raw}`;
-  }
-  return raw;
-}
-
-function isHttpUrl(value) {
-  const raw = String(value || "").trim();
-  return /^https?:\/\/\S+$/i.test(raw);
-}
-
-function buildMarkdownLink(label, href) {
-  const safeHref = normalizeHttpUrl(href);
-  const safeLabel = String(label || "").trim() || safeHref;
-  return `[${safeLabel}](${safeHref})`;
-}
-
-function applyMarkdownLink(currentValue, selectionStart, selectionEnd, href, labelOverride = "") {
-  const source = String(currentValue || "");
-  const start = Math.max(0, Number(selectionStart ?? 0));
-  const end = Math.max(start, Number(selectionEnd ?? start));
-  const selectedText = source.slice(start, end);
-  const label = String(labelOverride || "").trim() || selectedText || "link";
-  const linkMarkup = buildMarkdownLink(label, href);
-  const nextValue = source.slice(0, start) + linkMarkup + source.slice(end);
-
-  return {
-    value: nextValue,
-    caretStart: start + linkMarkup.length,
-    caretEnd: start + linkMarkup.length,
-    selectedText,
-  };
-}
-
-function renderLinkedNoteText(text) {
-  const source = String(text || "");
-  if (!source.trim()) return null;
-  const parts = [];
-  const pattern = /\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)|(https?:\/\/[^\s]+)/gi;
-  let lastIndex = 0;
-  let match;
-  let key = 0;
-
-  while ((match = pattern.exec(source)) !== null) {
-    if (match.index > lastIndex) {
-      parts.push(source.slice(lastIndex, match.index));
-    }
-
-    const label = match[1] || match[3] || match[2];
-    const href = match[2] || match[3];
-    parts.push(
-      <a key={`note-link-${key += 1}`} href={href} target="_blank" rel="noreferrer noopener">
-        {label}
-      </a>
-    );
-    lastIndex = pattern.lastIndex;
-  }
-
-  if (lastIndex < source.length) {
-    parts.push(source.slice(lastIndex));
-  }
-
-  return parts.map((part, index) =>
-    typeof part === "string" ? <span key={`note-text-${index}`}>{part}</span> : part
-  );
-}
-
-function NoteEditorToolbar({ disabled = false, onInsertLink }) {
-  return (
-    <div className="ember-toolbar" style={{ justifyContent: "flex-start", gap: 12, flexWrap: "wrap" }}>
-      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-        <button
-          type="button"
-          className="btn btn-secondary"
-          disabled={disabled}
-          onClick={onInsertLink}
-          title="Voeg een hyperlink toe"
-        >
-          <Link2 size={16} />
-          Link invoegen
-        </button>
-      </div>
-      <div className="muted" style={{ fontSize: 13 }}>
-        Selecteer tekst en druk op Ctrl+K ; links openen standaard in een nieuw tabblad.
-      </div>
-    </div>
-  );
 }
 
 function getFollowUpSourceLabel(row, currentFormInstanceId) {
@@ -2280,6 +2194,30 @@ export default function FormsMonitorDetailPage() {
     }, 0);
   }
 
+  function insertEmojiIntoNote(followUpActionId, emojiValue) {
+    const normalized = String(emojiValue || "").trim();
+    if (!normalized) return;
+
+    const textarea = noteTextareaRefs.current[followUpActionId];
+    const currentValue = noteDrafts[followUpActionId] ?? "";
+    const selectionStart = textarea?.selectionStart ?? currentValue.length;
+    const selectionEnd = textarea?.selectionEnd ?? selectionStart;
+    const result = insertRawText(currentValue, selectionStart, selectionEnd, `${normalized} `);
+
+    setNoteDrafts((prev) => ({
+      ...prev,
+      [followUpActionId]: result.value,
+    }));
+    scheduleNoteSave(followUpActionId, result.value);
+
+    window.setTimeout(() => {
+      const activeTextarea = noteTextareaRefs.current[followUpActionId];
+      if (!activeTextarea) return;
+      activeTextarea.focus();
+      activeTextarea.setSelectionRange(result.caretStart, result.caretEnd);
+    }, 0);
+  }
+
   function handleNoteKeyDown(followUpActionId, event) {
     if (event.altKey && String(event.key).toLowerCase() === "s") {
       event.preventDefault();
@@ -3368,7 +3306,7 @@ export default function FormsMonitorDetailPage() {
                                             <div className="ember-page-subtitle" style={{ marginTop: 8 }}>
                                               <strong style={{ color: "var(--ink-700)" }}>Klikbare preview:</strong>{" "}
                                               <span style={{ wordBreak: "break-word" }}>
-                                                {renderLinkedNoteText(noteValue)}
+                                                <NoteRichTextContent text={noteValue} />
                                               </span>
                                             </div>
                                           ) : null}
@@ -3376,6 +3314,7 @@ export default function FormsMonitorDetailPage() {
                                           <NoteEditorToolbar
                                             disabled={noteSaving}
                                             onInsertLink={() => openNoteLinkEditor(noteKey)}
+                                            onInsertEmoji={(emojiValue) => insertEmojiIntoNote(noteKey, emojiValue)}
                                           />
 
                                           {noteLinkDraft.openFor === noteKey ? (

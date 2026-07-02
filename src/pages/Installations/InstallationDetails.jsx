@@ -112,11 +112,41 @@ function BusyOverlay({ iconRef, title, label, fixed = false }) {
   );
 }
 
-function InstallationWarningPopup({ note, onOpen, onDismiss, progressPercent }) {
+function InstallationWarningPopup({ note, onOpen, onDismiss }) {
+  const [progressPercent, setProgressPercent] = useState(100);
+
+  useEffect(() => {
+    if (!note) return undefined;
+
+    setProgressPercent(100);
+    const startedAt = Date.now();
+
+    const intervalId = window.setInterval(() => {
+      const elapsed = Date.now() - startedAt;
+      const remaining = Math.max(0, 5000 - elapsed);
+      setProgressPercent((remaining / 5000) * 100);
+    }, 80);
+
+    const timeoutId = window.setTimeout(() => {
+      setProgressPercent(0);
+      onDismiss?.();
+    }, 5000);
+
+    return () => {
+      window.clearInterval(intervalId);
+      window.clearTimeout(timeoutId);
+    };
+  }, [note, onDismiss]);
+
   if (!note) return null;
 
   return (
     <div
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) {
+          onDismiss?.();
+        }
+      }}
       style={{
         position: "fixed",
         inset: 0,
@@ -125,17 +155,16 @@ function InstallationWarningPopup({ note, onOpen, onDismiss, progressPercent }) 
         alignItems: "flex-start",
         justifyContent: "center",
         paddingTop: 96,
-        pointerEvents: "none",
       }}
     >
       <div
         className="card monitor-surface--danger"
+        onMouseDown={(event) => event.stopPropagation()}
         style={{
           width: "min(720px, calc(100vw - 32px))",
           padding: 18,
           display: "grid",
           gap: 12,
-          pointerEvents: "auto",
           boxShadow: "0 22px 60px rgba(0,0,0,.22)",
         }}
       >
@@ -151,7 +180,7 @@ function InstallationWarningPopup({ note, onOpen, onDismiss, progressPercent }) 
           </button>
         </div>
 
-        <div style={{ fontSize: 15, lineHeight: 1.6 }}>{String(note.body_markdown || "").trim()}</div>
+        <div style={{ fontSize: 15, lineHeight: 1.6 }}>{linkifyWarningText(note.body_markdown)}</div>
 
         <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
           <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
@@ -176,6 +205,50 @@ function InstallationWarningPopup({ note, onOpen, onDismiss, progressPercent }) 
       </div>
     </div>
   );
+}
+
+function linkifyWarningText(text) {
+  const source = String(text || "");
+  const nodes = [];
+  const pattern = /\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)|(https?:\/\/[^\s<]+)/gi;
+  let lastIndex = 0;
+  let match;
+
+  while ((match = pattern.exec(source))) {
+    if (match.index > lastIndex) {
+      nodes.push(source.slice(lastIndex, match.index));
+    }
+
+    const label = match[1] || match[3];
+    const href = match[2] || match[3];
+    nodes.push(
+      <a
+        key={`${href}-${match.index}`}
+        href={href}
+        target="_blank"
+        rel="noreferrer noopener"
+        style={{ color: "var(--link)", textDecoration: "underline" }}
+      >
+        {label}
+      </a>
+    );
+    lastIndex = pattern.lastIndex;
+  }
+
+  if (lastIndex < source.length) {
+    nodes.push(source.slice(lastIndex));
+  }
+
+  return nodes.flatMap((part, index) => {
+    if (typeof part !== "string") return [part];
+    return part.split("\n").flatMap((line, lineIndex, arr) => {
+      const items = [line];
+      if (lineIndex < arr.length - 1) {
+        items.push(<br key={`warning-br-${index}-${lineIndex}`} />);
+      }
+      return items;
+    });
+  });
 }
 
 function buildRequiredDocumentsHeaderSummary(catalog, docs) {
@@ -280,6 +353,7 @@ export default function InstallationDetails() {
   const [catalog, setCatalogState] = useState(null);
   const [customValues, setCustomValuesState] = useState(null);
   const [docs, setDocs] = useState(null);
+  const [docsLoading, setDocsLoading] = useState(true);
   const [energySupplies, setEnergySupplies] = useState(null);
   const [energyBrandTypes, setEnergyBrandTypes] = useState(null);
   const [softwareData, setSoftwareData] = useState(null);
@@ -327,9 +401,6 @@ export default function InstallationDetails() {
   const [notesWorkflowOpenCount, setNotesWorkflowOpenCount] = useState(0);
   const [warningNotes, setWarningNotes] = useState([]);
   const [warningPopupVisible, setWarningPopupVisible] = useState(false);
-  const [warningPopupProgress, setWarningPopupProgress] = useState(100);
-  const warningPopupTimerRef = useRef(null);
-  const warningPopupIntervalRef = useRef(null);
   const warningPopupShownRef = useRef("");
 
   const [anyOpenByTab, setAnyOpenByTab] = useState({
@@ -515,11 +586,12 @@ export default function InstallationDetails() {
     let cancelled = false;
     setError(null);
     setPageLoading(true);
+    setDocsLoading(true);
     setWarningNotes([]);
     setNotesWorkflowOpenCount(0);
     setWarningPopupVisible(false);
-    setWarningPopupProgress(100);
     warningPopupShownRef.current = "";
+    setDocs(null);
 
     getInstallationTypes()
       .then((res) => {
@@ -532,19 +604,17 @@ export default function InstallationDetails() {
       getInstallation(code),
       getCatalog(code),
       getCustomValues(code),
-      getDocuments(code),
       getEnergySupplies(code),
       getEnergySupplyBrandTypes(),
       getInstallationSoftware(code),
     ]).then((results) => {
       if (cancelled) return;
 
-      const [instR, catR, valsR, docR, energyR, brandR, softwareR] = results;
+      const [instR, catR, valsR, energyR, brandR, softwareR] = results;
 
       if (instR.status === "fulfilled") setInstallation(instR.value.installation || null);
       if (catR.status === "fulfilled") setCatalogState(catR.value || null);
       if (valsR.status === "fulfilled") setCustomValuesState(valsR.value?.values || []);
-      if (docR.status === "fulfilled") setDocs(docR.value || null);
 
       if (energyR.status === "fulfilled") setEnergySupplies(energyR.value?.items || []);
       else setEnergySupplies([]);
@@ -560,6 +630,20 @@ export default function InstallationDetails() {
 
       setPageLoading(false);
     });
+
+    getDocuments(code)
+      .then((docData) => {
+        if (cancelled) return;
+        setDocs(docData || null);
+      })
+      .catch((docError) => {
+        if (cancelled) return;
+        setError((prev) => prev || docError?.message || String(docError));
+      })
+      .finally(() => {
+        if (cancelled) return;
+        setDocsLoading(false);
+      });
 
     return () => {
       cancelled = true;
@@ -602,37 +686,6 @@ export default function InstallationDetails() {
 
     warningPopupShownRef.current = warningId;
     setWarningPopupVisible(true);
-    setWarningPopupProgress(100);
-
-    if (warningPopupTimerRef.current) clearTimeout(warningPopupTimerRef.current);
-    if (warningPopupIntervalRef.current) clearInterval(warningPopupIntervalRef.current);
-
-    const startedAt = Date.now();
-    warningPopupIntervalRef.current = window.setInterval(() => {
-      const elapsed = Date.now() - startedAt;
-      const remaining = Math.max(0, 5000 - elapsed);
-      setWarningPopupProgress((remaining / 5000) * 100);
-    }, 80);
-
-    warningPopupTimerRef.current = window.setTimeout(() => {
-      setWarningPopupVisible(false);
-      setWarningPopupProgress(0);
-      if (warningPopupIntervalRef.current) {
-        clearInterval(warningPopupIntervalRef.current);
-        warningPopupIntervalRef.current = null;
-      }
-    }, 5000);
-
-    return () => {
-      if (warningPopupTimerRef.current) {
-        clearTimeout(warningPopupTimerRef.current);
-        warningPopupTimerRef.current = null;
-      }
-      if (warningPopupIntervalRef.current) {
-        clearInterval(warningPopupIntervalRef.current);
-        warningPopupIntervalRef.current = null;
-      }
-    };
   }, [warningNotes]);
 
   useEffect(() => {
@@ -646,14 +699,6 @@ export default function InstallationDetails() {
 
   useEffect(() => {
     return () => {
-      if (warningPopupTimerRef.current) {
-        clearTimeout(warningPopupTimerRef.current);
-        warningPopupTimerRef.current = null;
-      }
-      if (warningPopupIntervalRef.current) {
-        clearInterval(warningPopupIntervalRef.current);
-        warningPopupIntervalRef.current = null;
-      }
     };
   }, []);
 
@@ -893,6 +938,7 @@ export default function InstallationDetails() {
             ref={docsSaveRef}
             code={code}
             docs={docs}
+            loading={docsLoading}
             catalog={catalog}
             readOnly={isHistorical}
             onDirtyChange={setDocsDirty}
@@ -1129,28 +1175,11 @@ export default function InstallationDetails() {
       {warningPopupVisible && warningNotes[0] ? (
         <InstallationWarningPopup
           note={warningNotes[0]}
-          progressPercent={warningPopupProgress}
           onDismiss={() => {
             setWarningPopupVisible(false);
-            if (warningPopupTimerRef.current) {
-              clearTimeout(warningPopupTimerRef.current);
-              warningPopupTimerRef.current = null;
-            }
-            if (warningPopupIntervalRef.current) {
-              clearInterval(warningPopupIntervalRef.current);
-              warningPopupIntervalRef.current = null;
-            }
           }}
           onOpen={() => {
             setWarningPopupVisible(false);
-            if (warningPopupTimerRef.current) {
-              clearTimeout(warningPopupTimerRef.current);
-              warningPopupTimerRef.current = null;
-            }
-            if (warningPopupIntervalRef.current) {
-              clearInterval(warningPopupIntervalRef.current);
-              warningPopupIntervalRef.current = null;
-            }
 
             setActiveTab("notes");
 

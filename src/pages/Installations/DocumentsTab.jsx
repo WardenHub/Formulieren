@@ -609,6 +609,7 @@ const DocumentsTab = forwardRef(function DocumentsTab(
   {
     code,
     docs,
+    loading = false,
     catalog,
     onDirtyChange,
     onSavingChange,
@@ -2140,12 +2141,22 @@ const DocumentsTab = forwardRef(function DocumentsTab(
     );
   }
 
-  if (!docs) {
+  if (loading) {
     return (
       <TabLoadingCard
         title="Documenten laden..."
         label="Bezig met documentregels ophalen."
       />
+    );
+  }
+
+  if (!docs) {
+    return (
+      <div className="card" style={{ padding: 18 }}>
+        <div className="ember-alert ember-alert--danger" style={{ marginBottom: 0 }}>
+          Documenten konden niet worden geladen.
+        </div>
+      </div>
     );
   }
 

@@ -36,9 +36,17 @@ import {
   Trash2,
   Check,
   X,
-  Link2,
 } from "lucide-react";
+import { ArrowBigRightIcon } from "../../components/ui/arrow-big-right.jsx";
 import { MessageSquarePlusIcon } from "../../components/ui/message-square-plus.jsx";
+import {
+  NoteEditorToolbar,
+  NoteRichTextContent,
+  applyMarkdownLink,
+  insertRawText,
+  isHttpUrl,
+  normalizeHttpUrl,
+} from "../../components/notes/NoteRichText.jsx";
 
 const NOTE_KIND_OPTIONS = [
   { key: "NOTE", label: "Notitie", tone: "neutral", Icon: MessageCircleMore },
@@ -53,58 +61,6 @@ const REACTION_OPTIONS = [
   { key: "check", emoji: "✅" },
   { key: "idea", emoji: "💡" },
 ];
-
-function normalizeHttpUrl(value) {
-  const raw = String(value || "").trim();
-  if (!raw) return "";
-  if (!/^https?:\/\//i.test(raw)) {
-    return `https://${raw}`;
-  }
-  return raw;
-}
-
-function isHttpUrl(value) {
-  const raw = String(value || "").trim();
-  return /^https?:\/\/\S+$/i.test(raw);
-}
-
-function buildMarkdownLink(label, href) {
-  const safeHref = normalizeHttpUrl(href);
-  const safeLabel = String(label || "").trim() || safeHref;
-  return `[${safeLabel}](${safeHref})`;
-}
-
-function applyMarkdownLink(currentValue, selectionStart, selectionEnd, href, labelOverride = "") {
-  const source = String(currentValue || "");
-  const start = Math.max(0, Number(selectionStart ?? 0));
-  const end = Math.max(start, Number(selectionEnd ?? start));
-  const selectedText = source.slice(start, end);
-  const label = String(labelOverride || "").trim() || selectedText || "link";
-  const linkMarkup = buildMarkdownLink(label, href);
-  const nextValue = source.slice(0, start) + linkMarkup + source.slice(end);
-
-  return {
-    value: nextValue,
-    caretStart: start + linkMarkup.length,
-    caretEnd: start + linkMarkup.length,
-    selectedText,
-  };
-}
-
-function insertRawText(currentValue, selectionStart, selectionEnd, text) {
-  const source = String(currentValue || "");
-  const start = Math.max(0, Number(selectionStart ?? 0));
-  const end = Math.max(start, Number(selectionEnd ?? start));
-  const insertText = String(text || "");
-  const nextValue = source.slice(0, start) + insertText + source.slice(end);
-  const caret = start + insertText.length;
-
-  return {
-    value: nextValue,
-    caretStart: caret,
-    caretEnd: caret,
-  };
-}
 
 function findMentionContext(currentValue, selectionStart) {
   const source = String(currentValue || "");
@@ -135,77 +91,19 @@ function insertMentionReference(currentValue, mentionContext, displayName) {
   );
 }
 
-function NoteEditorToolbar({
-  disabled = false,
-  onInsertLink,
-}) {
-  return (
-    <div className="ember-toolbar" style={{ justifyContent: "flex-start", gap: 12, flexWrap: "wrap" }}>
-      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-        <button
-          type="button"
-          className="btn btn-secondary"
-          disabled={disabled}
-          onClick={onInsertLink}
-          title="Voeg een hyperlink toe"
-        >
-          <Link2 size={16} />
-          Link invoegen
-        </button>
-      </div>
-      <div className="muted" style={{ fontSize: 13 }}>
-        Selecteer tekst en druk op Ctrl+K ; links openen standaard in een nieuw tabblad.
-      </div>
-    </div>
-  );
-}
-
-function linkifyText(text) {
-  const source = String(text || "");
-  const nodes = [];
-  const pattern = /\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)|(https?:\/\/[^\s<]+)/gi;
-  let lastIndex = 0;
-  let match;
-
-  while ((match = pattern.exec(source))) {
-    if (match.index > lastIndex) {
-      nodes.push(source.slice(lastIndex, match.index));
-    }
-
-    const label = match[1] || match[3];
-    const href = match[2] || match[3];
-    nodes.push(
-      <a
-        key={`${href}-${match.index}`}
-        href={href}
-        target="_blank"
-        rel="noreferrer noopener"
-        style={{ color: "var(--link)", textDecoration: "underline" }}
-      >
-        {label}
-      </a>
-    );
-    lastIndex = pattern.lastIndex;
-  }
-
-  if (lastIndex < source.length) {
-    nodes.push(source.slice(lastIndex));
-  }
-
-  return nodes.flatMap((part, index) => {
-    if (typeof part !== "string") return [part];
-    return part.split("\n").flatMap((line, lineIndex, arr) => {
-      const items = [line];
-      if (lineIndex < arr.length - 1) {
-        items.push(<br key={`br-${index}-${lineIndex}`} />);
-      }
-      return items;
-    });
-  });
-}
 
 function getNoteKindMeta(noteKind) {
   return NOTE_KIND_OPTIONS.find((item) => item.key === noteKind) || NOTE_KIND_OPTIONS[0];
+}
+
+function getNoteSurfaceClass(noteKind) {
+  return getCardToneClass(
+    noteKind === "WARNING"
+      ? "AFGEWEZEN"
+      : noteKind === "HANDOVER"
+        ? "OPEN"
+        : "GEPLAND"
+  );
 }
 
 function buildReactionSummary(reactions = []) {
@@ -541,7 +439,17 @@ export default function NotesTab({
 
     window.addEventListener("keydown", handleSaveShortcut);
     return () => window.removeEventListener("keydown", handleSaveShortcut);
-  }, [draft.body_markdown, editingDraft.body_markdown, editingNoteId, isActive, readOnly, saving, subtab]);
+  }, [
+    draft.body_markdown,
+    draft.note_kind,
+    editingDraft.body_markdown,
+    editingDraft.note_kind,
+    editingNoteId,
+    isActive,
+    readOnly,
+    saving,
+    subtab,
+  ]);
 
   function closeLinkEditor() {
     setLinkDraft({
@@ -706,6 +614,25 @@ export default function NotesTab({
     focusEditor(linkDraft.target, result.caretStart, result.caretEnd);
   }
 
+  function insertEmojiIntoTarget(target, emojiValue) {
+    const normalized = String(emojiValue || "").trim();
+    if (!normalized) return;
+
+    const inputElement = target === "edit" ? editingTextareaRef.current : textareaRef.current;
+    const sourceValue = target === "edit" ? editingDraft.body_markdown : draft.body_markdown;
+    const caretStart = Number(inputElement?.selectionStart ?? sourceValue.length);
+    const caretEnd = Number(inputElement?.selectionEnd ?? sourceValue.length);
+    const result = insertRawText(sourceValue, caretStart, caretEnd, `${normalized} `);
+
+    if (target === "edit") {
+      setEditingDraft((prev) => ({ ...prev, body_markdown: result.value }));
+    } else {
+      setDraft((prev) => ({ ...prev, body_markdown: result.value }));
+    }
+
+    focusEditor(target, result.caretStart, result.caretEnd);
+  }
+
   async function handleCreateNote() {
     setSaving(true);
     try {
@@ -807,14 +734,9 @@ export default function NotesTab({
 
           {[...activeNotes, ...(showArchived ? archivedNotes : [])].map((note) => {
             const isEditing = editingNoteId === note.installation_note_id;
-            const noteMeta = getNoteKindMeta(note.note_kind);
-            const noteToneClass = getCardToneClass(
-              note.note_kind === "WARNING"
-                ? "AFGEWEZEN"
-                : note.note_kind === "HANDOVER"
-                  ? "OPEN"
-                  : "GEPLAND"
-            );
+            const activeNoteKind = isEditing ? editingDraft.note_kind : note.note_kind;
+            const noteMeta = getNoteKindMeta(activeNoteKind);
+            const noteToneClass = getNoteSurfaceClass(activeNoteKind);
             const directoryEntry =
               resolveActorDirectoryEntry(note.author_user_object_id, actorLookup) ||
               resolveActorDirectoryEntry(note.author_email_snapshot, actorLookup);
@@ -959,6 +881,7 @@ export default function NotesTab({
                       onInsertLink={() =>
                         openLinkEditor("edit", editingDraft.body_markdown, editingTextareaRef.current)
                       }
+                      onInsertEmoji={(emojiValue) => insertEmojiIntoTarget("edit", emojiValue)}
                     />
                     {linkDraft.open && linkDraft.target === "edit" ? (
                       <div className="card ember-inline-assist-panel ember-inline-assist-panel--editor">
@@ -1055,17 +978,9 @@ export default function NotesTab({
                   </div>
                 ) : (
                   <div style={{ display: "grid", gap: 12 }}>
-                    <div style={{ fontSize: 15, lineHeight: 1.6 }}>{linkifyText(note.body_markdown)}</div>
-
-                    {(note.mentions || []).length ? (
-                      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                        {(note.mentions || []).map((mention) => (
-                          <span key={mention.installation_note_mention_id} className="monitor-tag monitor-tag--active">
-                            {mention.mentioned_display_name_snapshot || mention.mentioned_email_snapshot || "Gebruiker"}
-                          </span>
-                        ))}
-                      </div>
-                    ) : null}
+                    <div style={{ fontSize: 15, lineHeight: 1.6 }}>
+                      <NoteRichTextContent text={note.body_markdown} mentions={note.mentions || []} />
+                    </div>
 
                     <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "flex-end", flexWrap: "wrap" }}>
                       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
@@ -1158,7 +1073,7 @@ export default function NotesTab({
             );
           })}
 
-          <div className="card" style={{ padding: 18, display: "grid", gap: 12 }}>
+          <div className={getNoteSurfaceClass(draft.note_kind)} style={{ padding: 18, display: "grid", gap: 12 }}>
             <div style={{ display: "grid", gap: 10 }}>
               <div style={{ fontWeight: 900, fontSize: 20 }}>Nieuwe notitie</div>
               <div className="muted">
@@ -1221,6 +1136,7 @@ export default function NotesTab({
             <NoteEditorToolbar
               disabled={readOnly || saving}
               onInsertLink={() => openLinkEditor("draft", draft.body_markdown, textareaRef.current)}
+              onInsertEmoji={(emojiValue) => insertEmojiIntoTarget("draft", emojiValue)}
             />
             {linkDraft.open && linkDraft.target === "draft" ? (
               <div className="card ember-inline-assist-panel ember-inline-assist-panel--editor">
@@ -1336,13 +1252,21 @@ export default function NotesTab({
             ) : null}
 
             {(workflowData?.activeItems || []).map((item) => (
-              <div key={item.follow_up_action_id} className={getCardToneClass(item.status)} style={{ padding: 16, display: "grid", gap: 10 }}>
+              <Link
+                key={item.follow_up_action_id}
+                className={`${getCardToneClass(item.status)} installation-workflow-card`}
+                to={`/monitor/formulieren/${encodeURIComponent(item.form_instance_id)}`}
+                title="Open formulierafhandeling"
+              >
                 <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
                   <div style={{ fontWeight: 800 }}>
                     {item.source_item_code ? `${item.source_item_code} ; ` : ""}
                     {item.workflow_title || "Workflowitem"}
                   </div>
-                  <span className={getToneClass(getStatusTone(item.status))}>{statusLabel(item.status)}</span>
+                  <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", justifyContent: "flex-end" }}>
+                    <span className={getToneClass(getStatusTone(item.status))}>{statusLabel(item.status)}</span>
+                    <ArrowBigRightIcon size={18} className="nav-anim-icon" />
+                  </div>
                 </div>
                 {item.workflow_description ? <div>{item.workflow_description}</div> : null}
                 <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
@@ -1356,11 +1280,8 @@ export default function NotesTab({
                   <div className="muted" style={{ fontSize: 13 }}>
                     Laatste wijziging; {formatDateTime(item.updated_at || item.created_at)}
                   </div>
-                  <Link className="btn" to={`/monitor/formulieren/${encodeURIComponent(item.form_instance_id)}`}>
-                    Open formulierafhandeling
-                  </Link>
                 </div>
-              </div>
+              </Link>
             ))}
           </div>
 

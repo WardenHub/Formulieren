@@ -14,10 +14,26 @@ function normalizeRuntimeSnapshot(snapshot) {
   return snapshot && typeof snapshot === "object" ? snapshot : null;
 }
 
-export function getApiStartupBadgeLabel(snapshot) {
-  if (!snapshot || typeof snapshot !== "object") return "starting";
+function localizeApiStartupStatusLabel(value) {
+  const normalized = String(value || "")
+    .trim()
+    .toLowerCase();
 
-  return String(
+  if (!normalized) return "Opstarten";
+  if (normalized === "starting") return "Opstarten";
+  if (normalized === "healthy") return "Gezond";
+  if (normalized === "degraded") return "Storing";
+  if (normalized === "ready") return "Gereed";
+  if (normalized === "warming") return "Opwarmen";
+  if (normalized === "idle") return "Stand-by";
+  if (normalized === "error") return "Error";
+  return normalized.replace(/_/g, " ");
+}
+
+export function getApiStartupBadgeLabel(snapshot) {
+  if (!snapshot || typeof snapshot !== "object") return "Opstarten";
+
+  return localizeApiStartupStatusLabel(
     snapshot.api_status ||
       snapshot.status ||
       (snapshot.ready ? "healthy" : snapshot.startup_phase) ||

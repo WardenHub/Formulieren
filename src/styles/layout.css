@@ -705,6 +705,61 @@ select.input option{
   color: var(--info-text);
 }
 
+.ember-inline-mention{
+  display: inline-block;
+  margin: 0 2px;
+  padding: 1px 8px;
+  border: 1px solid var(--info-border);
+  border-radius: 999px;
+  background: var(--info-bg);
+  color: var(--info-text);
+  font-weight: 700;
+  line-height: 1.35;
+  vertical-align: baseline;
+}
+
+.ember-inline-emoji{
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 0.08em;
+  vertical-align: -0.2em;
+}
+
+.ember-note-toolbar{
+  position: relative;
+}
+
+.ember-note-emoji-panel{
+  position: absolute;
+  left: 0;
+  top: calc(100% + 10px);
+  z-index: 40;
+  padding: 10px;
+  display: grid;
+  gap: 10px;
+}
+
+.ember-note-emoji-panel em-emoji-picker{
+  --background-rgb: 255,255,255;
+  --border-radius: 18px;
+  --category-icon-size: 18px;
+  --color-border-over: var(--line);
+  --color-border: var(--line);
+  --color-bg: var(--card);
+  --color-bg-hover: var(--surface-hover);
+  --color-bg-secondary: var(--surface-soft);
+  --color-text: var(--ink);
+  --font-family: inherit;
+}
+
+.ember-note-emoji-custom-row{
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  max-width: 380px;
+}
+
 .ember-label--success,
 .ui-label--success,
 .monitor-tag--success,
@@ -2669,6 +2724,37 @@ html[data-appearance="light"] .type-telefonie{
   background: transparent;
   color: inherit;
   font-size: 13px;
+}
+
+.installation-workflow-open-link{
+  width: 100%;
+  justify-content: space-between;
+  padding: 12px 14px;
+  border: 1px solid var(--border-soft);
+  border-radius: 14px;
+  background: rgba(255,255,255,.08);
+  text-decoration: none;
+  transition: background-color .16s ease, border-color .16s ease, transform .16s ease;
+}
+
+.installation-workflow-open-link:hover{
+  background: rgba(255,255,255,.14);
+  border-color: var(--accent-soft);
+  transform: translateY(-1px);
+}
+
+.installation-workflow-card{
+  display: grid;
+  gap: 10px;
+  padding: 16px;
+  text-decoration: none;
+  color: inherit;
+  transition: transform .16s ease, border-color .16s ease, box-shadow .16s ease, background-color .16s ease;
+}
+
+.installation-workflow-card:hover{
+  transform: translateY(-1px);
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.08);
 }
 
 .monitor-form-actions{

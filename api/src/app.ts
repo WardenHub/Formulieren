@@ -53,6 +53,7 @@ function buildHealthPayload({
     status,
     db,
     Jesse: healthy ? ":)" : ":(",
+    pdf_renderer_status: runtime.renderer_status,
     runtime: {
       ready: runtime.ready,
       startup_phase: runtime.startup_phase,
