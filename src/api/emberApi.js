@@ -274,6 +274,13 @@ export function getFormInstance(code, formInstanceId) {
   );
 }
 
+export function prepareOfflineFormPackage(code, formInstanceId, payload = {}) {
+  return apiPost(
+    `/installations/${encodeURIComponent(code)}/forms/instances/${encodeURIComponent(formInstanceId)}/offline-package`,
+    payload ?? {}
+  );
+}
+
 export function putFormInstanceMetadata(code, formInstanceId, payload) {
   return apiPut(
     `/installations/${encodeURIComponent(code)}/forms/instances/${encodeURIComponent(formInstanceId)}/metadata`,
@@ -736,6 +743,37 @@ export function getMe() {
 
 export function getUserDirectory() {
   return apiGet("/me/profile/directory");
+}
+
+export function getMyFeedback() {
+  return apiGet("/me/feedback");
+}
+
+export function createMyFeedback(payload = {}) {
+  return apiPost("/me/feedback", payload ?? {});
+}
+
+export function getAdminFeedback(params = {}) {
+  const qs = new URLSearchParams();
+
+  if (params.status && String(params.status).trim()) {
+    qs.set("status", String(params.status).trim());
+  }
+
+  if (params.sentiment && String(params.sentiment).trim()) {
+    qs.set("sentiment", String(params.sentiment).trim());
+  }
+
+  const suffix = qs.toString() ? `?${qs.toString()}` : "";
+  return apiGet(`/admin/feedback${suffix}`);
+}
+
+export function putAdminFeedbackStatus(feedbackId, payload = {}) {
+  return apiPut(`/admin/feedback/${encodeURIComponent(feedbackId)}/status`, payload ?? {});
+}
+
+export function putAdminFeedbackReply(feedbackId, payload = {}) {
+  return apiPut(`/admin/feedback/${encodeURIComponent(feedbackId)}/reply`, payload ?? {});
 }
 
 export function getMyNotifications(params = {}) {

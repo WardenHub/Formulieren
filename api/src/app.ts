@@ -10,9 +10,11 @@ import formsMonitorRouter from "./routes/formsMonitor.js";
 import adminFormsRouter from "./routes/adminForms.js";
 import adminInstallationsRouter from "./routes/adminInstallations.js";
 import adminGuidanceRouter from "./routes/adminGuidance.js";
+import adminFeedbackRouter from "./routes/adminFeedback.js";
 import internalMaintenanceRouter from "./routes/internalMaintenance.js";
 import homeRouter from "./routes/home.js";
 import profileRouter from "./routes/profile.js";
+import meFeedbackRouter from "./routes/meFeedback.js";
 import * as profileService from "./services/profileService.js";
 import { getRuntimeStatusSnapshot } from "./services/runtimeStatusService.js";
 
@@ -160,11 +162,13 @@ app.use("/internal/maintenance", internalMaintenanceRouter);
 
 app.use(authMiddleware);
 app.use("/me/profile", profileRouter);
+app.use("/me/feedback", meFeedbackRouter);
 app.use("/installations", installationsRouter);
 app.use("/installation-types", installationTypesRouter);
 app.use("/admin/forms", adminFormsRouter);
 app.use("/admin/installations", adminInstallationsRouter);
 app.use("/admin/guidance", adminGuidanceRouter);
+app.use("/admin/feedback", adminFeedbackRouter);
 app.use("/forms-monitor", formsMonitorRouter);
 
 app.get("/me", async (req: any, res) => {

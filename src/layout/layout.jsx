@@ -317,6 +317,15 @@ export default function Layout() {
                 Smoelenboek
               </Link>
 
+              <Link
+                className="menu-item"
+                to="/feedback"
+                state={{ sourcePath: `${location.pathname}${location.search}` }}
+                onClick={() => setAvatarOpen(false)}
+              >
+                Feedback
+              </Link>
+
               <a
                 className="menu-item"
                 href="https://kennis.wardenburg.nl/Main/Werkwijze/Ember/"

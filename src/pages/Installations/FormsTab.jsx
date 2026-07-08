@@ -10,10 +10,14 @@ import { SearchIcon } from "@/components/ui/search";
 import { RefreshCWIcon } from "@/components/ui/refresh-cw";
 import { PlusIcon } from "@/components/ui/plus";
 import { ChevronUpIcon } from "@/components/ui/chevron-up";
+import { DownloadIcon } from "@/components/ui/download";
 
 import {
+  getCatalog,
+  getDocuments,
   getFormsCatalog,
   getInstallationFormInstances,
+  prepareOfflineFormPackage,
   getUserDirectory,
 } from "../../api/emberApi.js";
 import { isHistoricalInstallation } from "../../lib/installationStatus.js";
@@ -251,6 +255,60 @@ function buildVisibleRows(items) {
   return result;
 }
 
+function toCleanString(value) {
+  return String(value || "").trim();
+}
+
+function buildOfflineTypeOptions(catalog, documents) {
+  const documentGroups = Array.isArray(documents?.documentTypes) ? documents.documentTypes : [];
+  const countByType = new Map(
+    documentGroups.map((group) => [
+      toCleanString(group?.document_type_key),
+      Array.isArray(group?.documents) ? group.documents.length : 0,
+    ])
+  );
+
+  const catalogTypes = Array.isArray(catalog?.documentTypes) ? catalog.documentTypes : [];
+  return catalogTypes
+    .map((row) => {
+      const key = toCleanString(row?.document_type_key);
+      if (!key) return null;
+      return {
+        key,
+        label: toCleanString(row?.document_type_name) || key,
+        sectionKey: toCleanString(row?.section_key) || null,
+        isRequired: row?.is_required === true,
+        isAttachmentOnly: row?.is_attachment_only === true,
+        documentCount: countByType.get(key) || 0,
+      };
+    })
+    .filter(Boolean)
+    .sort((a, b) => {
+      if (a.isRequired !== b.isRequired) return a.isRequired ? -1 : 1;
+      if (a.documentCount !== b.documentCount) return b.documentCount - a.documentCount;
+      return a.label.localeCompare(b.label, "nl-NL");
+    });
+}
+
+function deriveDefaultOfflineSelection(options) {
+  const safeOptions = Array.isArray(options) ? options : [];
+  const requiredWithDocs = safeOptions.filter((option) => option.isRequired && option.documentCount > 0);
+  if (requiredWithDocs.length > 0) return requiredWithDocs.map((option) => option.key);
+  return safeOptions.filter((option) => option.documentCount > 0).map((option) => option.key);
+}
+
+function downloadJsonFile(fileName, value) {
+  const blob = new Blob([JSON.stringify(value, null, 2)], { type: "application/json;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = fileName || "ember-offline-package.json";
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
 function SectionBusyOverlay({ iconRef, title, label }) {
   return (
     <div className="ember-busy-overlay ember-busy-overlay--section">
@@ -263,6 +321,128 @@ function SectionBusyOverlay({ iconRef, title, label }) {
 
         <div className="muted ember-xs-text">
           {label || "Bezig met gegevens ophalen."}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function OfflinePackageModal({
+  open,
+  item,
+  loading,
+  busy,
+  error,
+  options,
+  selectedKeys,
+  onClose,
+  onToggle,
+  onSelectRecommended,
+  onSelectAll,
+  onClear,
+  onConfirm,
+}) {
+  if (!open || !item) return null;
+
+  const selectedSet = new Set(selectedKeys || []);
+  const selectedCount = options.filter((option) => selectedSet.has(option.key)).length;
+  const totalDocumentCount = options.reduce((sum, option) => sum + (option.documentCount || 0), 0);
+
+  return (
+    <div className="doc-bulk-modal-backdrop" onClick={onClose}>
+      <div className="card doc-bulk-modal offline-package-modal" onClick={(e) => e.stopPropagation()}>
+        <div className="doc-bulk-modal__head">
+          <div className="ui-stack-sm">
+            <div className="doc-bulk-modal__title">Klaarzetten voor Ember Offline</div>
+            <div className="doc-bulk-modal__subtitle muted">
+              Kies welke installatiebestanden we in het offline pakket opnemen voor formulier #{item.form_instance_id}.
+            </div>
+          </div>
+
+          <button type="button" className="btn btn-secondary" onClick={onClose}>
+            Sluiten
+          </button>
+        </div>
+
+        <div className="offline-package-modal__summary">
+          <span className="ember-label ember-label--muted">{selectedCount} type(s) geselecteerd</span>
+          <span className="ember-label ember-label--muted">{totalDocumentCount} bestand(en) beschikbaar</span>
+          {item.form_name ? <span className="ember-label ember-label--neutral">{item.form_name}</span> : null}
+        </div>
+
+        <div className="ember-toolbar">
+          <button type="button" className="btn btn-secondary btn-sm" onClick={onSelectRecommended} disabled={loading || busy}>
+            Aanbevolen
+          </button>
+          <button type="button" className="btn btn-secondary btn-sm" onClick={onSelectAll} disabled={loading || busy}>
+            Alles met bestanden
+          </button>
+          <button type="button" className="btn btn-secondary btn-sm" onClick={onClear} disabled={loading || busy}>
+            Leegmaken
+          </button>
+        </div>
+
+        {loading ? <div className="muted">Documenttypes laden...</div> : null}
+        {error ? <div className="ember-error-text">{error}</div> : null}
+
+        {!loading && (
+          <div className="offline-package-modal__list">
+            {options.length === 0 ? (
+              <div className="muted">Geen documenttypes beschikbaar voor offline voorbereiding.</div>
+            ) : (
+              options.map((option) => {
+                const selected = selectedSet.has(option.key);
+                const disabled = option.documentCount === 0;
+
+                return (
+                  <button
+                    key={option.key}
+                    type="button"
+                    className={`offline-package-type ${selected ? "offline-package-type--selected" : ""} ${disabled ? "offline-package-type--disabled" : ""}`}
+                    onClick={() => {
+                      if (!disabled) onToggle(option.key);
+                    }}
+                    disabled={disabled || busy}
+                  >
+                    <div className="offline-package-type__main">
+                      <input type="checkbox" readOnly checked={selected} tabIndex={-1} />
+                      <div className="offline-package-type__copy">
+                        <div className="offline-package-type__title">{option.label}</div>
+                        <div className="offline-package-type__sub muted">
+                          {option.documentCount} bestand(en)
+                          {option.sectionKey ? ` ; sectie ${option.sectionKey}` : ""}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="offline-package-type__tags">
+                      {option.isRequired ? (
+                        <span className="ember-label ember-label--warning">Kritiek</span>
+                      ) : null}
+                      {option.isAttachmentOnly ? (
+                        <span className="ember-label ember-label--muted">Bijlage-type</span>
+                      ) : null}
+                    </div>
+                  </button>
+                );
+              })
+            )}
+          </div>
+        )}
+
+        <div className="doc-bulk-modal__foot">
+          <div className="muted ember-small-text">
+            Dit POC-pakket is bedoeld voor lokaal invullen; indienen en bijlagen uploaden blijven online.
+          </div>
+
+          <button
+            type="button"
+            className="btn btn-primary"
+            onClick={onConfirm}
+            disabled={busy || loading || selectedCount === 0}
+          >
+            {busy ? "Pakket maken..." : "Download package"}
+          </button>
         </div>
       </div>
     </div>
@@ -381,6 +561,14 @@ export default function FormsTab({
   const [childPreflightByParentId, setChildPreflightByParentId] = useState({});
   const [childPreflightLoadingByParentId, setChildPreflightLoadingByParentId] = useState({});
   const [childPreflightErrorByParentId, setChildPreflightErrorByParentId] = useState({});
+  const [offlineModalOpen, setOfflineModalOpen] = useState(false);
+  const [offlineTargetItem, setOfflineTargetItem] = useState(null);
+  const [offlineCatalog, setOfflineCatalog] = useState(null);
+  const [offlineDocuments, setOfflineDocuments] = useState(null);
+  const [offlineSelectedKeys, setOfflineSelectedKeys] = useState([]);
+  const [offlineLoading, setOfflineLoading] = useState(false);
+  const [offlineBusy, setOfflineBusy] = useState(false);
+  const [offlineError, setOfflineError] = useState(null);
 
   const checklistIconRef = useRef(null);
   const statusIconRef = useRef(null);
@@ -392,6 +580,7 @@ export default function FormsTab({
   const followUpStatusIconRefs = useRef({});
   const followUpStatusArrowRefs = useRef({});
   const openFormIconRefs = useRef({});
+  const offlineIconRefs = useRef({});
   const hasInitializedTypeFiltersRef = useRef(false);
   const lastAutoRefreshKeyRef = useRef("");
 
@@ -641,6 +830,10 @@ export default function FormsTab({
     return next;
   }, [directoryItems]);
   const actorLookup = useMemo(() => buildDirectoryActorLookup(directoryItems), [directoryItems]);
+  const offlineTypeOptions = useMemo(
+    () => buildOfflineTypeOptions(offlineCatalog, offlineDocuments),
+    [offlineCatalog, offlineDocuments]
+  );
 
   function toggleStatusFilter(statusKey) {
     setSelectedStatuses((prev) => {
@@ -674,6 +867,85 @@ export default function FormsTab({
 
   async function refreshList() {
     await loadInstances({ nextSearch: appliedSearch, nextStatuses: selectedStatuses });
+  }
+
+  async function ensureOfflineDocumentContext() {
+    if (offlineCatalog && offlineDocuments) return { catalog: offlineCatalog, documents: offlineDocuments };
+
+    const [catalogResult, documentsResult] = await Promise.all([getCatalog(code), getDocuments(code)]);
+    setOfflineCatalog(catalogResult || null);
+    setOfflineDocuments(documentsResult || null);
+    return {
+      catalog: catalogResult || null,
+      documents: documentsResult || null,
+    };
+  }
+
+  async function openOfflinePackageModal(item) {
+    setOfflineTargetItem(item || null);
+    setOfflineModalOpen(true);
+    setOfflineError(null);
+    setOfflineLoading(true);
+
+    try {
+      const context = await ensureOfflineDocumentContext();
+      const options = buildOfflineTypeOptions(context.catalog, context.documents);
+      setOfflineSelectedKeys(deriveDefaultOfflineSelection(options));
+    } catch (e) {
+      setOfflineError(e?.message || String(e));
+      setOfflineSelectedKeys([]);
+    } finally {
+      setOfflineLoading(false);
+    }
+  }
+
+  function closeOfflinePackageModal() {
+    if (offlineBusy) return;
+    setOfflineModalOpen(false);
+    setOfflineTargetItem(null);
+    setOfflineSelectedKeys([]);
+    setOfflineError(null);
+  }
+
+  function toggleOfflineSelectedKey(key) {
+    setOfflineSelectedKeys((prev) => {
+      const current = new Set(prev || []);
+      if (current.has(key)) current.delete(key);
+      else current.add(key);
+      return Array.from(current);
+    });
+  }
+
+  function selectRecommendedOfflineKeys() {
+    setOfflineSelectedKeys(deriveDefaultOfflineSelection(offlineTypeOptions));
+  }
+
+  function selectAllOfflineKeys() {
+    setOfflineSelectedKeys(
+      offlineTypeOptions.filter((option) => option.documentCount > 0).map((option) => option.key)
+    );
+  }
+
+  function clearOfflineKeys() {
+    setOfflineSelectedKeys([]);
+  }
+
+  async function confirmOfflinePackage() {
+    if (!offlineTargetItem?.form_instance_id) return;
+    setOfflineBusy(true);
+    setOfflineError(null);
+
+    try {
+      const response = await prepareOfflineFormPackage(code, offlineTargetItem.form_instance_id, {
+        selected_document_type_keys: offlineSelectedKeys,
+      });
+      downloadJsonFile(response?.file_name, response?.package);
+      closeOfflinePackageModal();
+    } catch (e) {
+      setOfflineError(e?.message || String(e));
+    } finally {
+      setOfflineBusy(false);
+    }
   }
 
   function getChildPreflight(parentId) {
@@ -1064,6 +1336,7 @@ export default function FormsTab({
                   const canFollowUp = !historical && canStartFollowUp(item);
                   const iconKey = String(itemId);
                   const openIconKey = `open-${itemId}`;
+                  const offlineIconKey = `offline-${itemId}`;
                   const childStartClickable =
                     childOkToStart &&
                     typeof onOpenChildForm === "function" &&
@@ -1155,6 +1428,23 @@ export default function FormsTab({
                             className="nav-anim-icon"
                           />
                           Open formulier
+                        </button>
+
+                        <button
+                          type="button"
+                          className="btn btn-secondary"
+                          onClick={() => openOfflinePackageModal(item)}
+                          onMouseEnter={() => offlineIconRefs.current[offlineIconKey]?.startAnimation?.()}
+                          onMouseLeave={() => offlineIconRefs.current[offlineIconKey]?.stopAnimation?.()}
+                        >
+                          <DownloadIcon
+                            ref={(el) => {
+                              offlineIconRefs.current[offlineIconKey] = el;
+                            }}
+                            size={18}
+                            className="nav-anim-icon"
+                          />
+                          Ember Offline
                         </button>
 
                         {canFollowUp && (
@@ -1344,6 +1634,22 @@ export default function FormsTab({
           </div>
         </div>
       </div>
+
+      <OfflinePackageModal
+        open={offlineModalOpen}
+        item={offlineTargetItem}
+        loading={offlineLoading}
+        busy={offlineBusy}
+        error={offlineError}
+        options={offlineTypeOptions}
+        selectedKeys={offlineSelectedKeys}
+        onClose={closeOfflinePackageModal}
+        onToggle={toggleOfflineSelectedKey}
+        onSelectRecommended={selectRecommendedOfflineKeys}
+        onSelectAll={selectAllOfflineKeys}
+        onClear={clearOfflineKeys}
+        onConfirm={confirmOfflinePackage}
+      />
     </div>
   );
 }

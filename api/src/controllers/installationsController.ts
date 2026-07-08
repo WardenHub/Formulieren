@@ -2,6 +2,7 @@
 import type { Request, Response } from "express";
 import * as service from "../services/installationsService.js";
 import * as formsService from "../services/formsService.js";
+import * as formsOfflineService from "../services/formsOfflineService.js";
 import * as documentFilesService from "../services/installationDocumentFilesService.js";
 import * as formDocumentFilesService from "../services/formInstanceDocumentFilesService.js";
 import * as softwareService from "../services/installationSoftwareService.js";
@@ -843,6 +844,27 @@ export async function getFormInstance(req: any, res: Response) {
   } catch (err) {
     console.error(err);
     return res.status(500).json({ error: "getFormInstance failed" });
+  }
+}
+
+export async function postFormInstanceOfflinePackage(req: any, res: Response) {
+  try {
+    const code = String(req.params.code || "");
+    const instanceId = String(req.params.instanceId || "");
+    const payload = req.body || {};
+
+    const data = await formsOfflineService.buildOfflineFormPackage(code, instanceId, payload, req.user);
+    if (data?.error === "not found") return res.status(404).json({ error: "not found" });
+    if (data?.ok === false) return res.status(400).json(data);
+
+    return res.json(data);
+  } catch (err: any) {
+    const msg = (err?.message || String(err)).toLowerCase();
+    if (msg.includes("atrium installation not found")) {
+      return res.status(404).json({ error: "atrium installation not found" });
+    }
+    console.error(err);
+    return res.status(500).json({ error: "postFormInstanceOfflinePackage failed" });
   }
 }
 

@@ -5,9 +5,11 @@ import SaveButton from "../../components/SaveButton.jsx";
 import AdminFormsTab from "./AdminFormsTab.jsx";
 import AdminInstallationsTab from "./AdminInstallationsTab.jsx";
 import AdminAITab from "./AdminAITab.jsx";
+import AdminFeedbackTab from "./AdminFeedbackTab.jsx";
 import { MicIcon } from "@/components/ui/mic";
 import { BrainIcon } from "@/components/ui/brain";
 import { CogIcon } from "@/components/ui/cog";
+import { MessageCircleMoreIcon } from "../../components/ui/message-circle-more.jsx";
 
 export default function AdminPage() {
   const formsRef = useRef(null);
@@ -94,6 +96,12 @@ export default function AdminPage() {
         label: "AI",
         Icon: MicIcon,
         content: <AdminAITab />,
+      },
+      {
+        key: "feedback",
+        label: "Feedback",
+        Icon: MessageCircleMoreIcon,
+        content: <AdminFeedbackTab />,
       },
     ];
   }, []);

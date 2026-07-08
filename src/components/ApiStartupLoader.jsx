@@ -66,7 +66,7 @@ export function useApiStartupLoader(
   {
     slowHintDelayMs = 5000,
     pollIntervalMs = 2000,
-    progressDurationSeconds = 30,
+    progressDurationSeconds = 60,
     loadingCopy = "De aanvraag wordt geladen.",
   } = {}
 ) {

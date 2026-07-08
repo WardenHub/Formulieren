@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const rootDir = path.resolve(__dirname, "..");
+const playwrightBrowsersPath = path.join(rootDir, "playwright-browsers");
 const tsxCliPath = path.join(rootDir, "node_modules", "tsx", "dist", "cli.mjs");
 const playwrightCliPath = path.join(rootDir, "node_modules", "playwright", "cli.js");
 const typescriptCliPath = path.join(rootDir, "node_modules", "typescript", "bin", "tsc");
@@ -52,11 +53,16 @@ async function ensurePlaywrightChromium() {
 
   console.log("[dev] Playwright Chromium ontbreekt; installatie wordt gestart...");
 
+  const browserEnv = {
+    ...process.env,
+    PLAYWRIGHT_BROWSERS_PATH: playwrightBrowsersPath,
+  };
+
   await new Promise((resolve, reject) => {
     const installer = spawn(process.execPath, [playwrightCliPath, "install", "chromium"], {
       cwd: rootDir,
       stdio: "inherit",
-      env: process.env,
+      env: browserEnv,
     });
 
     installer.on("exit", (code, signal) => {
@@ -84,6 +90,7 @@ const child = spawn(process.execPath, [tsxCliPath, "watch", "src/server.ts"], {
   env: {
     ...process.env,
     NODE_ENV: "development",
+    PLAYWRIGHT_BROWSERS_PATH: playwrightBrowsersPath,
   },
 });
 
