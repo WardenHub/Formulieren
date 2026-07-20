@@ -29,6 +29,25 @@ function norm(o: string | undefined | null) {
 }
 
 const ALLOWED = new Set(RAW_ORIGINS.map(norm));
+const TAURI_DESKTOP_ORIGINS = new Set(
+  ["tauri://localhost", "http://tauri.localhost", "https://tauri.localhost"].map(norm)
+);
+
+function isAllowedCorsOrigin(origin: string) {
+  const normalized = norm(origin);
+  if (ALLOWED.has(normalized) || TAURI_DESKTOP_ORIGINS.has(normalized)) return true;
+
+  if ((process.env.NODE_ENV || "").toLowerCase() !== "production") {
+    try {
+      const host = new URL(normalized).hostname;
+      return host === "localhost" || host === "127.0.0.1";
+    } catch {
+      return false;
+    }
+  }
+
+  return false;
+}
 
 function mapRuntimeHealthStatus(apiStatus: string | undefined) {
   if (apiStatus === "starting") return "starting";
@@ -71,8 +90,7 @@ app.use(
     origin: (origin, cb) => {
       if (!origin) return cb(null, true);
 
-      const o = norm(origin);
-      if (ALLOWED.has(o)) return cb(null, true);
+      if (isAllowedCorsOrigin(origin)) return cb(null, true);
 
       return cb(new Error(`cors blocked origin: ${origin}`));
     },

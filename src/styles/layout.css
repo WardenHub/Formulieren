@@ -2979,6 +2979,13 @@ html[data-appearance="light"] .type-telefonie{
 .monitor-followup-card--danger{ border-color: var(--danger-border); background: var(--danger-bg-soft); }
 .monitor-followup-card--muted{ border-color: rgba(100, 116, 139, 0.34); background: rgba(148, 163, 184, 0.22); }
 
+.monitor-followup-card__description{
+  color: var(--text);
+  font-weight: 650;
+  line-height: 1.45;
+  white-space: pre-wrap;
+}
+
 .monitor-followup-note-box{
   padding: 10px;
   border: 1px solid var(--border-soft);
@@ -3125,6 +3132,83 @@ html[data-appearance="light"] .type-telefonie{
   font-size: 13px;
   line-height: 1.45;
   z-index: 120;
+}
+
+.installation-warning-popup-backdrop{
+  position: fixed;
+  inset: 0;
+  z-index: 140;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 88px 16px 16px;
+  background: rgba(15, 23, 42, 0.14);
+  backdrop-filter: blur(3px);
+}
+
+.installation-warning-popup{
+  width: min(560px, calc(100vw - 32px));
+  padding: 18px;
+  display: grid;
+  gap: 14px;
+  border: 1px solid var(--danger-border);
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--card-bg) 90%, var(--danger-bg-soft) 10%) 0%, var(--card-bg) 100%);
+  color: var(--text);
+  box-shadow: 0 26px 70px rgba(0,0,0,.28);
+  overflow: hidden;
+}
+
+.installation-warning-popup__head{
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.installation-warning-popup__title-wrap{
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.installation-warning-popup__title{
+  font-weight: 900;
+  font-size: 22px;
+  line-height: 1.15;
+  color: var(--text-strong);
+}
+
+.installation-warning-popup__close{
+  flex: 0 0 auto;
+}
+
+.installation-warning-popup__body{
+  font-size: 15px;
+  line-height: 1.65;
+  color: var(--text-strong);
+  max-height: min(34vh, 240px);
+  overflow: auto;
+  padding-right: 2px;
+}
+
+.installation-warning-popup__actions{
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.installation-warning-popup__buttons{
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.installation-warning-popup__progress{
+  margin-top: -2px;
 }
 
 /* =========================================================
@@ -3311,6 +3395,25 @@ html[data-appearance="light"] .type-telefonie{
 .forms-filter-stack{
   display: grid;
   gap: 10px;
+}
+
+.forms-filter-toggle.is-active{
+  border-color: var(--accent-border, var(--accent));
+  background: var(--accent-bg-soft, var(--row-bg));
+}
+
+.forms-filter-chip{
+  transition: opacity .16s ease, filter .16s ease, box-shadow .16s ease, transform .16s ease;
+}
+
+.forms-filter-chip.is-active{
+  font-weight: 800;
+  box-shadow: 0 0 0 1px currentColor;
+}
+
+.forms-filter-chip.is-inactive{
+  opacity: .55;
+  filter: saturate(.5);
 }
 
 .forms-search-input{

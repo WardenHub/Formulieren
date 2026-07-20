@@ -1,5 +1,6 @@
 // src/pages/Installations/FormsTab.jsx
 import { useEffect, useMemo, useRef, useState } from "react";
+import { Minus } from "lucide-react";
 
 import { ArrowBigRightIcon } from "@/components/ui/arrow-big-right";
 import { RocketIcon } from "@/components/ui/rocket";
@@ -116,7 +117,8 @@ function StatusFilterChip({ status, active, onClick }) {
       type="button"
       title={statusLabel(status)}
       onClick={onClick}
-      className={`${active ? getToneClass(getStatusTone(status)) : getToneClass("muted")} ember-label--button`}
+      className={`${active ? getToneClass(getStatusTone(status)) : getToneClass("muted")} ember-label--button forms-filter-chip ${active ? "is-active" : "is-inactive"}`}
+      aria-pressed={active}
     >
       {statusLabel(status)}
     </button>
@@ -129,7 +131,8 @@ function TypeFilterChip({ label, active, onClick }) {
       type="button"
       title={label}
       onClick={onClick}
-      className={`${active ? getToneClass("neutral") : getToneClass("muted")} ember-label--button`}
+      className={`${active ? getToneClass("neutral") : getToneClass("muted")} ember-label--button forms-filter-chip ${active ? "is-active" : "is-inactive"}`}
+      aria-pressed={active}
     >
       {label}
     </button>
@@ -576,6 +579,7 @@ export default function FormsTab({
   const searchIconRef = useRef(null);
   const refreshIconRef = useRef(null);
   const instancesBusyIconRef = useRef(null);
+  const filtersToggleIconRef = useRef(null);
   const followUpToggleIconRefs = useRef({});
   const followUpStatusIconRefs = useRef({});
   const followUpStatusArrowRefs = useRef({});
@@ -775,6 +779,7 @@ export default function FormsTab({
 
     return Array.from(seen.values()).sort((a, b) => a.label.localeCompare(b.label, "nl-NL"));
   }, [instances]);
+  const availableFormTypeKeys = formTypeOptions.map((option) => option.key);
 
   useEffect(() => {
     const availableKeys = formTypeOptions.map((x) => x.key);
@@ -834,6 +839,22 @@ export default function FormsTab({
     () => buildOfflineTypeOptions(offlineCatalog, offlineDocuments),
     [offlineCatalog, offlineDocuments]
   );
+  const statusFiltersActive = selectedStatuses.length !== DEFAULT_SELECTED_STATUSES.length;
+  const formTypeFiltersActive =
+    availableFormTypeKeys.length > 0 &&
+    (selectedFormTypes.length !== availableFormTypeKeys.length ||
+      !availableFormTypeKeys.every((key) => selectedFormTypes.includes(key)));
+  const activeFilterCount =
+    Number(Boolean(String(appliedSearch || "").trim())) +
+    Number(statusFiltersActive) +
+    Number(formTypeFiltersActive);
+
+  function clearFilters() {
+    setSearchInput("");
+    setAppliedSearch("");
+    setSelectedStatuses(DEFAULT_SELECTED_STATUSES);
+    setSelectedFormTypes(availableFormTypeKeys);
+  }
 
   function toggleStatusFilter(statusKey) {
     setSelectedStatuses((prev) => {
@@ -1224,18 +1245,34 @@ export default function FormsTab({
               </div>
               <button
                 type="button"
-                className="btn btn-secondary"
-                onClick={() => setFiltersOpen((prev) => !prev)}
+                className={`btn btn-secondary forms-filter-toggle ${activeFilterCount > 0 ? "is-active" : ""}`}
+                onClick={() => {
+                  if (filtersOpen) {
+                    setFiltersOpen(false);
+                    return;
+                  }
+                  filtersToggleIconRef.current?.startAnimation?.();
+                  window.setTimeout(() => setFiltersOpen(true), 140);
+                }}
+                onMouseEnter={() => filtersToggleIconRef.current?.startAnimation?.()}
+                onMouseLeave={() => filtersToggleIconRef.current?.stopAnimation?.()}
+                aria-expanded={filtersOpen}
               >
-                {filtersOpen ? <ChevronUpIcon size={16} /> : <PlusIcon size={16} />}
-                {filtersOpen ? "Zoekfilters verbergen" : "Zoekfilters tonen"}
+                {filtersOpen ? <Minus size={16} /> : <PlusIcon ref={filtersToggleIconRef} size={16} />}
+                Zoekfilters
+                {activeFilterCount > 0 ? <span className="forms-filter-toggle__count">{activeFilterCount}</span> : null}
               </button>
             </div>
           </div>
 
           {filtersOpen ? (
             <div className="forms-filter-stack">
-              <div className="forms-chip-row">
+              <div className="forms-filter-group">
+                <div className="forms-filter-group__head">
+                  <strong>Status</strong>
+                  <span className="muted ember-xs-text">{statusFiltersActive ? "Gefilterd" : "Alle statussen"}</span>
+                </div>
+                <div className="forms-chip-row">
                 {STATUS_FILTER_OPTIONS.map((opt) => (
                   <StatusFilterChip
                     key={opt.key}
@@ -1244,10 +1281,16 @@ export default function FormsTab({
                     onClick={() => toggleStatusFilter(opt.key)}
                   />
                 ))}
+                </div>
               </div>
 
               {formTypeOptions.length > 0 && (
-                <div className="forms-chip-row">
+                <div className="forms-filter-group">
+                  <div className="forms-filter-group__head">
+                    <strong>Formulier</strong>
+                    <span className="muted ember-xs-text">{formTypeFiltersActive ? `${selectedFormTypes.length} geselecteerd` : "Alle formulieren"}</span>
+                  </div>
+                  <div className="forms-chip-row">
                   {formTypeOptions.map((opt) => (
                     <TypeFilterChip
                       key={opt.key}
@@ -1256,6 +1299,7 @@ export default function FormsTab({
                       onClick={() => toggleFormTypeFilter(opt.key)}
                     />
                   ))}
+                  </div>
                 </div>
               )}
 
@@ -1291,6 +1335,12 @@ export default function FormsTab({
                   <RefreshCWIcon ref={refreshIconRef} size={18} />
                   Verversen
                 </button>
+
+                {activeFilterCount > 0 ? (
+                  <button type="button" className="btn btn-secondary" onClick={clearFilters}>
+                    Filters wissen
+                  </button>
+                ) : null}
               </div>
             </div>
           ) : null}

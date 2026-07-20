@@ -1063,9 +1063,7 @@ function MonitorEvidencePanel({
                         />
                         <span className="ui-stack-sm ui-min-0">
                           <strong>{makeFollowUpLabel(item)}</strong>
-                          {item.workflow_description ? (
-                            <span className="ember-page-subtitle">{item.workflow_description}</span>
-                          ) : null}
+                          {item.workflow_description ? <span className="monitor-followup-card__description">{item.workflow_description}</span> : null}
                         </span>
                       </label>
                     );
@@ -1242,7 +1240,7 @@ function MonitorEvidencePanel({
                                 />
                                 <span className="ui-stack-sm ui-min-0">
                                   <strong>{makeFollowUpLabel(item)}</strong>
-                                  {item.workflow_description ? <span className="ember-page-subtitle">{item.workflow_description}</span> : null}
+                                  {item.workflow_description ? <span className="monitor-followup-card__description">{item.workflow_description}</span> : null}
                                 </span>
                               </label>
                             );
@@ -3197,7 +3195,7 @@ export default function FormsMonitorDetailPage() {
                                             </div>
 
                                             {row.workflow_description ? (
-                                              <div className="ember-page-subtitle">
+                                              <div className="monitor-followup-card__description">
                                                 {row.workflow_description}
                                               </div>
                                             ) : null}

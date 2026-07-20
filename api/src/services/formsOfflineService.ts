@@ -54,6 +54,7 @@ export async function buildOfflineFormPackage(
   user: any
 ) {
   const cleanCode = toCleanString(code);
+  const hasExplicitDocumentSelection = Array.isArray(payload?.selected_document_type_keys);
   const selectedDocumentTypeKeys = normalizeSelectedKeys(payload?.selected_document_type_keys);
 
   const [installationResult, formInstanceResult, catalogResult, documentsResult] = await Promise.all([
@@ -99,14 +100,13 @@ export async function buildOfflineFormPackage(
     .filter((row: any) => row?.is_required === true && (countsByType.get(toCleanString(row?.document_type_key)) || 0) > 0)
     .map((row: any) => toCleanString(row?.document_type_key));
 
-  const effectiveSelectedKeys =
-    selectedDocumentTypeKeys.length > 0
-      ? selectedDocumentTypeKeys
-      : defaultSelectedKeys.length > 0
-        ? defaultSelectedKeys
-        : documentTypeRows
-            .filter((row: any) => (countsByType.get(toCleanString(row?.document_type_key)) || 0) > 0)
-            .map((row: any) => toCleanString(row?.document_type_key));
+  const effectiveSelectedKeys = hasExplicitDocumentSelection
+    ? selectedDocumentTypeKeys
+    : defaultSelectedKeys.length > 0
+      ? defaultSelectedKeys
+      : documentTypeRows
+          .filter((row: any) => (countsByType.get(toCleanString(row?.document_type_key)) || 0) > 0)
+          .map((row: any) => toCleanString(row?.document_type_key));
 
   const selectedDocuments = groupedDocuments
     .filter((group: any) => effectiveSelectedKeys.includes(toCleanString(group?.document_type_key)))

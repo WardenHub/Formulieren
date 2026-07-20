@@ -283,6 +283,9 @@ function getMatrixFieldLayoutClass(layoutVariant, column) {
   }
 
   if (layoutVariant === "availability-periods") {
+    if (key === "heledag") {
+      return "ember-runtime-card-field--availability-full-day";
+    }
     if (key === "omschrijving" || key === "toelichting") {
       return "ember-runtime-card-field--availability-note";
     }
@@ -462,21 +465,7 @@ function downloadDocumentUrl(url, fileName) {
   document.body.removeChild(anchor);
 }
 
-function getReadonlyTableCellClass(column) {
-  const key = normalizeLower(column?.key || column?.name);
-  const title = normalizeLower(column?.title || column?.name);
-
-  if (
-    key.includes("gebruikersfunctie") ||
-    title.includes("gebruikersfunctie") ||
-    key.includes("doormelding") ||
-    title.includes("doormelding") ||
-    key === "pr_label" ||
-    title === "label"
-  ) {
-    return "ember-runtime-table-cell--nowrap";
-  }
-
+function getReadonlyTableCellClass() {
   return "";
 }
 
@@ -1212,6 +1201,7 @@ function MatrixAssessment({ question, canEdit, showErrors, validationSummary, gu
 
           const answerErrors = getMatrixRowErrors(validationSummary, questionName, rowIndex, answerName);
           const commentErrors = getMatrixRowErrors(validationSummary, questionName, rowIndex, commentName);
+          const rowErrors = [...new Set([...answerErrors, ...commentErrors])];
 
           const answerValue = normalizeText(answerQuestion?.value ?? rowData?.[answerName]);
           const answerReadOnly = isQuestionReadOnly(answerQuestion, canEdit) || answerColumn?.readOnly === true;
@@ -1299,7 +1289,6 @@ function MatrixAssessment({ question, canEdit, showErrors, validationSummary, gu
                       );
                     })}
                   </div>
-                  <FieldErrors errors={showErrors ? answerErrors : []} />
                 </div>
 
                 <div className="ember-runtime-assessment__cell ember-runtime-assessment__comment">
@@ -1313,7 +1302,7 @@ function MatrixAssessment({ question, canEdit, showErrors, validationSummary, gu
                     placeholder={normalizeText(commentColumn?.placeholder || commentColumn?.placeHolder) || undefined}
                     onChange={(event) => setQuestionValue(commentQuestion, event.target.value)}
                   />
-                  <FieldErrors errors={showErrors ? commentErrors : []} />
+                  <FieldErrors errors={showErrors ? rowErrors : []} />
                 </div>
               </div>
             </div>
@@ -1329,6 +1318,25 @@ function MatrixCardField({ cellQuestion, column, canEdit }) {
   const readOnly = isQuestionReadOnly(cellQuestion, canEdit) || column?.readOnly === true;
   const value = cellQuestion?.value ?? "";
   const title = getColumnTitle(column);
+
+  if (type === "boolean" || type === "checkbox") {
+    const checked = value === true || ["1", "true", "ja", "yes"].includes(String(value || "").trim().toLowerCase());
+
+    return (
+      <label className="ember-runtime-card-field ember-runtime-card-field--boolean">
+        <span className="ember-runtime-card-field__label">{title}</span>
+        <span className="ember-runtime-checkbox">
+          <input
+            type="checkbox"
+            checked={checked}
+            disabled={readOnly}
+            onChange={(event) => setQuestionValue(cellQuestion, event.target.checked)}
+          />
+          <span>24 uur per dag</span>
+        </span>
+      </label>
+    );
+  }
 
   if (type === "comment") {
     return (

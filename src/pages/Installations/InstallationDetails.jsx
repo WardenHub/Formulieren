@@ -147,43 +147,35 @@ function InstallationWarningPopup({ note, onOpen, onDismiss }) {
           onDismiss?.();
         }
       }}
-      style={{
-        position: "fixed",
-        inset: 0,
-        zIndex: 95,
-        display: "flex",
-        alignItems: "flex-start",
-        justifyContent: "center",
-        paddingTop: 96,
-      }}
+      className="installation-warning-popup-backdrop"
     >
       <div
-        className="card monitor-surface--danger"
+        className="card installation-warning-popup"
         onMouseDown={(event) => event.stopPropagation()}
-        style={{
-          width: "min(720px, calc(100vw - 32px))",
-          padding: 18,
-          display: "grid",
-          gap: 12,
-          boxShadow: "0 22px 60px rgba(0,0,0,.22)",
-        }}
       >
-        <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center" }}>
-          <div style={{ display: "grid", gap: 4 }}>
+        <div className="installation-warning-popup__head">
+          <div className="installation-warning-popup__title-wrap">
             <div className="ember-label ember-label--danger" style={{ justifySelf: "start" }}>
               Waarschuwing
             </div>
-            <div style={{ fontWeight: 900, fontSize: 20 }}>Actieve installatiewaarschuwing</div>
+            <div className="installation-warning-popup__title">Actieve installatiewaarschuwing</div>
           </div>
-          <button type="button" className="icon-btn" onClick={onDismiss} title="Sluiten">
+          <button
+            type="button"
+            className="icon-btn installation-warning-popup__close"
+            onClick={onDismiss}
+            title="Sluiten"
+          >
             ×
           </button>
         </div>
 
-        <div style={{ fontSize: 15, lineHeight: 1.6 }}>{linkifyWarningText(note.body_markdown)}</div>
+        <div className="installation-warning-popup__body">
+          {linkifyWarningText(note.body_markdown)}
+        </div>
 
-        <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
-          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+        <div className="installation-warning-popup__actions">
+          <div className="installation-warning-popup__buttons">
             <button type="button" className="btn" onClick={onOpen}>
               Open waarschuwing
             </button>
@@ -193,7 +185,7 @@ function InstallationWarningPopup({ note, onOpen, onDismiss }) {
           </div>
         </div>
 
-        <div className="installations-startup-card__progress">
+        <div className="installations-startup-card__progress installation-warning-popup__progress">
           <span
             className="installations-startup-card__progress-bar"
             style={{
