@@ -241,6 +241,36 @@ export async function postFormsMonitorFollowUpStatusAction(req: any, res: Respon
   }
 }
 
+export async function postFormsMonitorManualFollowUp(req: any, res: Response) {
+  try {
+    const formInstanceId = String(req.params.formInstanceId || "");
+    const data = await service.createMonitorManualFollowUp(formInstanceId, req.body || {}, {
+      user: req.user,
+      roles: req.roles || [],
+    });
+
+    if (data?.error === "not found") {
+      return res.status(404).json({ error: "not found" });
+    }
+
+    return res.status(201).json(data);
+  } catch (err: any) {
+    const msg = String(err?.message || err).toLowerCase();
+    if (msg.includes("not found")) return res.status(404).json({ error: "not found" });
+    if (isHistoricalReadOnlyMessage(msg)) return res.status(409).json({ error: "historical installation read-only" });
+    if (msg.includes("title is required") || msg.includes("title is too long")) {
+      return res.status(400).json({ error: msg });
+    }
+    if (msg.includes("require a submitted form")) {
+      return res.status(409).json({ error: "manual follow-ups require a submitted form" });
+    }
+    if (msg.includes("forbidden")) return res.status(403).json({ error: "forbidden" });
+
+    console.error(err);
+    return res.status(500).json({ error: "postFormsMonitorManualFollowUp failed" });
+  }
+}
+
 export async function putFormsMonitorFollowUpNote(req: any, res: Response) {
   try {
     const followUpActionId = String(req.params.followUpActionId || "");

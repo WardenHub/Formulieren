@@ -1,4 +1,5 @@
 //api/src/services/formsMonitorService.ts
+import { randomUUID } from "node:crypto";
 import { sqlQuery } from "../db/index.js";
 import {
   getFormsMonitorListSql,
@@ -18,6 +19,7 @@ import {
   updateFormFollowUpStatusSql,
   updateFormFollowUpNoteSql,
   updateFormFollowUpCertificateImpactSql,
+  insertManualFormFollowUpSql,
 } from "../db/queries/formFollowUps.sql.js";
 import { getUserProfileSql } from "../db/queries/profile.sql.js";
 import { isHistoricalInstallationStatus } from "./installationsService.js";
@@ -151,6 +153,10 @@ function buildAllowedActions(item: any, followUpSummary: any, roles: string[]) {
     }
   }
 
+  if (roles.includes("admin") && status === "AFGEHANDELD") {
+    allowed.set_in_behandeling = true;
+  }
+
   if (manager && status === "INGETROKKEN") {
     allowed.set_concept = true;
   }
@@ -219,8 +225,9 @@ function assertFormStatusActionAllowed(item: any, action: string, roles: string[
 
   if (action === "set_in_behandeling") {
     if (!manager) throw new Error("forbidden");
-    if (status !== "INGEDIEND") throw new Error("invalid status transition");
-    return;
+    if (status === "INGEDIEND") return;
+    if (status === "AFGEHANDELD" && roles.includes("admin")) return;
+    throw new Error("invalid status transition");
   }
 
   if (action === "set_ingediend") {
@@ -481,6 +488,10 @@ export async function getMonitorDetail(formInstanceIdRaw: any, context: DetailCo
     permissions: {
       can_assign_form: isManager(context.roles || []),
       can_set_compliment_points: isManager(context.roles || []),
+      can_add_follow_ups:
+        isManager(context.roles || []) &&
+        !isHistoricalInstallationStatus(item.installation_status) &&
+        ["INGEDIEND", "IN_BEHANDELING"].includes(String(item.status || "").trim()),
     },
     viewer: {
       actor: getUserAuditActor(context.user),
@@ -504,6 +515,81 @@ export async function getMonitorFollowUps(formInstanceIdRaw: any, _context: User
   return {
     items: Array.isArray(rows) ? rows : [],
     summary,
+  };
+}
+
+export async function createMonitorManualFollowUp(
+  formInstanceIdRaw: any,
+  payload: any,
+  context: UserContext
+) {
+  const formInstanceId = parsePositiveInt(formInstanceIdRaw);
+  if (formInstanceId == null) return { error: "not found" };
+
+  if (!isManager(context.roles || [])) {
+    throw new Error("forbidden");
+  }
+
+  const item = await getMonitorDetailRow(formInstanceId);
+  if (!item) return { error: "not found" };
+
+  if (isHistoricalInstallationStatus(item.installation_status)) {
+    throw new Error("historical installation read-only");
+  }
+
+  if (!["INGEDIEND", "IN_BEHANDELING"].includes(String(item.status || "").trim())) {
+    throw new Error("manual follow-ups require a submitted form");
+  }
+
+  const workflowTitle = normalizeOptionalString(payload?.workflow_title ?? payload?.title);
+  if (!workflowTitle) {
+    throw new Error("manual follow-up title is required");
+  }
+  if (workflowTitle.length > 400) {
+    throw new Error("manual follow-up title is too long");
+  }
+
+  const actor = getUserAuditActor(context.user);
+  const workflowDescription = normalizeOptionalString(
+    payload?.workflow_description ?? payload?.description
+  );
+  const requestedKind = String(payload?.kind ?? payload?.manual_kind ?? "workflow")
+    .trim()
+    .toLowerCase();
+  const kind = requestedKind === "report-only" || requestedKind === "informatief"
+    ? "report-only"
+    : "workflow";
+  const certificateImpact = kind === "workflow"
+    ? normalizeCertificateImpactOverride(
+        payload?.certificate_impact ?? payload?.certificateImpact ?? "yes"
+      )
+    : null;
+  const rows = await sqlQuery(insertManualFormFollowUpSql, {
+    formInstanceId,
+    atriumInstallationCode: item.atrium_installation_code,
+    sourceFingerprint: `manual:${randomUUID()}`,
+    workflowTitle,
+    workflowDescription,
+    kind,
+    certificateImpact,
+    actor,
+  });
+  const followUpActionId = String(rows?.[0]?.follow_up_action_id || "").trim();
+  if (!followUpActionId) {
+    throw new Error("manual follow-up could not be created");
+  }
+
+  if (String(item.status || "").trim() === "INGEDIEND") {
+    await sqlQuery(setFormInstanceInBehandelingIfSubmittedSql, {
+      formInstanceId,
+      updatedBy: actor,
+    });
+  }
+
+  return {
+    ok: true,
+    follow_up_action_id: followUpActionId,
+    form_instance_id: formInstanceId,
   };
 }
 

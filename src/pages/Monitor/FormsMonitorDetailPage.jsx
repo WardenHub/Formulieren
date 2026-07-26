@@ -9,6 +9,7 @@ import {
   putFormsMonitorAssignment,
   putFormsMonitorComplimentPoint,
   postFormsMonitorFollowUpStatusAction,
+  postFormsMonitorManualFollowUp,
   putFormsMonitorFollowUpNote,
   putFormsMonitorFollowUpCertificateImpact,
   startFormsMonitorPdfJob,
@@ -37,6 +38,8 @@ import { MessageCircleMoreIcon } from "@/components/ui/message-circle-more";
 import { CheckIcon } from "@/components/ui/check";
 import { PlusIcon } from "@/components/ui/plus";
 import { ChevronUpIcon } from "@/components/ui/chevron-up";
+import { ChevronsDownUpIcon } from "@/components/ui/chevrons-down-up";
+import { ChevronsUpDownIcon } from "@/components/ui/chevrons-up-down";
 import { ArchiveIcon } from "@/components/ui/archive";
 import { ChevronLeftIcon } from "@/components/ui/chevron-left";
 import { BadgeAlertIcon } from "@/components/ui/badge-alert";
@@ -50,10 +53,12 @@ import Tabs from "../../components/Tabs.jsx";
 import UserAvatar from "../../components/UserAvatar.jsx";
 import {
   NoteEditorToolbar,
+  NoteLinkDialog,
   NoteRichTextContent,
   applyMarkdownLink,
   insertRawText,
   isHttpUrl,
+  normalizeHttpUrl,
 } from "../../components/notes/NoteRichText.jsx";
 import {
   buildInitials,
@@ -79,26 +84,45 @@ import {
   buildRelationRows,
   groupFollowUpsByStatus,
   buildFollowUpStatusCounts,
+  FOLLOW_UP_STATUS_ORDER,
   getCreatedByDisplay,
   readStateFromStorage,
   saveStateToStorage,
 } from "./formsMonitorShared.jsx";
 
+const DETAIL_STATUS_FILTER_KEYS = [
+  "OPEN_GROUP",
+  "PLANNING_NODIG",
+  "WACHTENOPDERDEN",
+  "AFGEHANDELD",
+  "AFGEWEZEN",
+  "GEPLAND",
+  "INFORMATIEF",
+];
+
+function buildDefaultStatusOpenMap(open = true) {
+  return Object.fromEntries(FOLLOW_UP_STATUS_ORDER.map((status) => [status, open]));
+}
+
 function StatusTag({ status }) {
   return <span className={getToneClass(getStatusTone(status))}>{statusLabel(status)}</span>;
 }
 
-function SummaryTag({ children, title, tone = "neutral", active = false, onClick = null }) {
+function SummaryTag({ children, title, tone = "neutral", active = false, activeTone = null, onClick = null }) {
+  const effectiveTone = onClick && !active ? "neutral" : activeTone || tone;
   let cls = "ember-label ember-label--neutral";
 
-  if (tone === "active" || tone === "info") cls = "ember-label ember-label--info";
-  if (tone === "warning") cls = "ember-label ember-label--warning";
-  if (tone === "success") cls = "ember-label ember-label--success";
-  if (tone === "danger") cls = "ember-label ember-label--danger";
-  if (tone === "muted" || tone === "subtle") cls = "ember-label ember-label--muted";
-  if (tone === "ready") cls = "ember-label ember-label--ready";
+  if (effectiveTone === "active" || effectiveTone === "info") cls = "ember-label ember-label--info";
+  if (effectiveTone === "all") cls = "ember-label ember-label--all";
+  if (effectiveTone === "warning") cls = "ember-label ember-label--warning";
+  if (effectiveTone === "waiting") cls = "ember-label ember-label--waiting";
+  if (effectiveTone === "planned") cls = "ember-label ember-label--planned";
+  if (effectiveTone === "success") cls = "ember-label ember-label--success";
+  if (effectiveTone === "danger") cls = "ember-label ember-label--danger";
+  if (effectiveTone === "muted" || effectiveTone === "subtle") cls = "ember-label ember-label--muted";
+  if (effectiveTone === "ready") cls = "ember-label ember-label--ready";
 
-  if (active) cls = `${cls} ember-label--accent`;
+  if (active) cls = `${cls} ember-label--selected`;
 
   if (onClick) {
     return (
@@ -223,7 +247,7 @@ function getFollowUpStatusButtonClass(currentStatus, buttonStatus) {
   }
 
   if (buttonStatus === "WACHTENOPDERDEN") {
-    return `${baseClass} monitor-followup-status-btn--active monitor-followup-status-btn--warning`;
+    return `${baseClass} monitor-followup-status-btn--active monitor-followup-status-btn--waiting`;
   }
 
   if (buttonStatus === "PLANNING_NODIG") {
@@ -231,7 +255,7 @@ function getFollowUpStatusButtonClass(currentStatus, buttonStatus) {
   }
 
   if (buttonStatus === "GEPLAND") {
-    return `${baseClass} monitor-followup-status-btn--active monitor-followup-status-btn--info`;
+    return `${baseClass} monitor-followup-status-btn--active monitor-followup-status-btn--planned`;
   }
 
   if (buttonStatus === "AFGEWEZEN") {
@@ -561,13 +585,17 @@ function MonitorEvidencePanel({
   followUps,
   canEdit,
   canDeleteDocuments,
+  initialDocuments,
+  documentsLoaded,
   onDocumentsChange,
 }) {
   const fileInputRef = useRef(null);
   const cameraInputRef = useRef(null);
 
-  const [documents, setDocuments] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [documents, setDocuments] = useState(() =>
+    Array.isArray(initialDocuments) ? initialDocuments : []
+  );
+  const [loading, setLoading] = useState(!documentsLoaded);
   const [uploadOpen, setUploadOpen] = useState(false);
   const [openDocMap, setOpenDocMap] = useState({});
   const [selectedUploads, setSelectedUploads] = useState([]);
@@ -579,6 +607,7 @@ function MonitorEvidencePanel({
   const [busy, setBusy] = useState(false);
   const [busyDocId, setBusyDocId] = useState(null);
   const [error, setError] = useState(null);
+  const hasReportedInitialDocumentsRef = useRef(false);
 
   const followUpOptions = useMemo(() => normalizeFollowUpOptions(followUps), [followUps]);
 
@@ -603,8 +632,13 @@ function MonitorEvidencePanel({
   }, [selectedUploads]);
 
   useEffect(() => {
-    onDocumentsChange?.(documents);
-  }, [documents, onDocumentsChange]);
+    if (!loading) {
+      onDocumentsChange?.(documents, {
+        initial: !hasReportedInitialDocumentsRef.current,
+      });
+      hasReportedInitialDocumentsRef.current = true;
+    }
+  }, [documents, loading, onDocumentsChange]);
 
   async function loadDocuments() {
     if (!code || !instanceId) return;
@@ -625,8 +659,14 @@ function MonitorEvidencePanel({
   }
 
   useEffect(() => {
+    if (documentsLoaded) {
+      setDocuments(Array.isArray(initialDocuments) ? initialDocuments : []);
+      setLoading(false);
+      return;
+    }
+
     loadDocuments();
-  }, [code, instanceId]);
+  }, [code, instanceId, documentsLoaded]);
 
   function addFilesToSelection(inputFiles) {
     const files = Array.from(inputFiles || []).filter(Boolean);
@@ -1035,13 +1075,16 @@ function MonitorEvidencePanel({
             </div>
 
             <div className="ui-stack-sm">
+              <div className="monitor-detail-section__title">
+                Koppelen aan bestaande actiepunten
+              </div>
               <div className="ember-page-subtitle">
-                Direct koppelen aan actiepunten
+                Kies per bijlage welke bestaande actiepunten dit bewijs ondersteunen.
               </div>
 
               {followUpOptions.length === 0 ? (
                 <div className="monitor-info-box">
-                  Er zijn nog geen actiepunten. Actiepunten ontstaan pas na succesvol indienen wanneer er negatieve oordelen zijn.
+                  Er zijn nog geen actiepunten. Voeg eerst een actiepunt toe in de tab Actiepunten.
                 </div>
               ) : (
                 <div className="ui-stack-sm">
@@ -1362,16 +1405,7 @@ export default function FormsMonitorDetailPage() {
     storedUiState?.activeMetadataTab === "relation" ? "relation" : "form"
   );
   const [statusOpenMap, setStatusOpenMap] = useState(
-    storedUiState?.statusOpenMap ?? {
-      OPEN: true,
-      PLANNING_NODIG: true,
-      WACHTENOPDERDEN: true,
-      GEPLAND: true,
-      AFGEHANDELD: true,
-      AFGEWEZEN: true,
-      VERVALLEN: true,
-      INFORMATIEF: true,
-    }
+    storedUiState?.statusOpenMap ?? buildDefaultStatusOpenMap()
   );
   const [activeStatusFilters, setActiveStatusFilters] = useState(
     Array.isArray(storedUiState?.activeStatusFilters)
@@ -1387,6 +1421,8 @@ export default function FormsMonitorDetailPage() {
   const [followUps, setFollowUps] = useState([]);
   const [followUpSummary, setFollowUpSummary] = useState(null);
   const [evidenceDocuments, setEvidenceDocuments] = useState([]);
+  const [evidenceDocumentsLoaded, setEvidenceDocumentsLoaded] = useState(false);
+  const [evidenceAttachmentDelta, setEvidenceAttachmentDelta] = useState(null);
   const [directoryItems, setDirectoryItems] = useState([]);
   const [assignmentSearch, setAssignmentSearch] = useState("");
   const [assignmentSaving, setAssignmentSaving] = useState(false);
@@ -1397,6 +1433,12 @@ export default function FormsMonitorDetailPage() {
   const [formActionBusy, setFormActionBusy] = useState(false);
   const [followUpBusyId, setFollowUpBusyId] = useState(null);
   const [certificateMenuOpenId, setCertificateMenuOpenId] = useState(null);
+  const [manualFollowUpOpen, setManualFollowUpOpen] = useState(false);
+  const [manualFollowUpTitle, setManualFollowUpTitle] = useState("");
+  const [manualFollowUpDescription, setManualFollowUpDescription] = useState("");
+  const [manualFollowUpKind, setManualFollowUpKind] = useState("workflow");
+  const [manualFollowUpCertificateImpact, setManualFollowUpCertificateImpact] = useState("yes");
+  const [manualFollowUpSaving, setManualFollowUpSaving] = useState(false);
 
   const [noteDrafts, setNoteDrafts] = useState(storedNotesState?.noteDrafts ?? {});
   const [noteSavingById, setNoteSavingById] = useState({});
@@ -1410,6 +1452,8 @@ export default function FormsMonitorDetailPage() {
     selectionEnd: 0,
   });
   const [showFinishCelebration, setShowFinishCelebration] = useState(false);
+  const evidenceAttachmentCountRef = useRef(null);
+  const evidenceAttachmentDeltaTimerRef = useRef(null);
   const startupLoader = useApiStartupLoader(detailLoading, {
     loadingCopy: "De formulierafhandeling wordt geladen.",
   });
@@ -1423,6 +1467,33 @@ export default function FormsMonitorDetailPage() {
       pdfExportButtonLoaderRef.current?.stopAnimation?.();
     }
   }, [pdfExporting, showSlowPdfExportHint]);
+
+  useEffect(() => {
+    const previousCount = evidenceAttachmentCountRef.current;
+    const nextCount = evidenceDocuments.length;
+
+    if (previousCount !== null && previousCount !== nextCount) {
+      const delta = nextCount - previousCount;
+      setEvidenceAttachmentDelta(delta);
+      if (evidenceAttachmentDeltaTimerRef.current) {
+        window.clearTimeout(evidenceAttachmentDeltaTimerRef.current);
+      }
+      evidenceAttachmentDeltaTimerRef.current = window.setTimeout(() => {
+        setEvidenceAttachmentDelta(null);
+        evidenceAttachmentDeltaTimerRef.current = null;
+      }, 1300);
+    }
+
+    evidenceAttachmentCountRef.current = nextCount;
+  }, [evidenceDocuments.length]);
+
+  useEffect(() => {
+    return () => {
+      if (evidenceAttachmentDeltaTimerRef.current) {
+        window.clearTimeout(evidenceAttachmentDeltaTimerRef.current);
+      }
+    };
+  }, []);
 
   useEffect(() => {
     if (!pdfExporting) {
@@ -1504,9 +1575,17 @@ export default function FormsMonitorDetailPage() {
     });
   }, [followUps, item?.form_instance_id]);
 
-  const totalFilterActive = activeStatusFilters.length === 0;
+  const totalFilterActive = DETAIL_STATUS_FILTER_KEYS.every(
+    (filterKey) => activeStatusFilters.includes(filterKey)
+  ) && !activeStatusFilters.includes("VERVALLEN");
 
-  const hasStatusMenuActions = Boolean(allowedActions.set_ingediend || allowedActions.set_concept);
+  const allStatusGroupsOpen = FOLLOW_UP_STATUS_ORDER.every(
+    (status) => statusOpenMap[status] !== false
+  );
+
+  const hasStatusMenuActions = Boolean(
+    allowedActions.set_in_behandeling || allowedActions.set_ingediend || allowedActions.set_concept
+  );
   const ownerDirectoryEntry = useMemo(() => {
     const assignedUserObjectId = String(item?.assigned_user_object_id || "").trim();
     if (!assignedUserObjectId) return null;
@@ -1525,15 +1604,30 @@ export default function FormsMonitorDetailPage() {
   const hasFollowFormRelations = Boolean(detail?.parent || (Array.isArray(detail?.children) && detail.children.length > 0));
   const detailSectionTabs = [
     { key: "action_points", label: "Actiepunten", Icon: ClipboardCheckIcon },
-    { key: "evidence", label: "Bijlagen en bewijs", Icon: FolderInputIcon },
-    { key: "feedback", label: "Feedback", Icon: GavelIcon },
-    { key: "relations", label: "Metadata", Icon: ArchiveIcon },
+    {
+      key: "evidence",
+      label: "Bijlagen en bewijs",
+      Icon: FolderInputIcon,
+      count: evidenceDocuments.length,
+      countDelta: evidenceAttachmentDelta,
+    },
+    { key: "feedback", label: "Feedback", Icon: GavelIcon, iconTone: "danger" },
+    { key: "relations", label: "Metadata", Icon: ArchiveIcon, iconTone: "warning" },
     ...(hasFollowFormRelations ? [{ key: "follow_forms", label: "Vervolgformulieren", Icon: ArrowBigRightIcon }] : []),
   ];
   const metadataTabs = [
     { key: "form", label: "Formulier", Icon: SquarePenIcon },
-    { key: "relation", label: "Relatie", Icon: ArchiveIcon },
+    { key: "relation", label: "Relatie", Icon: ArchiveIcon, iconTone: "warning" },
   ];
+
+  function handleEvidenceDocumentsChange(nextDocuments, options = {}) {
+    const nextRows = Array.isArray(nextDocuments) ? nextDocuments : [];
+    if (options.initial) {
+      evidenceAttachmentCountRef.current = nextRows.length;
+      setEvidenceAttachmentDelta(null);
+    }
+    setEvidenceDocuments(nextRows);
+  }
 
   function openSection(nextKey) {
     setActiveSectionKey(nextKey);
@@ -1638,6 +1732,22 @@ export default function FormsMonitorDetailPage() {
       activeStatusFilters,
     });
   }, [activeSectionKey, activeMetadataTab, statusOpenMap, activeStatusFilters]);
+
+  useEffect(() => {
+    function handleGlobalCollapseShortcut(event) {
+      if (!event.altKey || String(event.key || "").toLowerCase() !== "q") return;
+
+      const target = event.target;
+      const tagName = String(target?.tagName || "").toLowerCase();
+      if (target?.isContentEditable || ["input", "textarea", "select"].includes(tagName)) return;
+
+      event.preventDefault();
+      toggleAllStatusSections();
+    }
+
+    window.addEventListener("keydown", handleGlobalCollapseShortcut);
+    return () => window.removeEventListener("keydown", handleGlobalCollapseShortcut);
+  }, []);
 
   useEffect(() => {
     if (!hasFollowFormRelations && activeSectionKey === "follow_forms") {
@@ -1789,6 +1899,10 @@ export default function FormsMonitorDetailPage() {
 
     setDetailLoading(true);
     setFollowUpsLoading(true);
+    setEvidenceDocumentsLoaded(false);
+    setEvidenceDocuments([]);
+    evidenceAttachmentCountRef.current = null;
+    setEvidenceAttachmentDelta(null);
     setError(null);
 
     const maxAttempts = 10;
@@ -1820,6 +1934,28 @@ export default function FormsMonitorDetailPage() {
 
         setDetailLoading(false);
         setFollowUpsLoading(false);
+
+        const detailItem = detailRes?.item;
+        const installationCode = String(detailItem?.atrium_installation_code || "").trim();
+        const formInstanceId = detailItem?.form_instance_id;
+
+        if (installationCode && formInstanceId) {
+          getFormInstanceDocuments(installationCode, formInstanceId)
+            .then((documentsRes) => {
+              const documents = normalizeFormDocsResponse(documentsRes);
+              evidenceAttachmentCountRef.current = documents.length;
+              setEvidenceAttachmentDelta(null);
+              setEvidenceDocuments(documents);
+              setEvidenceDocumentsLoaded(true);
+            })
+            .catch(() => {
+              setEvidenceDocuments([]);
+              setEvidenceDocumentsLoaded(true);
+            });
+        } else {
+          setEvidenceDocumentsLoaded(true);
+        }
+
         return;
       } catch (e) {
         if (attempt >= maxAttempts || !isRetryableDetailLoadError(e)) {
@@ -1997,6 +2133,39 @@ export default function FormsMonitorDetailPage() {
     }
   }
 
+  async function handleCreateManualFollowUp() {
+    if (!item?.form_instance_id || manualFollowUpSaving) return;
+
+    const workflowTitle = String(manualFollowUpTitle || "").trim();
+    if (!workflowTitle) {
+      setError("Vul eerst een onderwerp in.");
+      return;
+    }
+
+    setManualFollowUpSaving(true);
+    setError(null);
+    try {
+      await postFormsMonitorManualFollowUp(item.form_instance_id, {
+        workflow_title: workflowTitle,
+        workflow_description: String(manualFollowUpDescription || "").trim() || null,
+        kind: manualFollowUpKind,
+        certificate_impact:
+          manualFollowUpKind === "workflow" ? manualFollowUpCertificateImpact : null,
+      });
+      setManualFollowUpTitle("");
+      setManualFollowUpDescription("");
+      setManualFollowUpKind("workflow");
+      setManualFollowUpCertificateImpact("yes");
+      setManualFollowUpOpen(false);
+      setStatusOpenMap((prev) => ({ ...prev, OPEN: true }));
+      await refreshDetailOnly();
+    } catch (e) {
+      setError(String(e?.message || e || "Actiepunt toevoegen mislukt."));
+    } finally {
+      setManualFollowUpSaving(false);
+    }
+  }
+
   async function handleCertificateImpactOverride(followUpActionId, nextValue) {
     if (!followUpActionId || followUpBusyId) return;
 
@@ -2159,20 +2328,18 @@ export default function FormsMonitorDetailPage() {
       selectionEnd,
     });
 
-    window.setTimeout(() => {
-      textarea?.focus?.();
-    }, 0);
   }
 
   function handleNoteLinkInsert() {
-    if (!noteLinkDraft.openFor || !noteLinkDraft.url.trim()) return;
+    const normalizedUrl = normalizeHttpUrl(noteLinkDraft.url);
+    if (!noteLinkDraft.openFor || !isHttpUrl(normalizedUrl)) return;
     const followUpActionId = noteLinkDraft.openFor;
     const currentValue = noteDrafts[followUpActionId] ?? "";
     const result = applyMarkdownLink(
       currentValue,
       noteLinkDraft.selectionStart,
       noteLinkDraft.selectionEnd,
-      noteLinkDraft.url,
+      normalizedUrl,
       noteLinkDraft.label
     );
 
@@ -2274,9 +2441,16 @@ export default function FormsMonitorDetailPage() {
     }));
   }
 
+  function toggleAllStatusSections() {
+    setStatusOpenMap((prev) => {
+      const shouldOpen = FOLLOW_UP_STATUS_ORDER.some((status) => prev[status] === false);
+      return buildDefaultStatusOpenMap(shouldOpen);
+    });
+  }
+
   function toggleStatusFilter(filterKey) {
     if (filterKey === "ALL") {
-      setActiveStatusFilters([]);
+      setActiveStatusFilters(DETAIL_STATUS_FILTER_KEYS);
       return;
     }
 
@@ -2615,6 +2789,21 @@ export default function FormsMonitorDetailPage() {
                             </button>
                           ) : null}
 
+                          {allowedActions.set_in_behandeling ? (
+                            <button
+                              type="button"
+                              className="menu-item"
+                              disabled={formActionBusy}
+                              onClick={() => {
+                                setActionMenuOpen(false);
+                                handleFormAction("set_in_behandeling");
+                              }}
+                            >
+                              <ClipboardCheckIcon size={18} className="nav-anim-icon" />
+                              <span>Terug naar in behandeling</span>
+                            </button>
+                          ) : null}
+
                           {allowedActions.set_concept ? (
                             <button
                               type="button"
@@ -2741,20 +2930,44 @@ export default function FormsMonitorDetailPage() {
               <div className="monitor-detail-filter-head">
                 <div className="monitor-detail-section__title">Statusoverzicht actiepunten</div>
 
-                <button
-                  ref={filterInfoBtnRef}
-                  type="button"
-                  className="icon-btn"
-                  title="Klik op Totaal om alle actieregels te tonen. Klik op één of meer andere statusknoppen om de actiepuntenlijst daarop te filteren."
-                  onClick={toggleFilterInfoPopup}
-                  onMouseEnter={() => filterInfoIconRef.current?.startAnimation?.()}
-                  onMouseLeave={() => filterInfoIconRef.current?.stopAnimation?.()}
-                >
-                  <BadgeAlertIcon ref={filterInfoIconRef} size={18} className="nav-anim-icon" />
-                </button>
+                <div className="monitor-detail-filter-head__actions">
+                  <button
+                    type="button"
+                    className="icon-btn"
+                    title={allStatusGroupsOpen ? "Alles inklappen (Alt+Q)" : "Alles uitklappen (Alt+Q)"}
+                    onClick={toggleAllStatusSections}
+                  >
+                    {allStatusGroupsOpen ? (
+                      <ChevronsDownUpIcon size={18} className="nav-anim-icon" />
+                    ) : (
+                      <ChevronsUpDownIcon size={18} className="nav-anim-icon" />
+                    )}
+                  </button>
+
+                  <button
+                    ref={filterInfoBtnRef}
+                    type="button"
+                    className="icon-btn"
+                    title="Klik op Alles om alle actieregels te tonen. Klik op één of meer andere statusknoppen om de actiepuntenlijst daarop te filteren."
+                    onClick={toggleFilterInfoPopup}
+                    onMouseEnter={() => filterInfoIconRef.current?.startAnimation?.()}
+                    onMouseLeave={() => filterInfoIconRef.current?.stopAnimation?.()}
+                  >
+                    <BadgeAlertIcon ref={filterInfoIconRef} size={18} className="nav-anim-icon" />
+                  </button>
+                </div>
               </div>
 
               <div className="monitor-inline-totals">
+                <SummaryTag
+                  title="Toon alle actiepunten"
+                  tone="all"
+                  active={totalFilterActive}
+                  onClick={() => toggleStatusFilter("ALL")}
+                >
+                  Alles {followUpCounts.total}
+                </SummaryTag>
+
                 <SummaryTag
                   title="Filter op openstaande actiepunten; inclusief planning nodig en wachten op derden"
                   tone="active"
@@ -2766,7 +2979,7 @@ export default function FormsMonitorDetailPage() {
 
                 <SummaryTag
                   title="Filter op actiepunten waarvoor planning nodig is"
-                  tone="warning"
+                  tone="waiting"
                   active={activeStatusFilters.includes("PLANNING_NODIG")}
                   onClick={() => toggleStatusFilter("PLANNING_NODIG")}
                 >
@@ -2801,17 +3014,8 @@ export default function FormsMonitorDetailPage() {
                 </SummaryTag>
 
                 <SummaryTag
-                  title="Filter op vervallen actiepunten"
-                  tone="muted"
-                  active={activeStatusFilters.includes("VERVALLEN")}
-                  onClick={() => toggleStatusFilter("VERVALLEN")}
-                >
-                  Vervallen {followUpCounts.VERVALLEN}
-                </SummaryTag>
-
-                <SummaryTag
                   title="Filter op geplande actiepunten"
-                  tone="neutral"
+                  tone="planned"
                   active={activeStatusFilters.includes("GEPLAND")}
                   onClick={() => toggleStatusFilter("GEPLAND")}
                 >
@@ -2821,6 +3025,7 @@ export default function FormsMonitorDetailPage() {
                 <SummaryTag
                   title="Filter op informatieve actiepunten"
                   tone="muted"
+                  activeTone="info"
                   active={activeStatusFilters.includes("INFORMATIEF")}
                   onClick={() => toggleStatusFilter("INFORMATIEF")}
                 >
@@ -2828,19 +3033,21 @@ export default function FormsMonitorDetailPage() {
                 </SummaryTag>
 
                 <SummaryTag
-                  title="Toon alle actiepunten"
-                  tone="neutral"
-                  active={totalFilterActive}
-                  onClick={() => toggleStatusFilter("ALL")}
+                  title="Filter op vervallen actiepunten"
+                  tone="muted"
+                  activeTone="muted"
+                  active={activeStatusFilters.includes("VERVALLEN")}
+                  onClick={() => toggleStatusFilter("VERVALLEN")}
                 >
-                  Totaal {followUpCounts.total}
+                  Vervallen {followUpCounts.VERVALLEN}
                 </SummaryTag>
+
               </div>
                 </div>
 
                 {filterInfoOpen && filterInfoPopupStyle ? (
                   <div ref={filterInfoPopupRef} className="monitor-info-popup" style={filterInfoPopupStyle}>
-                    Klik op Totaal om alle actieregels te tonen. Klik op één of meer andere statusknoppen om de actiepuntenlijst daarop te filteren.
+                    Klik op Alles om alle actieregels te tonen. Klik op één of meer andere statusknoppen om de actiepuntenlijst daarop te filteren.
                   </div>
                 ) : null}
               </>
@@ -2949,7 +3156,9 @@ export default function FormsMonitorDetailPage() {
                     followUps={currentFormFollowUps}
                     canEdit={canEditEvidence}
                     canDeleteDocuments={canDeleteEvidence}
-                    onDocumentsChange={setEvidenceDocuments}
+                    initialDocuments={evidenceDocuments}
+                    documentsLoaded={evidenceDocumentsLoaded}
+                    onDocumentsChange={handleEvidenceDocumentsChange}
                   />
                 </div>
               </div>
@@ -3096,10 +3305,125 @@ export default function FormsMonitorDetailPage() {
                 <div className="monitor-detail-section__body">
                   <div className="ui-row-between">
                     <div className="monitor-detail-section__title">Actiepunten</div>
-                    <div className="ember-page-subtitle">
-                      {followUpsLoading ? "laden..." : `${followUps.length} regel(s)`}
+                    <div className="ui-row">
+                      <div className="ember-page-subtitle">
+                        {followUpsLoading ? "laden..." : `${followUps.length} actiepunten`}
+                      </div>
+                      {permissions.can_add_follow_ups ? (
+                        <button
+                          type="button"
+                          className="btn btn-secondary"
+                          onClick={() => {
+                            setManualFollowUpOpen((open) => !open);
+                            setManualFollowUpKind("workflow");
+                            setManualFollowUpCertificateImpact("yes");
+                            setError(null);
+                          }}
+                        >
+                          <PlusIcon size={17} className="nav-anim-icon" />
+                          Actiepunt toevoegen
+                        </button>
+                      ) : null}
                     </div>
                   </div>
+
+                  {manualFollowUpOpen ? (
+                    <div className="monitor-manual-followup-form">
+                      <div className="monitor-detail-section__title">
+                        {manualFollowUpKind === "workflow"
+                          ? "Nieuw actiepunt"
+                          : "Nieuwe rapportopmerking"}
+                      </div>
+                      <div className="ember-page-subtitle">
+                        Kies of dit een op te volgen actiepunt of een informatieve rapportopmerking is.
+                      </div>
+                      <div className="ui-stack-xs">
+                        <span className="cf-label-text cf-label-text--accent">Soort</span>
+                        <div className="ember-label-row">
+                          <button
+                            type="button"
+                            className={`btn ${manualFollowUpKind === "workflow" ? "btn-primary" : "btn-secondary"}`}
+                            onClick={() => setManualFollowUpKind("workflow")}
+                            disabled={manualFollowUpSaving}
+                          >
+                            Actiepunt
+                          </button>
+                          <button
+                            type="button"
+                            className={`btn ${manualFollowUpKind === "report-only" ? "btn-primary" : "btn-secondary"}`}
+                            onClick={() => setManualFollowUpKind("report-only")}
+                            disabled={manualFollowUpSaving}
+                          >
+                            Informatief punt (rapportopmerking)
+                          </button>
+                        </div>
+                      </div>
+                      {manualFollowUpKind === "workflow" ? (
+                        <div className="ui-stack-xs">
+                          <span className="cf-label-text cf-label-text--accent">Certificaatstatus</span>
+                          <div className="ember-label-row">
+                            <button
+                              type="button"
+                              className={`btn ${manualFollowUpCertificateImpact === "yes" ? "btn-primary" : "btn-secondary"}`}
+                              onClick={() => setManualFollowUpCertificateImpact("yes")}
+                              disabled={manualFollowUpSaving}
+                            >
+                              Blokkeert certificaat
+                            </button>
+                            <button
+                              type="button"
+                              className={`btn ${manualFollowUpCertificateImpact === "no" ? "btn-primary" : "btn-secondary"}`}
+                              onClick={() => setManualFollowUpCertificateImpact("no")}
+                              disabled={manualFollowUpSaving}
+                            >
+                              Blokkeert niet
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="ember-page-subtitle">Een rapportopmerking heeft geen certificaatimpact.</div>
+                      )}
+                      <label className="ui-stack-xs">
+                        <span className="cf-label-text cf-label-text--accent">Onderwerp</span>
+                        <input
+                          className="input"
+                          value={manualFollowUpTitle}
+                          onChange={(event) => setManualFollowUpTitle(event.target.value)}
+                          placeholder="Kort en duidelijk actiepunt"
+                          autoFocus
+                        />
+                      </label>
+                      <label className="ui-stack-xs">
+                        <span className="cf-label-text cf-label-text--accent">Toelichting</span>
+                        <textarea
+                          className="cf-textarea"
+                          value={manualFollowUpDescription}
+                          onChange={(event) => setManualFollowUpDescription(event.target.value)}
+                          placeholder="Optionele toelichting"
+                          rows={3}
+                        />
+                      </label>
+                      <div className="ui-row" style={{ justifyContent: "flex-end" }}>
+                        <button
+                          type="button"
+                          className="btn btn-secondary"
+                          onClick={() => setManualFollowUpOpen(false)}
+                          disabled={manualFollowUpSaving}
+                        >
+                          Annuleren
+                        </button>
+                        <button
+                          type="button"
+                          className="btn btn-primary"
+                          onClick={handleCreateManualFollowUp}
+                          disabled={!String(manualFollowUpTitle || "").trim() || manualFollowUpSaving}
+                        >
+                          <PlusIcon size={17} />
+                          {manualFollowUpSaving ? "Toevoegen..." : "Toevoegen"}
+                        </button>
+                      </div>
+                    </div>
+                  ) : null}
 
                   {followUpsLoading ? (
                     <div className="muted">laden; actiepunten</div>
@@ -3135,11 +3459,10 @@ export default function FormsMonitorDetailPage() {
                                 title={open ? "Inklappen" : "Uitklappen"}
                               >
                                 <div className="ember-label-row">
-                                  <div className="monitor-detail-section__title">{group.label}</div>
-                                  <StatusTag status={group.status} />
-                                  <SummaryTag title="Aantal actiepunten" tone="muted">
-                                    {group.count} regel(s)
-                                  </SummaryTag>
+                    <SummaryTag title="Aantal actiepunten" tone="muted">
+                      {group.count}x
+                    </SummaryTag>
+                    <StatusTag status={group.status} />
                                 </div>
 
                                 <div className="monitor-detail-section__icon">
@@ -3315,64 +3638,30 @@ export default function FormsMonitorDetailPage() {
                                             onInsertEmoji={(emojiValue) => insertEmojiIntoNote(noteKey, emojiValue)}
                                           />
 
-                                          {noteLinkDraft.openFor === noteKey ? (
-                                            <div className="card ember-inline-assist-panel ember-inline-assist-panel--editor">
-                                              <div className="ember-page-subtitle">
-                                                Hyperlink invoegen
-                                              </div>
-                                              <input
-                                                className="cf-input"
-                                                value={noteLinkDraft.label}
-                                                onChange={(event) =>
-                                                  setNoteLinkDraft((prev) => ({ ...prev, label: event.target.value }))
-                                                }
-                                                placeholder="Tekst van de link"
-                                              />
-                                              <input
-                                                className="cf-input"
-                                                autoFocus
-                                                value={noteLinkDraft.url}
-                                                onChange={(event) =>
-                                                  setNoteLinkDraft((prev) => ({ ...prev, url: event.target.value }))
-                                                }
-                                                onKeyDown={(event) => {
-                                                  if (event.key === "Enter") {
-                                                    event.preventDefault();
-                                                    handleNoteLinkInsert();
-                                                  }
-                                                  if (event.key === "Escape") {
-                                                    event.preventDefault();
-                                                    closeNoteLinkEditor();
-                                                  }
-                                                }}
-                                                placeholder="https://..."
-                                              />
-                                              <div className="ember-toolbar">
-                                                <button
-                                                  type="button"
-                                                  className="btn btn-secondary"
-                                                  onClick={closeNoteLinkEditor}
-                                                >
-                                                  Annuleren
-                                                </button>
-                                                <button
-                                                  type="button"
-                                                  className="btn btn-secondary"
-                                                  disabled={!noteLinkDraft.url.trim()}
-                                                  onClick={handleNoteLinkInsert}
-                                                >
-                                                  Link invoegen
-                                                </button>
-                                              </div>
-                                            </div>
-                                          ) : null}
+                                          <NoteLinkDialog
+                                            open={noteLinkDraft.openFor === noteKey}
+                                            label={noteLinkDraft.label}
+                                            url={noteLinkDraft.url}
+                                            onLabelChange={(label) =>
+                                              setNoteLinkDraft((prev) => ({ ...prev, label }))
+                                            }
+                                            onUrlChange={(url) =>
+                                              setNoteLinkDraft((prev) => ({ ...prev, url }))
+                                            }
+                                            onConfirm={handleNoteLinkInsert}
+                                            onCancel={closeNoteLinkEditor}
+                                          />
 
-                                          <div className="ember-page-subtitle">
+                                          <div
+                                            className={`monitor-followup-note-save-status${noteSaving ? " monitor-followup-note-save-status--saving" : ""}`}
+                                            aria-live="polite"
+                                          >
+                                            {noteSaving ? <LoaderPinwheelIcon size={14} className="ember-note-save-spinner" /> : null}
                                             {noteSaving
-                                              ? "opslaan..."
+                                              ? "Opslaan..."
                                               : noteSaved
-                                                ? "opgeslagen"
-                                                : "wijzigingen worden automatisch opgeslagen"}
+                                                ? "Opgeslagen"
+                                                : "Wijzigingen worden automatisch opgeslagen"}
                                           </div>
                                         </div>
 

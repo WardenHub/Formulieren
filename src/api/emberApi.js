@@ -568,6 +568,13 @@ export function postFormsMonitorFollowUpStatusAction(followUpActionId, payload) 
   );
 }
 
+export function postFormsMonitorManualFollowUp(formInstanceId, payload) {
+  return apiPost(
+    `/forms-monitor/${encodeURIComponent(formInstanceId)}/follow-ups`,
+    payload ?? {}
+  );
+}
+
 export function putFormsMonitorFollowUpNote(followUpActionId, payload) {
   return apiPut(
     `/forms-monitor/follow-ups/${encodeURIComponent(followUpActionId)}/note`,
