@@ -6,6 +6,7 @@ import {
   putAdminFeedbackStatus,
 } from "../../api/emberApi.js";
 import { MessageCircleMoreIcon } from "../../components/ui/message-circle-more.jsx";
+import { getSentimentMeta, SENTIMENT_OPTIONS as FEEDBACK_SENTIMENT_OPTIONS } from "../Feedback/feedbackShared.js";
 
 const STATUS_OPTIONS = [
   { key: "", label: "Alle statussen" },
@@ -17,8 +18,10 @@ const STATUS_OPTIONS = [
 
 const SENTIMENT_OPTIONS = [
   { key: "", label: "Alle signalen" },
-  { key: "positive", label: "Positief" },
-  { key: "negative", label: "Negatief" },
+  ...FEEDBACK_SENTIMENT_OPTIONS.map((option) => ({
+    key: option.key,
+    label: option.label,
+  })),
 ];
 
 const STATUS_META = {
@@ -149,6 +152,9 @@ export default function AdminFeedbackTab() {
               Open {Number(payload?.summary?.open_count || 0)}
             </span>
             <span className="monitor-tag monitor-tag--muted">
+              Voorstel {Number(payload?.summary?.proposal_count || 0)}
+            </span>
+            <span className="monitor-tag monitor-tag--muted">
               Negatief {Number(payload?.summary?.negative_count || 0)}
             </span>
           </div>
@@ -202,7 +208,7 @@ export default function AdminFeedbackTab() {
           ) : (
             items.map((item) => {
               const statusMeta = getStatusMeta(item.status);
-              const sentimentLabel = item.sentiment === "negative" ? "Negatief" : "Positief";
+              const sentimentMeta = getSentimentMeta(item.sentiment);
               const selected = item.feedback_id === selectedFeedbackId;
 
               return (
@@ -222,8 +228,8 @@ export default function AdminFeedbackTab() {
                 >
                   <div style={{ display: "flex", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
                     <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                      <span className={item.sentiment === "negative" ? "monitor-tag monitor-tag--warning" : "monitor-tag monitor-tag--success"}>
-                        {sentimentLabel}
+                      <span className={sentimentMeta.tagClass}>
+                        {sentimentMeta.label}
                       </span>
                       <span className={statusMeta.tagClass}>{statusMeta.label}</span>
                     </div>
@@ -280,9 +286,9 @@ export default function AdminFeedbackTab() {
               </div>
 
               <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                {selectedItem.source_path ? (
-                  <span className="monitor-tag monitor-tag--muted">{selectedItem.source_path}</span>
-                ) : null}
+                <span className={getSentimentMeta(selectedItem.sentiment).tagClass}>
+                  {getSentimentMeta(selectedItem.sentiment).label}
+                </span>
                 {selectedItem.installation_code ? (
                   <span className="monitor-tag monitor-tag--muted">
                     Installatie {selectedItem.installation_code}

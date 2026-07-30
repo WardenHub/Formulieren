@@ -78,6 +78,10 @@ html[data-appearance="dark"]{
   --warning-border: rgba(245,158,11,.34);
   --warning-text: rgba(254,243,199,.98);
 
+  --proposal-bg: rgba(250,204,21,.20);
+  --proposal-border: rgba(250,204,21,.45);
+  --proposal-text: rgba(254,252,232,.98);
+
   --waiting-bg: rgba(249,115,22,.17);
   --waiting-bg-soft: rgba(249,115,22,.09);
   --waiting-border: rgba(249,115,22,.36);
@@ -197,6 +201,10 @@ html[data-appearance="light"]{
   --warning-bg-soft: #fffbeb;
   --warning-border: #fed7aa;
   --warning-text: #9a3412;
+
+  --proposal-bg: #fef9c3;
+  --proposal-border: #fde047;
+  --proposal-text: #3f6212;
 
   --waiting-bg: #ffedd5;
   --waiting-bg-soft: #fff7ed;
@@ -887,6 +895,12 @@ select.input option{
   border-color: var(--warning-border);
   background: var(--warning-bg);
   color: var(--warning-text);
+}
+
+.monitor-tag--proposal{
+  border-color: var(--proposal-border);
+  background: var(--proposal-bg);
+  color: var(--proposal-text);
 }
 
 .ember-label--waiting,
@@ -4917,6 +4931,35 @@ button.monitor-tag{
 .monitor-tag--selected{
   box-shadow: 0 0 0 2px var(--accent-ring);
   font-weight: 850;
+}
+
+/* Keep semantic feedback choices colored when they are selected. */
+.monitor-tag--success.monitor-tag--selected{
+  border-color: var(--success-border);
+  background: var(--success-bg);
+  color: var(--success-text);
+  box-shadow: 0 0 0 2px var(--success-border);
+}
+
+.monitor-tag--danger.monitor-tag--selected{
+  border-color: var(--danger-border);
+  background: var(--danger-bg);
+  color: var(--danger-text);
+  box-shadow: 0 0 0 2px var(--danger-border);
+}
+
+.monitor-tag--warning.monitor-tag--selected{
+  border-color: var(--warning-border);
+  background: var(--warning-bg);
+  color: var(--warning-text);
+  box-shadow: 0 0 0 2px var(--warning-border);
+}
+
+.monitor-tag--proposal.monitor-tag--selected{
+  border-color: var(--proposal-border);
+  background: var(--proposal-bg);
+  color: var(--proposal-text);
+  box-shadow: 0 0 0 2px var(--proposal-border);
 }
 
 @media (max-width: 1180px){

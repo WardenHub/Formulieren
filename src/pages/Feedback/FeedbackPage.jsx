@@ -4,11 +4,7 @@ import { useLocation } from "react-router-dom";
 import { createMyFeedback, getMyFeedback } from "../../api/emberApi.js";
 import ApiStartupLoader, { useApiStartupLoader } from "../../components/ApiStartupLoader.jsx";
 import { MessageCircleMoreIcon } from "../../components/ui/message-circle-more.jsx";
-
-const SENTIMENT_OPTIONS = [
-  { key: "positive", label: "Positief", tagClass: "monitor-tag monitor-tag--success" },
-  { key: "negative", label: "Negatief", tagClass: "monitor-tag monitor-tag--warning" },
-];
+import { getSentimentMeta, SENTIMENT_OPTIONS } from "./feedbackShared.js";
 
 const STATUS_META = {
   OPEN: { label: "Open", tagClass: "monitor-tag monitor-tag--warning" },
@@ -90,8 +86,7 @@ function inferContextFromSourcePath(sourcePath) {
 }
 
 function FeedbackCard({ item }) {
-  const sentimentMeta =
-    SENTIMENT_OPTIONS.find((option) => option.key === item?.sentiment) || SENTIMENT_OPTIONS[0];
+  const sentimentMeta = getSentimentMeta(item?.sentiment);
   const statusMeta = getStatusMeta(item?.status);
 
   return (
@@ -113,11 +108,8 @@ function FeedbackCard({ item }) {
         <div className="muted">Geen extra toelichting toegevoegd.</div>
       )}
 
-      {item?.source_path || item?.installation_code || item?.form_instance_id ? (
+      {item?.installation_code || item?.form_instance_id ? (
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-          {item?.source_path ? (
-            <span className="monitor-tag monitor-tag--muted">{item.source_path}</span>
-          ) : null}
           {item?.installation_code ? (
             <span className="monitor-tag monitor-tag--muted">
               Installatie {item.installation_code}
@@ -247,11 +239,8 @@ export default function FeedbackPage() {
             <div style={{ fontWeight: 900, fontSize: 18 }}>Nieuw feedbackitem</div>
           </div>
 
-          {inferredContext.source_path ? (
+          {inferredContext.installation_code || inferredContext.form_instance_id ? (
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-              <span className="monitor-tag monitor-tag--muted">
-                Context {inferredContext.source_path}
-              </span>
               {inferredContext.installation_code ? (
                 <span className="monitor-tag monitor-tag--muted">
                   Installatie {inferredContext.installation_code}
@@ -318,6 +307,9 @@ export default function FeedbackPage() {
               </span>
               <span className="monitor-tag monitor-tag--muted">
                 Open {Number(payload?.summary?.open_count || 0)}
+              </span>
+              <span className="monitor-tag monitor-tag--muted">
+                Voorstel {Number(payload?.summary?.proposal_count || 0)}
               </span>
               <span className="monitor-tag monitor-tag--muted">
                 Beantwoord {Number(payload?.summary?.answered_count || 0)}
