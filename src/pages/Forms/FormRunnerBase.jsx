@@ -275,7 +275,7 @@ function formatBytes(value) {
 
 function formatFollowUpKindLabel(kind) {
   const k = String(kind || "").trim().toLowerCase();
-  if (k === "workflow") return "Actiepunt";
+  if (k === "workflow") return "Workflow";
   if (k === "report-only") return "Rapportopmerking";
   return kind || "Onbekend";
 }
@@ -1606,15 +1606,7 @@ export default function FormRunnerBase({ mode }) {
           validationActivatedRef,
           suppressDirtyRef,
           onAnswersSnapshotChange: setAnswersPreview,
-          onValidationSummaryChange: (summary) => {
-            const nextSummary = Array.isArray(summary) ? summary : [];
-            setValidationSummary(nextSummary);
-            if (nextSummary.length === 0) {
-              setError((current) => (
-                current === "Controleer eerst de gemarkeerde velden." ? null : current
-              ));
-            }
-          },
+          onValidationSummaryChange: setValidationSummary,
           guidanceByQuestion: inst?.guidance_by_question || null,
           guidanceByMatrixRow: inst?.guidance_by_matrix_row || null,
           onOpenQuestionGuidance: setGuidanceDialog,
@@ -2814,11 +2806,8 @@ export default function FormRunnerBase({ mode }) {
       )}
 
       {!isDebug && !submitSummary && !canEditAnswers && runtimeReady && surveyModelRef.current && (
-        <button
-          type="button"
-          className="card form-runner-readonly-banner form-runner-readonly-banner--link"
-          onClick={() => navigate(`/monitor/formulieren/${encodeURIComponent(instanceId)}`)}
-          title="Open formulierafhandeling"
+        <div
+          className="card form-runner-readonly-banner"
           style={{
             padding: 14,
             display: "grid",
@@ -2833,7 +2822,7 @@ export default function FormRunnerBase({ mode }) {
           <div className="muted" style={{ fontSize: 13 }}>
             {readonlyBanner.text}
           </div>
-        </button>
+        </div>
       )}
 
       {!isDebug && runtimeReady && surveyModelRef.current && (
@@ -3283,7 +3272,7 @@ export default function FormRunnerBase({ mode }) {
                 <div style={{ minWidth: 0 }}>
                   <div className="form-guidance-modal__title">Formulier indienen</div>
                   <div className="muted form-guidance-modal__subtitle">
-                    Controleer opvolgacties en koppel formulierbijlagen waar nodig.
+                    Controleer opvolgregistraties en koppel formulierbijlagen waar nodig.
                   </div>
                 </div>
               </div>
@@ -3291,7 +3280,7 @@ export default function FormRunnerBase({ mode }) {
               <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                 <button
                   type="button"
-                  className="btn btn-secondary form-submit-dialog__cancel"
+                  className="btn btn-secondary"
                   disabled={submitDialog.submitting}
                   onClick={() => setSubmitDialog(null)}
                 >
@@ -3300,7 +3289,7 @@ export default function FormRunnerBase({ mode }) {
 
                 <button
                   type="button"
-                  className="btn form-submit-dialog__confirm"
+                  className="btn"
                   disabled={submitDialog.submitting}
                   onClick={confirmSubmitDialog}
                 >
@@ -3312,7 +3301,7 @@ export default function FormRunnerBase({ mode }) {
             <div className="form-guidance-modal__body" style={{ display: "grid", gap: 16 }}>
               <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                 <span style={themedChip({ fontSize: 12 })}>
-                  Actiepunten: {submitDialog.previewSummary.workflowCount}
+                  Workflowacties: {submitDialog.previewSummary.workflowCount}
                 </span>
                 <span style={themedChip({ fontSize: 12 })}>
                   Rapportopmerkingen: {submitDialog.previewSummary.reportOnlyCount}
@@ -3324,7 +3313,7 @@ export default function FormRunnerBase({ mode }) {
 
               {submitDialog.followUpItems.length > 0 ? (
                 <div className="card" style={{ padding: 12, display: "grid", gap: 10 }}>
-                  <div style={{ fontWeight: 800, fontSize: 14 }}>Opvolgacties</div>
+                  <div style={{ fontWeight: 800, fontSize: 14 }}>Opvolgregistraties bij indienen</div>
                   <div style={{ display: "grid", gap: 8 }}>
                     {submitDialog.followUpItems.map((item) => (
                       <div
@@ -3355,7 +3344,7 @@ export default function FormRunnerBase({ mode }) {
                 </div>
               ) : (
                 <div className="card" style={{ padding: 12, display: "grid", gap: 6 }}>
-                  <div style={{ fontWeight: 800, fontSize: 14 }}>Geen opvolgacties gevonden</div>
+                  <div style={{ fontWeight: 800, fontSize: 14 }}>Geen opvolgregistraties gevonden</div>
                   <div className="muted" style={{ fontSize: 13 }}>
                     Dit formulier levert op dit moment geen opvolgacties of rapportopmerkingen op.
                   </div>
@@ -3365,7 +3354,7 @@ export default function FormRunnerBase({ mode }) {
               <div className="card" style={{ padding: 12, display: "grid", gap: 12 }}>
                 <div style={{ fontWeight: 800, fontSize: 14 }}>Koppel bestanden aan de opvolgacties</div>
                 <div className="muted" style={{ fontSize: 13 }}>
-                  Per formulierbijlage kun je aangeven of deze bij een opvolgactie hoort. Geen selectie betekent; niet koppelen.
+                  Per formulierbijlage kun je aangeven of deze bij een opvolgregistratie hoort. Geen selectie betekent; niet koppelen.
                 </div>
 
                 {submitDialog.documents.length === 0 ? (
@@ -3374,7 +3363,7 @@ export default function FormRunnerBase({ mode }) {
                   </div>
                 ) : submitDialog.followUpItems.length === 0 ? (
                   <div className="muted" style={{ fontSize: 13 }}>
-                    Er zijn wel formulierbijlagen aanwezig, maar er zijn geen opvolgacties om aan te koppelen.
+                    Er zijn wel formulierbijlagen aanwezig, maar er zijn geen opvolgregistraties om aan te koppelen.
                   </div>
                 ) : (
                   <div style={{ display: "grid", gap: 10 }}>

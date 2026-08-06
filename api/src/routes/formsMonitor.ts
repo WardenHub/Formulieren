@@ -7,7 +7,6 @@ import {
   getFormsMonitorFollowUps,
   postFormsMonitorStatusAction,
   postFormsMonitorFollowUpStatusAction,
-  postFormsMonitorManualFollowUp,
   putFormsMonitorFollowUpNote,
   putFormsMonitorFollowUpCertificateImpact,
   downloadFormsMonitorPdf,
@@ -33,7 +32,6 @@ router.get("/:formInstanceId", requireRole("admin", "gebruiker", "documentbeheer
 router.post("/:formInstanceId/status-action", requireRole("admin", "documentbeheerder"), postFormsMonitorStatusAction);
 router.put("/:formInstanceId/assignment", requireRole("admin", "documentbeheerder"), putFormsMonitorAssignment);
 router.put("/:formInstanceId/compliment-point", requireRole("admin", "documentbeheerder"), putFormsMonitorComplimentPoint);
-router.post("/:formInstanceId/follow-ups", requireRole("admin", "documentbeheerder"), postFormsMonitorManualFollowUp);
 router.post("/follow-ups/:followUpActionId/status-action", requireRole("admin", "documentbeheerder"), postFormsMonitorFollowUpStatusAction);
 router.put("/follow-ups/:followUpActionId/note", requireRole("admin", "documentbeheerder"), putFormsMonitorFollowUpNote);
 router.put("/follow-ups/:followUpActionId/certificate-impact", requireRole("admin", "documentbeheerder"), putFormsMonitorFollowUpCertificateImpact);

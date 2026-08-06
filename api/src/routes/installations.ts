@@ -43,7 +43,6 @@ import {
   startFormInstance,
   startChildFormInstance,
   getFormInstance,
-  postFormInstanceOfflinePackage,
   withdrawFormInstance,
   submitFormInstance,
   putFormAnswers,
@@ -202,11 +201,6 @@ router.post(
   startChildFormInstance
 );
 router.get("/:code/forms/instances/:instanceId", requireRole("admin", "gebruiker"), getFormInstance);
-router.post(
-  "/:code/forms/instances/:instanceId/offline-package",
-  requireRole("admin", "gebruiker"),
-  postFormInstanceOfflinePackage
-);
 router.put("/:code/forms/instances/:instanceId/metadata", requireRole("admin", "gebruiker"), putFormInstanceMetadata);
 router.put("/:code/forms/instances/:instanceId/answers", requireRole("admin", "gebruiker"), putFormAnswers);
 router.post("/:code/forms/instances/:instanceId/submit-preview", requireRole("admin", "gebruiker"), previewSubmitFormInstance);

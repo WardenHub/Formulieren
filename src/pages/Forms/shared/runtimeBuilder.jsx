@@ -4,7 +4,6 @@ import { getFormPrefill } from "@/api/emberApi.js";
 
 import {
   stripHandledMatrixValidatorsFromSurveyJson,
-  injectRuntimeMatrixEnhancements,
   collectRequestedPrefillKeys,
   injectChoicesIntoSurveyJson,
   applyChoices,
@@ -48,9 +47,7 @@ export function buildPreparedSurveyJson(surveyJson) {
     return { ok: false, error: parsed.error };
   }
 
-  const preparedSurveyJson = injectRuntimeMatrixEnhancements(
-    stripHandledMatrixValidatorsFromSurveyJson(parsed.value)
-  );
+  const preparedSurveyJson = stripHandledMatrixValidatorsFromSurveyJson(parsed.value);
   return { ok: true, preparedSurveyJson };
 }
 

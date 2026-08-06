@@ -21,7 +21,6 @@ dist
 dist-ssr
 *.local
 api/playwright-browsers/
-api/output/
 
 # Editor directories and files
 .vscode/*

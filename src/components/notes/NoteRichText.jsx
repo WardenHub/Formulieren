@@ -1,12 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { createPortal } from "react-dom";
-import { Picker as EmojiMartPicker } from "emoji-mart";
+import { Picker } from "emoji-mart";
 import emojiData from "@emoji-mart/data";
 import emojiRegex from "emoji-regex";
 import { FluentEmoji } from "@lobehub/fluent-emoji";
 import { Link2, SmilePlus } from "lucide-react";
-
-const EMOJI_FALLBACKS = ["👍", "✅", "👀", "💡", "🎉", "⚠️", "😀", "📎"];
 
 export function normalizeHttpUrl(value) {
   const raw = String(value || "").trim();
@@ -194,141 +191,6 @@ export function NoteRichTextContent({ text, mentions = [] }) {
   return <>{nodes}</>;
 }
 
-function EmojiPickerSurface({ onSelect }) {
-  const hostRef = useRef(null);
-  const onSelectRef = useRef(onSelect);
-  const [unavailable, setUnavailable] = useState(false);
-
-  useEffect(() => {
-    onSelectRef.current = onSelect;
-  }, [onSelect]);
-
-  useEffect(() => {
-    if (!hostRef.current) return undefined;
-
-    try {
-      const picker = new EmojiMartPicker({
-        data: emojiData,
-        theme: "auto",
-        previewPosition: "none",
-        skinTonePosition: "none",
-        autoFocus: true,
-        onEmojiSelect: (emoji) => {
-          const value = String(emoji?.native || "").trim();
-          if (value) onSelectRef.current?.(value);
-        },
-      });
-      hostRef.current.replaceChildren(picker);
-      return () => picker.remove();
-    } catch {
-      setUnavailable(true);
-      return undefined;
-    }
-  }, []);
-
-  if (unavailable) {
-    return (
-      <div className="ember-note-emoji-fallback" aria-label="Emoji kiezen">
-        {EMOJI_FALLBACKS.map((emoji) => (
-          <button key={emoji} type="button" className="btn btn-secondary" onClick={() => onSelect?.(emoji)}>
-            <FluentEmoji emoji={emoji} size={22} type="flat" />
-          </button>
-        ))}
-      </div>
-    );
-  }
-
-  return <div ref={hostRef} className="ember-note-emoji-host" />;
-}
-
-export function NoteLinkDialog({
-  open = false,
-  label = "",
-  url = "",
-  onLabelChange,
-  onUrlChange,
-  onCancel,
-  onConfirm,
-}) {
-  const urlInputRef = useRef(null);
-  const normalizedUrl = normalizeHttpUrl(url);
-  const canConfirm = isHttpUrl(normalizedUrl);
-
-  useEffect(() => {
-    if (!open) return undefined;
-    const timer = window.setTimeout(() => urlInputRef.current?.focus(), 0);
-    return () => window.clearTimeout(timer);
-  }, [open]);
-
-  useEffect(() => {
-    if (!open) return undefined;
-    function handleKeyDown(event) {
-      if (event.key === "Escape") {
-        event.preventDefault();
-        onCancel?.();
-      }
-    }
-    document.addEventListener("keydown", handleKeyDown);
-    return () => document.removeEventListener("keydown", handleKeyDown);
-  }, [open, onCancel]);
-
-  if (!open || typeof document === "undefined") return null;
-
-  return createPortal(
-    <div className="ember-note-link-dialog-layer" role="presentation">
-      <button
-        type="button"
-        className="ember-note-link-dialog-backdrop"
-        aria-label="Hyperlinkvenster sluiten"
-        onClick={onCancel}
-      />
-      <section className="card ember-note-link-dialog" role="dialog" aria-modal="true" aria-label="Hyperlink invoegen">
-        <div className="ember-note-link-dialog__title">Hyperlink invoegen</div>
-        <label className="ember-note-link-dialog__field">
-          <span>Webadres</span>
-          <input
-            ref={urlInputRef}
-            className="cf-input"
-            value={url}
-            onChange={(event) => onUrlChange?.(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === "Enter" && canConfirm) {
-                event.preventDefault();
-                onConfirm?.();
-              }
-            }}
-            placeholder="https://..."
-          />
-        </label>
-        <label className="ember-note-link-dialog__field">
-          <span>Linktekst</span>
-          <input
-            className="cf-input"
-            value={label}
-            onChange={(event) => onLabelChange?.(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === "Enter" && canConfirm) {
-                event.preventDefault();
-                onConfirm?.();
-              }
-            }}
-            placeholder="Tekst die zichtbaar wordt"
-          />
-        </label>
-        <div className="ember-note-link-dialog__actions">
-          <button type="button" className="btn btn-secondary" onClick={onCancel}>
-            Annuleren
-          </button>
-          <button type="button" className="btn" disabled={!canConfirm} onClick={onConfirm}>
-            Link invoegen
-          </button>
-        </div>
-      </section>
-    </div>,
-    document.body
-  );
-}
-
 export function NoteEditorToolbar({
   disabled = false,
   onInsertLink,
@@ -337,10 +199,7 @@ export function NoteEditorToolbar({
   emojiButtonLabel = "Emoji invoegen",
 }) {
   const [emojiOpen, setEmojiOpen] = useState(false);
-  const [emojiPanelPosition, setEmojiPanelPosition] = useState(null);
   const rootRef = useRef(null);
-  const emojiButtonRef = useRef(null);
-  const emojiPanelRef = useRef(null);
   const preparedCustomEmojis = useMemo(
     () =>
       (customEmojis || [])
@@ -357,7 +216,7 @@ export function NoteEditorToolbar({
     if (!emojiOpen) return undefined;
 
     function handlePointer(event) {
-      if (!rootRef.current?.contains(event.target) && !emojiPanelRef.current?.contains(event.target)) {
+      if (!rootRef.current?.contains(event.target)) {
         setEmojiOpen(false);
       }
     }
@@ -374,75 +233,33 @@ export function NoteEditorToolbar({
     };
   }, [emojiOpen]);
 
-  useEffect(() => {
-    if (!emojiOpen) return undefined;
-
-    function updatePosition() {
-      const anchor = emojiButtonRef.current?.getBoundingClientRect();
-      if (!anchor) return;
-
-      const panelWidth = Math.min(390, window.innerWidth - 24);
-      const spaceBelow = window.innerHeight - anchor.bottom;
-      const openAbove = spaceBelow < 420 && anchor.top > spaceBelow;
-      const left = Math.min(Math.max(12, anchor.left), window.innerWidth - panelWidth - 12);
-      const top = openAbove ? Math.max(12, anchor.top - 10) : anchor.bottom + 10;
-      const availableHeight = openAbove ? anchor.top - 22 : spaceBelow - 22;
-
-      setEmojiPanelPosition({
-        left,
-        top,
-        openAbove,
-        maxHeight: Math.max(240, availableHeight),
-      });
-    }
-
-    updatePosition();
-    window.addEventListener("resize", updatePosition);
-    window.addEventListener("scroll", updatePosition, true);
-    return () => {
-      window.removeEventListener("resize", updatePosition);
-      window.removeEventListener("scroll", updatePosition, true);
-    };
-  }, [emojiOpen]);
-
   return (
     <div className="ember-toolbar ember-note-toolbar" style={{ justifyContent: "flex-start", gap: 12, flexWrap: "wrap" }}>
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", position: "relative" }} ref={rootRef}>
         <button
-          ref={emojiButtonRef}
           type="button"
-          className="btn btn-secondary ember-note-toolbar-button"
+          className="btn btn-secondary"
           disabled={disabled}
           onClick={onInsertLink}
           title="Voeg een hyperlink toe"
-          aria-label="Hyperlink invoegen"
         >
           <Link2 size={16} />
+          Link invoegen
         </button>
 
         <button
-          ref={emojiButtonRef}
           type="button"
-          className="btn btn-secondary ember-note-toolbar-button"
+          className="btn btn-secondary"
           disabled={disabled || !onInsertEmoji}
           onClick={() => setEmojiOpen((prev) => !prev)}
           title={emojiButtonLabel}
-          aria-label={emojiButtonLabel}
         >
           <SmilePlus size={16} />
+          Emoji
         </button>
 
-        {emojiOpen && emojiPanelPosition && typeof document !== "undefined"
-          ? createPortal(
-          <div
-            ref={emojiPanelRef}
-            className={`card ember-note-emoji-panel${emojiPanelPosition.openAbove ? " ember-note-emoji-panel--above" : ""}`}
-            style={{
-              left: emojiPanelPosition.left,
-              top: emojiPanelPosition.top,
-              maxHeight: emojiPanelPosition.maxHeight,
-            }}
-          >
+        {emojiOpen ? (
+          <div className="card ember-note-emoji-panel">
             {preparedCustomEmojis.length ? (
               <div className="ember-note-emoji-custom-row">
                 {preparedCustomEmojis.map((item) => (
@@ -464,17 +281,21 @@ export function NoteEditorToolbar({
                 ))}
               </div>
             ) : null}
-            <EmojiPickerSurface
-              onSelect={(value) => {
+            <Picker
+              data={emojiData}
+              theme="light"
+              previewPosition="none"
+              skinTonePosition="none"
+              autoFocus
+              onEmojiSelect={(emoji) => {
+                const value = String(emoji?.native || "").trim();
+                if (!value) return;
                 onInsertEmoji?.(value);
                 setEmojiOpen(false);
               }}
             />
           </div>
-          ,
-          document.body
-        )
-          : null}
+        ) : null}
       </div>
       <div className="muted" style={{ fontSize: 13 }}>
         Selecteer tekst en druk op Ctrl+K ; links openen standaard in een nieuw tabblad.

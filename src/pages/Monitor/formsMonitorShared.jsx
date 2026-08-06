@@ -59,8 +59,8 @@ export function getStatusTone(status) {
   if (status === "CONCEPT") return "muted";
   if (status === "OPEN") return "active";
   if (status === "PLANNING_NODIG") return "warning";
-  if (status === "WACHTENOPDERDEN") return "waiting";
-  if (status === "GEPLAND") return "planned";
+  if (status === "WACHTENOPDERDEN") return "warning";
+  if (status === "GEPLAND") return "neutral";
   if (status === "AFGEWEZEN") return "danger";
   if (status === "VERVALLEN") return "muted";
   if (status === "INFORMATIEF") return "neutral";
@@ -72,8 +72,6 @@ export function getToneClass(tone) {
   if (tone === "neutral") return "monitor-tag monitor-tag--neutral";
   if (tone === "success") return "monitor-tag monitor-tag--success";
   if (tone === "warning") return "monitor-tag monitor-tag--warning";
-  if (tone === "waiting") return "monitor-tag monitor-tag--waiting";
-  if (tone === "planned") return "monitor-tag monitor-tag--planned";
   if (tone === "danger") return "monitor-tag monitor-tag--danger";
   return "monitor-tag monitor-tag--muted";
 }
@@ -84,8 +82,6 @@ export function getCardToneClass(status) {
   if (tone === "neutral") return "monitor-surface monitor-surface--neutral";
   if (tone === "success") return "monitor-surface monitor-surface--success";
   if (tone === "warning") return "monitor-surface monitor-surface--warning";
-  if (tone === "waiting") return "monitor-surface monitor-surface--waiting";
-  if (tone === "planned") return "monitor-surface monitor-surface--planned";
   if (tone === "danger") return "monitor-surface monitor-surface--danger";
   return "monitor-surface monitor-surface--muted";
 }
@@ -96,8 +92,6 @@ export function getFollowUpCardClass(status) {
   if (tone === "neutral") return "monitor-followup-card monitor-followup-card--neutral";
   if (tone === "success") return "monitor-followup-card monitor-followup-card--success";
   if (tone === "warning") return "monitor-followup-card monitor-followup-card--warning";
-  if (tone === "waiting") return "monitor-followup-card monitor-followup-card--waiting";
-  if (tone === "planned") return "monitor-followup-card monitor-followup-card--planned";
   if (tone === "danger") return "monitor-followup-card monitor-followup-card--danger";
   return "monitor-followup-card monitor-followup-card--muted";
 }
@@ -244,7 +238,6 @@ export function buildMonitorRowActionCounts(row) {
   const waiting = Number(row?.follow_up_counts?.waiting_count ?? 0);
   const planned = Number(row?.follow_up_counts?.planned_count ?? 0);
   const done =
-    planned +
     Number(row?.follow_up_counts?.done_count ?? 0) +
     Number(row?.follow_up_counts?.rejected_count ?? 0) +
     Number(row?.follow_up_counts?.expired_count ?? 0);

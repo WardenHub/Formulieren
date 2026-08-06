@@ -465,15 +465,6 @@
   color: var(--text);
 }
 
-html[data-appearance="dark"] .ember-runtime-select {
-  color-scheme: dark;
-}
-
-html[data-appearance="dark"] .ember-runtime-select option {
-  background: var(--input-bg, var(--surface));
-  color: var(--text);
-}
-
 .ember-runtime-html {
   color: var(--muted);
   line-height: 1.55;
@@ -749,8 +740,7 @@ html[data-appearance="dark"] .ember-runtime-select option {
 .ember-runtime-card-field--energy,
 .ember-runtime-card-field--energy-primary,
 .ember-runtime-card-field--availability-primary,
-.ember-runtime-card-field--availability-secondary,
-.ember-runtime-card-field--availability-full-day {
+.ember-runtime-card-field--availability-secondary {
   grid-column: span 3;
 }
 
@@ -765,29 +755,6 @@ html[data-appearance="dark"] .ember-runtime-select option {
 .ember-runtime-card-field--availability-note {
   grid-column: 10 / span 3;
   grid-row: 1 / span 2;
-}
-
-.ember-runtime-card-field--availability-full-day {
-  align-content: end;
-}
-
-.ember-runtime-checkbox {
-  min-height: 46px;
-  display: inline-flex;
-  align-items: center;
-  gap: 9px;
-  padding: 0 13px;
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  background: var(--input-bg, var(--surface));
-  color: var(--text);
-  font-weight: 700;
-}
-
-.ember-runtime-checkbox input {
-  width: 18px;
-  height: 18px;
-  accent-color: var(--accent);
 }
 
 .ember-runtime-card-field--energy-primary .ember-runtime-card-field__label,
@@ -1499,49 +1466,6 @@ html[data-appearance="dark"] .ember-runtime-select option {
 
 .form-runner-readonly-banner {
   animation: form-runner-readonly-banner-intro 1.2s ease-out 0s 1;
-}
-
-.form-runner-readonly-banner--link {
-  width: 100%;
-  cursor: pointer;
-  text-align: left;
-  transition: transform 0.16s ease, box-shadow 0.16s ease;
-}
-
-.form-runner-readonly-banner--link:hover {
-  transform: translateY(-1px);
-  box-shadow: 0 9px 22px rgba(127, 29, 29, 0.14);
-}
-
-.form-runner-readonly-banner--link:focus-visible {
-  outline: 3px solid color-mix(in srgb, var(--danger, #ef4444) 42%, transparent);
-  outline-offset: 3px;
-}
-
-.form-submit-dialog__cancel {
-  border-color: var(--danger-border);
-  background: var(--danger-bg-soft);
-  color: var(--danger-text);
-}
-
-.form-submit-dialog__confirm {
-  border-color: var(--success-border);
-  background: var(--success-bg-soft);
-  color: var(--success-text);
-  animation: form-submit-dialog-confirm-shake 1.3s ease-in-out 0.35s 1;
-}
-
-@keyframes form-submit-dialog-confirm-shake {
-  0%, 72%, 100% { transform: translateX(0); }
-  78% { transform: translateX(-2px); }
-  84% { transform: translateX(2px); }
-  90% { transform: translateX(-1px); }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .form-submit-dialog__confirm {
-    animation: none;
-  }
 }
 
 .form-runner-actions-menu {

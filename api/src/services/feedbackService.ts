@@ -18,7 +18,7 @@ import {
   getUserObjectId,
 } from "../utils/userIdentity.js";
 
-const FEEDBACK_SENTIMENTS = new Set(["positive", "negative", "proposal"]);
+const FEEDBACK_SENTIMENTS = new Set(["positive", "negative"]);
 const FEEDBACK_STATUSES = new Set(["OPEN", "IN_BEHANDELING", "BEANTWOORD", "GESLOTEN"]);
 
 function normalizeOptionalString(value: any) {
@@ -128,7 +128,6 @@ function mapFeedbackRecordsets(recordsets: any[]) {
       closed_count: items.filter((item) => String(item.status || "").trim().toUpperCase() === "GESLOTEN").length,
       positive_count: items.filter((item) => item.sentiment === "positive").length,
       negative_count: items.filter((item) => item.sentiment === "negative").length,
-      proposal_count: items.filter((item) => item.sentiment === "proposal").length,
     },
   };
 }

@@ -13,9 +13,6 @@ import { MonitorCheckIcon } from "@/components/ui/monitor-check";
 import { IdCardIcon } from "@/components/ui/id-card";
 import { MenuIcon } from "@/components/ui/menu";
 import { BookTextIcon } from "@/components/ui/book-text";
-import { LaughIcon } from "@/components/ui/laugh";
-import { GavelIcon } from "@/components/ui/gavel";
-import { CircleHelpIcon } from "@/components/ui/circle-help";
 import { buildInitials, resolveProfileAvatarPath } from "../lib/avatar.js";
 import NotificationCenter from "../components/NotificationCenter.jsx";
 
@@ -81,43 +78,6 @@ export default function Layout() {
         <Icon ref={iconRef} size={18} className="nav-anim-icon" />
         <span>{children}</span>
       </button>
-    );
-  }
-
-  function AnimatedMenuLink({ to, state, onClick, Icon, children, className = "menu-item" }) {
-    const iconRef = useRef(null);
-
-    return (
-      <Link
-        className={className}
-        to={to}
-        state={state}
-        onClick={onClick}
-        onMouseEnter={() => iconRef.current?.startAnimation?.()}
-        onMouseLeave={() => iconRef.current?.stopAnimation?.()}
-      >
-        <Icon ref={iconRef} size={18} className="nav-anim-icon" />
-        <span>{children}</span>
-      </Link>
-    );
-  }
-
-  function AnimatedMenuAnchor({ href, onClick, Icon, children, className = "menu-item" }) {
-    const iconRef = useRef(null);
-
-    return (
-      <a
-        className={className}
-        href={href}
-        target="_blank"
-        rel="noreferrer"
-        onClick={onClick}
-        onMouseEnter={() => iconRef.current?.startAnimation?.()}
-        onMouseLeave={() => iconRef.current?.stopAnimation?.()}
-      >
-        <Icon ref={iconRef} size={18} className="nav-anim-icon" />
-        <span>{children}</span>
-      </a>
     );
   }
 
@@ -349,38 +309,32 @@ export default function Layout() {
                 </div>
               </div>
 
-              <AnimatedMenuLink
-                to="/profiel"
-                Icon={IdCardIcon}
-                onClick={() => setAvatarOpen(false)}
-              >
+              <Link className="menu-item" to="/profiel" onClick={() => setAvatarOpen(false)}>
                 Profiel
-              </AnimatedMenuLink>
+              </Link>
 
-              <AnimatedMenuLink
-                to="/smoelenboek"
-                Icon={LaughIcon}
-                onClick={() => setAvatarOpen(false)}
-              >
+              <Link className="menu-item" to="/smoelenboek" onClick={() => setAvatarOpen(false)}>
                 Smoelenboek
-              </AnimatedMenuLink>
+              </Link>
 
-              <AnimatedMenuLink
+              <Link
+                className="menu-item"
                 to="/feedback"
-                Icon={GavelIcon}
                 state={{ sourcePath: `${location.pathname}${location.search}` }}
                 onClick={() => setAvatarOpen(false)}
               >
                 Feedback
-              </AnimatedMenuLink>
+              </Link>
 
-              <AnimatedMenuAnchor
+              <a
+                className="menu-item"
                 href="https://kennis.wardenburg.nl/Main/Werkwijze/Ember/"
-                Icon={CircleHelpIcon}
+                target="_blank"
+                rel="noreferrer"
                 onClick={() => setAvatarOpen(false)}
               >
                 Help
-              </AnimatedMenuAnchor>
+              </a>
 
               <AnimatedMenuItem
                 className="menu-item danger"

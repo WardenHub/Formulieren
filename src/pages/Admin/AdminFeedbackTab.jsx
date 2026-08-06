@@ -5,8 +5,10 @@ import {
   putAdminFeedbackReply,
   putAdminFeedbackStatus,
 } from "../../api/emberApi.js";
+import { DownvoteIcon } from "../../components/ui/downvote.jsx";
 import { MessageCircleMoreIcon } from "../../components/ui/message-circle-more.jsx";
-import { getSentimentMeta, SENTIMENT_OPTIONS as FEEDBACK_SENTIMENT_OPTIONS } from "../Feedback/feedbackShared.js";
+import { NoteRichTextContent } from "../../components/notes/NoteRichText.jsx";
+import { UpvoteIcon } from "../../components/ui/upvote.jsx";
 
 const STATUS_OPTIONS = [
   { key: "", label: "Alle statussen" },
@@ -18,10 +20,8 @@ const STATUS_OPTIONS = [
 
 const SENTIMENT_OPTIONS = [
   { key: "", label: "Alle signalen" },
-  ...FEEDBACK_SENTIMENT_OPTIONS.map((option) => ({
-    key: option.key,
-    label: option.label,
-  })),
+  { key: "positive", label: "Upvote" },
+  { key: "negative", label: "Downvote" },
 ];
 
 const STATUS_META = {
@@ -35,6 +35,24 @@ function getStatusMeta(status) {
   return STATUS_META[String(status || "").trim().toUpperCase()] || STATUS_META.OPEN;
 }
 
+function getSentimentMeta(sentiment) {
+  if (String(sentiment || "").trim().toLowerCase() === "negative") {
+    return {
+      label: "Downvote",
+      tagClass: "monitor-tag monitor-tag--warning",
+      Icon: DownvoteIcon,
+      iconColor: "#dc2626",
+    };
+  }
+
+  return {
+    label: "Upvote",
+    tagClass: "monitor-tag monitor-tag--success",
+    Icon: UpvoteIcon,
+    iconColor: "#1f9d55",
+  };
+}
+
 function formatDateTime(value) {
   if (!value) return "";
   const date = new Date(value);
@@ -46,6 +64,22 @@ function formatDateTime(value) {
     hour: "2-digit",
     minute: "2-digit",
   }).format(date);
+}
+
+function SentimentBadge({ sentiment, size = 22 }) {
+  const sentimentMeta = getSentimentMeta(sentiment);
+  const Icon = sentimentMeta.Icon;
+
+  return (
+    <span
+      className={sentimentMeta.tagClass}
+      title={sentimentMeta.label}
+      aria-label={sentimentMeta.label}
+      style={{ display: "inline-flex", alignItems: "center", gap: 6 }}
+    >
+      <Icon size={size} style={{ color: sentimentMeta.iconColor }} />
+    </span>
+  );
 }
 
 export default function AdminFeedbackTab() {
@@ -151,11 +185,14 @@ export default function AdminFeedbackTab() {
             <span className="monitor-tag monitor-tag--muted">
               Open {Number(payload?.summary?.open_count || 0)}
             </span>
-            <span className="monitor-tag monitor-tag--muted">
-              Voorstel {Number(payload?.summary?.proposal_count || 0)}
-            </span>
-            <span className="monitor-tag monitor-tag--muted">
-              Negatief {Number(payload?.summary?.negative_count || 0)}
+            <span
+              className="monitor-tag monitor-tag--muted"
+              title="Downvotes"
+              aria-label="Downvotes"
+              style={{ display: "inline-flex", alignItems: "center", gap: 6 }}
+            >
+              <DownvoteIcon size={18} style={{ color: "#dc2626" }} />
+              {Number(payload?.summary?.negative_count || 0)}
             </span>
           </div>
         </div>
@@ -208,7 +245,6 @@ export default function AdminFeedbackTab() {
           ) : (
             items.map((item) => {
               const statusMeta = getStatusMeta(item.status);
-              const sentimentMeta = getSentimentMeta(item.sentiment);
               const selected = item.feedback_id === selectedFeedbackId;
 
               return (
@@ -228,9 +264,7 @@ export default function AdminFeedbackTab() {
                 >
                   <div style={{ display: "flex", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
                     <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                      <span className={sentimentMeta.tagClass}>
-                        {sentimentMeta.label}
-                      </span>
+                      <SentimentBadge sentiment={item.sentiment} />
                       <span className={statusMeta.tagClass}>{statusMeta.label}</span>
                     </div>
                     <div className="muted" style={{ fontSize: 12 }}>
@@ -243,7 +277,7 @@ export default function AdminFeedbackTab() {
                   </div>
 
                   <div className="muted" style={{ fontSize: 13, whiteSpace: "pre-wrap" }}>
-                    {item.message_markdown || "Geen extra toelichting."}
+                    {item.message_markdown ? <NoteRichTextContent text={item.message_markdown} mentions={[]} /> : "Geen extra toelichting."}
                   </div>
                 </button>
               );
@@ -286,9 +320,10 @@ export default function AdminFeedbackTab() {
               </div>
 
               <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                <span className={getSentimentMeta(selectedItem.sentiment).tagClass}>
-                  {getSentimentMeta(selectedItem.sentiment).label}
-                </span>
+                <SentimentBadge sentiment={selectedItem.sentiment} />
+                {selectedItem.source_path ? (
+                  <span className="monitor-tag monitor-tag--muted">{selectedItem.source_path}</span>
+                ) : null}
                 {selectedItem.installation_code ? (
                   <span className="monitor-tag monitor-tag--muted">
                     Installatie {selectedItem.installation_code}
@@ -305,7 +340,7 @@ export default function AdminFeedbackTab() {
                 className="monitor-surface monitor-surface--neutral"
                 style={{ padding: 14, whiteSpace: "pre-wrap", lineHeight: 1.6 }}
               >
-                {selectedItem.message_markdown || "Geen extra toelichting toegevoegd."}
+                {selectedItem.message_markdown ? <NoteRichTextContent text={selectedItem.message_markdown} mentions={[]} /> : "Geen extra toelichting toegevoegd."}
               </div>
 
               <div style={{ display: "grid", gap: 10 }}>
@@ -343,3 +378,7 @@ export default function AdminFeedbackTab() {
     </div>
   );
 }
+
+
+
+

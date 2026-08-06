@@ -274,13 +274,6 @@ export function getFormInstance(code, formInstanceId) {
   );
 }
 
-export function prepareOfflineFormPackage(code, formInstanceId, payload = {}) {
-  return apiPost(
-    `/installations/${encodeURIComponent(code)}/forms/instances/${encodeURIComponent(formInstanceId)}/offline-package`,
-    payload ?? {}
-  );
-}
-
 export function putFormInstanceMetadata(code, formInstanceId, payload) {
   return apiPut(
     `/installations/${encodeURIComponent(code)}/forms/instances/${encodeURIComponent(formInstanceId)}/metadata`,
@@ -564,13 +557,6 @@ export function putFormsMonitorComplimentPoint(formInstanceId, payload) {
 export function postFormsMonitorFollowUpStatusAction(followUpActionId, payload) {
   return apiPost(
     `/forms-monitor/follow-ups/${encodeURIComponent(followUpActionId)}/status-action`,
-    payload ?? {}
-  );
-}
-
-export function postFormsMonitorManualFollowUp(formInstanceId, payload) {
-  return apiPost(
-    `/forms-monitor/${encodeURIComponent(formInstanceId)}/follow-ups`,
     payload ?? {}
   );
 }

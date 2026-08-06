@@ -394,22 +394,20 @@ select
   fwa.updated_at,
   fwa.updated_by,
   fi.form_instance_id as instance_number,
-  fd.code as form_code,
+  fi.form_code,
   fi.status as form_status,
   fi.parent_instance_id,
   coalesce(
     nullif(ltrim(rtrim(fi.instance_title)), N''),
-    nullif(ltrim(rtrim(fd.name)), N''),
-    nullif(ltrim(rtrim(fd.code)), N''),
-    convert(nvarchar(50), fi.form_instance_id)
+    nullif(ltrim(rtrim(fd.display_name)), N''),
+    nullif(ltrim(rtrim(fd.form_name)), N''),
+    nullif(ltrim(rtrim(fi.form_code)), N'')
   ) as form_title
 from dbo.FormFollowUpAction fwa
 join dbo.FormInstance fi
   on fi.form_instance_id = fwa.form_instance_id
-join dbo.FormDefinitionVersion fdv
-  on fdv.form_version_id = fi.form_version_id
-join dbo.FormDefinition fd
-  on fd.form_id = fdv.form_id
+left join dbo.FormDefinition fd
+  on fd.form_code = fi.form_code
 where fwa.atrium_installation_code = @code
 order by
   case
@@ -420,3 +418,4 @@ order by
   coalesce(fwa.updated_at, fwa.created_at) desc,
   fwa.created_at desc;
 `;
+
