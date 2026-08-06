@@ -11,6 +11,7 @@ import adminFormsRouter from "./routes/adminForms.js";
 import adminInstallationsRouter from "./routes/adminInstallations.js";
 import adminGuidanceRouter from "./routes/adminGuidance.js";
 import adminFeedbackRouter from "./routes/adminFeedback.js";
+import adminAssistantRouter from "./routes/adminAssistant.js";
 import internalMaintenanceRouter from "./routes/internalMaintenance.js";
 import homeRouter from "./routes/home.js";
 import profileRouter from "./routes/profile.js";
@@ -187,6 +188,7 @@ app.use("/admin/forms", adminFormsRouter);
 app.use("/admin/installations", adminInstallationsRouter);
 app.use("/admin/guidance", adminGuidanceRouter);
 app.use("/admin/feedback", adminFeedbackRouter);
+app.use("/admin/ai", adminAssistantRouter);
 app.use("/forms-monitor", formsMonitorRouter);
 
 app.get("/me", async (req: any, res) => {

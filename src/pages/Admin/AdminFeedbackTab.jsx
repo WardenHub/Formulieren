@@ -8,10 +8,8 @@ import {
   putAdminFeedbackStatus,
 } from "../../api/emberApi.js";
 import { Trash2 } from "lucide-react";
-import { DownvoteIcon } from "../../components/ui/downvote.jsx";
 import { MessageCircleMoreIcon } from "../../components/ui/message-circle-more.jsx";
-import { NoteRichTextContent } from "../../components/notes/NoteRichText.jsx";
-import { UpvoteIcon } from "../../components/ui/upvote.jsx";
+import { getSentimentMeta, SENTIMENT_OPTIONS as FEEDBACK_SENTIMENT_OPTIONS } from "../Feedback/feedbackShared.js";
 
 const STATUS_OPTIONS = [
   { key: "", label: "Alle statussen" },
@@ -23,8 +21,10 @@ const STATUS_OPTIONS = [
 
 const SENTIMENT_OPTIONS = [
   { key: "", label: "Alle signalen" },
-  { key: "positive", label: "Upvote" },
-  { key: "negative", label: "Downvote" },
+  ...FEEDBACK_SENTIMENT_OPTIONS.map((option) => ({
+    key: option.key,
+    label: option.label,
+  })),
 ];
 
 const STATUS_META = {
@@ -38,24 +38,6 @@ function getStatusMeta(status) {
   return STATUS_META[String(status || "").trim().toUpperCase()] || STATUS_META.OPEN;
 }
 
-function getSentimentMeta(sentiment) {
-  if (String(sentiment || "").trim().toLowerCase() === "negative") {
-    return {
-      label: "Downvote",
-      tagClass: "monitor-tag monitor-tag--warning",
-      Icon: DownvoteIcon,
-      iconColor: "#dc2626",
-    };
-  }
-
-  return {
-    label: "Upvote",
-    tagClass: "monitor-tag monitor-tag--success",
-    Icon: UpvoteIcon,
-    iconColor: "#1f9d55",
-  };
-}
-
 function formatDateTime(value) {
   if (!value) return "";
   const date = new Date(value);
@@ -67,50 +49,6 @@ function formatDateTime(value) {
     hour: "2-digit",
     minute: "2-digit",
   }).format(date);
-}
-
-function SentimentBadge({ sentiment, size = 22 }) {
-  const sentimentMeta = getSentimentMeta(sentiment);
-  const Icon = sentimentMeta.Icon;
-
-
-  async function handleDeleteFeedback() {
-    if (!selectedItem?.feedback_id) return;
-    if (!window.confirm("Weet je zeker dat je deze feedback wilt verwijderen?")) return;
-
-    setDeletingFeedback(true);
-    setError("");
-    try {
-      await deleteAdminFeedback(selectedItem.feedback_id);
-      await refreshAfterChange("");
-    } catch (err) {
-      setError(err?.message || String(err));
-    } finally {
-      setDeletingFeedback(false);
-    }
-  }
-
-  useEffect(() => {
-    function handleAltS(event) {
-      if (!event.altKey || String(event.key || "").toLowerCase() !== "s") return;
-      if (!selectedItem?.feedback_id || savingReply || !String(replyDraft || "").trim()) return;
-      event.preventDefault();
-      void handleReplySave();
-    }
-
-    window.addEventListener("keydown", handleAltS);
-    return () => window.removeEventListener("keydown", handleAltS);
-  }, [selectedItem?.feedback_id, replyDraft, savingReply]);
-  return (
-    <span
-      className={sentimentMeta.tagClass}
-      title={sentimentMeta.label}
-      aria-label={sentimentMeta.label}
-      style={{ display: "inline-flex", alignItems: "center", gap: 6 }}
-    >
-      <Icon size={size} style={{ color: sentimentMeta.iconColor }} />
-    </span>
-  );
 }
 
 export default function AdminFeedbackTab() {
@@ -176,38 +114,11 @@ export default function AdminFeedbackTab() {
     }
 
     void markRead();
-  
-  async function handleDeleteFeedback() {
-    if (!selectedItem?.feedback_id) return;
-    if (!window.confirm("Weet je zeker dat je deze feedback wilt verwijderen?")) return;
-
-    setDeletingFeedback(true);
-    setError("");
-    try {
-      await deleteAdminFeedback(selectedItem.feedback_id);
-      await refreshAfterChange("");
-    } catch (err) {
-      setError(err?.message || String(err));
-    } finally {
-      setDeletingFeedback(false);
-    }
-  }
-
-  useEffect(() => {
-    function handleAltS(event) {
-      if (!event.altKey || String(event.key || "").toLowerCase() !== "s") return;
-      if (!selectedItem?.feedback_id || savingReply || !String(replyDraft || "").trim()) return;
-      event.preventDefault();
-      void handleReplySave();
-    }
-
-    window.addEventListener("keydown", handleAltS);
-    return () => window.removeEventListener("keydown", handleAltS);
-  }, [selectedItem?.feedback_id, replyDraft, savingReply]);
-  return () => {
+    return () => {
       cancelled = true;
     };
   }, [selectedItem?.feedback_id, selectedItem?.status]);
+
   async function refreshAfterChange(nextFeedbackId = selectedFeedbackId) {
     const result = await getAdminFeedback(filters);
     const nextItems = Array.isArray(result?.items) ? result.items : [];
@@ -247,7 +158,6 @@ export default function AdminFeedbackTab() {
     }
   }
 
-
   async function handleDeleteFeedback() {
     if (!selectedItem?.feedback_id) return;
     if (!window.confirm("Weet je zeker dat je deze feedback wilt verwijderen?")) return;
@@ -275,6 +185,7 @@ export default function AdminFeedbackTab() {
     window.addEventListener("keydown", handleAltS);
     return () => window.removeEventListener("keydown", handleAltS);
   }, [selectedItem?.feedback_id, replyDraft, savingReply]);
+
   return (
     <div style={{ display: "grid", gap: 16 }}>
       <div className="card" style={{ padding: 18, display: "grid", gap: 14 }}>
@@ -291,14 +202,11 @@ export default function AdminFeedbackTab() {
             <span className="monitor-tag monitor-tag--muted">
               Open {Number(payload?.summary?.open_count || 0)}
             </span>
-            <span
-              className="monitor-tag monitor-tag--muted"
-              title="Downvotes"
-              aria-label="Downvotes"
-              style={{ display: "inline-flex", alignItems: "center", gap: 6 }}
-            >
-              <DownvoteIcon size={18} style={{ color: "#dc2626" }} />
-              {Number(payload?.summary?.negative_count || 0)}
+            <span className="monitor-tag monitor-tag--muted">
+              Voorstel {Number(payload?.summary?.proposal_count || 0)}
+            </span>
+            <span className="monitor-tag monitor-tag--muted">
+              Negatief {Number(payload?.summary?.negative_count || 0)}
             </span>
           </div>
         </div>
@@ -351,37 +259,10 @@ export default function AdminFeedbackTab() {
           ) : (
             items.map((item) => {
               const statusMeta = getStatusMeta(item.status);
+              const sentimentMeta = getSentimentMeta(item.sentiment);
               const selected = item.feedback_id === selectedFeedbackId;
 
-            
-  async function handleDeleteFeedback() {
-    if (!selectedItem?.feedback_id) return;
-    if (!window.confirm("Weet je zeker dat je deze feedback wilt verwijderen?")) return;
-
-    setDeletingFeedback(true);
-    setError("");
-    try {
-      await deleteAdminFeedback(selectedItem.feedback_id);
-      await refreshAfterChange("");
-    } catch (err) {
-      setError(err?.message || String(err));
-    } finally {
-      setDeletingFeedback(false);
-    }
-  }
-
-  useEffect(() => {
-    function handleAltS(event) {
-      if (!event.altKey || String(event.key || "").toLowerCase() !== "s") return;
-      if (!selectedItem?.feedback_id || savingReply || !String(replyDraft || "").trim()) return;
-      event.preventDefault();
-      void handleReplySave();
-    }
-
-    window.addEventListener("keydown", handleAltS);
-    return () => window.removeEventListener("keydown", handleAltS);
-  }, [selectedItem?.feedback_id, replyDraft, savingReply]);
-  return (
+              return (
                 <button
                   key={item.feedback_id}
                   type="button"
@@ -398,7 +279,9 @@ export default function AdminFeedbackTab() {
                 >
                   <div style={{ display: "flex", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
                     <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                      <SentimentBadge sentiment={item.sentiment} />
+                      <span className={sentimentMeta.tagClass}>
+                        {sentimentMeta.label}
+                      </span>
                       <span className={statusMeta.tagClass}>{statusMeta.label}</span>
                     </div>
                     <div className="muted" style={{ fontSize: 12 }}>
@@ -411,7 +294,7 @@ export default function AdminFeedbackTab() {
                   </div>
 
                   <div className="muted" style={{ fontSize: 13, whiteSpace: "pre-wrap" }}>
-                    {item.message_markdown ? <NoteRichTextContent text={item.message_markdown} mentions={[]} /> : "Geen extra toelichting."}
+                    {item.message_markdown || "Geen extra toelichting."}
                   </div>
                 </button>
               );
@@ -454,10 +337,9 @@ export default function AdminFeedbackTab() {
               </div>
 
               <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                <SentimentBadge sentiment={selectedItem.sentiment} />
-                {selectedItem.source_path ? (
-                  <span className="monitor-tag monitor-tag--muted">{selectedItem.source_path}</span>
-                ) : null}
+                <span className={getSentimentMeta(selectedItem.sentiment).tagClass}>
+                  {getSentimentMeta(selectedItem.sentiment).label}
+                </span>
                 {selectedItem.installation_code ? (
                   <span className="monitor-tag monitor-tag--muted">
                     Installatie {selectedItem.installation_code}
@@ -474,7 +356,7 @@ export default function AdminFeedbackTab() {
                 className="monitor-surface monitor-surface--neutral"
                 style={{ padding: 14, whiteSpace: "pre-wrap", lineHeight: 1.6 }}
               >
-                {selectedItem.message_markdown ? <NoteRichTextContent text={selectedItem.message_markdown} mentions={[]} /> : "Geen extra toelichting toegevoegd."}
+                {selectedItem.message_markdown || "Geen extra toelichting toegevoegd."}
               </div>
 
               <div style={{ display: "grid", gap: 10 }}>
@@ -486,7 +368,6 @@ export default function AdminFeedbackTab() {
                     disabled={deletingFeedback}
                     onClick={handleDeleteFeedback}
                     title="Feedback verwijderen"
-                    aria-label="Feedback verwijderen"
                   >
                     <Trash2 size={16} /> Verwijderen
                   </button>
@@ -530,7 +411,3 @@ export default function AdminFeedbackTab() {
     </div>
   );
 }
-
-
-
-
