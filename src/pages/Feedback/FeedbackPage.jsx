@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useLocation } from "react-router-dom";
+import { Pencil, Trash2 } from "lucide-react";
 
-import { createMyFeedback, getMyFeedback, getUserDirectory } from "../../api/emberApi.js";
+import { createMyFeedback, deleteMyFeedback, getMyFeedback, getUserDirectory, putMyFeedback } from "../../api/emberApi.js";
 import ApiStartupLoader, { useApiStartupLoader } from "../../components/ApiStartupLoader.jsx";
 import {
   NoteEditorToolbar,
@@ -223,7 +224,7 @@ function SentimentBadge({ sentiment, size = 18 }) {
   );
 }
 
-function FeedbackCard({ item }) {
+function FeedbackCard({ item, actionBusy, onEdit, onDelete }) {
   const statusMeta = getStatusMeta(item?.status);
   const contextLabel = getContextLabel(item?.source_path);
 
@@ -249,6 +250,17 @@ function FeedbackCard({ item }) {
         <div className="muted">Geen extra toelichting toegevoegd.</div>
       )}
 
+
+      {!item?.has_reply && !item?.active_reply ? (
+        <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, flexWrap: "wrap" }}>
+          <button type="button" className="btn btn-secondary" disabled={actionBusy} onClick={onEdit}>
+            <Pencil size={16} /> Bewerken
+          </button>
+          <button type="button" className="btn danger" disabled={actionBusy} onClick={onDelete}>
+            <Trash2 size={16} /> Verwijderen
+          </button>
+        </div>
+      ) : null}
       {item?.installation_code || item?.form_instance_id ? (
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
           {item?.installation_code ? (
@@ -264,9 +276,9 @@ function FeedbackCard({ item }) {
         </div>
       ) : null}
 
-      <div className="monitor-surface monitor-surface--neutral" style={{ padding: 14 }}>
-        <div style={{ fontWeight: 800, marginBottom: 6 }}>Reactie van Ember-beheer</div>
-        {item?.active_reply?.reply_markdown ? (
+      {item?.active_reply?.reply_markdown ? (
+        <div className="monitor-surface monitor-surface--neutral" style={{ padding: 14 }}>
+          <div style={{ fontWeight: 800, marginBottom: 6 }}>Reactie van Admin</div>
           <div style={{ display: "grid", gap: 8 }}>
             <div style={{ lineHeight: 1.6 }}>
               <NoteRichTextContent text={item.active_reply.reply_markdown} mentions={[]} />
@@ -278,10 +290,8 @@ function FeedbackCard({ item }) {
                 : ""}
             </div>
           </div>
-        ) : (
-          <div className="muted">Nog geen reactie geplaatst.</div>
-        )}
-      </div>
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -295,6 +305,7 @@ export default function FeedbackPage() {
   const [error, setError] = useState("");
   const [submitState, setSubmitState] = useState("");
   const [payload, setPayload] = useState({ items: [], summary: {} });
+  const [feedbackActionBusy, setFeedbackActionBusy] = useState(false);
   const [draft, setDraft] = useState({
     sentiment: "positive",
     message_markdown: "",
@@ -422,7 +433,7 @@ export default function FeedbackPage() {
       emojiValue
     );
 
-    setDraft((prev) => ({ ...prev, body_markdown: result.value }));
+    setDraft((prev) => ({ ...prev, message_markdown: result.value }));
     closeMentionPicker();
     focusEditor(result.caretStart, result.caretEnd);
   }
@@ -513,6 +524,43 @@ export default function FeedbackPage() {
     }
   }
 
+  async function handleEditFeedback(item) {
+    if (!item?.feedback_id) return;
+    const nextMessage = window.prompt("Feedback bewerken", item.message_markdown || "");
+    if (nextMessage == null) return;
+
+    setFeedbackActionBusy(true);
+    setError("");
+    try {
+      await putMyFeedback(item.feedback_id, {
+        sentiment: item.sentiment,
+        message_markdown: String(nextMessage || "").trim() || null,
+      });
+      setSubmitState("Feedback bijgewerkt.");
+      await load();
+    } catch (err) {
+      setError(err?.message || String(err));
+    } finally {
+      setFeedbackActionBusy(false);
+    }
+  }
+
+  async function handleDeleteFeedback(item) {
+    if (!item?.feedback_id) return;
+    if (!window.confirm("Weet je zeker dat je deze feedback wilt verwijderen?")) return;
+
+    setFeedbackActionBusy(true);
+    setError("");
+    try {
+      await deleteMyFeedback(item.feedback_id);
+      setSubmitState("Feedback verwijderd.");
+      await load();
+    } catch (err) {
+      setError(err?.message || String(err));
+    } finally {
+      setFeedbackActionBusy(false);
+    }
+  }
   const items = Array.isArray(payload?.items) ? payload.items : [];
 
   return (
@@ -523,7 +571,7 @@ export default function FeedbackPage() {
             <div className="inst-title">
               <h1>Feedback</h1>
               <div className="ember-page-subtitle">
-                Laat kort weten wat goed werkt of wat beter kan in Ember.
+                Laat weten wat goed werkt of wat beter kan in Ember.
               </div>
             </div>
           </div>
@@ -722,7 +770,13 @@ export default function FeedbackPage() {
           ) : (
             <div style={{ display: "grid", gap: 14 }}>
               {items.map((item) => (
-                <FeedbackCard key={item.feedback_id} item={item} />
+                <FeedbackCard
+                  key={item.feedback_id}
+                  item={item}
+                  actionBusy={feedbackActionBusy}
+                  onEdit={() => handleEditFeedback(item)}
+                  onDelete={() => handleDeleteFeedback(item)}
+                />
               ))}
             </div>
           )}

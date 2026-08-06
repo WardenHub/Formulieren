@@ -3,6 +3,9 @@ select
   uf.feedback_id,
   uf.sentiment,
   uf.status,
+  cast(case when exists (
+    select 1 from dbo.UserFeedbackReply ur where ur.feedback_id = uf.feedback_id
+  ) then 1 else 0 end as bit) as has_reply,
   uf.message_markdown,
   uf.user_object_id,
   uf.user_display_name_snapshot,
@@ -48,6 +51,9 @@ select
   uf.feedback_id,
   uf.sentiment,
   uf.status,
+  cast(case when exists (
+    select 1 from dbo.UserFeedbackReply ur where ur.feedback_id = uf.feedback_id
+  ) then 1 else 0 end as bit) as has_reply,
   uf.message_markdown,
   uf.user_object_id,
   uf.user_display_name_snapshot,
@@ -108,6 +114,9 @@ select top 1
   uf.feedback_id,
   uf.sentiment,
   uf.status,
+  cast(case when exists (
+    select 1 from dbo.UserFeedbackReply ur where ur.feedback_id = uf.feedback_id
+  ) then 1 else 0 end as bit) as has_reply,
   uf.message_markdown,
   uf.user_object_id,
   uf.user_display_name_snapshot,
@@ -187,6 +196,34 @@ set
   updated_at = sysutcdatetime(),
   updated_by = @actor
 where feedback_id = @feedbackId;
+`;
+
+export const updateMyUserFeedbackSql = `
+update dbo.UserFeedback
+set
+  sentiment = @sentiment,
+  message_markdown = nullif(ltrim(rtrim(@messageMarkdown)), N''),
+  updated_at = sysutcdatetime(),
+  updated_by = @actor
+where feedback_id = @feedbackId
+  and user_object_id = @userObjectId;
+`;
+
+export const deleteUserFeedbackSql = `
+set xact_abort on;
+begin transaction;
+
+delete ur
+from dbo.UserFeedbackReply ur
+join dbo.UserFeedback uf on uf.feedback_id = ur.feedback_id
+where uf.feedback_id = @feedbackId
+  and (@userObjectId is null or uf.user_object_id = @userObjectId);
+
+delete from dbo.UserFeedback
+where feedback_id = @feedbackId
+  and (@userObjectId is null or user_object_id = @userObjectId);
+
+commit transaction;
 `;
 
 export const getActiveUserFeedbackReplySql = `

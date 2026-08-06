@@ -8,6 +8,8 @@ import {
   getUserFeedbackByIdSql,
   insertUserFeedbackReplySql,
   insertUserFeedbackSql,
+  deleteUserFeedbackSql,
+  updateMyUserFeedbackSql,
   updateUserFeedbackReplySql,
   updateUserFeedbackStatusSql,
 } from "../db/queries/feedback.sql.js";
@@ -18,7 +20,7 @@ import {
   getUserObjectId,
 } from "../utils/userIdentity.js";
 
-const FEEDBACK_SENTIMENTS = new Set(["positive", "negative"]);
+const FEEDBACK_SENTIMENTS = new Set(["positive", "negative", "proposal"]);
 const FEEDBACK_STATUSES = new Set(["OPEN", "IN_BEHANDELING", "BEANTWOORD", "GESLOTEN"]);
 
 function normalizeOptionalString(value: any) {
@@ -65,6 +67,7 @@ function mapFeedbackRow(row: any) {
     feedback_id: row.feedback_id,
     sentiment: row.sentiment ?? "positive",
     status: row.status ?? "OPEN",
+    has_reply: row.has_reply === true || row.has_reply === 1,
     message_markdown: row.message_markdown ?? null,
     user_object_id: row.user_object_id ?? null,
     user_display_name_snapshot: row.user_display_name_snapshot ?? null,
@@ -128,6 +131,7 @@ function mapFeedbackRecordsets(recordsets: any[]) {
       closed_count: items.filter((item) => String(item.status || "").trim().toUpperCase() === "GESLOTEN").length,
       positive_count: items.filter((item) => item.sentiment === "positive").length,
       negative_count: items.filter((item) => item.sentiment === "negative").length,
+      proposal_count: items.filter((item) => item.sentiment === "proposal").length,
     },
   };
 }
@@ -187,6 +191,47 @@ export async function createMyFeedback(payload: any, user: any) {
   };
 }
 
+function assertMyFeedbackIsMutable(item: any, userObjectId: string) {
+  if (String(item?.user_object_id || "").trim() !== userObjectId) {
+    throw new Error("feedback access denied");
+  }
+  if (item?.has_reply) {
+    throw new Error("feedback locked after admin reply");
+  }
+}
+
+export async function updateMyFeedback(feedbackId: string, payload: any, user: any) {
+  const cleanFeedbackId = String(feedbackId || "").trim();
+  const userObjectId = normalizeOptionalString(getUserObjectId(user));
+  if (!cleanFeedbackId) throw new Error("feedback not found");
+  if (!userObjectId) throw new Error("missing user object id");
+
+  const existingFeedback = await getFeedbackItemOrThrow(cleanFeedbackId);
+  assertMyFeedbackIsMutable(existingFeedback, userObjectId);
+
+  await sqlQuery(updateMyUserFeedbackSql, {
+    feedbackId: cleanFeedbackId,
+    userObjectId,
+    sentiment: normalizeSentiment(payload?.sentiment),
+    messageMarkdown: normalizeOptionalString(payload?.message_markdown ?? payload?.message ?? payload?.text),
+    actor: getUserAuditActor(user),
+  });
+
+  return { ok: true, item: await getFeedbackItemOrThrow(cleanFeedbackId) };
+}
+
+export async function deleteMyFeedback(feedbackId: string, user: any) {
+  const cleanFeedbackId = String(feedbackId || "").trim();
+  const userObjectId = normalizeOptionalString(getUserObjectId(user));
+  if (!cleanFeedbackId) throw new Error("feedback not found");
+  if (!userObjectId) throw new Error("missing user object id");
+
+  const existingFeedback = await getFeedbackItemOrThrow(cleanFeedbackId);
+  assertMyFeedbackIsMutable(existingFeedback, userObjectId);
+  await sqlQuery(deleteUserFeedbackSql, { feedbackId: cleanFeedbackId, userObjectId });
+  return { ok: true };
+}
+
 export async function getAdminFeedback(query: any) {
   const status = normalizeOptionalString(query?.status);
   const sentiment = normalizeOptionalString(query?.sentiment);
@@ -215,6 +260,30 @@ export async function updateAdminFeedbackStatus(feedbackId: string, payload: any
     ok: true,
     item: await getFeedbackItemOrThrow(cleanFeedbackId),
   };
+}
+
+export async function markAdminFeedbackRead(feedbackId: string, user: any) {
+  const cleanFeedbackId = String(feedbackId || "").trim();
+  if (!cleanFeedbackId) throw new Error("feedback not found");
+
+  const item = await getFeedbackItemOrThrow(cleanFeedbackId);
+  if (String(item.status || "").trim().toUpperCase() === "OPEN") {
+    await sqlQuery(updateUserFeedbackStatusSql, {
+      feedbackId: cleanFeedbackId,
+      status: "IN_BEHANDELING",
+      actor: getUserAuditActor(user),
+    });
+  }
+
+  return { ok: true, item: await getFeedbackItemOrThrow(cleanFeedbackId) };
+}
+
+export async function deleteAdminFeedback(feedbackId: string) {
+  const cleanFeedbackId = String(feedbackId || "").trim();
+  if (!cleanFeedbackId) throw new Error("feedback not found");
+  await getFeedbackItemOrThrow(cleanFeedbackId);
+  await sqlQuery(deleteUserFeedbackSql, { feedbackId: cleanFeedbackId, userObjectId: null });
+  return { ok: true };
 }
 
 export async function upsertAdminFeedbackReply(feedbackId: string, payload: any, user: any) {

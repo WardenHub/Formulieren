@@ -41,6 +41,7 @@ import { ArrowBigRightIcon } from "../../components/ui/arrow-big-right.jsx";
 import { MessageSquarePlusIcon } from "../../components/ui/message-square-plus.jsx";
 import {
   NoteEditorToolbar,
+  NoteLinkDialog,
   NoteRichTextContent,
   applyMarkdownLink,
   insertRawText,
@@ -50,7 +51,7 @@ import {
 
 const NOTE_KIND_OPTIONS = [
   { key: "NOTE", label: "Notitie", tone: "neutral", Icon: MessageCircleMore },
-  { key: "HANDOVER", label: "Overdracht", tone: "active", Icon: HandHelping },
+  { key: "HANDOVER", label: "Overdracht", tone: "success", Icon: HandHelping },
   { key: "WARNING", label: "Waarschuwing", tone: "danger", Icon: TriangleAlert },
 ];
 
@@ -101,7 +102,7 @@ function getNoteSurfaceClass(noteKind) {
     noteKind === "WARNING"
       ? "AFGEWEZEN"
       : noteKind === "HANDOVER"
-        ? "OPEN"
+        ? "AFGEHANDELD"
         : "GEPLAND"
   );
 }
@@ -883,61 +884,18 @@ export default function NotesTab({
                       }
                       onInsertEmoji={(emojiValue) => insertEmojiIntoTarget("edit", emojiValue)}
                     />
-                    {linkDraft.open && linkDraft.target === "edit" ? (
-                      <div className="card ember-inline-assist-panel ember-inline-assist-panel--editor">
-                        <div style={{ fontWeight: 800 }}>Hyperlink invoegen</div>
-                        <div style={{ display: "grid", gap: 10, width: "100%" }}>
-                          <input
-                            className="cf-input"
-                            value={linkDraft.label}
-                            onChange={(event) =>
-                              setLinkDraft((prev) => ({ ...prev, label: event.target.value }))
-                            }
-                            placeholder="Linktekst"
-                          />
-                          <input
-                            className="cf-input"
-                            value={linkDraft.url}
-                            autoFocus
-                            onChange={(event) =>
-                              setLinkDraft((prev) => ({ ...prev, url: event.target.value }))
-                            }
-                            onKeyDown={(event) => {
-                              if (event.key === "Enter") {
-                                event.preventDefault();
-                                applyLinkToTarget();
-                              }
-                              if (event.key === "Escape") {
-                                event.preventDefault();
-                                closeLinkEditor();
-                                focusEditor("edit", linkDraft.selectionStart, linkDraft.selectionEnd);
-                              }
-                            }}
-                            placeholder="https://..."
-                          />
-                        </div>
-                        <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, width: "100%" }}>
-                          <button
-                            type="button"
-                            className="btn btn-secondary"
-                            onClick={() => {
-                              closeLinkEditor();
-                              focusEditor("edit", linkDraft.selectionStart, linkDraft.selectionEnd);
-                            }}
-                          >
-                            Annuleren
-                          </button>
-                          <button
-                            type="button"
-                            className="btn"
-                            disabled={!isHttpUrl(normalizeHttpUrl(linkDraft.url))}
-                            onClick={applyLinkToTarget}
-                          >
-                            Link invoegen
-                          </button>
-                        </div>
-                      </div>
-                    ) : null}
+                    <NoteLinkDialog
+                      open={linkDraft.open && linkDraft.target === "edit"}
+                      label={linkDraft.label}
+                      url={linkDraft.url}
+                      onLabelChange={(label) => setLinkDraft((prev) => ({ ...prev, label }))}
+                      onUrlChange={(url) => setLinkDraft((prev) => ({ ...prev, url }))}
+                      onConfirm={applyLinkToTarget}
+                      onCancel={() => {
+                        closeLinkEditor();
+                        focusEditor("edit", linkDraft.selectionStart, linkDraft.selectionEnd);
+                      }}
+                    />
                     <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                       {editingDraft.mentions.map((mention) => (
                         <button
@@ -1041,7 +999,6 @@ export default function NotesTab({
                                     title={count > 0 ? `${count} reactie(s)` : "Reageer"}
                                     onClick={async () => {
                                       await toggleInstallationNoteReaction(code, note.installation_note_id, reactionOption.key);
-                                      setReactionMenuNoteId("");
                                       await loadNotes({ includeArchived: showArchived, markRead: false });
                                     }}
                                   >
@@ -1138,61 +1095,18 @@ export default function NotesTab({
               onInsertLink={() => openLinkEditor("draft", draft.body_markdown, textareaRef.current)}
               onInsertEmoji={(emojiValue) => insertEmojiIntoTarget("draft", emojiValue)}
             />
-            {linkDraft.open && linkDraft.target === "draft" ? (
-              <div className="card ember-inline-assist-panel ember-inline-assist-panel--editor">
-                <div style={{ fontWeight: 800 }}>Hyperlink invoegen</div>
-                <div style={{ display: "grid", gap: 10, width: "100%" }}>
-                  <input
-                    className="cf-input"
-                    value={linkDraft.label}
-                    onChange={(event) =>
-                      setLinkDraft((prev) => ({ ...prev, label: event.target.value }))
-                    }
-                    placeholder="Linktekst"
-                  />
-                  <input
-                    className="cf-input"
-                    value={linkDraft.url}
-                    autoFocus
-                    onChange={(event) =>
-                      setLinkDraft((prev) => ({ ...prev, url: event.target.value }))
-                    }
-                    onKeyDown={(event) => {
-                      if (event.key === "Enter") {
-                        event.preventDefault();
-                        applyLinkToTarget();
-                      }
-                      if (event.key === "Escape") {
-                        event.preventDefault();
-                        closeLinkEditor();
-                        focusEditor("draft", linkDraft.selectionStart, linkDraft.selectionEnd);
-                      }
-                    }}
-                    placeholder="https://..."
-                  />
-                </div>
-                <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, width: "100%" }}>
-                  <button
-                    type="button"
-                    className="btn btn-secondary"
-                    onClick={() => {
-                      closeLinkEditor();
-                      focusEditor("draft", linkDraft.selectionStart, linkDraft.selectionEnd);
-                    }}
-                  >
-                    Annuleren
-                  </button>
-                  <button
-                    type="button"
-                    className="btn"
-                    disabled={!isHttpUrl(normalizeHttpUrl(linkDraft.url))}
-                    onClick={applyLinkToTarget}
-                  >
-                    Link invoegen
-                  </button>
-                </div>
-              </div>
-            ) : null}
+            <NoteLinkDialog
+              open={linkDraft.open && linkDraft.target === "draft"}
+              label={linkDraft.label}
+              url={linkDraft.url}
+              onLabelChange={(label) => setLinkDraft((prev) => ({ ...prev, label }))}
+              onUrlChange={(url) => setLinkDraft((prev) => ({ ...prev, url }))}
+              onConfirm={applyLinkToTarget}
+              onCancel={() => {
+                closeLinkEditor();
+                focusEditor("draft", linkDraft.selectionStart, linkDraft.selectionEnd);
+              }}
+            />
 
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
               {draft.mentions.map((mention) => (

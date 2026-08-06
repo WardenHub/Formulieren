@@ -24,7 +24,9 @@ app.listen(port, () => {
   for (const delay of delays) {
     setTimeout(() => {
       markRuntimeRendererWarmUp("startup");
-      void warmUpHtmlFormReportRenderer();
+      void warmUpHtmlFormReportRenderer().catch((err) => {
+        console.warn("[form report pdf] startup warm-up skipped", err);
+      });
     }, delay);
   }
 });

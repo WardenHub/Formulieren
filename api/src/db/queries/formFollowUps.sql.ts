@@ -73,6 +73,50 @@ values
 )
 `;
 
+export const insertManualFormFollowUpSql = `
+insert into dbo.FormFollowUpAction
+(
+  form_instance_id,
+  installation_id,
+  atrium_installation_code,
+  source_question_name,
+  source_question_type,
+  source_row_index,
+  source_item_code,
+  source_fingerprint,
+  kind,
+  workflow_title,
+  workflow_description,
+  category,
+  certificate_impact,
+  status,
+  status_set_at,
+  status_set_by,
+  created_by
+)
+output inserted.follow_up_action_id
+select
+  @formInstanceId,
+  i.installation_id,
+  i.atrium_installation_code,
+  case when @kind = N'report-only' then N'Handmatige rapportopmerking' else N'Handmatig actiepunt' end,
+  case when @kind = N'report-only' then N'manual-report' else N'manual' end,
+  null,
+  null,
+  @sourceFingerprint,
+  @kind,
+  @workflowTitle,
+  @workflowDescription,
+  case when @kind = N'report-only' then N'rapportopmerking' else N'handmatig' end,
+  @certificateImpact,
+  case when @kind = N'report-only' then N'INFORMATIEF' else N'OPEN' end,
+  sysutcdatetime(),
+  @actor,
+  @actor
+from dbo.Installation i
+where i.atrium_installation_code = @atriumInstallationCode;
+`;
+
 export const updateFormFollowUpContentSql = `
 update dbo.FormFollowUpAction
 set

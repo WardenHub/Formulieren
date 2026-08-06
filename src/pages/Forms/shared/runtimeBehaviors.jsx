@@ -62,14 +62,37 @@ function getQuestionGuidanceItems(guidanceByQuestion, questionName) {
   const key = normalizeGuidanceQuestionName(questionName);
   if (!key) return [];
   const items = guidanceByQuestion?.[key];
-  return Array.isArray(items) ? items : [];
+  return filterGuidanceItemsWithContent(items);
 }
 
 function getMatrixRowGuidanceItems(guidanceByMatrixRow, questionName, matrixRowKey) {
   const lookupKey = buildMatrixGuidanceLookupKey(questionName, matrixRowKey);
   if (!lookupKey) return [];
   const items = guidanceByMatrixRow?.[lookupKey];
-  return Array.isArray(items) ? items : [];
+  return filterGuidanceItemsWithContent(items);
+}
+
+function filterGuidanceItemsWithContent(items) {
+  if (!Array.isArray(items)) return [];
+  return items.filter((item) => {
+    if (!item || typeof item !== "object") return false;
+    return [
+      item.content,
+      item.content_html,
+      item.content_markdown,
+      item.body,
+      item.body_html,
+      item.body_markdown,
+      item.text,
+      item.description,
+      item.url,
+      item.href,
+      item.image_url,
+      item.imageUrl,
+      item.video_url,
+      item.videoUrl,
+    ].some((value) => String(value ?? "").trim());
+  });
 }
 
 function getQuestionGuidanceAnchor(questionRoot) {
@@ -1044,10 +1067,12 @@ export function normalizeAvailabilityRows(model, availabilityAutoStateRef) {
     const prevState = availabilityAutoStateRef.current[stateKey] || {};
     availabilityAutoStateRef.current[stateKey] = { ...prevState };
 
-    const urenPerDag = formatMaybeNumber(
-      computeHoursBetween(row.tijd_begin, row.tijd_einde),
-      3
+    const isFullDay = row.hele_dag === true || ["1", "true", "ja", "yes"].includes(
+      String(row.hele_dag || "").trim().toLowerCase()
     );
+    const urenPerDag = isFullDay
+      ? "24"
+      : formatMaybeNumber(computeHoursBetween(row.tijd_begin, row.tijd_einde), 3);
 
     if (!valuesEqualLoose(row.uren_pd_niet_beschikbaar, urenPerDag)) {
       row.uren_pd_niet_beschikbaar = urenPerDag;

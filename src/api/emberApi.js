@@ -274,6 +274,13 @@ export function getFormInstance(code, formInstanceId) {
   );
 }
 
+export function prepareOfflineFormPackage(code, formInstanceId, payload = {}) {
+  return apiPost(
+    `/installations/${encodeURIComponent(code)}/forms/instances/${encodeURIComponent(formInstanceId)}/offline-package`,
+    payload ?? {}
+  );
+}
+
 export function putFormInstanceMetadata(code, formInstanceId, payload) {
   return apiPut(
     `/installations/${encodeURIComponent(code)}/forms/instances/${encodeURIComponent(formInstanceId)}/metadata`,
@@ -561,6 +568,13 @@ export function postFormsMonitorFollowUpStatusAction(followUpActionId, payload) 
   );
 }
 
+export function postFormsMonitorManualFollowUp(formInstanceId, payload) {
+  return apiPost(
+    `/forms-monitor/${encodeURIComponent(formInstanceId)}/follow-ups`,
+    payload ?? {}
+  );
+}
+
 export function putFormsMonitorFollowUpNote(followUpActionId, payload) {
   return apiPut(
     `/forms-monitor/follow-ups/${encodeURIComponent(followUpActionId)}/note`,
@@ -746,6 +760,14 @@ export function createMyFeedback(payload = {}) {
   return apiPost("/me/feedback", payload ?? {});
 }
 
+export function putMyFeedback(feedbackId, payload = {}) {
+  return apiPut(`/me/feedback/${encodeURIComponent(feedbackId)}`, payload ?? {});
+}
+
+export function deleteMyFeedback(feedbackId) {
+  return apiDelete(`/me/feedback/${encodeURIComponent(feedbackId)}`);
+}
+
 export function getAdminFeedback(params = {}) {
   const qs = new URLSearchParams();
 
@@ -767,6 +789,14 @@ export function putAdminFeedbackStatus(feedbackId, payload = {}) {
 
 export function putAdminFeedbackReply(feedbackId, payload = {}) {
   return apiPut(`/admin/feedback/${encodeURIComponent(feedbackId)}/reply`, payload ?? {});
+}
+
+export function markAdminFeedbackRead(feedbackId) {
+  return apiPost(`/admin/feedback/${encodeURIComponent(feedbackId)}/read`, {});
+}
+
+export function deleteAdminFeedback(feedbackId) {
+  return apiDelete(`/admin/feedback/${encodeURIComponent(feedbackId)}`);
 }
 
 export function getMyNotifications(params = {}) {

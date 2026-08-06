@@ -16,6 +16,7 @@ import { ArrowBigRightIcon } from "@/components/ui/arrow-big-right";
 import { RefreshCWIcon } from "@/components/ui/refresh-cw";
 import { RefreshCWOffIcon } from "@/components/ui/refresh-cw-off";
 import { BadgeAlertIcon } from "@/components/ui/badge-alert";
+import { LayoutGridIcon, LayoutListIcon } from "@/components/ui/view-toggle-icons";
 
 import {
   OVERVIEW_LS_KEY,
@@ -42,6 +43,46 @@ const STATUS_GROUP_OPTIONS = [
 ];
 
 const DEFAULT_SELECTED_STATUS_GROUPS = ["TODO"];
+const VIEW_MODES = new Set(["list", "grid"]);
+
+function buildDefaultFilters() {
+  return {
+    q: "",
+    mine: true,
+    assignedUserObjectId: "",
+    assignedSearch: "",
+    unassignedOnly: false,
+    onlyActionable: false,
+    noRemainingOpenActionPoints: false,
+    selectedStatusGroups: DEFAULT_SELECTED_STATUS_GROUPS,
+    actionStatusFilter: "ALL",
+    take: 200,
+    skip: 0,
+  };
+}
+
+function buildInitialFilters(storedState) {
+  const storedFilters = storedState?.filters || {};
+  const defaults = buildDefaultFilters();
+
+  return {
+    ...defaults,
+    q: storedFilters.q ?? defaults.q,
+    mine: storedFilters.mine ?? defaults.mine,
+    assignedUserObjectId: storedFilters.assignedUserObjectId ?? defaults.assignedUserObjectId,
+    assignedSearch: storedFilters.assignedSearch ?? defaults.assignedSearch,
+    unassignedOnly: storedFilters.unassignedOnly ?? defaults.unassignedOnly,
+    onlyActionable: storedFilters.onlyActionable ?? defaults.onlyActionable,
+    noRemainingOpenActionPoints:
+      storedFilters.noRemainingOpenActionPoints ?? defaults.noRemainingOpenActionPoints,
+    selectedStatusGroups: Array.isArray(storedFilters.selectedStatusGroups)
+      ? storedFilters.selectedStatusGroups
+      : Array.isArray(storedFilters.selectedStatuses) && storedFilters.selectedStatuses.length > 0
+        ? ["TODO"]
+        : defaults.selectedStatusGroups,
+    actionStatusFilter: storedFilters.actionStatusFilter ?? defaults.actionStatusFilter,
+  };
+}
 
 function cx(...parts) {
   return parts.filter(Boolean).join(" ");
@@ -121,6 +162,8 @@ function SummaryTag({ children, title, tone = "default", active = false, onClick
 
   if (tone === "active") cls = "monitor-tag monitor-tag--active";
   if (tone === "warning") cls = "monitor-tag monitor-tag--warning";
+  if (tone === "waiting") cls = "monitor-tag monitor-tag--waiting";
+  if (tone === "planned") cls = "monitor-tag monitor-tag--planned";
   if (tone === "success") cls = "monitor-tag monitor-tag--success";
   if (tone === "danger") cls = "monitor-tag monitor-tag--danger";
   if (tone === "muted" || tone === "subtle") cls = "monitor-tag monitor-tag--muted";
@@ -199,7 +242,7 @@ function renderAssignedOwnerChip(row, ownerEntry, onClick = null) {
         alt={label}
         className="avatar-badge monitor-assignee-avatar"
       />
-      <span className="monitor-assignee-chip__text">Toegewezen aan {label}</span>
+      <span className="monitor-assignee-chip__text">{label}</span>
     </>
   );
 
@@ -251,26 +294,13 @@ export default function FormsMonitorPage() {
   const [statusInfoOpen, setStatusInfoOpen] = useState(false);
   const [statusInfoPopupStyle, setStatusInfoPopupStyle] = useState(null);
 
-  const [filters, setFilters] = useState({
-    q: storedState?.filters?.q ?? "",
-    mine: storedState?.filters?.mine ?? true,
-    assignedUserObjectId: storedState?.filters?.assignedUserObjectId ?? "",
-    assignedSearch: storedState?.filters?.assignedSearch ?? "",
-    unassignedOnly: storedState?.filters?.unassignedOnly ?? false,
-    onlyActionable: storedState?.filters?.onlyActionable ?? false,
-    noRemainingOpenActionPoints: storedState?.filters?.noRemainingOpenActionPoints ?? false,
-    selectedStatusGroups: Array.isArray(storedState?.filters?.selectedStatusGroups)
-      ? storedState.filters.selectedStatusGroups
-      : Array.isArray(storedState?.filters?.selectedStatuses) && storedState.filters.selectedStatuses.length > 0
-        ? ["TODO"]
-        : DEFAULT_SELECTED_STATUS_GROUPS,
-    actionStatusFilter: storedState?.filters?.actionStatusFilter ?? "ALL",
-    take: 200,
-    skip: 0,
-  });
+  const [filters, setFilters] = useState(buildInitialFilters(storedState));
 
   const [items, setItems] = useState([]);
   const [autoRefreshEnabled, setAutoRefreshEnabled] = useState(storedState?.autoRefreshEnabled ?? false);
+  const [viewMode, setViewMode] = useState(
+    VIEW_MODES.has(storedState?.viewMode) ? storedState.viewMode : "list"
+  );
   const [directoryItems, setDirectoryItems] = useState([]);
   const [viewerUserObjectId, setViewerUserObjectId] = useState(null);
 
@@ -278,7 +308,7 @@ export default function FormsMonitorPage() {
     return buildEffectiveStatuses(filters.selectedStatusGroups);
   }, [filters.selectedStatusGroups]);
 
-  const visibleItems = useMemo(() => {
+  const baseVisibleItems = useMemo(() => {
     const selectedStatusesSet = new Set(effectiveSelectedStatuses || []);
 
     return (items || [])
@@ -292,30 +322,53 @@ export default function FormsMonitorPage() {
         return getRemainingOpenActionCount(x) > 0;
       })
       .filter((x) => {
-        if (!filters.actionStatusFilter || filters.actionStatusFilter === "ALL") return true;
-        if (filters.actionStatusFilter === "OPEN") return getRemainingOpenActionCount(x) > 0;
-        return rowHasMonitorActionFilter(x, filters.actionStatusFilter);
+        return true;
       });
   }, [items, filters, effectiveSelectedStatuses]);
 
+  const visibleItems = useMemo(() => {
+    return baseVisibleItems.filter((x) => {
+      if (!filters.actionStatusFilter || filters.actionStatusFilter === "ALL") return true;
+      if (filters.actionStatusFilter === "OPEN") return getRemainingOpenActionCount(x) > 0;
+      return rowHasMonitorActionFilter(x, filters.actionStatusFilter);
+    });
+  }, [baseVisibleItems, filters.actionStatusFilter]);
+
   const visibleTotals = useMemo(() => {
-    const base = buildMonitorVisibleTotals(visibleItems);
-    const fallback = visibleItems.reduce(
+    const base = buildMonitorVisibleTotals(baseVisibleItems);
+    const fallback = baseVisibleItems.reduce(
       (acc, row) => {
+        acc.planningNeeded += getPlanningNeededCount(row);
         acc.open += getOpenCount(row);
         acc.waiting += getWaitingCount(row);
         acc.done += getDoneCount(row);
         return acc;
       },
-      { open: 0, waiting: 0, done: 0 }
+      { planningNeeded: 0, open: 0, waiting: 0, done: 0 }
     );
 
     return {
+      planningNeeded: Number(base?.planningNeeded ?? fallback.planningNeeded),
       open: Number(base?.open ?? fallback.open),
       waiting: Number(base?.waiting ?? fallback.waiting),
       done: Number(base?.done ?? fallback.done),
     };
-  }, [visibleItems]);
+  }, [baseVisibleItems]);
+
+  const hasActiveFilters = useMemo(() => {
+    const defaults = buildDefaultFilters();
+    return (
+      filters.q !== defaults.q ||
+      filters.mine !== defaults.mine ||
+      filters.assignedUserObjectId !== defaults.assignedUserObjectId ||
+      filters.assignedSearch !== defaults.assignedSearch ||
+      filters.unassignedOnly !== defaults.unassignedOnly ||
+      filters.onlyActionable !== defaults.onlyActionable ||
+      filters.noRemainingOpenActionPoints !== defaults.noRemainingOpenActionPoints ||
+      JSON.stringify(filters.selectedStatusGroups || []) !== JSON.stringify(defaults.selectedStatusGroups || []) ||
+      filters.actionStatusFilter !== defaults.actionStatusFilter
+    );
+  }, [filters]);
 
   const directoryByUserObjectId = useMemo(() => {
     const next = new Map();
@@ -326,6 +379,13 @@ export default function FormsMonitorPage() {
     }
     return next;
   }, [directoryItems]);
+
+  const selectedAssigneeLabel = useMemo(() => {
+    const userObjectId = String(filters.assignedUserObjectId || "").trim();
+    if (!userObjectId) return "";
+
+    return getDirectoryDisplayName(directoryByUserObjectId.get(userObjectId)) || "Geselecteerde collega";
+  }, [directoryByUserObjectId, filters.assignedUserObjectId]);
 
   const actorLookup = useMemo(() => buildDirectoryActorLookup(directoryItems), [directoryItems]);
   const startupLoader = useApiStartupLoader(listLoading, {
@@ -343,8 +403,8 @@ export default function FormsMonitorPage() {
   }
 
   useEffect(() => {
-    saveStateToStorage(OVERVIEW_LS_KEY, { filters, autoRefreshEnabled });
-  }, [filters, autoRefreshEnabled]);
+    saveStateToStorage(OVERVIEW_LS_KEY, { filters, autoRefreshEnabled, viewMode });
+  }, [filters, autoRefreshEnabled, viewMode]);
 
   useEffect(() => {
     function onDocMouseDown(e) {
@@ -484,6 +544,12 @@ export default function FormsMonitorPage() {
     setFilters((prev) => ({ ...prev, q: "" }));
   }
 
+  async function clearAllFilters() {
+    const next = buildDefaultFilters();
+    setFilters(next);
+    await loadList(next);
+  }
+
   function openRow(row) {
     navigate(`/monitor/formulieren/${row.form_instance_id}`);
   }
@@ -546,9 +612,11 @@ export default function FormsMonitorPage() {
   }
 
   async function applyAssignedUserSelection(userObjectId) {
+    const nextUserObjectId = String(userObjectId || "").trim();
     const next = {
       ...filters,
-      assignedUserObjectId: String(userObjectId || "").trim(),
+      assignedUserObjectId: nextUserObjectId,
+      assignedSearch: nextUserObjectId ? filters.assignedSearch : "",
       unassignedOnly: false,
     };
     setFilters(next);
@@ -594,6 +662,135 @@ export default function FormsMonitorPage() {
 
     openPopupNearButton(statusInfoBtnRef.current, setStatusInfoPopupStyle, 460);
     setStatusInfoOpen(true);
+  }
+
+  function getRowPresentation(row) {
+    const ownerEntry = directoryByUserObjectId.get(
+      String(row?.assigned_user_object_id || "").trim()
+    );
+    const actionCountsRaw = buildMonitorRowActionCounts(row);
+
+    return {
+      ownerEntry,
+      actionCounts: {
+        open: Number(actionCountsRaw?.open ?? getOpenCount(row)),
+        planningNeeded: Number(actionCountsRaw?.planningNeeded ?? getPlanningNeededCount(row)),
+        waiting: Number(actionCountsRaw?.waiting ?? getWaitingCount(row)),
+        done: Number(actionCountsRaw?.done ?? getDoneCount(row)),
+      },
+      isReady: hasNoRemainingOpenActionPoints(row),
+      id: String(row.form_instance_id),
+    };
+  }
+
+  function openFollowForms(event, row) {
+    event.stopPropagation();
+    navigate(`/monitor/formulieren/${row.form_instance_id}?section=follow_forms`);
+  }
+
+  function renderGridRow(row) {
+    const { ownerEntry, actionCounts, isReady, id } = getRowPresentation(row);
+
+    return (
+      <div
+        key={row.form_instance_id}
+        className={`${getMonitorRowSurfaceClass(row)} monitor-grid-row`}
+        role="button"
+        tabIndex={0}
+        onClick={() => openRow(row)}
+        onKeyDown={(event) => {
+          if (event.currentTarget !== event.target) return;
+          if (event.key !== "Enter" && event.key !== " ") return;
+          event.preventDefault();
+          openRow(row);
+        }}
+        title="Open formulierafhandeling"
+      >
+        <div className="monitor-grid-row__cell monitor-grid-row__form" data-label="Formulier">
+          <div className="monitor-dossier-row__title">
+            {row.form_name || row.form_code || `Formulier ${row.form_instance_id}`}
+          </div>
+          <div className="monitor-dossier-row__title-tags">
+            <SummaryTag title="Documentnummer" tone="muted">{row.form_instance_id ?? "-"}</SummaryTag>
+            <SummaryTag title="Formulierversie" tone="muted">v{row.version_label || "-"}</SummaryTag>
+            {row.parent_instance_id ? (
+              <button
+                type="button"
+                className="monitor-tag monitor-tag--active monitor-link-tag"
+                title="Open vervolgformulieren"
+                onClick={(event) => openFollowForms(event, row)}
+              >
+                vervolg op formulier #{row.parent_instance_id}
+              </button>
+            ) : null}
+            {row.relations?.has_children ? (
+              <button
+                type="button"
+                className="monitor-tag monitor-tag--active monitor-link-tag"
+                title="Open vervolgformulieren"
+                onClick={(event) => openFollowForms(event, row)}
+              >
+                heeft vervolgformulier
+                {row.relations?.latest_child_form_instance_id != null
+                  ? ` #${row.relations.latest_child_form_instance_id}`
+                  : ""}
+              </button>
+            ) : null}
+            {isReady ? (
+              <SummaryTag title="Geen resterende openstaande actiepunten" tone="ready">
+                geen openstaande actiepunten
+              </SummaryTag>
+            ) : null}
+          </div>
+        </div>
+
+        <div className="monitor-grid-row__cell" data-label="Installatie">
+          <div className="monitor-dossier-row__sub">{compactInstallationLine(row) || "-"}</div>
+          {row.instance_title ? <div className="monitor-dossier-row__meta">{row.instance_title}</div> : null}
+        </div>
+
+        <div className="monitor-grid-row__cell" data-label="Toegewezen aan">
+          {row.assigned_display_name_snapshot || row.assigned_email_snapshot ? (
+            renderAssignedOwnerChip(row, ownerEntry)
+          ) : (
+            <span className="ember-page-subtitle">Niet toegewezen</span>
+          )}
+        </div>
+
+        <div className="monitor-grid-row__cell" data-label="Actiepunten">
+          <div className="monitor-row-action-chips">
+            <SummaryTag title="Aantal openstaande workflowacties" tone="active">Open {actionCounts.open}</SummaryTag>
+            <SummaryTag title="Aantal actiepunten waarvoor planning nodig is" tone="warning">Planning nodig {actionCounts.planningNeeded}</SummaryTag>
+            <SummaryTag title="Aantal wacht op derden" tone="warning">Wachten op derden {actionCounts.waiting}</SummaryTag>
+            <SummaryTag title="Aantal afgehandelde of geplande actiepunten" tone="success">Afgehandeld {actionCounts.done}</SummaryTag>
+          </div>
+        </div>
+
+        <div className="monitor-grid-row__cell monitor-grid-row__status" data-label="Status">
+          <StatusTag status={row.status} />
+        </div>
+
+        <div className="monitor-grid-row__cell monitor-grid-row__audit" data-label="Laatste wijziging">
+          <div>{formatDateTime(row.updated_at || row.created_at)}</div>
+          <div>{getLastModifiedBy(row, actorLookup)}</div>
+        </div>
+
+        <div
+          className="monitor-grid-row__cell monitor-grid-row__open"
+          aria-hidden="true"
+          onMouseEnter={() => openIconRefById.current[id]?.startAnimation?.()}
+          onMouseLeave={() => openIconRefById.current[id]?.stopAnimation?.()}
+        >
+          <ArrowBigRightIcon
+            ref={(element) => {
+              openIconRefById.current[id] = element;
+            }}
+            size={18}
+            className="nav-anim-icon"
+          />
+        </div>
+      </div>
+    );
   }
 
   return (
@@ -660,6 +857,15 @@ export default function FormsMonitorPage() {
                 title="Toon alleen formulieren zonder toegewezen behandelaar"
                 onClick={toggleUnassignedOnly}
               />
+
+              {filters.assignedUserObjectId ? (
+                <FilterChip
+                  active
+                  label={selectedAssigneeLabel}
+                  title="Wis het filter op deze toegewezen collega"
+                  onClick={() => void applyAssignedUserSelection("")}
+                />
+              ) : null}
 
               <input
                 className="input"
@@ -800,6 +1006,12 @@ export default function FormsMonitorPage() {
                   Zoektekst wissen
                 </button>
               ) : null}
+
+              {hasActiveFilters ? (
+                <button type="button" className="btn btn-secondary" onClick={() => void clearAllFilters()}>
+                  Filters wissen
+                </button>
+              ) : null}
             </div>
           </div>
         </section>
@@ -810,6 +1022,30 @@ export default function FormsMonitorPage() {
           <div className="monitor-results-head">
             <div className="monitor-results-title-row">
               <div className="monitor-results-title">Formulierafhandelingen</div>
+
+              <div className="monitor-view-toggle" role="group" aria-label="Kies een weergave">
+                <button
+                  type="button"
+                  className={`icon-btn monitor-view-toggle__button ${viewMode === "list" ? "monitor-view-toggle__button--active" : ""}`}
+                  aria-label="Lijstweergave"
+                  aria-pressed={viewMode === "list"}
+                  title="Lijstweergave"
+                  onClick={() => setViewMode("list")}
+                >
+                  <LayoutListIcon size={18} className="nav-anim-icon" />
+                </button>
+
+                <button
+                  type="button"
+                  className={`icon-btn monitor-view-toggle__button ${viewMode === "grid" ? "monitor-view-toggle__button--active" : ""}`}
+                  aria-label="Gridweergave"
+                  aria-pressed={viewMode === "grid"}
+                  title="Gridweergave"
+                  onClick={() => setViewMode("grid")}
+                >
+                  <LayoutGridIcon size={18} className="nav-anim-icon" />
+                </button>
+              </div>
 
               <button
                 ref={infoBtnRef}
@@ -829,20 +1065,20 @@ export default function FormsMonitorPage() {
             </div>
           </div>
 
-          {!listLoading && visibleItems.length > 0 && (
+          {!listLoading && (
             <div className="monitor-summary-chips">
               <SummaryTag
-                title="Toon formulieren met openstaande actiepunten; inclusief planning nodig en wachten op derden"
+                title="Toon formulieren met openstaande workflowacties"
                 tone="active"
                 active={filters.actionStatusFilter === "OPEN"}
                 onClick={() => setActionStatusFilter("OPEN")}
               >
-                Open {visibleTotals.open + visibleTotals.planningNeeded + visibleTotals.waiting}
+                Open {visibleTotals.open}
               </SummaryTag>
 
               <SummaryTag
                 title="Toon formulieren met actiepunten waarvoor planning nodig is"
-                tone="warning"
+                tone="waiting"
                 active={filters.actionStatusFilter === "PLANNING_NODIG"}
                 onClick={() => setActionStatusFilter("PLANNING_NODIG")}
               >
@@ -859,7 +1095,7 @@ export default function FormsMonitorPage() {
               </SummaryTag>
 
               <SummaryTag
-                title="Toon formulieren met afgehandelde actiepunten"
+                title="Toon formulieren met afgehandelde of geplande actiepunten"
                 tone="success"
                 active={filters.actionStatusFilter === "DONE"}
                 onClick={() => setActionStatusFilter("DONE")}
@@ -894,6 +1130,21 @@ export default function FormsMonitorPage() {
             <ApiStartupLoader state={startupLoader} inlineLabel="laden; monitor" />
           ) : visibleItems.length === 0 ? (
             <div className="muted">Geen formulieren gevonden.</div>
+          ) : viewMode === "grid" ? (
+            <div className="monitor-grid-scroll">
+              <div className="monitor-grid" role="region" aria-label="Formulierafhandelingen">
+                <div className="monitor-grid__header">
+                  <div>Formulier</div>
+                  <div>Installatie</div>
+                  <div>Toegewezen aan</div>
+                  <div>Actiepunten</div>
+                  <div>Status</div>
+                  <div>Laatste wijziging</div>
+                  <div aria-hidden="true" />
+                </div>
+                {visibleItems.map(renderGridRow)}
+              </div>
+            </div>
           ) : (
             <div className="monitor-list">
               {visibleItems.map((row) => {
@@ -903,6 +1154,9 @@ export default function FormsMonitorPage() {
                 const actionCountsRaw = buildMonitorRowActionCounts(row);
                 const actionCounts = {
                   open: Number(actionCountsRaw?.open ?? getOpenCount(row)),
+                  planningNeeded: Number(
+                    actionCountsRaw?.planningNeeded ?? getPlanningNeededCount(row)
+                  ),
                   waiting: Number(actionCountsRaw?.waiting ?? getWaitingCount(row)),
                   done: Number(actionCountsRaw?.done ?? getDoneCount(row)),
                 };
@@ -985,15 +1239,19 @@ export default function FormsMonitorPage() {
                       ) : null}
 
                       <div className="monitor-row-action-chips">
-                        <SummaryTag title="Aantal openstaande actiepunten; inclusief wachten op derden" tone="active">
-                          Open {actionCounts.open + actionCounts.waiting}
+                        <SummaryTag title="Aantal openstaande workflowacties" tone="active">
+                          Open {actionCounts.open}
+                        </SummaryTag>
+
+                        <SummaryTag title="Aantal actiepunten waarvoor planning nodig is" tone="warning">
+                          Planning nodig {actionCounts.planningNeeded}
                         </SummaryTag>
 
                         <SummaryTag title="Aantal wacht op derden" tone="warning">
                           Wachten op derden {actionCounts.waiting}
                         </SummaryTag>
 
-                        <SummaryTag title="Aantal afgehandelde actiepunten" tone="success">
+                        <SummaryTag title="Aantal afgehandelde of geplande actiepunten" tone="success">
                           Afgehandeld {actionCounts.done}
                         </SummaryTag>
                       </div>

@@ -44,6 +44,29 @@ export function stripHandledMatrixValidatorsFromSurveyJson(surveyJson) {
   return next;
 }
 
+export function injectRuntimeMatrixEnhancements(surveyJson) {
+  const next = deepClone(surveyJson);
+
+  walkElements(next, (el) => {
+    if (String(el?.type || "").trim() !== "matrixdynamic") return;
+    if (String(el?.name || "").trim() !== "a2_buitenbedrijfstellingen") return;
+    if (!Array.isArray(el.columns)) return;
+    if (el.columns.some((column) => String(column?.name || "").trim() === "hele_dag")) return;
+
+    const afterTimeIndex = el.columns.findIndex(
+      (column) => String(column?.name || "").trim() === "tijd_einde"
+    );
+    el.columns.splice(afterTimeIndex >= 0 ? afterTimeIndex + 1 : el.columns.length, 0, {
+      name: "hele_dag",
+      title: "Hele dag",
+      cellType: "boolean",
+      width: "12%",
+    });
+  });
+
+  return next;
+}
+
 export function injectChoicesIntoSurveyJson(surveyJson, prefillPayload) {
   const payloadChoices = prefillPayload?.choices || prefillPayload?.prefill?.choices || {};
   const next = deepClone(surveyJson);

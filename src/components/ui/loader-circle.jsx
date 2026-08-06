@@ -4,43 +4,25 @@ import { forwardRef, useCallback, useImperativeHandle, useRef } from "react";
 
 import { cn } from "@/lib/utils";
 
-const PLUS_VARIANTS = {
-  normal: {
-    pathLength: 1,
-    opacity: 1,
-    transition: {
-      duration: 0.3,
-    },
-  },
+const G_VARIANTS = {
+  normal: { rotate: 0 },
   animate: {
-    pathLength: [0, 1],
-    opacity: [0, 1],
+    rotate: 360,
     transition: {
-      pathLength: { duration: 0.4, ease: "easeInOut" },
-      opacity: { duration: 0.4, ease: "easeInOut" },
+      repeat: Number.POSITIVE_INFINITY,
+      duration: 0.8,
+      ease: "linear",
     },
   },
 };
 
-const PLUS_HORIZONTAL_VARIANTS = {
-  normal: {
-    pathLength: 1,
-    opacity: 1,
-    transition: {
-      duration: 0.3,
-    },
-  },
-  animate: {
-    pathLength: [0, 1],
-    opacity: [0, 1],
-    transition: {
-      pathLength: { duration: 0.4, ease: "easeInOut", delay: 0.2 },
-      opacity: { duration: 0.4, ease: "easeInOut", delay: 0.2 },
-    },
-  },
+const DEFAULT_TRANSITION = {
+  type: "spring",
+  stiffness: 50,
+  damping: 10,
 };
 
-const MessageSquarePlusIcon = forwardRef(({ onMouseEnter, onMouseLeave, className, size = 28, ...props }, ref) => {
+const LoaderCircleIcon = forwardRef(({ onMouseEnter, onMouseLeave, className, size = 28, ...props }, ref) => {
   const controls = useAnimation();
   const isControlledRef = useRef(false);
 
@@ -85,19 +67,17 @@ const MessageSquarePlusIcon = forwardRef(({ onMouseEnter, onMouseLeave, classNam
         viewBox="0 0 24 24"
         width={size}
         xmlns="http://www.w3.org/2000/svg">
-        <path
-          d="M22 17a2 2 0 0 1-2 2H6.828a2 2 0 0 0-1.414.586l-2.202 2.202A.71.71 0 0 1 2 21.286V5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2z" />
-        <motion.path animate={controls} d="M12 8v6" initial="normal" variants={PLUS_VARIANTS} />
         <motion.path
           animate={controls}
-          d="M9 11h6"
-          initial="normal"
-          variants={PLUS_HORIZONTAL_VARIANTS} />
+          d="M21 12a9 9 0 1 1-6.219-8.56"
+          style={{ transformOrigin: "12px 12px" }}
+          transition={DEFAULT_TRANSITION}
+          variants={G_VARIANTS} />
       </svg>
     </div>
   );
 });
 
-MessageSquarePlusIcon.displayName = "MessageSquarePlusIcon";
+LoaderCircleIcon.displayName = "LoaderCircleIcon";
 
-export { MessageSquarePlusIcon };
+export { LoaderCircleIcon };
