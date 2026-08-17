@@ -278,7 +278,9 @@ export default function NotesTab({
   });
 
   const currentUserObjectId = String(
-    me?.user_object_id ||
+    me?.user?.objectId ||
+      me?.user?.oid ||
+      me?.user_object_id ||
       me?.profile?.user_object_id ||
       me?.profile?.microsoft_user_object_id ||
       ""
@@ -814,10 +816,26 @@ export default function NotesTab({
                       <button
                         type="button"
                         className="btn danger"
+                        disabled={saving}
                         onClick={async () => {
                           if (!window.confirm("Weet je zeker dat je deze notitie wilt verwijderen?")) return;
-                          await deleteInstallationNote(code, note.installation_note_id);
-                          await loadNotes({ includeArchived: showArchived, markRead: true });
+                          setSaving(true);
+                          setError("");
+                          try {
+                            await deleteInstallationNote(code, note.installation_note_id);
+                            await loadNotes({ includeArchived: showArchived, markRead: true });
+                          } catch (err) {
+                            const message = String(err?.message || "");
+                            setError(
+                              message === "installation note forbidden"
+                                ? "Je mag deze notitie niet verwijderen."
+                                : message === "installation note not found"
+                                  ? "Deze notitie bestaat niet meer."
+                                  : "Notitie verwijderen mislukt. Probeer het opnieuw."
+                            );
+                          } finally {
+                            setSaving(false);
+                          }
                         }}
                       >
                         <Trash2 size={16} />

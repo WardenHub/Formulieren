@@ -862,10 +862,15 @@ export async function deleteInstallationNote(code: string, installationNoteId: s
     throw new Error("installation note forbidden");
   }
 
-  await sqlQuery(deleteInstallationNoteSql, {
+  const result: any = await sqlQueryRaw(deleteInstallationNoteSql, {
     installationNoteId: cleanNoteId,
     code: cleanCode,
   });
+
+  const deletedCount = Number(result?.recordset?.[0]?.deleted_count || 0);
+  if (deletedCount !== 1) {
+    throw new Error("installation note delete failed");
+  }
 
   return {
     ok: true,

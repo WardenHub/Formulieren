@@ -196,6 +196,9 @@ export async function deleteInstallationNote(req: any, res: Response) {
     if (msg.includes("installation note forbidden")) {
       return res.status(403).json({ error: "installation note forbidden" });
     }
+    if (msg.includes("installation note delete failed")) {
+      return res.status(409).json({ error: "installation note could not be deleted" });
+    }
     console.error(err);
     return res.status(500).json({ error: "deleteInstallationNote failed" });
   }

@@ -243,18 +243,32 @@ where n.installation_note_id = @installationNoteId
 `;
 
 export const deleteInstallationNoteSql = `
-delete from dbo.InstallationNoteReaction
-where installation_note_id = @installationNoteId;
+begin try
+  begin transaction;
 
-delete from dbo.InstallationNoteMention
-where installation_note_id = @installationNoteId;
+  delete from dbo.InstallationNoteReaction
+  where installation_note_id = @installationNoteId;
 
-delete from dbo.UserNotificationEvent
-where installation_note_id = @installationNoteId;
+  delete from dbo.InstallationNoteMention
+  where installation_note_id = @installationNoteId;
 
-delete from dbo.InstallationNote
-where installation_note_id = @installationNoteId
-  and atrium_installation_code = @code;
+  delete from dbo.UserNotificationEvent
+  where installation_note_id = @installationNoteId;
+
+  delete from dbo.InstallationNote
+  where installation_note_id = @installationNoteId
+    and atrium_installation_code = @code;
+
+  declare @deletedCount int = @@rowcount;
+
+  commit transaction;
+
+  select @deletedCount as deleted_count;
+end try
+begin catch
+  if @@trancount > 0 rollback transaction;
+  throw;
+end catch;
 `;
 
 export const toggleInstallationNoteReactionSql = `
