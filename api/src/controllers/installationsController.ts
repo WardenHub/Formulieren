@@ -6,6 +6,7 @@ import * as formsOfflineService from "../services/formsOfflineService.js";
 import * as documentFilesService from "../services/installationDocumentFilesService.js";
 import * as formDocumentFilesService from "../services/formInstanceDocumentFilesService.js";
 import * as softwareService from "../services/installationSoftwareService.js";
+import * as logbookService from "../services/installationLogbookService.js";
 
 function isHistoricalReadOnlyMessage(msg: string) {
   return String(msg || "").toLowerCase().includes("historical installation read-only");
@@ -87,6 +88,61 @@ export async function getDocuments(req: any, res: Response) {
   } catch (err) {
     console.error(err);
     return res.status(500).json({ error: "getDocuments failed" });
+  }
+}
+
+export async function getInstallationLogbook(req: any, res: Response) {
+  try {
+    return res.json(await logbookService.getInstallationLogbook(String(req.params.code || "")));
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ error: "getInstallationLogbook failed" });
+  }
+}
+
+export async function putInstallationLogbook(req: any, res: Response) {
+  try {
+    return res.json(await logbookService.linkInstallationLogbook(
+      String(req.params.code || ""), req.body || {}, req.user
+    ));
+  } catch (err: any) {
+    const msg = String(err?.message || err).toLowerCase();
+    if (isHistoricalReadOnlyMessage(msg)) return res.status(409).json({ error: "historical installation read-only" });
+    if (msg.includes("digilog id invalid")) return res.status(400).json({ error: "digilog id invalid" });
+    if (msg.includes("digilog already linked")) return res.status(409).json({ error: "digilog already linked" });
+    if (msg.includes("digilog link has sync history")) return res.status(409).json({ error: "digilog link has sync history" });
+    if (msg.includes("atrium installation not found")) return res.status(404).json({ error: "atrium installation not found" });
+    if (msg.includes("digilog not found") || msg.includes("request failed (404)")) return res.status(404).json({ error: "digilog not found" });
+    console.error(err);
+    return res.status(502).json({ error: "putInstallationLogbook failed" });
+  }
+}
+
+export async function previewInstallationLogbookSync(req: any, res: Response) {
+  try {
+    return res.json(await logbookService.previewInstallationLogbookSync(String(req.params.code || "")));
+  } catch (err: any) {
+    const msg = String(err?.message || err).toLowerCase();
+    if (msg.includes("not linked")) return res.status(404).json({ error: "installation logbook not linked" });
+    console.error(err);
+    return res.status(502).json({ error: "logbook sync preview failed" });
+  }
+}
+
+export async function synchronizeInstallationLogbook(req: any, res: Response) {
+  try {
+    const result = await logbookService.synchronizeInstallationLogbook(
+      String(req.params.code || ""), req.body || {}, req.user
+    );
+    return res.status(result.ok ? 200 : 207).json(result);
+  } catch (err: any) {
+    const msg = String(err?.message || err).toLowerCase();
+    if (isHistoricalReadOnlyMessage(msg)) return res.status(409).json({ error: "historical installation read-only" });
+    if (msg.includes("not linked")) return res.status(404).json({ error: "installation logbook not linked" });
+    if (msg.includes("preview stale")) return res.status(409).json({ error: "sync preview stale" });
+    if (msg.includes("decision") || msg.includes("document type required")) return res.status(400).json({ error: msg });
+    console.error(err);
+    return res.status(502).json({ error: "logbook synchronization failed" });
   }
 }
 

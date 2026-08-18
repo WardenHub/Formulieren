@@ -51,6 +51,22 @@ export function getDocuments(code) {
   return apiGet(`/installations/${code}/documents`);
 }
 
+export function getInstallationLogbook(code) {
+  return apiGet(`/installations/${encodeURIComponent(code)}/logbook`);
+}
+
+export function putInstallationLogbook(code, digiLogId) {
+  return apiPut(`/installations/${encodeURIComponent(code)}/logbook`, { digilog_id: digiLogId });
+}
+
+export function previewInstallationLogbookSync(code) {
+  return apiPost(`/installations/${encodeURIComponent(code)}/logbook/sync-preview`, {});
+}
+
+export function synchronizeInstallationLogbook(code, decisions) {
+  return apiPost(`/installations/${encodeURIComponent(code)}/logbook/synchronize`, { decisions });
+}
+
 export function getInstallationNotes(code, params = {}) {
   const qs = new URLSearchParams();
   if (params.includeArchived) qs.set("includeArchived", "1");

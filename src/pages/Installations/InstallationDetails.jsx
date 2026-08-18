@@ -12,6 +12,7 @@ import FormsTab from "./FormsTab.jsx";
 import ComponentsTab from "./ComponentsTab.jsx";
 import SoftwareTab from "./SoftwareTab.jsx";
 import NotesTab from "./NotesTab.jsx";
+import LogbookTab from "./LogbookTab.jsx";
 
 import SaveButton from "../../components/SaveButton.jsx";
 import Tabs from "../../components/Tabs.jsx";
@@ -29,6 +30,7 @@ import { ChevronsDownUpIcon } from "@/components/ui/chevrons-down-up";
 import { ChevronsUpDownIcon } from "@/components/ui/chevrons-up-down";
 import { CogIcon } from "@/components/ui/cog";
 import { MonitorCheckIcon } from "@/components/ui/monitor-check";
+import { BookTextIcon } from "@/components/ui/book-text";
 import { RefreshCWIcon } from "@/components/ui/refresh-cw";
 import { MessageSquareText } from "lucide-react";
 import { pushRecentHomeItem } from "../../lib/recentHomeItems.js";
@@ -967,6 +969,19 @@ export default function InstallationDetails() {
             }}
             onSaved={reloadSoftware}
             onAnyOpenChange={(v) => setAnyOpen("software", v)}
+          />
+        ),
+      },
+      {
+        key: "logbook",
+        label: "Logboek",
+        Icon: BookTextIcon,
+        content: (
+          <LogbookTab
+            code={code}
+            catalog={catalog}
+            isAdmin={isAdmin}
+            readOnly={isHistorical}
           />
         ),
       },

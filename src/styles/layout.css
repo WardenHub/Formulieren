@@ -2135,6 +2135,78 @@ html[data-appearance="light"] .type-telefonie{
   line-height: 1.35;
 }
 
+.logbook-tab{
+  display: grid;
+  gap: 16px;
+}
+
+.logbook-summary-card{
+  padding: 18px;
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.logbook-summary-card__main{
+  display: flex;
+  align-items: end;
+  gap: 20px;
+  flex-wrap: wrap;
+  flex: 1 1 620px;
+}
+
+.logbook-id-field{
+  flex: 1 1 360px;
+  max-width: 560px;
+}
+
+.logbook-last-sync{
+  display: grid;
+  gap: 6px;
+  min-width: 180px;
+}
+
+.logbook-sync-modal{
+  width: min(980px, 100%);
+}
+
+.logbook-document-choice{
+  display: grid;
+  grid-template-columns: minmax(280px, 1fr) minmax(220px, .65fr);
+  gap: 14px;
+  align-items: center;
+}
+
+.logbook-document-choice__check{
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  min-width: 0;
+}
+
+.logbook-document-choice__check input{
+  margin-top: 3px;
+}
+
+.logbook-document-choice__meta{
+  display: block;
+  margin-top: 4px;
+  font-size: 12px;
+}
+
+.logbook-history{
+  max-height: 420px;
+  overflow: auto;
+}
+
+@media (max-width: 760px){
+  .logbook-document-choice{
+    grid-template-columns: 1fr;
+  }
+}
+
 .offline-package-modal{
   width: min(980px, 100%);
 }

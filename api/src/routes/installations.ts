@@ -7,6 +7,10 @@ import {
   getCustomValues,
   putCustomValues,
   getDocuments,
+  getInstallationLogbook,
+  putInstallationLogbook,
+  previewInstallationLogbookSync,
+  synchronizeInstallationLogbook,
   getInstallationNotes,
   getInstallationWorkflowItems,
   putInstallationType,
@@ -161,6 +165,10 @@ router.get("/:code/workflow-items", requireRole(...documentRoles), getInstallati
 router.put("/:code/custom-values", requireRole("admin", "gebruiker"), putCustomValues);
 
 router.get("/:code/documents", requireRole(...documentRoles), getDocuments);
+router.get("/:code/logbook", requireRole(...documentRoles), getInstallationLogbook);
+router.put("/:code/logbook", requireRole("admin"), putInstallationLogbook);
+router.post("/:code/logbook/sync-preview", requireRole(...documentRoles), previewInstallationLogbookSync);
+router.post("/:code/logbook/synchronize", requireRole(...documentRoles), synchronizeInstallationLogbook);
 router.put("/:code/documents", requireRole(...documentRoles), putDocuments);
 router.post(
   "/:code/documents/:documentId/upload",
