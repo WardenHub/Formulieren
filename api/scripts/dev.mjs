@@ -1,4 +1,4 @@
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -10,6 +10,7 @@ const playwrightBrowsersPath = path.join(rootDir, "playwright-browsers");
 const tsxCliPath = path.join(rootDir, "node_modules", "tsx", "dist", "cli.mjs");
 const playwrightCliPath = path.join(rootDir, "node_modules", "playwright", "cli.js");
 const typescriptCliPath = path.join(rootDir, "node_modules", "typescript", "bin", "tsc");
+const windowsDevScriptPath = path.join(__dirname, "start-api-dev.ps1");
 
 async function ensureApiDependencies() {
   if (fs.existsSync(tsxCliPath) && fs.existsSync(playwrightCliPath) && fs.existsSync(typescriptCliPath)) {
@@ -84,7 +85,29 @@ async function ensurePlaywrightChromium() {
 await ensureApiDependencies();
 await ensurePlaywrightChromium();
 
-const child = spawn(process.execPath, [tsxCliPath, "watch", "src/server.ts"], {
+const powershellLookup = process.platform === "win32"
+  ? spawnSync("where.exe", ["pwsh.exe"], { encoding: "utf8", windowsHide: true })
+  : null;
+const powershellCommand = String(powershellLookup?.stdout || "").split(/\r?\n/).find(Boolean) || "powershell.exe";
+const childCommand = process.platform === "win32" ? powershellCommand : process.execPath;
+const childArgs = process.platform === "win32"
+  ? [
+      "-NoProfile",
+      "-NonInteractive",
+      "-ExecutionPolicy",
+      "Bypass",
+      "-File",
+      windowsDevScriptPath,
+      "-NodePath",
+      process.execPath,
+      "-TsxCliPath",
+      tsxCliPath,
+      "-PlaywrightBrowsersPath",
+      playwrightBrowsersPath,
+    ]
+  : [tsxCliPath, "watch", "src/server.ts"];
+
+const child = spawn(childCommand, childArgs, {
   cwd: rootDir,
   stdio: "inherit",
   env: {

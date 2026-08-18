@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import {
   getInstallationLogbook,
   previewInstallationLogbookSync,
@@ -6,6 +6,35 @@ import {
   synchronizeInstallationLogbook,
 } from "../../api/emberApi.js";
 import { RefreshCWIcon } from "@/components/ui/refresh-cw";
+import { CircleHelpIcon } from "@/components/ui/circle-help";
+import { CheckIcon } from "@/components/ui/check";
+import { ChevronDownIcon } from "@/components/ui/chevron-down";
+import { ChevronRightIcon } from "@/components/ui/chevron-right";
+import { LoaderPinwheelIcon } from "@/components/ui/loader-pinwheel";
+
+const UUID_RE = /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i;
+
+function extractDigiLogId(value) {
+  const text = String(value || "").trim();
+  if (UUID_RE.test(text)) return text.toLowerCase();
+
+  try {
+    const url = new URL(text);
+    const pathParts = url.pathname.split("/").filter(Boolean);
+    const allowedHost = ["digitaallogboek.com", "www.digitaallogboek.com"].includes(url.hostname.toLowerCase());
+    if (url.protocol !== "https:" || !allowedHost || pathParts.length !== 2 || pathParts[0].toLowerCase() !== "digilogs") {
+      return null;
+    }
+    return UUID_RE.test(pathParts[1]) ? pathParts[1].toLowerCase() : null;
+  } catch {
+    return null;
+  }
+}
+
+function logbookReference(logbook) {
+  if (logbook?.digilog_url) return logbook.digilog_url;
+  return logbook?.digilog_id ? `https://www.digitaallogboek.com/digilogs/${logbook.digilog_id}` : "";
+}
 
 function formatDateTime(value) {
   if (!value) return "Nog niet";
@@ -30,7 +59,53 @@ function statusLabel(value) {
   return ({ COMPLETED: "Voltooid", PARTIAL: "Deels voltooid", FAILED: "Mislukt", RUNNING: "Bezig" })[value] || value || "Onbekend";
 }
 
-function SyncModal({ preview, documentTypes, busy, onChange, onClose, onConfirm }) {
+function SyncProgress({ label }) {
+  return (
+    <div className="logbook-sync-progress" role="status" aria-live="polite">
+      <LoaderPinwheelIcon size={22} active aria-label="synchronisatie bezig" />
+      <div className="logbook-sync-progress__content">
+        <strong>{label}</strong>
+        <div className="installations-startup-card__progress" aria-hidden="true">
+          <span className="logbook-sync-progress__bar" />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ChangeLogbookModal({ currentUrl, nextUrl, busy, onCancel, onConfirm }) {
+  if (!nextUrl) return null;
+  return (
+    <div className="doc-bulk-modal-backdrop" onClick={() => !busy && onCancel()}>
+      <div className="card doc-bulk-modal logbook-change-modal" onClick={(event) => event.stopPropagation()}>
+        <div className="doc-bulk-modal__head">
+          <div>
+            <div className="doc-bulk-modal__title">Logboekkoppeling wijzigen?</div>
+            <div className="muted doc-bulk-modal__subtitle">
+              Eerder geïmporteerde documenten en synchronisatiehistorie blijven in Ember bewaard.
+              Er worden geen bestanden automatisch verwijderd.
+            </div>
+          </div>
+        </div>
+        <div className="logbook-change-comparison">
+          <div><span className="label">Huidige koppeling</span><span>{currentUrl}</span></div>
+          <div><span className="label">Nieuwe koppeling</span><span>{nextUrl}</span></div>
+        </div>
+        <div className="doc-bulk-modal__foot">
+          <div className="muted doc-text-sm">Nieuwe synchronisaties gebruiken alleen het nieuwe online logboek.</div>
+          <div className="doc-inline-actions">
+            <button type="button" className="btn btn-secondary" onClick={onCancel} disabled={busy}>Annuleren</button>
+            <button type="button" className="btn" onClick={onConfirm} disabled={busy}>
+              {busy ? "Koppeling controleren..." : "Koppeling wijzigen"}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function SyncModal({ preview, documentTypes, busy, progressLabel, onChange, onClose, onConfirm }) {
   if (!preview) return null;
   const items = preview.pending_documents || [];
   const decisions = preview.decisions || {};
@@ -102,27 +177,37 @@ function SyncModal({ preview, documentTypes, busy, onChange, onClose, onConfirm 
             </button>
           </div>
         </div>
+        {busy && progressLabel ? <SyncProgress label={progressLabel} /> : null}
       </div>
     </div>
   );
 }
 
-export default function LogbookTab({ code, catalog, isAdmin = false, readOnly = false }) {
+export default function LogbookTab({ code, catalog, isAdmin = false, readOnly = false, onDocumentsChanged }) {
   const [data, setData] = useState({ logbook: null, history: [] });
-  const [digiLogId, setDigiLogId] = useState("");
+  const [digiLogReference, setDigiLogReference] = useState("");
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [preview, setPreview] = useState(null);
   const [editingLink, setEditingLink] = useState(false);
+  const [helpOpen, setHelpOpen] = useState(false);
+  const [pendingLinkChange, setPendingLinkChange] = useState("");
+  const [syncBusyLabel, setSyncBusyLabel] = useState("");
+  const [linkJustSaved, setLinkJustSaved] = useState(false);
+  const [openHistory, setOpenHistory] = useState({});
+  const helpIconRef = useRef(null);
+  const helpWrapRef = useRef(null);
+  const linkSavedTimerRef = useRef(null);
 
   const documentTypes = useMemo(() => (catalog?.documentTypes || [])
     .filter((type) => type.is_active !== false && !type.is_attachment_only), [catalog]);
+  const recognizedDigiLogId = useMemo(() => extractDigiLogId(digiLogReference), [digiLogReference]);
 
   async function reload() {
     const next = await getInstallationLogbook(code);
     setData(next || { logbook: null, history: [] });
-    setDigiLogId(next?.logbook?.digilog_id || "");
+    setDigiLogReference(logbookReference(next?.logbook));
   }
 
   useEffect(() => {
@@ -132,26 +217,77 @@ export default function LogbookTab({ code, catalog, isAdmin = false, readOnly = 
       .then((next) => {
         if (!active) return;
         setData(next || { logbook: null, history: [] });
-        setDigiLogId(next?.logbook?.digilog_id || "");
+        setDigiLogReference(logbookReference(next?.logbook));
       })
       .catch((err) => active && setError(err?.message || "Logboek kon niet worden geladen."))
       .finally(() => active && setLoading(false));
     return () => { active = false; };
   }, [code]);
 
-  async function saveLink() {
+  useEffect(() => {
+    if (!helpOpen) return undefined;
+
+    function onMouseDown(event) {
+      if (helpWrapRef.current && !helpWrapRef.current.contains(event.target)) setHelpOpen(false);
+    }
+
+    function onKeyDown(event) {
+      if (event.key === "Escape") setHelpOpen(false);
+    }
+
+    document.addEventListener("mousedown", onMouseDown);
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("mousedown", onMouseDown);
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [helpOpen]);
+
+  useEffect(() => () => {
+    if (linkSavedTimerRef.current) window.clearTimeout(linkSavedTimerRef.current);
+  }, []);
+
+  async function saveLink(reference = digiLogReference) {
     setBusy(true); setError("");
     try {
-      await putInstallationLogbook(code, digiLogId);
+      await putInstallationLogbook(code, reference);
       await reload();
       setEditingLink(false);
+      setPendingLinkChange("");
+      setLinkJustSaved(true);
+      if (linkSavedTimerRef.current) window.clearTimeout(linkSavedTimerRef.current);
+      linkSavedTimerRef.current = window.setTimeout(() => setLinkJustSaved(false), 900);
+      return true;
     } catch (err) {
-      setError(err?.message || "Koppeling kon niet worden opgeslagen.");
+      const message = String(err?.message || "");
+      if (message.includes("digilog reference invalid")) {
+        setError("Plak een geldige Digitaal Logboek-link of een geldig logboek-ID.");
+      } else if (message.includes("digitaal logboek configuration missing")) {
+        setError("De lokale Digitaal Logboek-koppeling is nog niet geladen. Herstart de lokale API en probeer opnieuw.");
+      } else if (message.includes("digitaal logboek authentication failed")) {
+        setError("Aanmelden bij Digitaal Logboek is mislukt. Controleer de backendconfiguratie.");
+      } else {
+        setError(message || "Koppeling kon niet worden opgeslagen.");
+      }
+      return false;
     } finally { setBusy(false); }
   }
 
+  function changeReference(value) {
+    setDigiLogReference(value);
+    const nextId = extractDigiLogId(value);
+    const currentId = String(data.logbook?.digilog_id || "").toLowerCase();
+    if (editingLink && nextId && currentId && nextId !== currentId) setPendingLinkChange(value.trim());
+  }
+
+  function cancelLinkChange() {
+    setPendingLinkChange("");
+    setEditingLink(false);
+    setDigiLogReference(logbookReference(data.logbook));
+  }
+
   async function openSync() {
-    setBusy(true); setError("");
+    setBusy(true); setSyncBusyLabel("Documenten in Digitaal Logboek controleren..."); setError("");
     try {
       const result = await previewInstallationLogbookSync(code);
       const decisions = {};
@@ -163,7 +299,7 @@ export default function LogbookTab({ code, catalog, isAdmin = false, readOnly = 
       setPreview({ ...result, decisions });
     } catch (err) {
       setError(err?.message || "Documenten konden niet worden opgehaald.");
-    } finally { setBusy(false); }
+    } finally { setBusy(false); setSyncBusyLabel(""); }
   }
 
   function updateDecision(id, patch) {
@@ -174,7 +310,7 @@ export default function LogbookTab({ code, catalog, isAdmin = false, readOnly = 
   }
 
   async function confirmSync() {
-    setBusy(true); setError("");
+    setBusy(true); setSyncBusyLabel("Geselecteerde documenten importeren..."); setError("");
     try {
       const decisions = (preview?.pending_documents || []).map((item) => {
         const choice = preview.decisions[item.remote_document_id] || {};
@@ -187,11 +323,11 @@ export default function LogbookTab({ code, catalog, isAdmin = false, readOnly = 
       });
       const result = await synchronizeInstallationLogbook(code, decisions);
       setPreview(null);
-      await reload();
+      await Promise.all([reload(), onDocumentsChanged?.()]);
       if (result?.failed_count) setError(`${result.failed_count} document(en) konden niet worden verwerkt.`);
     } catch (err) {
       setError(err?.message || "Synchronisatie is mislukt.");
-    } finally { setBusy(false); }
+    } finally { setBusy(false); setSyncBusyLabel(""); }
   }
 
   if (loading) return <div className="muted">Logboek laden...</div>;
@@ -199,39 +335,103 @@ export default function LogbookTab({ code, catalog, isAdmin = false, readOnly = 
 
   return (
     <div className="logbook-tab">
+      <div className="logbook-heading-row">
+        <h2>Logboek</h2>
+        <div ref={helpWrapRef} className="logbook-help-wrap">
+          <button
+            type="button"
+            className="icon-btn"
+            title="info"
+            aria-expanded={helpOpen}
+            aria-controls="logbook-help-panel"
+            onClick={() => setHelpOpen((value) => !value)}
+            onMouseEnter={() => helpIconRef.current?.startAnimation?.()}
+            onMouseLeave={() => helpIconRef.current?.stopAnimation?.()}
+          >
+            <CircleHelpIcon ref={helpIconRef} size={18} className="nav-anim-icon" />
+          </button>
+          {helpOpen ? (
+            <div id="logbook-help-panel" className="panel logbook-help-panel" role="dialog" aria-label="info logboek">
+              <div className="muted logbook-help-text">
+                Deze koppeling is bedoeld voor online logboeken. Op dit moment ondersteunt Ember alleen Beveiligingslogboek.nl.
+                We werken aan koppelingen met aanvullende externe platformen.
+              </div>
+            </div>
+          ) : null}
+        </div>
+      </div>
       {error ? <div className="ember-alert ember-alert--danger">{error}</div> : null}
       <div className="card logbook-summary-card">
         <div className="logbook-summary-card__main">
-          <label className="admin-field logbook-id-field">
-            <span>Digitaal Logboek-ID</span>
-            <input
-              className="input"
-              value={digiLogId}
-              readOnly={!isAdmin || (Boolean(logbook) && !editingLink) || readOnly}
-              placeholder="00000000-0000-0000-0000-000000000000"
-              onChange={(event) => setDigiLogId(event.target.value)}
-            />
-          </label>
+          <div className="admin-field logbook-link-field">
+            <span>Link naar Digitaal Logboek</span>
+            {logbook && !editingLink ? (
+              <button
+                type="button"
+                className={`logbook-linked-field${linkJustSaved ? " logbook-linked-field--confirmed" : ""}`}
+                onClick={() => {
+                  if (!isAdmin || readOnly || busy) return;
+                  setDigiLogReference(logbookReference(logbook));
+                  setEditingLink(true);
+                }}
+                disabled={!isAdmin || readOnly || busy}
+                title={isAdmin && !readOnly ? "Klik om de koppeling te wijzigen" : undefined}
+              >
+                <span className="logbook-linked-field__check"><CheckIcon size={18} /></span>
+                <span className="logbook-linked-field__content">
+                  <strong>{logbook.digilog_title || "Online logboek gekoppeld"}</strong>
+                  <span>{logbook.digilog_url}</span>
+                </span>
+                {isAdmin && !readOnly ? <span className="muted logbook-linked-field__hint">Klik om te wijzigen</span> : null}
+              </button>
+            ) : (
+              <>
+                <div className="logbook-link-control-row">
+                  <input
+                    id="installation-digilog-reference"
+                    className="input"
+                    value={digiLogReference}
+                    readOnly={!isAdmin || readOnly}
+                    autoFocus={editingLink}
+                    placeholder="https://www.digitaallogboek.com/digilogs/..."
+                    onChange={(event) => changeReference(event.target.value)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Escape" && logbook) cancelLinkChange();
+                    }}
+                  />
+                  {isAdmin && !logbook ? (
+                    <button
+                      type="button"
+                      className={`btn logbook-link-action${recognizedDigiLogId ? " logbook-link-action--ready" : ""}`}
+                      onClick={() => saveLink()}
+                      disabled={busy || readOnly || !recognizedDigiLogId}
+                    >
+                      Logboek koppelen
+                    </button>
+                  ) : null}
+                </div>
+                {isAdmin ? (
+                  <span className="muted logbook-link-help">
+                    {editingLink
+                      ? "Plak een andere geldige link; Ember vraagt daarna om bevestiging. Druk Escape om te annuleren."
+                      : recognizedDigiLogId
+                        ? "Logboek herkend; de koppeling kan worden opgeslagen."
+                        : "Plak de volledige link uit de adresbalk. Een los logboek-ID werkt ook."}
+                  </span>
+                ) : null}
+              </>
+            )}
+          </div>
           <div className="logbook-last-sync">
             <span className="label">Laatste synchronisatie</span>
             <strong>{relativeTime(logbook?.last_checked_at)}</strong>
           </div>
         </div>
-        <div className="doc-inline-actions">
-          {isAdmin && (!logbook || editingLink) ? (
-            <button type="button" className="btn" onClick={saveLink} disabled={busy || readOnly || !digiLogId.trim()}>
-              {logbook ? "Wijziging opslaan" : "Logboek koppelen"}
-            </button>
-          ) : null}
-          {isAdmin && logbook && !editingLink ? (
-            <button type="button" className="btn btn-secondary" onClick={() => setEditingLink(true)} disabled={busy || readOnly}>
-              Koppeling wijzigen
-            </button>
-          ) : null}
-          {editingLink ? (
-            <button type="button" className="btn btn-secondary" onClick={() => { setEditingLink(false); setDigiLogId(logbook?.digilog_id || ""); }} disabled={busy}>
-              Annuleren
-            </button>
+        <div className="doc-inline-actions logbook-summary-actions">
+          {logbook?.digilog_url && !editingLink ? (
+            <a className="btn btn-secondary" href={logbook.digilog_url} target="_blank" rel="noreferrer">
+              Open Digitaal Logboek
+            </a>
           ) : null}
           <button type="button" className="btn" onClick={openSync} disabled={busy || readOnly || !logbook}>
             <RefreshCWIcon size={16} />
@@ -240,22 +440,63 @@ export default function LogbookTab({ code, catalog, isAdmin = false, readOnly = 
         </div>
       </div>
 
+      {syncBusyLabel && !preview ? <SyncProgress label={syncBusyLabel} /> : null}
+
       <div className="admin-table-wrap logbook-history">
         <table className="admin-table">
           <thead><tr><th>Datum</th><th>Status</th><th>Gevonden</th><th>Geïmporteerd</th><th>Overgeslagen</th><th>Mislukt</th></tr></thead>
           <tbody>
             {(data.history || []).length === 0 ? (
               <tr><td colSpan="6" className="muted">Nog geen synchronisaties.</td></tr>
-            ) : data.history.map((row) => (
-              <tr key={row.installation_logbook_sync_id}>
-                <td>{formatDateTime(row.completed_at || row.started_at)}</td>
-                <td>{statusLabel(row.status)}</td>
-                <td>{row.remote_document_count}</td>
-                <td>{row.imported_document_count}</td>
-                <td>{row.skipped_document_count}</td>
-                <td>{row.failed_document_count}</td>
-              </tr>
-            ))}
+            ) : data.history.map((row) => {
+              const syncId = String(row.installation_logbook_sync_id);
+              const importedDocuments = row.imported_documents || [];
+              const canExpand = importedDocuments.length > 0;
+              const isOpen = Boolean(openHistory[syncId]);
+              return (
+                <Fragment key={syncId}>
+                  <tr>
+                    <td>
+                      {canExpand ? (
+                        <button
+                          type="button"
+                          className="logbook-history-toggle"
+                          onClick={() => setOpenHistory((current) => ({ ...current, [syncId]: !current[syncId] }))}
+                          aria-expanded={isOpen}
+                        >
+                          {isOpen ? <ChevronDownIcon size={16} /> : <ChevronRightIcon size={16} />}
+                          {formatDateTime(row.completed_at || row.started_at)}
+                        </button>
+                      ) : formatDateTime(row.completed_at || row.started_at)}
+                    </td>
+                    <td>{statusLabel(row.status)}</td>
+                    <td>{row.remote_document_count}</td>
+                    <td>{row.imported_document_count}</td>
+                    <td>{row.skipped_document_count}</td>
+                    <td>{row.failed_document_count}</td>
+                  </tr>
+                  {isOpen ? (
+                    <tr className="logbook-history-detail-row">
+                      <td colSpan="6">
+                        <div className="logbook-history-documents">
+                          {importedDocuments.map((document) => (
+                            <div key={document.document_id} className="logbook-history-document">
+                              <div>
+                                <strong>{document.file_name || document.title || "Document"}</strong>
+                                <span className="muted">{document.document_type_name || document.document_type_key || "Document"}</span>
+                              </div>
+                              <span className={`ember-label ${document.is_active ? "ember-label--success" : "ember-label--muted"}`}>
+                                {document.is_active ? "Geïmporteerd" : "Gearchiveerd"}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      </td>
+                    </tr>
+                  ) : null}
+                </Fragment>
+              );
+            })}
           </tbody>
         </table>
       </div>
@@ -264,9 +505,17 @@ export default function LogbookTab({ code, catalog, isAdmin = false, readOnly = 
         preview={preview}
         documentTypes={documentTypes}
         busy={busy}
+        progressLabel={syncBusyLabel}
         onChange={updateDecision}
         onClose={() => !busy && setPreview(null)}
         onConfirm={confirmSync}
+      />
+      <ChangeLogbookModal
+        currentUrl={logbookReference(logbook)}
+        nextUrl={pendingLinkChange}
+        busy={busy}
+        onCancel={cancelLinkChange}
+        onConfirm={() => saveLink(pendingLinkChange)}
       />
     </div>
   );

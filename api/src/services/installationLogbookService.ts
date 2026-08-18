@@ -21,13 +21,39 @@ import {
 import { assertInstallationWritable } from "./installationsService.js";
 import { getUserAuditActor } from "../utils/userIdentity.js";
 
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const UUID_RE = /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i;
 const MAX_FILE_BYTES = Number(process.env.DOCUMENT_UPLOAD_MAX_BYTES || 25 * 1024 * 1024);
 
 function asUuid(value: any, errorMessage: string) {
   const text = String(value || "").trim();
   if (!UUID_RE.test(text)) throw new Error(errorMessage);
   return text.toLowerCase();
+}
+
+export function parseDigiLogReference(value: any) {
+  const text = String(value || "").trim();
+  if (UUID_RE.test(text)) return text.toLowerCase();
+
+  let url: URL;
+  try {
+    url = new URL(text);
+  } catch {
+    throw new Error("digilog reference invalid");
+  }
+
+  const allowedHosts = new Set(["digitaallogboek.com", "www.digitaallogboek.com"]);
+  const pathParts = url.pathname.split("/").filter(Boolean);
+  if (
+    url.protocol !== "https:"
+    || !allowedHosts.has(url.hostname.toLowerCase())
+    || pathParts.length !== 2
+    || pathParts[0].toLowerCase() !== "digilogs"
+    || !UUID_RE.test(pathParts[1])
+  ) {
+    throw new Error("digilog reference invalid");
+  }
+
+  return pathParts[1].toLowerCase();
 }
 
 function nullableText(value: any, maxLength = 1000) {
@@ -107,15 +133,28 @@ function documentParams(logbookId: string, document: any, updatedBy: string) {
 
 export async function getInstallationLogbook(code: string) {
   const result: any = await sqlQueryRaw(getInstallationLogbookSql, { code: String(code || "").trim() });
+  const importedDocuments = result?.recordsets?.[2] ?? [];
+  const documentsBySync = new Map<string, any[]>();
+  for (const document of importedDocuments) {
+    const syncId = String(document.installation_logbook_sync_id || "");
+    if (!syncId) continue;
+    const current = documentsBySync.get(syncId) || [];
+    current.push(document);
+    documentsBySync.set(syncId, current);
+  }
+
   return {
     logbook: result?.recordsets?.[0]?.[0] ?? null,
-    history: result?.recordsets?.[1] ?? [],
+    history: (result?.recordsets?.[1] ?? []).map((row: any) => ({
+      ...row,
+      imported_documents: documentsBySync.get(String(row.installation_logbook_sync_id || "")) || [],
+    })),
   };
 }
 
 export async function linkInstallationLogbook(code: string, payload: any, user: any) {
   await assertInstallationWritable(code);
-  const digiLogId = asUuid(payload?.digilog_id, "digilog id invalid");
+  const digiLogId = parseDigiLogReference(payload?.digilog_id);
   const remote: any = await getDigiLog(digiLogId);
   if (String(remote?.id || "").toLowerCase() !== digiLogId) throw new Error("digilog not found");
 

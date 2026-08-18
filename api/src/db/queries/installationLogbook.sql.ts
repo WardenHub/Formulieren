@@ -34,6 +34,28 @@ join dbo.InstallationLogbook l
   on l.installation_logbook_id = s.installation_logbook_id
 where l.atrium_installation_code = @code
 order by s.started_at desc;
+
+select
+  s.installation_logbook_sync_id,
+  d.document_id,
+  d.title,
+  d.file_name,
+  d.document_type_key,
+  dt.naam as document_type_name,
+  d.created_at,
+  d.is_active
+from dbo.InstallationLogbookSync s
+join dbo.InstallationLogbook l
+  on l.installation_logbook_id = s.installation_logbook_id
+join dbo.InstallationDocument d
+  on d.installation_id = l.installation_id
+ and d.source_system = N'DigitaalLogboek'
+ and d.created_at >= s.started_at
+ and d.created_at <= coalesce(s.completed_at, sysutcdatetime())
+left join dbo.DocumentType dt
+  on dt.document_type_key = d.document_type_key
+where l.atrium_installation_code = @code
+order by s.started_at desc, d.created_at asc;
 `;
 
 export const upsertInstallationLogbookSql = `
@@ -65,18 +87,6 @@ begin try
   )
     throw 50000, 'digilog already linked', 1;
 
-  if exists (
-    select 1
-    from dbo.InstallationLogbook l
-    where l.installation_id = @installationId
-      and l.digilog_id <> @digiLogId
-      and (
-        exists (select 1 from dbo.InstallationLogbookSync s where s.installation_logbook_id = l.installation_logbook_id)
-        or exists (select 1 from dbo.InstallationLogbookDocument d where d.installation_logbook_id = l.installation_logbook_id)
-      )
-  )
-    throw 50000, 'digilog link has sync history', 1;
-
   merge dbo.InstallationLogbook as target
   using (select @installationId as installation_id) as source
     on target.installation_id = source.installation_id
@@ -84,6 +94,10 @@ begin try
     digilog_id = @digiLogId,
     digilog_title = @digiLogTitle,
     digilog_url = @digiLogUrl,
+    last_checked_at = case when target.digilog_id <> @digiLogId then null else target.last_checked_at end,
+    last_check_status = case when target.digilog_id <> @digiLogId then null else target.last_check_status end,
+    last_check_error = case when target.digilog_id <> @digiLogId then null else target.last_check_error end,
+    last_import_at = case when target.digilog_id <> @digiLogId then null else target.last_import_at end,
     updated_at = sysutcdatetime(),
     updated_by = @updatedBy
   when not matched then insert (

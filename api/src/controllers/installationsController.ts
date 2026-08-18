@@ -108,9 +108,10 @@ export async function putInstallationLogbook(req: any, res: Response) {
   } catch (err: any) {
     const msg = String(err?.message || err).toLowerCase();
     if (isHistoricalReadOnlyMessage(msg)) return res.status(409).json({ error: "historical installation read-only" });
-    if (msg.includes("digilog id invalid")) return res.status(400).json({ error: "digilog id invalid" });
+    if (msg.includes("digilog reference invalid")) return res.status(400).json({ error: "digilog reference invalid" });
+    if (msg.includes("missing env var digitaal_logboek")) return res.status(503).json({ error: "digitaal logboek configuration missing" });
+    if (msg.includes("digitaal logboek authentication failed")) return res.status(502).json({ error: "digitaal logboek authentication failed" });
     if (msg.includes("digilog already linked")) return res.status(409).json({ error: "digilog already linked" });
-    if (msg.includes("digilog link has sync history")) return res.status(409).json({ error: "digilog link has sync history" });
     if (msg.includes("atrium installation not found")) return res.status(404).json({ error: "atrium installation not found" });
     if (msg.includes("digilog not found") || msg.includes("request failed (404)")) return res.status(404).json({ error: "digilog not found" });
     console.error(err);

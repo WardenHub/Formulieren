@@ -55,8 +55,8 @@ export function getInstallationLogbook(code) {
   return apiGet(`/installations/${encodeURIComponent(code)}/logbook`);
 }
 
-export function putInstallationLogbook(code, digiLogId) {
-  return apiPut(`/installations/${encodeURIComponent(code)}/logbook`, { digilog_id: digiLogId });
+export function putInstallationLogbook(code, digiLogReference) {
+  return apiPut(`/installations/${encodeURIComponent(code)}/logbook`, { digilog_id: digiLogReference });
 }
 
 export function previewInstallationLogbookSync(code) {

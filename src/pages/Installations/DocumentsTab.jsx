@@ -155,6 +155,8 @@ function flattenTypeDocuments(items) {
       file_last_modified_by: doc.file_last_modified_by ?? null,
       storage_provider: doc.storage_provider ?? null,
       storage_key: doc.storage_key ?? null,
+      source_system: doc.source_system ?? null,
+      source_reference: doc.source_reference ?? null,
       document_is_active: doc.document_is_active ?? true,
       created_at: doc.created_at ?? null,
       created_by: doc.created_by ?? null,
@@ -1777,6 +1779,11 @@ const DocumentsTab = forwardRef(function DocumentsTab(
                     {renderQueuedBadge(row.document_id)}
                     {renderRowStatus(row.document_id)}
                     {accentRowId === row.document_id ? <StatusChip tone="accent">Zojuist toegevoegd</StatusChip> : null}
+                    {String(row.source_system || "").toLowerCase() === "digitaallogboek" ? (
+                      <span title="Gesynchroniseerd uit Digitaal Logboek">
+                        <StatusChip tone="success">DigiLog-sync</StatusChip>
+                      </span>
+                    ) : null}
                     {isNewTemp ? <StatusChip tone="warning">Nieuw concept</StatusChip> : null}
                     {!row.document_is_active ? <StatusChip tone="neutral">Gearchiveerd</StatusChip> : null}
                     {row.document_type_key && row.document_type_key !== typeKey && row.document_type_name ? (

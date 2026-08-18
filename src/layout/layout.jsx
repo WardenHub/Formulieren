@@ -432,7 +432,7 @@ export default function Layout() {
       </aside>
 
       <main className="content">
-        <Outlet />
+        <Outlet context={{ roles }} />
       </main>
     </div>
   );

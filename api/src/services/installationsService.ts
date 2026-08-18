@@ -549,6 +549,8 @@ export async function getInstallationDocuments(code: string) {
 
       storage_provider: r.storage_provider ?? null,
       storage_key: r.storage_key ?? null,
+      source_system: r.source_system ?? null,
+      source_reference: r.source_reference ?? null,
 
       document_is_active: r.document_is_active ?? true,
       created_at: r.created_at ?? null,

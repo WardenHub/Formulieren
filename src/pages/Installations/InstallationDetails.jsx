@@ -1,7 +1,7 @@
 // src/pages/Installations/InstallationDetails.jsx
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useParams, useNavigate, useSearchParams } from "react-router-dom";
+import { useParams, useNavigate, useOutletContext, useSearchParams } from "react-router-dom";
 
 import AtriumTab from "./AtriumTab.jsx";
 import DocumentsTab from "./DocumentsTab.jsx";
@@ -319,6 +319,7 @@ function buildSoftwareHeaderSummary(softwareData) {
 }
 
 export default function InstallationDetails() {
+  const { roles = [] } = useOutletContext() || {};
   const { code } = useParams();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -834,7 +835,8 @@ export default function InstallationDetails() {
     });
   }, [installation, code]);
   
-  const isAdmin = Boolean(installation?.is_admin || installation?.isAdmin || installation?.user_is_admin);
+  const isAdmin = roles.includes("admin")
+    || Boolean(installation?.is_admin || installation?.isAdmin || installation?.user_is_admin);
 
   const tabs = useMemo(() => {
     const customLabel = typeIsSet ? "Eigenschappen" : "Eigenschappen (kies type)";
@@ -982,6 +984,15 @@ export default function InstallationDetails() {
             catalog={catalog}
             isAdmin={isAdmin}
             readOnly={isHistorical}
+            onDocumentsChanged={async () => {
+              setDocsLoading(true);
+              try {
+                const docData = await getDocuments(code);
+                setDocs(docData || null);
+              } finally {
+                setDocsLoading(false);
+              }
+            }}
           />
         ),
       },
