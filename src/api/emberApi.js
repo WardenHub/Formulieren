@@ -67,6 +67,20 @@ export function synchronizeInstallationLogbook(code, decisions) {
   return apiPost(`/installations/${encodeURIComponent(code)}/logbook/synchronize`, { decisions });
 }
 
+export function undoInstallationLogbookSync(code, syncId, documentIds = []) {
+  return apiPost(
+    `/installations/${encodeURIComponent(code)}/logbook/syncs/${encodeURIComponent(syncId)}/undo`,
+    { document_ids: documentIds }
+  );
+}
+
+export function reimportInstallationLogbookDocument(code, documentId) {
+  return apiPost(
+    `/installations/${encodeURIComponent(code)}/logbook/documents/${encodeURIComponent(documentId)}/reimport`,
+    {}
+  );
+}
+
 export function getInstallationNotes(code, params = {}) {
   const qs = new URLSearchParams();
   if (params.includeArchived) qs.set("includeArchived", "1");

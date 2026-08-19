@@ -4,9 +4,15 @@ import {
   beginInstallationLogbookSyncSql,
   finishInstallationLogbookSyncSql,
   getInstallationLogbookSql,
+  getInstallationLogbookReimportContextSql,
   getInstallationLogbookTrackedDocumentsSql,
+  getInstallationLogbookUndoCandidatesSql,
   importInstallationLogbookDocumentSql,
+  markInstallationLogbookDocumentUndoneSql,
   markInstallationLogbookDocumentSkippedSql,
+  recordInstallationLogbookSyncFailureSql,
+  reimportInstallationLogbookDocumentSql,
+  restoreInstallationLogbookDocumentAfterUndoFailureSql,
   upsertInstallationLogbookSql,
 } from "../db/queries/installationLogbook.sql.js";
 import {
@@ -245,11 +251,25 @@ export async function synchronizeInstallationLogbook(code: string, payload: any,
     const decision = decisionById.get(document.remote_document_id);
     if (String(decision.action).toUpperCase() === "SKIP") {
       try {
-        await sqlQuery(markInstallationLogbookDocumentSkippedSql, documentParams(logbook.installation_logbook_id, document, actor));
+        await sqlQuery(markInstallationLogbookDocumentSkippedSql, {
+          ...documentParams(logbook.installation_logbook_id, document, actor),
+          syncId,
+        });
         skippedCount += 1;
-      } catch {
+      } catch (error: any) {
         failedCount += 1;
         errors.push({ remote_document_id: document.remote_document_id, error: "overslaan kon niet worden opgeslagen" });
+        try {
+          await sqlQuery(recordInstallationLogbookSyncFailureSql, {
+            syncId,
+            remoteDocumentId: document.remote_document_id,
+            documentTypeKey: null,
+            action: "SKIP",
+            remoteName: document.remote_name,
+            remoteTimeLastModified: document.remote_time_last_modified,
+            errorMessage: nullableText(error?.message, 1000) || "overslaan kon niet worden opgeslagen",
+          });
+        } catch { /* hoofdfout blijft leidend */ }
       }
       continue;
     }
@@ -273,6 +293,7 @@ export async function synchronizeInstallationLogbook(code: string, payload: any,
       const checksum = crypto.createHash("sha256").update(downloaded.buffer).digest("hex");
       await sqlQuery(importInstallationLogbookDocumentSql, {
         ...documentParams(logbook.installation_logbook_id, document, actor),
+        syncId,
         code,
         documentId,
         documentTypeKey: String(decision.document_type_key).trim(),
@@ -293,6 +314,17 @@ export async function synchronizeInstallationLogbook(code: string, payload: any,
       }
       failedCount += 1;
       errors.push({ remote_document_id: document.remote_document_id, error: nullableText(error?.message, 250) || "import failed" });
+      try {
+        await sqlQuery(recordInstallationLogbookSyncFailureSql, {
+          syncId,
+          remoteDocumentId: document.remote_document_id,
+          documentTypeKey: String(decision.document_type_key || "").trim() || null,
+          action: "IMPORT",
+          remoteName: document.remote_name,
+          remoteTimeLastModified: document.remote_time_last_modified,
+          errorMessage: nullableText(error?.message, 1000) || "import failed",
+        });
+      } catch { /* hoofdfout blijft leidend */ }
     }
   }
 
@@ -311,4 +343,172 @@ export async function synchronizeInstallationLogbook(code: string, payload: any,
   });
 
   return { ok: failedCount === 0, status: finalStatus, imported_count: importedCount, skipped_count: skippedCount, failed_count: failedCount, errors };
+}
+
+export async function undoInstallationLogbookSync(code: string, syncIdValue: any, payload: any, user: any) {
+  await assertInstallationWritable(code);
+  const syncId = asUuid(syncIdValue, "logbook sync id invalid");
+  const requestedIds = Array.isArray(payload?.document_ids)
+    ? [...new Set(payload.document_ids.map((value: any) => asUuid(value, "logbook document id invalid")))]
+    : [];
+  if (requestedIds.length > 100) throw new Error("too many logbook documents");
+
+  const rows: any[] = await sqlQuery(getInstallationLogbookUndoCandidatesSql, {
+    code: String(code || "").trim(),
+    syncId,
+    documentIdsJson: requestedIds.length ? JSON.stringify(requestedIds) : null,
+  });
+  if (!rows.length || (requestedIds.length && rows.length !== requestedIds.length)) {
+    throw new Error("logbook sync documents not removable");
+  }
+  if (rows.some((row) => Number(row.active_related_document_count || 0) > 0)) {
+    throw new Error("logbook document has active related documents");
+  }
+
+  const actor = getUserAuditActor(user);
+  const removed: string[] = [];
+  const errors: Array<{ document_id: string; error: string }> = [];
+
+  for (const row of rows) {
+    const params = {
+      code: String(code || "").trim(),
+      syncDocumentId: row.installation_logbook_sync_document_id,
+      documentId: row.installation_document_id,
+      updatedBy: actor,
+    };
+    try {
+      await sqlQuery(markInstallationLogbookDocumentUndoneSql, params);
+      try {
+        if (row.storage_key) await deleteInstallationDocumentBlob(String(row.storage_key));
+      } catch (blobError: any) {
+        await sqlQuery(restoreInstallationLogbookDocumentAfterUndoFailureSql, {
+          ...params,
+          storageProvider: row.storage_provider ?? null,
+          storageKey: row.storage_key ?? null,
+          storageUrl: row.storage_url ?? null,
+          checksumSha256: row.checksum_sha256 ?? null,
+        });
+        throw blobError;
+      }
+      removed.push(String(row.installation_document_id));
+    } catch (error: any) {
+      errors.push({
+        document_id: String(row.installation_document_id),
+        error: nullableText(error?.message, 250) || "verwijderen is mislukt",
+      });
+    }
+  }
+
+  return {
+    ok: errors.length === 0,
+    removed_count: removed.length,
+    removed_document_ids: removed,
+    failed_count: errors.length,
+    errors,
+  };
+}
+
+export async function reimportInstallationLogbookDocument(code: string, documentIdValue: any, user: any) {
+  await assertInstallationWritable(code);
+  const documentId = asUuid(documentIdValue, "logbook document id invalid");
+  const contextRows: any[] = await sqlQuery(getInstallationLogbookReimportContextSql, {
+    code: String(code || "").trim(),
+    documentId,
+  });
+  const context = contextRows[0];
+  if (!context) throw new Error("logbook document not found");
+  if (context.is_active || context.storage_key) throw new Error("logbook document already active");
+
+  const [remoteLogbook, remoteRows] = await Promise.all([
+    getDigiLog(String(context.digilog_id)),
+    scanDigiLogDocuments(String(context.digilog_id)),
+  ]);
+  const remote = remoteRows
+    .map(normalizeRemoteDocument)
+    .find((item: any) => item.remote_document_id === String(context.remote_document_id).toLowerCase());
+  if (!remote) throw new Error("remote logbook document not found");
+
+  const actor = getUserAuditActor(user);
+  const syncId = randomUUID();
+  await sqlQuery(beginInstallationLogbookSyncSql, {
+    syncId,
+    installationLogbookId: context.installation_logbook_id,
+    remoteDocumentCount: 1,
+    pendingDocumentCount: 1,
+    createdBy: actor,
+  });
+
+  let uploaded: any = null;
+  try {
+    const downloaded = await downloadDigiLogDocument(String(context.digilog_id), remote.remote_document_id);
+    if (!downloaded.buffer.length) throw new Error("remote file is empty");
+    if (downloaded.buffer.length > MAX_FILE_BYTES) throw new Error("remote file exceeds size limit");
+    const mimeType = detectedMimeType(downloaded.buffer, remote.remote_file_extension);
+    if (!mimeType) throw new Error("remote file type or signature is not supported");
+
+    uploaded = await uploadInstallationDocumentBlob({
+      installationCode: code,
+      documentId,
+      fileName: remote.remote_name,
+      contentType: mimeType,
+      buffer: downloaded.buffer,
+    });
+    const checksum = crypto.createHash("sha256").update(downloaded.buffer).digest("hex");
+    await sqlQuery(reimportInstallationLogbookDocumentSql, {
+      ...documentParams(context.installation_logbook_id, remote, actor),
+      syncId,
+      code: String(code || "").trim(),
+      documentId,
+      documentTypeKey: context.document_type_key,
+      remoteCreated: remote.remote_created,
+      fileName: remote.remote_name,
+      mimeType,
+      fileSizeBytes: downloaded.buffer.length,
+      storageProvider: uploaded.storageProvider,
+      storageKey: uploaded.storageKey,
+      storageUrl: uploaded.storageUrl,
+      checksumSha256: checksum,
+      sourceReference: `${context.digilog_id}/${remote.remote_document_id}@${remote.remote_time_last_modified}`,
+    });
+    await sqlQuery(finishInstallationLogbookSyncSql, {
+      syncId,
+      installationLogbookId: context.installation_logbook_id,
+      status: "COMPLETED",
+      importedCount: 1,
+      skippedCount: 0,
+      failedCount: 0,
+      errorMessage: null,
+      digiLogTitle: nullableText((remoteLogbook as any)?.title, 250),
+      updatedBy: actor,
+    });
+    return { ok: true, status: "COMPLETED", imported_count: 1, document_id: documentId };
+  } catch (error: any) {
+    if (uploaded?.storageKey) {
+      try { await deleteInstallationDocumentBlob(uploaded.storageKey); } catch { /* best effort cleanup */ }
+    }
+    const errorMessage = nullableText(error?.message, 1000) || "opnieuw synchroniseren is mislukt";
+    try {
+      await sqlQuery(recordInstallationLogbookSyncFailureSql, {
+        syncId,
+        remoteDocumentId: remote.remote_document_id,
+        documentTypeKey: context.document_type_key,
+        action: "REIMPORT",
+        remoteName: remote.remote_name,
+        remoteTimeLastModified: remote.remote_time_last_modified,
+        errorMessage,
+      });
+      await sqlQuery(finishInstallationLogbookSyncSql, {
+        syncId,
+        installationLogbookId: context.installation_logbook_id,
+        status: "FAILED",
+        importedCount: 0,
+        skippedCount: 0,
+        failedCount: 1,
+        errorMessage,
+        digiLogTitle: nullableText((remoteLogbook as any)?.title, 250),
+        updatedBy: actor,
+      });
+    } catch { /* oorspronkelijke fout blijft leidend */ }
+    throw error;
+  }
 }

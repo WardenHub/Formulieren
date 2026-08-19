@@ -349,6 +349,7 @@ export default function InstallationDetails() {
   const [customValues, setCustomValuesState] = useState(null);
   const [docs, setDocs] = useState(null);
   const [docsLoading, setDocsLoading] = useState(true);
+  const [focusedDocumentId, setFocusedDocumentId] = useState(null);
   const [energySupplies, setEnergySupplies] = useState(null);
   const [energyBrandTypes, setEnergyBrandTypes] = useState(null);
   const [softwareData, setSoftwareData] = useState(null);
@@ -937,6 +938,8 @@ export default function InstallationDetails() {
             loading={docsLoading}
             catalog={catalog}
             readOnly={isHistorical}
+            focusDocumentId={focusedDocumentId}
+            onFocusHandled={() => setFocusedDocumentId(null)}
             onDirtyChange={setDocsDirty}
             onSavingChange={setDocsSaving}
             onSaveOk={() => {
@@ -992,6 +995,10 @@ export default function InstallationDetails() {
               } finally {
                 setDocsLoading(false);
               }
+            }}
+            onOpenDocument={(document) => {
+              setFocusedDocumentId(document?.document_id || null);
+              setActiveTab("documents");
             }}
           />
         ),

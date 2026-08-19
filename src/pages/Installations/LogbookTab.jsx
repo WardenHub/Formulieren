@@ -3,7 +3,9 @@ import {
   getInstallationLogbook,
   previewInstallationLogbookSync,
   putInstallationLogbook,
+  reimportInstallationLogbookDocument,
   synchronizeInstallationLogbook,
+  undoInstallationLogbookSync,
 } from "../../api/emberApi.js";
 import { RefreshCWIcon } from "@/components/ui/refresh-cw";
 import { CircleHelpIcon } from "@/components/ui/circle-help";
@@ -11,6 +13,9 @@ import { CheckIcon } from "@/components/ui/check";
 import { ChevronDownIcon } from "@/components/ui/chevron-down";
 import { ChevronRightIcon } from "@/components/ui/chevron-right";
 import { LoaderPinwheelIcon } from "@/components/ui/loader-pinwheel";
+import { BookTextIcon } from "@/components/ui/book-text";
+import { RotateCCWIcon } from "@/components/ui/rotate-ccw";
+import { Trash2 } from "lucide-react";
 
 const UUID_RE = /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i;
 
@@ -105,6 +110,44 @@ function ChangeLogbookModal({ currentUrl, nextUrl, busy, onCancel, onConfirm }) 
   );
 }
 
+function UndoSyncModal({ target, busy, onCancel, onConfirm }) {
+  if (!target) return null;
+  const document = target.document || null;
+  const count = Number(target.count || 0);
+  const title = document ? "Import van dit bestand ongedaan maken?" : "Synchronisatie ongedaan maken?";
+  const subject = document
+    ? (document.file_name || document.title || "Dit bestand")
+    : `${count} geïmporteerde ${count === 1 ? "bestand" : "bestanden"}`;
+
+  return (
+    <div className="doc-bulk-modal-backdrop" onClick={() => !busy && onCancel()}>
+      <div className="card doc-bulk-modal logbook-undo-modal" onClick={(event) => event.stopPropagation()}>
+        <div className="doc-bulk-modal__head">
+          <div>
+            <div className="doc-bulk-modal__title">{title}</div>
+            <div className="muted doc-bulk-modal__subtitle">
+              {subject} wordt uit Ember verwijderd. Het online logboek blijft ongewijzigd en de actie blijft zichtbaar in de synchronisatiehistorie.
+            </div>
+          </div>
+        </div>
+        <div className="ember-alert ember-alert--warning">
+          Na het verwijderen kun je ieder bestand afzonderlijk opnieuw synchroniseren.
+        </div>
+        <div className="doc-bulk-modal__foot">
+          <div className="muted doc-text-sm">Gekoppelde vervangingen of bijlagen worden nooit stilzwijgend verwijderd.</div>
+          <div className="doc-inline-actions">
+            <button type="button" className="btn btn-secondary" onClick={onCancel} disabled={busy}>Annuleren</button>
+            <button type="button" className="btn btn-danger" onClick={onConfirm} disabled={busy}>
+              <Trash2 size={16} />
+              {busy ? "Verwijderen..." : "Verwijderen uit Ember"}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function SyncModal({ preview, documentTypes, busy, progressLabel, onChange, onClose, onConfirm }) {
   if (!preview) return null;
   const items = preview.pending_documents || [];
@@ -183,7 +226,14 @@ function SyncModal({ preview, documentTypes, busy, progressLabel, onChange, onCl
   );
 }
 
-export default function LogbookTab({ code, catalog, isAdmin = false, readOnly = false, onDocumentsChanged }) {
+export default function LogbookTab({
+  code,
+  catalog,
+  isAdmin = false,
+  readOnly = false,
+  onDocumentsChanged,
+  onOpenDocument,
+}) {
   const [data, setData] = useState({ logbook: null, history: [] });
   const [digiLogReference, setDigiLogReference] = useState("");
   const [loading, setLoading] = useState(true);
@@ -196,13 +246,21 @@ export default function LogbookTab({ code, catalog, isAdmin = false, readOnly = 
   const [syncBusyLabel, setSyncBusyLabel] = useState("");
   const [linkJustSaved, setLinkJustSaved] = useState(false);
   const [openHistory, setOpenHistory] = useState({});
+  const [undoTarget, setUndoTarget] = useState(null);
+  const [notice, setNotice] = useState("");
   const helpIconRef = useRef(null);
   const helpWrapRef = useRef(null);
   const linkSavedTimerRef = useRef(null);
+  const openLogbookIconRef = useRef(null);
+  const syncIconRef = useRef(null);
+  const reimportIconRefs = useRef({});
 
   const documentTypes = useMemo(() => (catalog?.documentTypes || [])
     .filter((type) => type.is_active !== false && !type.is_attachment_only), [catalog]);
   const recognizedDigiLogId = useMemo(() => extractDigiLogId(digiLogReference), [digiLogReference]);
+  const hasSuccessfulSync = useMemo(() => (data.history || []).some((row) => (
+    ["COMPLETED", "PARTIAL"].includes(String(row.status || "").toUpperCase()) && Boolean(row.completed_at)
+  )), [data.history]);
 
   async function reload() {
     const next = await getInstallationLogbook(code);
@@ -287,7 +345,7 @@ export default function LogbookTab({ code, catalog, isAdmin = false, readOnly = 
   }
 
   async function openSync() {
-    setBusy(true); setSyncBusyLabel("Documenten in Digitaal Logboek controleren..."); setError("");
+    setBusy(true); setSyncBusyLabel("Documenten in Digitaal Logboek controleren..."); setError(""); setNotice("");
     try {
       const result = await previewInstallationLogbookSync(code);
       const decisions = {};
@@ -310,7 +368,7 @@ export default function LogbookTab({ code, catalog, isAdmin = false, readOnly = 
   }
 
   async function confirmSync() {
-    setBusy(true); setSyncBusyLabel("Geselecteerde documenten importeren..."); setError("");
+    setBusy(true); setSyncBusyLabel("Geselecteerde documenten importeren..."); setError(""); setNotice("");
     try {
       const decisions = (preview?.pending_documents || []).map((item) => {
         const choice = preview.decisions[item.remote_document_id] || {};
@@ -327,6 +385,46 @@ export default function LogbookTab({ code, catalog, isAdmin = false, readOnly = 
       if (result?.failed_count) setError(`${result.failed_count} document(en) konden niet worden verwerkt.`);
     } catch (err) {
       setError(err?.message || "Synchronisatie is mislukt.");
+    } finally { setBusy(false); setSyncBusyLabel(""); }
+  }
+
+  function toggleHistory(syncId) {
+    setOpenHistory((current) => ({ ...current, [syncId]: !current[syncId] }));
+  }
+
+  async function confirmUndo() {
+    if (!undoTarget) return;
+    const syncId = String(undoTarget.sync.installation_logbook_sync_id || "");
+    const documentIds = undoTarget.document?.document_id ? [undoTarget.document.document_id] : [];
+    setBusy(true); setError(""); setNotice("");
+    try {
+      const result = await undoInstallationLogbookSync(code, syncId, documentIds);
+      setUndoTarget(null);
+      await Promise.all([reload(), onDocumentsChanged?.()]);
+      if (result?.failed_count) {
+        setError(`${result.failed_count} bestand(en) konden niet uit Ember worden verwijderd.`);
+      } else {
+        setNotice(`${result?.removed_count || 0} bestand(en) uit Ember verwijderd. Het online logboek is niet gewijzigd.`);
+      }
+    } catch (err) {
+      const message = String(err?.message || "");
+      if (message.includes("active related documents")) {
+        setError("Dit bestand heeft nog actieve vervangingen of bijlagen. Verwijder of archiveer die eerst via Documenten.");
+      } else {
+        setError(message || "De synchronisatie kon niet ongedaan worden gemaakt.");
+      }
+    } finally { setBusy(false); }
+  }
+
+  async function reimportDocument(document) {
+    if (!document?.document_id) return;
+    setBusy(true); setSyncBusyLabel("Bestand opnieuw synchroniseren..."); setError(""); setNotice("");
+    try {
+      await reimportInstallationLogbookDocument(code, document.document_id);
+      await Promise.all([reload(), onDocumentsChanged?.()]);
+      setNotice(`${document.file_name || document.title || "Het bestand"} is opnieuw uit het online logboek geïmporteerd.`);
+    } catch (err) {
+      setError(err?.message || "Het bestand kon niet opnieuw worden gesynchroniseerd.");
     } finally { setBusy(false); setSyncBusyLabel(""); }
   }
 
@@ -353,15 +451,16 @@ export default function LogbookTab({ code, catalog, isAdmin = false, readOnly = 
           {helpOpen ? (
             <div id="logbook-help-panel" className="panel logbook-help-panel" role="dialog" aria-label="info logboek">
               <div className="muted logbook-help-text">
-                Deze koppeling is bedoeld voor online logboeken. Op dit moment ondersteunt Ember alleen Beveiligingslogboek.nl.
-                We werken aan koppelingen met aanvullende externe platformen.
+                Via dit tabblad koppel je Ember aan een online logboek. Op dit moment ondersteunen we alleen Beveiligingslogboek.nl.
+                Zodra andere externe platformen beschikbaar zijn, voegen we die toe. Mis je een platform? Tip ons via de feedbackknop.
               </div>
             </div>
           ) : null}
         </div>
       </div>
       {error ? <div className="ember-alert ember-alert--danger">{error}</div> : null}
-      <div className="card logbook-summary-card">
+      {notice ? <div className="ember-alert ember-alert--success">{notice}</div> : null}
+      <div className={`card logbook-summary-card${hasSuccessfulSync ? " logbook-summary-card--synced" : ""}`}>
         <div className="logbook-summary-card__main">
           <div className="admin-field logbook-link-field">
             <span>Link naar Digitaal Logboek</span>
@@ -429,12 +528,27 @@ export default function LogbookTab({ code, catalog, isAdmin = false, readOnly = 
         </div>
         <div className="doc-inline-actions logbook-summary-actions">
           {logbook?.digilog_url && !editingLink ? (
-            <a className="btn btn-secondary" href={logbook.digilog_url} target="_blank" rel="noreferrer">
+            <a
+              className="btn btn-secondary"
+              href={logbook.digilog_url}
+              target="_blank"
+              rel="noreferrer"
+              onMouseEnter={() => openLogbookIconRef.current?.startAnimation?.()}
+              onMouseLeave={() => openLogbookIconRef.current?.stopAnimation?.()}
+            >
+              <BookTextIcon ref={openLogbookIconRef} size={16} />
               Open Digitaal Logboek
             </a>
           ) : null}
-          <button type="button" className="btn" onClick={openSync} disabled={busy || readOnly || !logbook}>
-            <RefreshCWIcon size={16} />
+          <button
+            type="button"
+            className="btn"
+            onClick={openSync}
+            disabled={busy || readOnly || !logbook}
+            onMouseEnter={() => syncIconRef.current?.startAnimation?.()}
+            onMouseLeave={() => syncIconRef.current?.stopAnimation?.()}
+          >
+            <RefreshCWIcon ref={syncIconRef} size={16} />
             {busy ? "Bezig..." : "Documenten synchroniseren"}
           </button>
         </div>
@@ -453,21 +567,27 @@ export default function LogbookTab({ code, catalog, isAdmin = false, readOnly = 
               const importedDocuments = row.imported_documents || [];
               const canExpand = importedDocuments.length > 0;
               const isOpen = Boolean(openHistory[syncId]);
+              const removableDocuments = importedDocuments.filter((document) => (
+                document.installation_logbook_sync_document_id && document.is_active && !document.undone_at
+              ));
               return (
                 <Fragment key={syncId}>
-                  <tr>
+                  <tr
+                    className={canExpand ? "logbook-history-row logbook-history-row--expandable" : "logbook-history-row"}
+                    tabIndex={canExpand ? 0 : undefined}
+                    aria-expanded={canExpand ? isOpen : undefined}
+                    onClick={() => canExpand && toggleHistory(syncId)}
+                    onKeyDown={(event) => {
+                      if (!canExpand || !["Enter", " "].includes(event.key)) return;
+                      event.preventDefault();
+                      toggleHistory(syncId);
+                    }}
+                  >
                     <td>
-                      {canExpand ? (
-                        <button
-                          type="button"
-                          className="logbook-history-toggle"
-                          onClick={() => setOpenHistory((current) => ({ ...current, [syncId]: !current[syncId] }))}
-                          aria-expanded={isOpen}
-                        >
-                          {isOpen ? <ChevronDownIcon size={16} /> : <ChevronRightIcon size={16} />}
-                          {formatDateTime(row.completed_at || row.started_at)}
-                        </button>
-                      ) : formatDateTime(row.completed_at || row.started_at)}
+                      <span className="logbook-history-toggle">
+                        {canExpand ? (isOpen ? <ChevronDownIcon size={16} /> : <ChevronRightIcon size={16} />) : null}
+                        {formatDateTime(row.completed_at || row.started_at)}
+                      </span>
                     </td>
                     <td>{statusLabel(row.status)}</td>
                     <td>{row.remote_document_count}</td>
@@ -479,17 +599,87 @@ export default function LogbookTab({ code, catalog, isAdmin = false, readOnly = 
                     <tr className="logbook-history-detail-row">
                       <td colSpan="6">
                         <div className="logbook-history-documents">
-                          {importedDocuments.map((document) => (
-                            <div key={document.document_id} className="logbook-history-document">
-                              <div>
-                                <strong>{document.file_name || document.title || "Document"}</strong>
-                                <span className="muted">{document.document_type_name || document.document_type_key || "Document"}</span>
+                          {importedDocuments.map((document) => {
+                            const canOpen = Boolean(document.is_active && document.has_file && onOpenDocument);
+                            const canReimport = Boolean(
+                              document.installation_logbook_sync_document_id && document.undone_at && !document.is_active
+                            );
+                            const status = document.undone_at
+                              ? (document.is_active ? "Later opnieuw gesynchroniseerd" : "Verwijderd uit Ember")
+                              : (document.is_active ? "Geïmporteerd" : "Niet beschikbaar");
+                            return (
+                              <div
+                                key={document.installation_logbook_sync_document_id || `${syncId}-${document.document_id}`}
+                                className="logbook-history-document"
+                              >
+                                <button
+                                  type="button"
+                                  className="logbook-history-document__open"
+                                  disabled={!canOpen}
+                                  title={canOpen ? "Open dit bestand bij Documenten" : undefined}
+                                  onClick={(event) => {
+                                    event.stopPropagation();
+                                    if (canOpen) onOpenDocument(document);
+                                  }}
+                                >
+                                  <strong>{document.file_name || document.remote_name || document.title || "Document"}</strong>
+                                  <span className="muted">{document.document_type_name || document.document_type_key || "Document"}</span>
+                                </button>
+                                <div className="logbook-history-document__actions">
+                                  <span className={`ember-label ${document.is_active && !document.undone_at ? "ember-label--success" : "ember-label--muted"}`}>
+                                    {status}
+                                  </span>
+                                  {!readOnly && document.installation_logbook_sync_document_id && document.is_active && !document.undone_at ? (
+                                    <button
+                                      type="button"
+                                      className="btn btn-secondary btn-sm"
+                                      disabled={busy}
+                                      onClick={(event) => {
+                                        event.stopPropagation();
+                                        setUndoTarget({ sync: row, document, count: 1 });
+                                      }}
+                                    >
+                                      <Trash2 size={14} /> Verwijderen
+                                    </button>
+                                  ) : null}
+                                  {!readOnly && canReimport ? (
+                                    <button
+                                      type="button"
+                                      className="btn btn-secondary btn-sm"
+                                      disabled={busy}
+                                      onClick={(event) => {
+                                        event.stopPropagation();
+                                        void reimportDocument(document);
+                                      }}
+                                      onMouseEnter={() => reimportIconRefs.current[document.document_id]?.startAnimation?.()}
+                                      onMouseLeave={() => reimportIconRefs.current[document.document_id]?.stopAnimation?.()}
+                                    >
+                                      <RotateCCWIcon
+                                        ref={(node) => { reimportIconRefs.current[document.document_id] = node; }}
+                                        size={14}
+                                      />
+                                      Opnieuw synchroniseren
+                                    </button>
+                                  ) : null}
+                                </div>
                               </div>
-                              <span className={`ember-label ${document.is_active ? "ember-label--success" : "ember-label--muted"}`}>
-                                {document.is_active ? "Geïmporteerd" : "Gearchiveerd"}
-                              </span>
+                            );
+                          })}
+                          {!readOnly && removableDocuments.length > 0 ? (
+                            <div className="logbook-history-documents__footer">
+                              <button
+                                type="button"
+                                className="btn btn-secondary btn-sm"
+                                disabled={busy}
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  setUndoTarget({ sync: row, document: null, count: removableDocuments.length });
+                                }}
+                              >
+                                <Trash2 size={14} /> Synchronisatie ongedaan maken
+                              </button>
                             </div>
-                          ))}
+                          ) : null}
                         </div>
                       </td>
                     </tr>
@@ -516,6 +706,12 @@ export default function LogbookTab({ code, catalog, isAdmin = false, readOnly = 
         busy={busy}
         onCancel={cancelLinkChange}
         onConfirm={() => saveLink(pendingLinkChange)}
+      />
+      <UndoSyncModal
+        target={undoTarget}
+        busy={busy}
+        onCancel={() => !busy && setUndoTarget(null)}
+        onConfirm={confirmUndo}
       />
     </div>
   );

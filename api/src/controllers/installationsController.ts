@@ -147,6 +147,44 @@ export async function synchronizeInstallationLogbook(req: any, res: Response) {
   }
 }
 
+export async function undoInstallationLogbookSync(req: any, res: Response) {
+  try {
+    const result = await logbookService.undoInstallationLogbookSync(
+      String(req.params.code || ""),
+      req.params.syncId,
+      req.body || {},
+      req.user
+    );
+    return res.status(result.ok ? 200 : 207).json(result);
+  } catch (err: any) {
+    const msg = String(err?.message || err).toLowerCase();
+    if (isHistoricalReadOnlyMessage(msg)) return res.status(409).json({ error: "historical installation read-only" });
+    if (msg.includes("id invalid") || msg.includes("too many")) return res.status(400).json({ error: msg });
+    if (msg.includes("active related documents")) return res.status(409).json({ error: "logbook document has active related documents" });
+    if (msg.includes("not removable")) return res.status(409).json({ error: "logbook sync documents not removable" });
+    console.error(err);
+    return res.status(502).json({ error: "undo logbook synchronization failed" });
+  }
+}
+
+export async function reimportInstallationLogbookDocument(req: any, res: Response) {
+  try {
+    return res.json(await logbookService.reimportInstallationLogbookDocument(
+      String(req.params.code || ""),
+      req.params.documentId,
+      req.user
+    ));
+  } catch (err: any) {
+    const msg = String(err?.message || err).toLowerCase();
+    if (isHistoricalReadOnlyMessage(msg)) return res.status(409).json({ error: "historical installation read-only" });
+    if (msg.includes("id invalid")) return res.status(400).json({ error: msg });
+    if (msg.includes("already active") || msg.includes("not ready")) return res.status(409).json({ error: msg });
+    if (msg.includes("document not found")) return res.status(404).json({ error: msg });
+    console.error(err);
+    return res.status(502).json({ error: "reimport logbook document failed" });
+  }
+}
+
 export async function getInstallationNotes(req: any, res: Response) {
   try {
     const code = String(req.params.code || "");

@@ -11,6 +11,8 @@ import {
   putInstallationLogbook,
   previewInstallationLogbookSync,
   synchronizeInstallationLogbook,
+  undoInstallationLogbookSync,
+  reimportInstallationLogbookDocument,
   getInstallationNotes,
   getInstallationWorkflowItems,
   putInstallationType,
@@ -169,6 +171,8 @@ router.get("/:code/logbook", requireRole(...documentRoles), getInstallationLogbo
 router.put("/:code/logbook", requireRole("admin"), putInstallationLogbook);
 router.post("/:code/logbook/sync-preview", requireRole(...documentRoles), previewInstallationLogbookSync);
 router.post("/:code/logbook/synchronize", requireRole(...documentRoles), synchronizeInstallationLogbook);
+router.post("/:code/logbook/syncs/:syncId/undo", requireRole(...documentRoles), undoInstallationLogbookSync);
+router.post("/:code/logbook/documents/:documentId/reimport", requireRole(...documentRoles), reimportInstallationLogbookDocument);
 router.put("/:code/documents", requireRole(...documentRoles), putDocuments);
 router.post(
   "/:code/documents/:documentId/upload",

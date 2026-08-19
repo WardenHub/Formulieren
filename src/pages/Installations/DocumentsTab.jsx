@@ -619,6 +619,8 @@ const DocumentsTab = forwardRef(function DocumentsTab(
     onSaved,
     onAnyOpenChange,
     readOnly = false,
+    focusDocumentId = null,
+    onFocusHandled,
   },
   ref
 ) {
@@ -859,6 +861,30 @@ const DocumentsTab = forwardRef(function DocumentsTab(
 
     return sk;
   }
+
+  useEffect(() => {
+    if (!focusDocumentId || loading) return;
+    const documentId = String(focusDocumentId);
+    const found = Object.entries(rowsByType).find(([, rows]) => (
+      (rows || []).some((row) => String(row.document_id) === documentId)
+    ));
+    if (!found) return;
+
+    const [typeKey] = found;
+    const documentType = documentTypes.find((item) => item.document_type_key === typeKey);
+    const sectionKey = documentType?.section_key || "overig";
+    setViewFilter("all");
+    setSectionOpenMap((current) => ({ ...current, [sectionKey]: true }));
+    setTypeOpenMap((current) => ({ ...current, [typeKey]: true }));
+    setCollapsedArchived((current) => ({ ...current, [typeKey]: false }));
+    setAccentRowId(documentId);
+
+    const timer = window.setTimeout(() => {
+      rowRefs.current[documentId]?.scrollIntoView({ behavior: "smooth", block: "center", inline: "nearest" });
+    }, 180);
+    onFocusHandled?.();
+    return () => window.clearTimeout(timer);
+  }, [focusDocumentId, loading, rowsByType, documentTypes, onFocusHandled]);
 
   function setRow(typeKey, rowId, patch, fieldKey) {
     if (readOnly) return;

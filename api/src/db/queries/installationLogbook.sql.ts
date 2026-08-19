@@ -35,27 +35,80 @@ join dbo.InstallationLogbook l
 where l.atrium_installation_code = @code
 order by s.started_at desc;
 
-select
-  s.installation_logbook_sync_id,
-  d.document_id,
-  d.title,
-  d.file_name,
-  d.document_type_key,
-  dt.naam as document_type_name,
-  d.created_at,
-  d.is_active
-from dbo.InstallationLogbookSync s
-join dbo.InstallationLogbook l
-  on l.installation_logbook_id = s.installation_logbook_id
-join dbo.InstallationDocument d
-  on d.installation_id = l.installation_id
- and d.source_system = N'DigitaalLogboek'
- and d.created_at >= s.started_at
- and d.created_at <= coalesce(s.completed_at, sysutcdatetime())
-left join dbo.DocumentType dt
-  on dt.document_type_key = d.document_type_key
-where l.atrium_installation_code = @code
-order by s.started_at desc, d.created_at asc;
+if object_id(N'dbo.InstallationLogbookSyncDocument', N'U') is not null
+begin
+  exec sys.sp_executesql N'
+    select
+      sd.installation_logbook_sync_document_id,
+      sd.installation_logbook_sync_id,
+      sd.remote_document_id,
+      sd.action,
+      sd.outcome,
+      sd.remote_name,
+      sd.remote_time_last_modified,
+      sd.error_message,
+      sd.undone_at,
+      sd.undone_by,
+      d.document_id,
+      d.title,
+      d.file_name,
+      d.document_type_key,
+      dt.naam as document_type_name,
+      d.created_at,
+      d.is_active,
+      cast(case when d.storage_key is not null then 1 else 0 end as bit) as has_file
+    from dbo.InstallationLogbookSyncDocument sd
+    join dbo.InstallationLogbookSync s
+      on s.installation_logbook_sync_id = sd.installation_logbook_sync_id
+    join dbo.InstallationLogbook l
+      on l.installation_logbook_id = s.installation_logbook_id
+    left join dbo.InstallationDocument d
+      on d.document_id = sd.installation_document_id
+    left join dbo.DocumentType dt
+      on dt.document_type_key = coalesce(sd.document_type_key, d.document_type_key)
+    where l.atrium_installation_code = @codeInner
+      and sd.outcome = N''IMPORTED''
+    order by s.started_at desc, sd.created_at asc;',
+    N'@codeInner nvarchar(450)',
+    @codeInner = @code;
+end
+else
+begin
+  select
+    cast(null as uniqueidentifier) as installation_logbook_sync_document_id,
+    s.installation_logbook_sync_id,
+    ld.remote_document_id,
+    cast(N'IMPORT' as nvarchar(20)) as action,
+    cast(N'IMPORTED' as nvarchar(20)) as outcome,
+    coalesce(ld.remote_name, d.file_name, d.title, N'Document') as remote_name,
+    ld.handled_remote_time_last_modified as remote_time_last_modified,
+    cast(null as nvarchar(1000)) as error_message,
+    cast(null as datetime2(3)) as undone_at,
+    cast(null as nvarchar(200)) as undone_by,
+    d.document_id,
+    d.title,
+    d.file_name,
+    d.document_type_key,
+    dt.naam as document_type_name,
+    d.created_at,
+    d.is_active,
+    cast(case when d.storage_key is not null then 1 else 0 end as bit) as has_file
+  from dbo.InstallationLogbookSync s
+  join dbo.InstallationLogbook l
+    on l.installation_logbook_id = s.installation_logbook_id
+  join dbo.InstallationDocument d
+    on d.installation_id = l.installation_id
+   and d.source_system = N'DigitaalLogboek'
+   and d.created_at >= s.started_at
+   and d.created_at <= coalesce(s.completed_at, sysutcdatetime())
+  join dbo.InstallationLogbookDocument ld
+    on ld.installation_logbook_id = l.installation_logbook_id
+   and ld.installation_document_id = d.document_id
+  left join dbo.DocumentType dt
+    on dt.document_type_key = d.document_type_key
+  where l.atrium_installation_code = @code
+  order by s.started_at desc, d.created_at asc;
+end;
 `;
 
 export const upsertInstallationLogbookSql = `
@@ -158,6 +211,10 @@ insert into dbo.InstallationLogbookSync (
 `;
 
 export const markInstallationLogbookDocumentSkippedSql = `
+set nocount on;
+set xact_abort on;
+begin transaction;
+begin try
 merge dbo.InstallationLogbookDocument as target
 using (select @installationLogbookId as installation_logbook_id, @remoteDocumentId as remote_document_id) as source
   on target.installation_logbook_id = source.installation_logbook_id
@@ -188,6 +245,23 @@ when not matched then insert (
   @remoteTimeLastModified, null, null,
   sysutcdatetime(), sysutcdatetime(), @updatedBy, sysutcdatetime(), @updatedBy
 );
+
+insert into dbo.InstallationLogbookSyncDocument (
+  installation_logbook_sync_document_id, installation_logbook_sync_id,
+  remote_document_id, installation_document_id, document_type_key,
+  action, outcome, remote_name, remote_time_last_modified, created_at
+) values (
+  newid(), @syncId,
+  @remoteDocumentId, null, null,
+  N'SKIP', N'SKIPPED', @remoteName, @remoteTimeLastModified, sysutcdatetime()
+);
+
+commit transaction;
+end try
+begin catch
+  if @@trancount > 0 rollback transaction;
+  throw;
+end catch;
 `;
 
 export const importInstallationLogbookDocumentSql = `
@@ -269,6 +343,16 @@ begin try
     sysutcdatetime(), sysutcdatetime(), @updatedBy, sysutcdatetime(), @updatedBy
   );
 
+  insert into dbo.InstallationLogbookSyncDocument (
+    installation_logbook_sync_document_id, installation_logbook_sync_id,
+    remote_document_id, installation_document_id, document_type_key,
+    action, outcome, remote_name, remote_time_last_modified, created_at
+  ) values (
+    newid(), @syncId,
+    @remoteDocumentId, @documentId, @documentTypeKey,
+    N'IMPORT', N'IMPORTED', @remoteName, @remoteTimeLastModified, sysutcdatetime()
+  );
+
   commit transaction;
 end try
 begin catch
@@ -299,4 +383,239 @@ set
   updated_at = sysutcdatetime(),
   updated_by = @updatedBy
 where installation_logbook_id = @installationLogbookId;
+`;
+
+export const recordInstallationLogbookSyncFailureSql = `
+insert into dbo.InstallationLogbookSyncDocument (
+  installation_logbook_sync_document_id, installation_logbook_sync_id,
+  remote_document_id, installation_document_id, document_type_key,
+  action, outcome, remote_name, remote_time_last_modified,
+  error_message, created_at
+) values (
+  newid(), @syncId,
+  @remoteDocumentId, null, @documentTypeKey,
+  @action, N'FAILED', @remoteName, @remoteTimeLastModified,
+  @errorMessage, sysutcdatetime()
+);
+`;
+
+export const getInstallationLogbookUndoCandidatesSql = `
+select
+  sd.installation_logbook_sync_document_id,
+  sd.installation_logbook_sync_id,
+  sd.remote_document_id,
+  sd.remote_name,
+  sd.remote_time_last_modified,
+  sd.installation_document_id,
+  sd.document_type_key,
+  d.storage_provider,
+  d.storage_key,
+  d.storage_url,
+  d.checksum_sha256,
+  d.is_active,
+  (
+    select count_big(1)
+    from dbo.InstallationDocument child
+    where child.parent_document_id = d.document_id
+      and child.is_active = 1
+  ) as active_related_document_count
+from dbo.InstallationLogbookSyncDocument sd
+join dbo.InstallationLogbookSync s
+  on s.installation_logbook_sync_id = sd.installation_logbook_sync_id
+join dbo.InstallationLogbook l
+  on l.installation_logbook_id = s.installation_logbook_id
+join dbo.InstallationDocument d
+  on d.document_id = sd.installation_document_id
+where l.atrium_installation_code = @code
+  and s.installation_logbook_sync_id = @syncId
+  and sd.outcome = N'IMPORTED'
+  and sd.undone_at is null
+  and d.source_system = N'DigitaalLogboek'
+  and d.is_active = 1
+  and (
+    @documentIdsJson is null
+    or d.document_id in (
+      select try_convert(uniqueidentifier, [value])
+      from openjson(@documentIdsJson)
+      where try_convert(uniqueidentifier, [value]) is not null
+    )
+  )
+order by sd.created_at;
+`;
+
+export const markInstallationLogbookDocumentUndoneSql = `
+set nocount on;
+set xact_abort on;
+begin transaction;
+begin try
+  if not exists (
+    select 1
+    from dbo.InstallationLogbookSyncDocument sd
+    join dbo.InstallationLogbookSync s
+      on s.installation_logbook_sync_id = sd.installation_logbook_sync_id
+    join dbo.InstallationLogbook l
+      on l.installation_logbook_id = s.installation_logbook_id
+    join dbo.InstallationDocument d
+      on d.document_id = sd.installation_document_id
+    where sd.installation_logbook_sync_document_id = @syncDocumentId
+      and d.document_id = @documentId
+      and l.atrium_installation_code = @code
+      and sd.undone_at is null
+      and d.is_active = 1
+      and d.source_system = N'DigitaalLogboek'
+  )
+    throw 50000, 'logbook sync document not removable', 1;
+
+  if exists (
+    select 1
+    from dbo.InstallationDocument child
+    where child.parent_document_id = @documentId
+      and child.is_active = 1
+  )
+    throw 50000, 'logbook document has active related documents', 1;
+
+  update dbo.InstallationDocument
+  set
+    is_active = 0,
+    storage_provider = null,
+    storage_key = null,
+    storage_url = null,
+    checksum_sha256 = null,
+    updated_at = sysutcdatetime(),
+    updated_by = @updatedBy
+  where document_id = @documentId
+    and atrium_installation_code = @code;
+
+  update dbo.InstallationLogbookSyncDocument
+  set
+    undone_at = sysutcdatetime(),
+    undone_by = @updatedBy
+  where installation_logbook_sync_document_id = @syncDocumentId;
+
+  commit transaction;
+end try
+begin catch
+  if @@trancount > 0 rollback transaction;
+  throw;
+end catch;
+`;
+
+export const restoreInstallationLogbookDocumentAfterUndoFailureSql = `
+set nocount on;
+set xact_abort on;
+begin transaction;
+begin try
+  update dbo.InstallationDocument
+  set
+    is_active = 1,
+    storage_provider = @storageProvider,
+    storage_key = @storageKey,
+    storage_url = @storageUrl,
+    checksum_sha256 = @checksumSha256,
+    updated_at = sysutcdatetime(),
+    updated_by = @updatedBy
+  where document_id = @documentId
+    and atrium_installation_code = @code;
+
+  update dbo.InstallationLogbookSyncDocument
+  set undone_at = null, undone_by = null
+  where installation_logbook_sync_document_id = @syncDocumentId;
+
+  commit transaction;
+end try
+begin catch
+  if @@trancount > 0 rollback transaction;
+  throw;
+end catch;
+`;
+
+export const getInstallationLogbookReimportContextSql = `
+select top 1
+  l.installation_logbook_id,
+  l.digilog_id,
+  l.digilog_title,
+  ld.remote_document_id,
+  ld.document_type_key,
+  d.document_id,
+  d.is_active,
+  d.storage_key
+from dbo.InstallationLogbookDocument ld
+join dbo.InstallationLogbook l
+  on l.installation_logbook_id = ld.installation_logbook_id
+join dbo.InstallationDocument d
+  on d.document_id = ld.installation_document_id
+where l.atrium_installation_code = @code
+  and d.document_id = @documentId
+  and d.source_system = N'DigitaalLogboek'
+  and ld.handled_status = N'IMPORTED';
+`;
+
+export const reimportInstallationLogbookDocumentSql = `
+set nocount on;
+set xact_abort on;
+begin transaction;
+begin try
+  update dbo.InstallationDocument
+  set
+    title = @remoteName,
+    note = N'Opnieuw geïmporteerd uit Digitaal Logboek',
+    document_date = cast(@remoteCreated as date),
+    file_name = @fileName,
+    mime_type = @mimeType,
+    file_size_bytes = @fileSizeBytes,
+    uploaded_at = sysutcdatetime(),
+    uploaded_by = @updatedBy,
+    file_last_modified_at = sysutcdatetime(),
+    file_last_modified_by = @updatedBy,
+    storage_provider = @storageProvider,
+    storage_key = @storageKey,
+    storage_url = @storageUrl,
+    checksum_sha256 = @checksumSha256,
+    source_reference = @sourceReference,
+    is_active = 1,
+    updated_at = sysutcdatetime(),
+    updated_by = @updatedBy
+  where document_id = @documentId
+    and atrium_installation_code = @code
+    and source_system = N'DigitaalLogboek'
+    and is_active = 0
+    and storage_key is null;
+
+  if @@rowcount <> 1
+    throw 50000, 'logbook document not ready for reimport', 1;
+
+  update dbo.InstallationLogbookDocument
+  set
+    remote_time_last_modified = @remoteTimeLastModified,
+    remote_name = @remoteName,
+    remote_type_title = @remoteTypeTitle,
+    remote_folder_id = @remoteFolderId,
+    remote_folder_name = @remoteFolderName,
+    remote_file_extension = @remoteFileExtension,
+    remote_mime_type = @remoteMimeType,
+    handled_status = N'IMPORTED',
+    handled_remote_time_last_modified = @remoteTimeLastModified,
+    last_seen_at = sysutcdatetime(),
+    updated_at = sysutcdatetime(),
+    updated_by = @updatedBy
+  where installation_logbook_id = @installationLogbookId
+    and remote_document_id = @remoteDocumentId
+    and installation_document_id = @documentId;
+
+  insert into dbo.InstallationLogbookSyncDocument (
+    installation_logbook_sync_document_id, installation_logbook_sync_id,
+    remote_document_id, installation_document_id, document_type_key,
+    action, outcome, remote_name, remote_time_last_modified, created_at
+  ) values (
+    newid(), @syncId,
+    @remoteDocumentId, @documentId, @documentTypeKey,
+    N'REIMPORT', N'IMPORTED', @remoteName, @remoteTimeLastModified, sysutcdatetime()
+  );
+
+  commit transaction;
+end try
+begin catch
+  if @@trancount > 0 rollback transaction;
+  throw;
+end catch;
 `;

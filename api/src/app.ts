@@ -38,6 +38,10 @@ function isAllowedCorsOrigin(origin: string) {
   const normalized = norm(origin);
   if (ALLOWED.has(normalized) || TAURI_DESKTOP_ORIGINS.has(normalized)) return true;
 
+  // De native ontwikkelapp laadt via de lokale Vite-server. Productie blijft
+  // gebonden aan de vaste Tauri-origins hierboven.
+  if (normalized === "http://127.0.0.1:1430" || normalized === "http://localhost:1430") return true;
+
   if ((process.env.NODE_ENV || "").toLowerCase() !== "production") {
     try {
       const host = new URL(normalized).hostname;
