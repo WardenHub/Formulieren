@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useLocation } from "react-router-dom";
-import { Pencil, Trash2 } from "lucide-react";
+import { HandHeart, Pencil, Trash2 } from "lucide-react";
 
 import { createMyFeedback, deleteMyFeedback, getMyFeedback, getUserDirectory, putMyFeedback } from "../../api/emberApi.js";
 import ApiStartupLoader, { useApiStartupLoader } from "../../components/ApiStartupLoader.jsx";
 import {
   NoteEditorToolbar,
+  NoteLinkDialog,
   NoteRichTextContent,
   applyMarkdownLink,
   insertRawText,
@@ -20,17 +21,24 @@ import { getDirectoryDisplayName } from "../../lib/avatar.js";
 const SENTIMENT_OPTIONS = [
   {
     key: "positive",
-    label: "Upvote",
+    label: "Positief",
     tagClass: "monitor-tag monitor-tag--success",
     Icon: UpvoteIcon,
     iconColor: "#1f9d55",
   },
   {
     key: "negative",
-    label: "Downvote",
+    label: "Verbeterpunt",
     tagClass: "monitor-tag monitor-tag--warning",
     Icon: DownvoteIcon,
     iconColor: "#dc2626",
+  },
+  {
+    key: "proposal",
+    label: "Voorstel",
+    tagClass: "monitor-tag monitor-tag--active",
+    Icon: HandHeart,
+    iconColor: "var(--accent, #0f766e)",
   },
 ];
 
@@ -306,6 +314,7 @@ export default function FeedbackPage() {
   const [submitState, setSubmitState] = useState("");
   const [payload, setPayload] = useState({ items: [], summary: {} });
   const [feedbackActionBusy, setFeedbackActionBusy] = useState(false);
+  const [listFilters, setListFilters] = useState({ sentiment: "", status: "", topic: "" });
   const [draft, setDraft] = useState({
     sentiment: "positive",
     message_markdown: "",
@@ -450,7 +459,7 @@ export default function FeedbackPage() {
       linkDraft.label
     );
 
-    setDraft((prev) => ({ ...prev, body_markdown: result.value }));
+    setDraft((prev) => ({ ...prev, message_markdown: result.value }));
     closeLinkEditor();
     focusEditor(result.caretStart, result.caretEnd);
   }
@@ -462,7 +471,7 @@ export default function FeedbackPage() {
 
     setDraft((prev) => ({
       ...prev,
-      body_markdown: result.value,
+      message_markdown: result.value,
       mentions: [...prev.mentions.filter((entry) => entry.mentioned_user_object_id !== nextMention.mentioned_user_object_id), nextMention],
     }));
     closeMentionPicker();
@@ -562,6 +571,21 @@ export default function FeedbackPage() {
     }
   }
   const items = Array.isArray(payload?.items) ? payload.items : [];
+  const visibleItems = useMemo(() => items.filter((item) => {
+    if (listFilters.sentiment && item.sentiment !== listFilters.sentiment) return false;
+    if (listFilters.status && item.status !== listFilters.status) return false;
+    const needle = listFilters.topic.trim().toLowerCase();
+    return !needle || `${item.source_path || ""} ${item.message_markdown || ""} ${item.form_instance_id || ""}`.toLowerCase().includes(needle);
+  }), [items, listFilters]);
+  const feedbackGroups = useMemo(() => {
+    const groups = new Map();
+    for (const item of visibleItems) {
+      const label = item.form_instance_id ? `Formulier #${item.form_instance_id}` : getContextLabel(item.source_path) || "Algemeen";
+      if (!groups.has(label)) groups.set(label, []);
+      groups.get(label).push(item);
+    }
+    return Array.from(groups, ([label, groupItems]) => ({ label, items: groupItems }));
+  }, [visibleItems]);
 
   return (
     <div className="admin-page">
@@ -660,61 +684,18 @@ export default function FeedbackPage() {
               onInsertEmoji={insertEmojiIntoDraft}
             />
 
-            {linkDraft.open ? (
-              <div className="card ember-inline-assist-panel ember-inline-assist-panel--editor">
-                <div style={{ fontWeight: 800 }}>Hyperlink invoegen</div>
-                <div style={{ display: "grid", gap: 10, width: "100%" }}>
-                  <input
-                    className="cf-input"
-                    value={linkDraft.label}
-                    onChange={(event) =>
-                      setLinkDraft((prev) => ({ ...prev, label: event.target.value }))
-                    }
-                    placeholder="Linktekst"
-                  />
-                  <input
-                    className="cf-input"
-                    value={linkDraft.url}
-                    autoFocus
-                    onChange={(event) =>
-                      setLinkDraft((prev) => ({ ...prev, url: event.target.value }))
-                    }
-                    onKeyDown={(event) => {
-                      if (event.key === "Enter") {
-                        event.preventDefault();
-                        applyLinkToDraft();
-                      }
-                      if (event.key === "Escape") {
-                        event.preventDefault();
-                        closeLinkEditor();
-                        focusEditor(linkDraft.selectionStart, linkDraft.selectionEnd);
-                      }
-                    }}
-                    placeholder="https://..."
-                  />
-                </div>
-                <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, width: "100%" }}>
-                  <button
-                    type="button"
-                    className="btn btn-secondary"
-                    onClick={() => {
-                      closeLinkEditor();
-                      focusEditor(linkDraft.selectionStart, linkDraft.selectionEnd);
-                    }}
-                  >
-                    Annuleren
-                  </button>
-                  <button
-                    type="button"
-                    className="btn"
-                    disabled={!isHttpUrl(normalizeHttpUrl(linkDraft.url))}
-                    onClick={applyLinkToDraft}
-                  >
-                    Link invoegen
-                  </button>
-                </div>
-              </div>
-            ) : null}
+            <NoteLinkDialog
+              open={linkDraft.open}
+              label={linkDraft.label}
+              url={linkDraft.url}
+              onLabelChange={(label) => setLinkDraft((prev) => ({ ...prev, label }))}
+              onUrlChange={(url) => setLinkDraft((prev) => ({ ...prev, url }))}
+              onConfirm={applyLinkToDraft}
+              onCancel={() => {
+                closeLinkEditor();
+                focusEditor(linkDraft.selectionStart, linkDraft.selectionEnd);
+              }}
+            />
 
             {draft.mentions.length ? (
               <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
@@ -765,18 +746,34 @@ export default function FeedbackPage() {
             </div>
           </div>
 
-          {!loading && !items.length ? (
+          <div className="feedback-filter-row">
+            <select className="cf-input" value={listFilters.sentiment} onChange={(event) => setListFilters((value) => ({ ...value, sentiment: event.target.value }))}>
+              <option value="">Alle feedbacktypen</option>
+              {SENTIMENT_OPTIONS.map((option) => <option key={option.key} value={option.key}>{option.label}</option>)}
+            </select>
+            <select className="cf-input" value={listFilters.status} onChange={(event) => setListFilters((value) => ({ ...value, status: event.target.value }))}>
+              <option value="">Alle statussen</option>
+              {Object.entries(STATUS_META).map(([key, value]) => <option key={key} value={key}>{value.label}</option>)}
+            </select>
+            <input className="cf-input" value={listFilters.topic} onChange={(event) => setListFilters((value) => ({ ...value, topic: event.target.value }))} placeholder="Formulier, norm, vraag of onderwerp" />
+          </div>
+
+          {!loading && !visibleItems.length ? (
             <div className="ui-empty">Er zijn nog geen feedbackitems geplaatst.</div>
           ) : (
-            <div style={{ display: "grid", gap: 14 }}>
-              {items.map((item) => (
-                <FeedbackCard
-                  key={item.feedback_id}
-                  item={item}
-                  actionBusy={feedbackActionBusy}
-                  onEdit={() => handleEditFeedback(item)}
-                  onDelete={() => handleDeleteFeedback(item)}
-                />
+            <div className="feedback-groups">
+              {feedbackGroups.map((group) => (
+                <section key={group.label} className="feedback-group">
+                  <div className="feedback-group__head">
+                    <strong>{group.label}</strong>
+                    <div className="follow-up-tags">
+                      {SENTIMENT_OPTIONS.map((option) => <span key={option.key} className={option.tagClass}>{option.label} {group.items.filter((item) => item.sentiment === option.key).length}</span>)}
+                    </div>
+                  </div>
+                  <div className="feedback-group__items">{group.items.map((item) => (
+                    <FeedbackCard key={item.feedback_id} item={item} actionBusy={feedbackActionBusy} onEdit={() => handleEditFeedback(item)} onDelete={() => handleDeleteFeedback(item)} />
+                  ))}</div>
+                </section>
               ))}
             </div>
           )}

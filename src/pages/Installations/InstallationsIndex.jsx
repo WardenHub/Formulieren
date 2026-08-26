@@ -1,9 +1,10 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 
 import {
   getInstallationTypes,
   getInstallationsMap,
+  getInstallationsMapViewport,
 } from "@/api/emberApi.js";
 import ApiStartupLoader, { useApiStartupLoader } from "@/components/ApiStartupLoader.jsx";
 import InstallationTypeTag from "@/components/InstallationTypeTag.jsx";
@@ -164,6 +165,8 @@ export default function InstallationsIndex() {
   const [installationTypes, setInstallationTypes] = useState([]);
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState(null);
+  const [viewport, setViewport] = useState(null);
+  const mapRequestRef = useRef(null);
   const startupLoader = useApiStartupLoader(loading);
 
   useEffect(() => {
@@ -179,6 +182,7 @@ export default function InstallationsIndex() {
   }, []);
 
   useEffect(() => {
+    if (mode !== "list") return undefined;
     let cancelled = false;
 
     async function run() {
@@ -189,7 +193,7 @@ export default function InstallationsIndex() {
           ...filters,
           q: q.trim(),
           onlyCurrent,
-          take: 20000,
+          take: 500,
         });
         if (!cancelled) {
           setData({
@@ -211,13 +215,60 @@ export default function InstallationsIndex() {
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [filters, onlyCurrent, q]);
+  }, [filters, onlyCurrent, q, mode]);
+
+  useEffect(() => {
+    if (mode !== "map" || !viewport) return undefined;
+    const cleanQuery = q.trim();
+    if (cleanQuery.length === 1) {
+      setErr("Typ minimaal twee tekens om op de kaart te zoeken.");
+      return undefined;
+    }
+
+    mapRequestRef.current?.abort();
+    const controller = new AbortController();
+    mapRequestRef.current = controller;
+    const timer = window.setTimeout(async () => {
+      setLoading(true);
+      setErr(null);
+      try {
+        const response = await getInstallationsMapViewport({
+          ...viewport,
+          q: cleanQuery,
+          onlyCurrent,
+          installationType: filters.installationType,
+          followUpMode: filters.followUpMode,
+          take: cleanQuery ? 100 : 750,
+        }, { signal: controller.signal });
+        setData((current) => ({
+          ...current,
+          items: cleanQuery ? (response?.markers || []).flatMap((marker) => marker.installations || []) : [],
+          markers: response?.markers || [],
+          without_coordinates: [],
+          summary: {
+            result_count: (response?.markers || []).reduce((sum, marker) => sum + Number(marker.installation_count || 0), 0),
+            marker_count: (response?.markers || []).length,
+          },
+        }));
+      } catch (error) {
+        if (error?.name !== "AbortError") setErr(error?.message || String(error));
+      } finally {
+        if (!controller.signal.aborted) setLoading(false);
+      }
+    }, cleanQuery ? 300 : 220);
+
+    return () => {
+      window.clearTimeout(timer);
+      controller.abort();
+    };
+  }, [filters.followUpMode, filters.installationType, mode, onlyCurrent, q, viewport]);
 
   const visibleList = useMemo(() => data.items.slice(0, 500), [data.items]);
   const summary = data.summary || {};
 
   function setFilter(key, value) {
     setFilters((current) => ({ ...current, [key]: value }));
+    if (mode === "map" && !["followUpMode", "installationType"].includes(key)) setMode("list");
   }
 
   return (
@@ -343,11 +394,21 @@ export default function InstallationsIndex() {
           {err ? <p className="doc-error">{err}</p> : null}
           <ApiStartupLoader state={startupLoader} />
 
-          {!loading && !err && data.items.length === 0 ? (
+          {!loading && !err && (
+            mode === "list" ? data.items.length === 0 : data.markers.length === 0
+          ) ? (
             <div className="ui-empty">Geen installaties binnen deze selectie.</div>
           ) : null}
 
-          {!err && mode === "map" ? <InstallationsMap markers={data.markers} /> : null}
+          {mode === "map" ? (
+            <InstallationsMap
+              markers={data.markers}
+              loading={loading}
+              onViewportChange={setViewport}
+              fitRequestKey={q.trim().length >= 2 ? q.trim() : ""}
+              showLegend
+            />
+          ) : null}
 
           {!loading && !err && mode === "list" && visibleList.length > 0 ? (
             <>

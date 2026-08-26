@@ -12,6 +12,7 @@ import FormsTab from "./FormsTab.jsx";
 import ComponentsTab from "./ComponentsTab.jsx";
 import SoftwareTab from "./SoftwareTab.jsx";
 import NotesTab from "./NotesTab.jsx";
+import FollowUpsTab from "./FollowUpsTab.jsx";
 import LogbookTab from "./LogbookTab.jsx";
 import InstallationOverviewTab from "./InstallationOverviewTab.jsx";
 import DrawingPinsTab from "./DrawingPinsTab.jsx";
@@ -36,7 +37,7 @@ import { CogIcon } from "@/components/ui/cog";
 import { MonitorCheckIcon } from "@/components/ui/monitor-check";
 import { BookTextIcon } from "@/components/ui/book-text";
 import { RefreshCWIcon } from "@/components/ui/refresh-cw";
-import { BadgeCheck, ClipboardCheck, MapPin, MapPinned, MessageSquareText } from "lucide-react";
+import { BadgeCheck, ClipboardCheck, ClipboardList, MapPin, MapPinned, MessageSquareText } from "lucide-react";
 import { pushRecentHomeItem } from "../../lib/recentHomeItems.js";
 import {
   getInstallationStatusClassName,
@@ -296,6 +297,20 @@ function buildRequiredDocumentsHeaderSummary(catalog, docs) {
   };
 }
 
+function hasUsablePdfDrawing(docs) {
+  function visit(rows) {
+    return (rows || []).some((row) => {
+      const fileName = String(row?.file_name || "").toLowerCase();
+      const mimeType = String(row?.mime_type || "").toLowerCase();
+      const extension = String(row?.file_extension || "").replace(/^\./, "").toLowerCase();
+      const isPdf = mimeType === "application/pdf" || extension === "pdf" || fileName.endsWith(".pdf");
+      if (row?.document_is_active !== false && row?.is_active !== false && row?.has_file && isPdf) return true;
+      return visit(row?.history) || visit(row?.attachments);
+    });
+  }
+  return (docs?.documentTypes || []).some((group) => visit(group?.documents));
+}
+
 function buildSoftwareHeaderSummary(softwareData) {
   if (!softwareData) {
     return {
@@ -367,7 +382,16 @@ export default function InstallationDetails() {
 
   const typeIsSet = Boolean(installation?.installation_type_key);
   const isHistorical = isHistoricalInstallation(installation);
+  const hasDrawings = useMemo(() => hasUsablePdfDrawing(docs), [docs]);
   const historicalReason = "Deze installatie is historisch en alleen als dossier beschikbaar.";
+
+  useEffect(() => {
+    if (activeTab !== "drawings" || hasDrawings || docsLoading) return;
+    setActiveTab("documents");
+    const next = new URLSearchParams(searchParams);
+    next.set("tab", "documents");
+    setSearchParams(next, { replace: true });
+  }, [activeTab, docsLoading, hasDrawings, searchParams, setSearchParams]);
 
   const [customDirty, setCustomDirty] = useState(false);
   const [customSaving, setCustomSaving] = useState(false);
@@ -860,14 +884,7 @@ export default function InstallationDetails() {
       },
       {
         key: "notes",
-        label: (
-          <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
-            <span>Notities</span>
-            {notesWorkflowOpenCount > 0 ? (
-              <span className="monitor-tag monitor-tag--warning">{notesWorkflowOpenCount}</span>
-            ) : null}
-          </span>
-        ),
+        label: "Notities",
         Icon: MessageSquareText,
         content: (
           <NotesTab
@@ -879,6 +896,24 @@ export default function InstallationDetails() {
             activationToken={activeTab === "notes" ? formsActivationToken : 0}
             onWorkflowCountChange={setNotesWorkflowOpenCount}
             onWarningNotesChange={setWarningNotes}
+          />
+        ),
+      },
+      {
+        key: "followups",
+        label: (
+          <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+            <span>Opvolgingen</span>
+            {notesWorkflowOpenCount > 0 ? <span className="monitor-tag monitor-tag--warning">{notesWorkflowOpenCount}</span> : null}
+          </span>
+        ),
+        Icon: ClipboardList,
+        content: (
+          <FollowUpsTab
+            code={code}
+            readOnly={isHistorical}
+            initialDrawingPinId={searchParams.get("newFollowUpPin") || ""}
+            onCountChange={setNotesWorkflowOpenCount}
           />
         ),
       },
@@ -970,7 +1005,7 @@ export default function InstallationDetails() {
           />
         ),
       },
-      {
+      hasDrawings ? {
         key: "drawings",
         label: "Tekeningen",
         Icon: MapPinned,
@@ -978,9 +1013,10 @@ export default function InstallationDetails() {
           <DrawingPinsTab
             code={code}
             readOnly={isHistorical}
+            onOpenFollowUp={() => setActiveTab("followups")}
           />
         ),
-      },
+      } : null,
       {
         key: "certificates",
         label: "Certificaten",
@@ -1187,11 +1223,12 @@ export default function InstallationDetails() {
           />
         ),
       },
-    ];
+    ].filter(Boolean);
   }, [
     catalog,
     installation,
     docs,
+    hasDrawings,
     code,
     customValues,
     typeIsSet,
@@ -1204,6 +1241,7 @@ export default function InstallationDetails() {
     activeTab,
     formsActivationToken,
     notesWorkflowOpenCount,
+    searchParams,
     selectedFormCode,
     preflight,
     preflightLoading,

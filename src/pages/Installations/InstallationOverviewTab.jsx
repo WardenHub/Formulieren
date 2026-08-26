@@ -76,9 +76,39 @@ export default function InstallationOverviewTab({ code, onOpenTab }) {
       open_form_count: item.open_form_count,
       missing_required_document_count: item.missing_required_document_count,
       installation_count: 1,
+      installation_type_key: item.installation_type_key,
+      installation_type_name: item.installation_type_name,
       installations: [item],
     }];
   }, [item]);
+
+  const contractRows = Array.isArray(item?.service_badges) ? item.service_badges : [];
+  const activeContracts = contractRows.filter((row) => String(row?.service_status || "").toUpperCase() === "ACTIVE");
+  const historicalContracts = contractRows.filter((row) => String(row?.service_status || "").toUpperCase() !== "ACTIVE");
+
+  function ContractCard({ service }) {
+    const title = service.contract_type_description || service.display_label || service.service_category || "Contract";
+    return (
+      <article className="installation-overview__service-card">
+        <div className="installation-overview__heading">
+          <strong>{title}</strong>
+          <span className={`ember-label ember-label--${tone(service.service_status)}`}>{label(service.service_status)}</span>
+        </div>
+        <span>
+          {service.contract_type_code ? `${service.contract_type_code}; ` : ""}
+          {service.paragraph_title || service.paragraph_code || "Paragraaf onbekend"}
+        </span>
+        {(service.contract_start_date || service.paragraph_start_date || service.contract_end_date || service.paragraph_end_date) ? (
+          <small>
+            {service.paragraph_start_date || service.contract_start_date || "onbekend"} tot {service.paragraph_end_date || service.contract_end_date || "doorlopend"}
+          </small>
+        ) : null}
+        <small title={`Bron: Atrium bestekparagraaf; status ${service.document_status_code || "onbekend"}; uitvoermodus ${service.paragraph_execution_mode || "onbekend"}`}>
+          {service.service_status_reason || "Geen statusreden beschikbaar"}
+        </small>
+      </article>
+    );
+  }
 
   if (loading) return <div className="ui-empty">Operationele samenvatting laden...</div>;
   if (error) return <div className="ember-alert ember-alert--danger">{error}</div>;
@@ -135,7 +165,7 @@ export default function InstallationOverviewTab({ code, onOpenTab }) {
         </div>
 
         {Number(item.open_follow_up_count || 0) > 0 ? (
-          <button type="button" className="btn btn-secondary" onClick={() => onOpenTab?.("notes")}>
+          <button type="button" className="btn btn-secondary" onClick={() => onOpenTab?.("followups")}>
             Open opvolgingen en notities
           </button>
         ) : null}
@@ -151,26 +181,23 @@ export default function InstallationOverviewTab({ code, onOpenTab }) {
             {item.has_valid_coordinates ? "Coördinaten beschikbaar" : "Coördinaten ontbreken"}
           </span>
         </div>
-        <InstallationsMap markers={marker} compact />
+        <InstallationsMap markers={marker} compact fitRequestKey={code} />
       </section>
 
-      {item.service_badges?.length ? (
+      {contractRows.length ? (
         <section className="installation-overview__services">
-          <h2>Dienstonderbouwing</h2>
+          <h2>Contracten</h2>
           <div className="installation-overview__service-grid">
-            {item.service_badges.map((service, index) => (
-              <article key={`${service.service_category}:${service.paragraph_code}:${index}`} className="installation-overview__service-card">
-                <div className="installation-overview__heading">
-                  <strong>{service.display_label || service.service_category}</strong>
-                  <span className={`ember-label ember-label--${tone(service.service_status)}`}>
-                    {label(service.service_status)}
-                  </span>
-                </div>
-                <span>{service.bestek_code || "Bestek onbekend"}; {service.paragraph_title || service.paragraph_code || "Paragraaf onbekend"}</span>
-                <small>{service.service_status_reason || "Geen statusreden beschikbaar"}</small>
-              </article>
-            ))}
+            {activeContracts.map((service, index) => <ContractCard key={`${service.service_category}:${service.paragraph_code}:${index}`} service={service} />)}
           </div>
+          {historicalContracts.length ? (
+            <details className="installation-overview__contract-history">
+              <summary>Historische contracten ({historicalContracts.length})</summary>
+              <div className="installation-overview__service-grid">
+                {historicalContracts.map((service, index) => <ContractCard key={`history:${service.service_category}:${service.paragraph_code}:${index}`} service={service} />)}
+              </div>
+            </details>
+          ) : null}
         </section>
       ) : null}
     </div>

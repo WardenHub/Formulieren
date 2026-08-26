@@ -2011,11 +2011,27 @@ export default function FormsMonitorDetailPage() {
   function isRetryableDetailLoadError(e) {
     const message = String(e?.message || e || "").toLowerCase();
     if (!message) return true;
+    if (e?.status && Number(e.status) < 500) return false;
+    if (message.includes("technical error")) return false;
     if (message.includes("not found")) return false;
     if (message.includes("forbidden")) return false;
     if (message.includes("unauthorized")) return false;
     if (message.includes("ongeldig")) return false;
     return true;
+  }
+
+  function friendlyDetailError(errorValue) {
+    const message = String(errorValue?.message || errorValue || "").toLowerCase();
+    if (errorValue?.status === 404 || message.includes("not found")) {
+      return "Formulier niet gevonden";
+    }
+    if (errorValue?.status === 403 || message.includes("forbidden")) {
+      return "Je hebt onvoldoende rechten om dit formulier te bekijken.";
+    }
+    const correlationId = String(errorValue?.correlationId || "").trim();
+    return correlationId
+      ? `Het formulier kon door een technische fout niet worden geladen. Referentie: ${correlationId}`
+      : "Het formulier kon door een technische fout niet worden geladen. Probeer het later opnieuw.";
   }
 
   async function loadDetailPage() {
@@ -2091,7 +2107,7 @@ export default function FormsMonitorDetailPage() {
         return;
       } catch (e) {
         if (attempt >= maxAttempts || !isRetryableDetailLoadError(e)) {
-          setError(e?.message || String(e));
+          setError(friendlyDetailError(e));
           setDetail(null);
           setFollowUps([]);
           setDetailLoading(false);

@@ -21,6 +21,7 @@ import { RefreshCWIcon } from "@/components/ui/refresh-cw";
 import { UploadIcon } from "@/components/ui/upload";
 import { FileTextIcon } from "@/components/ui/file-text";
 import { FileStackIcon } from "@/components/ui/file-stack";
+import DateInput from "../../components/DateInput.jsx";
 
 function cx(...parts) {
   return parts.filter(Boolean).join(" ");
@@ -278,14 +279,15 @@ function StatusChip({ children, tone = "neutral" }) {
   return <span className={`ember-label ember-label--${tone}`}>{children}</span>;
 }
 
-function AnimatedActionButton({
-  title,
-  onClick,
-  Icon,
-  children,
-  className = "btn-ghost",
-  disabled = false,
-}) {
+function AnimatedActionButton(props) {
+  const {
+    title,
+    onClick,
+    children,
+    className = "btn-ghost",
+    disabled = false,
+  } = props;
+  const IconComponent = props.Icon;
   const iconRef = useRef(null);
 
   return (
@@ -302,7 +304,7 @@ function AnimatedActionButton({
       onMouseEnter={() => iconRef.current?.startAnimation?.()}
       onMouseLeave={() => iconRef.current?.stopAnimation?.()}
     >
-      <Icon ref={iconRef} size={16} className="doc-anim-icon" />
+      <IconComponent ref={iconRef} size={16} className="doc-anim-icon" />
       {children}
     </button>
   );
@@ -558,13 +560,11 @@ function BulkUploadModal({
                     disabled={readOnly}
                   />
 
-                  <input
-                    className={cx("input", item.prefilled_date && "doc-bulk-date-input--prefilled")}
-                    type="date"
+                  <DateInput
                     value={item.document_date || ""}
-                    onChange={(e) =>
+                    onChange={(value) =>
                       onUpdateItem?.(item.id, {
-                        document_date: e.target.value || null,
+                        document_date: value || null,
                         prefilled_date: false,
                       })
                     }
@@ -1680,7 +1680,7 @@ const DocumentsTab = forwardRef(function DocumentsTab(
   function renderQueuedBadge(rowId) {
     const file = pendingFilesByRowId[rowId];
     if (!file) return null;
-    return <StatusChip tone="warning">Wordt geüpload bij opslaan; {file.name}</StatusChip>;
+    return <StatusChip tone="warning">Klaar voor upload; {file.name} ; {formatBytes(file.size)} ; {file.type || "onbekend type"}</StatusChip>;
   }
 
   function renderRowStatus(rowId) {
@@ -1707,7 +1707,7 @@ const DocumentsTab = forwardRef(function DocumentsTab(
     if (queued) {
       return {
         title: queued.name,
-        sub: "Wordt geüpload bij opslaan",
+        sub: `Klaar voor upload ; ${formatBytes(queued.size)} ; ${queued.type || "onbekend type"}`,
       };
     }
 
@@ -1919,12 +1919,10 @@ const DocumentsTab = forwardRef(function DocumentsTab(
 
                 <div className="doc-field">
                   {fieldLabel("datum", Boolean(df.document_date))}
-                  <input
-                    className="cf-input"
-                    type="date"
+                  <DateInput
                     value={isoDate(row.document_date)}
-                    onChange={(e) =>
-                      setRow(typeKey, row.document_id, { document_date: e.target.value || null }, "document_date")
+                    onChange={(value) =>
+                      setRow(typeKey, row.document_id, { document_date: value || null }, "document_date")
                     }
                     disabled={readOnly}
                   />
@@ -2035,6 +2033,23 @@ const DocumentsTab = forwardRef(function DocumentsTab(
                       >
                         uploaden
                       </AnimatedActionButton>
+                      <button
+                        type="button"
+                        className="btn danger btn-compact"
+                        aria-label={`Selectie ${pendingFile.name} verwijderen`}
+                        title="Niet-geüploade selectie verwijderen"
+                        onClick={() => {
+                          setPendingFilesByRowId((current) => {
+                            const next = { ...current };
+                            delete next[row.document_id];
+                            return next;
+                          });
+                          clearRowStatus(row.document_id);
+                        }}
+                        disabled={actionDisabled}
+                      >
+                        × Verwijderen
+                      </button>
                     </div>
                   )}
                 </div>

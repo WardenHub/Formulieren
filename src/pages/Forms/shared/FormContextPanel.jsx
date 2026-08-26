@@ -2012,6 +2012,7 @@ export default function FormContextPanel({
                     const isEditing = editingDocId === doc.form_instance_document_id;
                     const docBusy = busyDocId === doc.form_instance_document_id;
                     const selectedForDoc = getDocSelectedLabelKeys(doc);
+                    const editableFileName = splitFileName(doc.file_name || "");
 
                     return (
                       <DocumentCard
@@ -2062,34 +2063,32 @@ export default function FormContextPanel({
                                 <div className="muted" style={{ fontSize: 12 }}>
                                   Bestandsnaam
                                 </div>
-                                <input
-                                  className="input"
-                                  value={doc.file_name || ""}
-                                  disabled={docBusy}
-                                  onChange={(e) => {
-                                    const value = e.target.value;
-                                    setFormDocs((prev) =>
-                                      prev.map((x) =>
-                                        x.form_instance_document_id === doc.form_instance_document_id
-                                          ? {
-                                              ...x,
-                                              file_name: buildFileNameWithOriginalExtension(
-                                                value,
-                                                x.file_name || x.title || "bijlage"
-                                              ),
-                                            }
-                                          : x
-                                      )
-                                    );
-                                  }}
-                                  onBlur={() => {
-                                    const currentDoc = formDocs.find(
-                                      (x) => x.form_instance_document_id === doc.form_instance_document_id
-                                    );
-                                    saveDocFileName(doc, currentDoc?.file_name || "");
-                                  }}
-                                  placeholder="Bestandsnaam"
-                                />
+                                <div className="ember-file-name-editor">
+                                  <input
+                                    className="input ember-file-name-editor__input"
+                                    value={editableFileName.baseName}
+                                    disabled={docBusy}
+                                    onChange={(e) => {
+                                      const pastedOrTyped = splitFileName(sanitizeFileName(e.target.value, ""));
+                                      const baseName = pastedOrTyped.baseName;
+                                      setFormDocs((prev) => prev.map((x) => x.form_instance_document_id === doc.form_instance_document_id
+                                        ? { ...x, file_name: `${baseName}${editableFileName.extension ? `.${editableFileName.extension}` : ""}` }
+                                        : x));
+                                    }}
+                                    onBlur={() => {
+                                      const currentDoc = formDocs.find((x) => x.form_instance_document_id === doc.form_instance_document_id);
+                                      const current = splitFileName(currentDoc?.file_name || "");
+                                      if (!current.baseName.trim()) {
+                                        setError("Bestandsnaam mag niet leeg zijn.");
+                                        return;
+                                      }
+                                      saveDocFileName(doc, `${current.baseName}${editableFileName.extension ? `.${editableFileName.extension}` : ""}`);
+                                    }}
+                                    placeholder="Bestandsnaam zonder extensie"
+                                    aria-label="Bestandsnaam zonder extensie"
+                                  />
+                                  {editableFileName.extension ? <span className="ember-file-name-editor__suffix">.{editableFileName.extension}</span> : null}
+                                </div>
                                 <div className="muted" style={{ fontSize: 11 }}>
                                   De uploadnaam en het onderliggende bestand worden samen hernoemd.
                                 </div>

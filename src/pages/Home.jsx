@@ -52,7 +52,9 @@ function newsImageSrc(rawUrl) {
   return `${base}/home/news/image?url=${encodeURIComponent(rawUrl)}`;
 }
 
-function AnimatedHomeCard({ to, Icon, title, text }) {
+function AnimatedHomeCard(props) {
+  const { to, title, text } = props;
+  const IconComponent = props.Icon;
   const iconRef = useRef(null);
   const arrowRef = useRef(null);
 
@@ -71,7 +73,7 @@ function AnimatedHomeCard({ to, Icon, title, text }) {
     >
       <div className="home-card-head">
         <div className="home-card-icon-wrap">
-          <Icon ref={iconRef} size={18} className="nav-anim-icon" />
+          <IconComponent ref={iconRef} size={18} className="nav-anim-icon" />
         </div>
 
         <div className="home-card-title-wrap">
@@ -195,6 +197,13 @@ export default function Home() {
               Icon={SearchIcon}
               title="Installatiegegevens"
               text="Zoek en bekijk installatie-informatie, maak en vul formulieren voor installaties."
+            />
+
+            <AnimatedHomeCard
+              to="/formulieren"
+              Icon={FileCheckIcon}
+              title="Formulieren"
+              text="Start algemene of installatiegebonden formulieren en bekijk je eigen formulieren."
             />
 
             <AnimatedHomeCard

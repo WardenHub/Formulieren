@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { GlobalWorkerOptions, getDocument as loadPdfDocument } from "pdfjs-dist";
 import pdfWorkerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
+import { MapPin, MessageSquareText, MoreVertical, TriangleAlert } from "lucide-react";
 
 import {
   createDrawingPin,
@@ -17,12 +18,15 @@ import {
 
 GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
 
-function PdfPinViewer({ pdfDocument, pageNumber, pins, selectedPinId, placing, onPlace, onSelect }) {
+function PdfPinViewer({ pdfDocument, pageNumber, pins, selectedPinId, placing, onPlace, onSelect, onQuickAction, readOnly }) {
   const shellRef = useRef(null);
   const canvasRef = useRef(null);
   const [pageSize, setPageSize] = useState({ width: 0, height: 0 });
   const [shellWidth, setShellWidth] = useState(900);
   const [rendering, setRendering] = useState(false);
+  const [quickMenu, setQuickMenu] = useState(null);
+  const menuRef = useRef(null);
+  const longPressRef = useRef(null);
 
   useEffect(() => {
     if (!shellRef.current) return undefined;
@@ -73,6 +77,52 @@ function PdfPinViewer({ pdfDocument, pageNumber, pins, selectedPinId, placing, o
 
   const pagePins = pins.filter((pin) => Number(pin.page_number) === Number(pageNumber));
 
+  useEffect(() => {
+    if (!quickMenu) return undefined;
+    const close = (event) => {
+      if (event.type === "keydown" && event.key !== "Escape") return;
+      if (event.type === "pointerdown" && menuRef.current?.contains(event.target)) return;
+      setQuickMenu(null);
+    };
+    window.addEventListener("keydown", close);
+    window.addEventListener("pointerdown", close);
+    window.requestAnimationFrame(() => menuRef.current?.querySelector("button")?.focus());
+    return () => {
+      window.removeEventListener("keydown", close);
+      window.removeEventListener("pointerdown", close);
+    };
+  }, [quickMenu]);
+
+  function positionFromEvent(event) {
+    const layer = event.currentTarget;
+    const rect = layer.getBoundingClientRect();
+    const offsetX = Math.min(rect.width - 72, Math.max(72, event.clientX - rect.left));
+    const offsetY = Math.min(rect.height - 72, Math.max(72, event.clientY - rect.top));
+    return {
+      left: offsetX,
+      top: offsetY,
+      x_normalized: Math.min(1, Math.max(0, (event.clientX - rect.left) / rect.width)),
+      y_normalized: Math.min(1, Math.max(0, (event.clientY - rect.top) / rect.height)),
+      page_number: pageNumber,
+    };
+  }
+
+  function openQuickMenu(event) {
+    if (readOnly || placing || !pageSize.width || !pageSize.height) return;
+    event.preventDefault();
+    setQuickMenu(positionFromEvent(event));
+  }
+
+  function runQuickAction(kind) {
+    if (!quickMenu) return;
+    onQuickAction?.(kind, {
+      x_normalized: quickMenu.x_normalized,
+      y_normalized: quickMenu.y_normalized,
+      page_number: quickMenu.page_number,
+    });
+    setQuickMenu(null);
+  }
+
   function handlePlacement(event) {
     if (!placing || !pageSize.width || !pageSize.height) return;
     const rect = event.currentTarget.getBoundingClientRect();
@@ -91,6 +141,15 @@ function PdfPinViewer({ pdfDocument, pageNumber, pins, selectedPinId, placing, o
           tabIndex={placing ? 0 : -1}
           aria-label={placing ? "Klik op de tekening om een pin te plaatsen" : "Pins op de tekening"}
           onClick={handlePlacement}
+          onContextMenu={openQuickMenu}
+          onPointerDown={(event) => {
+            if (event.pointerType === "mouse" || readOnly || placing) return;
+            const position = positionFromEvent(event);
+            longPressRef.current = window.setTimeout(() => setQuickMenu(position), 550);
+          }}
+          onPointerUp={() => { if (longPressRef.current) window.clearTimeout(longPressRef.current); }}
+          onPointerCancel={() => { if (longPressRef.current) window.clearTimeout(longPressRef.current); }}
+          onPointerMove={() => { if (longPressRef.current) window.clearTimeout(longPressRef.current); }}
         >
           {pagePins.map((pin) => (
             <button
@@ -108,6 +167,26 @@ function PdfPinViewer({ pdfDocument, pageNumber, pins, selectedPinId, placing, o
               <span />
             </button>
           ))}
+          {!readOnly && !placing ? (
+            <button
+              type="button"
+              className="drawing-quick-menu-fallback"
+              aria-label="Snelmenu voor een pin openen"
+              title="Pin, opmerking of tekortkoming toevoegen"
+              onClick={(event) => {
+                event.stopPropagation();
+                const rect = event.currentTarget.parentElement.getBoundingClientRect();
+                setQuickMenu({ left: rect.width - 54, top: 54, x_normalized: 0.88, y_normalized: 0.12, page_number: pageNumber });
+              }}
+            ><MoreVertical size={19} /></button>
+          ) : null}
+          {quickMenu ? (
+            <div ref={menuRef} className="drawing-radial-menu" style={{ left: quickMenu.left, top: quickMenu.top }} role="menu" aria-label="Tekeningactie">
+              <button type="button" role="menuitem" className="drawing-radial-menu__item drawing-radial-menu__item--pin" onClick={(event) => { event.stopPropagation(); runQuickAction("pin"); }}><MapPin size={18} /><span>Pin</span></button>
+              <button type="button" role="menuitem" className="drawing-radial-menu__item drawing-radial-menu__item--note" onClick={(event) => { event.stopPropagation(); runQuickAction("note"); }}><MessageSquareText size={18} /><span>Opmerking</span></button>
+              <button type="button" role="menuitem" className="drawing-radial-menu__item drawing-radial-menu__item--defect" onClick={(event) => { event.stopPropagation(); runQuickAction("defect"); }}><TriangleAlert size={18} /><span>Tekortkoming</span></button>
+            </div>
+          ) : null}
         </div>
       </div>
       {rendering ? <div className="drawing-pdf-loading">PDF-pagina laden...</div> : null}
@@ -240,7 +319,7 @@ function PinActions({ code, pin, actions, busy, onChanged }) {
   );
 }
 
-export default function DrawingPinsTab({ code, readOnly = false }) {
+export default function DrawingPinsTab({ code, readOnly = false, onOpenFollowUp }) {
   const [searchParams, setSearchParams] = useSearchParams();
   const [directory, setDirectory] = useState({ drawings: [], follow_up_actions: [] });
   const [selectedDocumentId, setSelectedDocumentId] = useState(() => String(searchParams.get("drawing") || ""));
@@ -253,6 +332,7 @@ export default function DrawingPinsTab({ code, readOnly = false }) {
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [quickActionKind, setQuickActionKind] = useState("");
 
   const selectedDrawing = directory.drawings.find((item) => String(item.document_id) === selectedDocumentId) || null;
   const selectedPin = pins.find((item) => String(item.drawing_pin_id) === selectedPinId) || null;
@@ -362,7 +442,15 @@ export default function DrawingPinsTab({ code, readOnly = false }) {
         const response = await createDrawingPin(code, selectedDocumentId, draft);
         setDraft(response?.pin || null);
         setSelectedPinId(String(response?.pin?.drawing_pin_id || ""));
+        if (quickActionKind === "defect" && response?.pin?.drawing_pin_id) {
+          const next = new URLSearchParams(searchParams);
+          next.set("tab", "followups");
+          next.set("newFollowUpPin", String(response.pin.drawing_pin_id));
+          setSearchParams(next);
+          onOpenFollowUp?.(String(response.pin.drawing_pin_id));
+        }
       }
+      setQuickActionKind("");
       setPlacing(false);
       await Promise.all([loadPins(), loadDirectory({ documentId: selectedDocumentId })]);
     } catch (requestError) {
@@ -473,6 +561,7 @@ export default function DrawingPinsTab({ code, readOnly = false }) {
               pins={pins}
               selectedPinId={selectedPinId}
               placing={placing}
+              readOnly={readOnly || selectedDrawing?.is_current_version === false}
               onPlace={(position) => {
                 setPlacing(false);
                 setDraft({ ...position, label: "", description: "" });
@@ -482,6 +571,17 @@ export default function DrawingPinsTab({ code, readOnly = false }) {
                 setDraft({ ...pin });
                 setPlacing(false);
                 updateLocation(selectedDocumentId, pin.page_number, pin.drawing_pin_id);
+              }}
+              onQuickAction={(kind, position) => {
+                setQuickActionKind(kind);
+                setSelectedPinId("");
+                setPlacing(false);
+                setDraft({
+                  ...position,
+                  label: kind === "defect" ? "Tekortkoming" : kind === "note" ? "Opmerking" : "Pin",
+                  description: "",
+                  pin_kind: kind === "defect" ? "DEFICIENCY" : kind === "note" ? "NOTE" : "LOCATION",
+                });
               }}
             />
           </div>

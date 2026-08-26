@@ -47,7 +47,29 @@ const EMPTY_INSTANCE_FILTERS = {
   dateTo: "",
   reviewStatus: "",
   hasOpenPoints: "",
+  category: "all",
+  relation: "",
+  project: "",
+  workOrder: "",
+  installation: "",
+  employee: "",
 };
+
+function isInstallationForm(form) {
+  return (form?.context_rules || []).some(
+    (rule) => String(rule?.context_type || "").toUpperCase() === "INSTALLATION" && Boolean(rule?.is_required)
+  );
+}
+
+function matchesInstanceContext(item, type, query) {
+  const clean = String(query || "").trim().toLowerCase();
+  if (!clean) return true;
+  return (item?.contexts || []).some((context) => (
+    String(context?.context_type || "").toUpperCase() === type &&
+    [context?.display_label, context?.display_code, context?.source_key]
+      .some((value) => String(value || "").toLowerCase().includes(clean))
+  ));
+}
 
 function formatDate(value) {
   if (!value) return "-";
@@ -297,6 +319,15 @@ export default function FormsHubPage() {
   const [selectedForm, setSelectedForm] = useState(null);
   const [instanceFilters, setInstanceFilters] = useState(EMPTY_INSTANCE_FILTERS);
   const [instanceLoading, setInstanceLoading] = useState(false);
+  const [availableCategory, setAvailableCategory] = useState("all");
+  const canOpenMonitor = roles.some((role) => ["admin", "documentbeheerder", "gebruiker"].includes(role));
+  const canManageForms = roles.includes("admin");
+
+  const visibleForms = useMemo(() => forms.filter((form) => {
+    if (availableCategory === "installation") return isInstallationForm(form);
+    if (availableCategory === "general") return !isInstallationForm(form);
+    return true;
+  }), [forms, availableCategory]);
 
   async function load() {
     setLoading(true);
@@ -331,7 +362,20 @@ export default function FormsHubPage() {
             ? false
             : undefined,
       });
-      setInstances(Array.isArray(result?.items) ? result.items : []);
+      const nextItems = Array.isArray(result?.items) ? result.items : [];
+      const visibleItems = nextItems.filter((item) => {
+        const installationBound = (item?.contexts || []).some((context) => (
+          String(context?.context_type || "").toUpperCase() === "INSTALLATION"
+        ));
+        if (nextFilters.category === "installation" && !installationBound) return false;
+        if (nextFilters.category === "general" && installationBound) return false;
+        return matchesInstanceContext(item, "RELATION", nextFilters.relation)
+          && matchesInstanceContext(item, "PROJECT", nextFilters.project)
+          && matchesInstanceContext(item, "WORK_ORDER", nextFilters.workOrder)
+          && matchesInstanceContext(item, "INSTALLATION", nextFilters.installation)
+          && matchesInstanceContext(item, "EMPLOYEE", nextFilters.employee);
+      });
+      setInstances(visibleItems);
     } catch (err) {
       setError(String(err?.message || "Formulieren laden is mislukt."));
     } finally {
@@ -364,16 +408,26 @@ export default function FormsHubPage() {
         <div className="forms-hub-tabs" role="tablist" aria-label="Formulieren">
           <button type="button" className={`btn ${tab === "available" ? "btn-primary" : "btn-secondary"}`} onClick={() => setTab("available")}>Beschikbare formulieren</button>
           <button type="button" className={`btn ${tab === "mine" ? "btn-primary" : "btn-secondary"}`} onClick={() => setTab("mine")}>Mijn formulieren</button>
-          <button type="button" className="btn btn-secondary" onClick={() => navigate("/monitor/formulieren")}>Formulierenmonitor</button>
-          {roles.includes("admin") ? <button type="button" className="btn btn-secondary" onClick={() => navigate("/admin")}>Formulierbeheer</button> : null}
+          {canOpenMonitor ? <button type="button" className="btn btn-secondary" onClick={() => navigate("/monitor/formulieren")}>Formulierenmonitor</button> : null}
+          {canManageForms ? <button type="button" className="btn btn-secondary" onClick={() => navigate("/admin")}>Formulierbeheer</button> : null}
         </div>
 
         {loading ? <div className="card">Formulieren laden...</div> : null}
         {error ? <div className="ember-error-text">{error}</div> : null}
 
         {!loading && !error && tab === "available" ? (
-          <div className="forms-hub-grid">
-            {forms.map((form) => (
+          <div className="ui-stack">
+            <div className="forms-hub-tabs" role="group" aria-label="Categorie formulieren">
+              {[
+                ["all", "Alle formulieren"],
+                ["general", "Algemene formulieren"],
+                ["installation", "Installatiegebonden formulieren"],
+              ].map(([value, label]) => (
+                <button key={value} type="button" className={`btn ${availableCategory === value ? "btn-primary" : "btn-secondary"}`} onClick={() => setAvailableCategory(value)}>{label}</button>
+              ))}
+            </div>
+            <div className="forms-hub-grid">
+            {visibleForms.map((form) => (
               <article className="card forms-hub-card" key={form.form_id || form.code}>
                 <div className="ui-row-between">
                   <div>
@@ -384,6 +438,9 @@ export default function FormsHubPage() {
                 </div>
                 <p>{form.description || "Geen aanvullende beschrijving."}</p>
                 <div className="ember-label-row">
+                  <span className="ember-label ember-label--neutral">
+                    {isInstallationForm(form) ? "Installatiegebonden" : "Algemeen"}
+                  </span>
                   {form.context_rules.map((rule) => (
                     <span className={`ember-label ${rule.is_required ? "ember-label--info" : "ember-label--muted"}`} key={rule.context_type}>
                       {contextLabel(rule.context_type)}{rule.is_required ? " verplicht" : ""}
@@ -397,7 +454,8 @@ export default function FormsHubPage() {
                 <button type="button" className="btn btn-primary" onClick={() => setSelectedForm(form)}>Starten</button>
               </article>
             ))}
-            {forms.length === 0 ? <div className="card">Er zijn geen actieve gepubliceerde formulieren.</div> : null}
+            {visibleForms.length === 0 ? <div className="card">Er zijn geen actieve formulieren in deze categorie.</div> : null}
+            </div>
           </div>
         ) : null}
 
@@ -407,12 +465,18 @@ export default function FormsHubPage() {
               <div className="admin-form-grid">
                 <label className="ui-stack-sm"><strong>Zoeken</strong><input value={instanceFilters.q} onChange={(event) => updateInstanceFilter("q", event.target.value)} placeholder="Titel, nummer of hoofdcontext" /></label>
                 <label className="ui-stack-sm"><strong>Context</strong><input value={instanceFilters.contextQ} onChange={(event) => updateInstanceFilter("contextQ", event.target.value)} placeholder="Relatie, project, werkbon, installatie of medewerker" /></label>
-                <label className="ui-stack-sm"><strong>Formuliertype</strong><select value={instanceFilters.formCode} onChange={(event) => updateInstanceFilter("formCode", event.target.value)}><option value="">Alle formulieren</option>{forms.map((form) => <option value={form.code} key={form.code}>{form.name}</option>)}</select></label>
-                <label className="ui-stack-sm"><strong>Status</strong><select value={instanceFilters.status} onChange={(event) => updateInstanceFilter("status", event.target.value)}><option value="">Alle statussen</option>{Object.entries(STATUS_LABELS).map(([value, label]) => <option value={value} key={value}>{label}</option>)}</select></label>
+                <label className="ui-stack-sm"><strong>Formuliertype</strong><select className="cf-input" value={instanceFilters.formCode} onChange={(event) => updateInstanceFilter("formCode", event.target.value)}><option value="">Alle formulieren</option>{forms.map((form) => <option value={form.code} key={form.code}>{form.name}</option>)}</select></label>
+                <label className="ui-stack-sm"><strong>Status</strong><select className="cf-input" value={instanceFilters.status} onChange={(event) => updateInstanceFilter("status", event.target.value)}><option value="">Alle statussen</option>{Object.entries(STATUS_LABELS).map(([value, label]) => <option value={value} key={value}>{label}</option>)}</select></label>
+                <label className="ui-stack-sm"><strong>Categorie</strong><select className="cf-input" value={instanceFilters.category} onChange={(event) => updateInstanceFilter("category", event.target.value)}><option value="all">Alle</option><option value="general">Algemeen</option><option value="installation">Installatiegebonden</option></select></label>
+                <label className="ui-stack-sm"><strong>Relatie</strong><input value={instanceFilters.relation} onChange={(event) => updateInstanceFilter("relation", event.target.value)} /></label>
+                <label className="ui-stack-sm"><strong>Project</strong><input value={instanceFilters.project} onChange={(event) => updateInstanceFilter("project", event.target.value)} /></label>
+                <label className="ui-stack-sm"><strong>Werkbon</strong><input value={instanceFilters.workOrder} onChange={(event) => updateInstanceFilter("workOrder", event.target.value)} /></label>
+                <label className="ui-stack-sm"><strong>Installatie</strong><input value={instanceFilters.installation} onChange={(event) => updateInstanceFilter("installation", event.target.value)} /></label>
+                <label className="ui-stack-sm"><strong>Medewerker</strong><input value={instanceFilters.employee} onChange={(event) => updateInstanceFilter("employee", event.target.value)} /></label>
                 <label className="ui-stack-sm"><strong>Vanaf</strong><input type="date" value={instanceFilters.dateFrom} onChange={(event) => updateInstanceFilter("dateFrom", event.target.value)} /></label>
                 <label className="ui-stack-sm"><strong>Tot en met</strong><input type="date" value={instanceFilters.dateTo} onChange={(event) => updateInstanceFilter("dateTo", event.target.value)} /></label>
-                <label className="ui-stack-sm"><strong>Opvolgreview</strong><select value={instanceFilters.reviewStatus} onChange={(event) => updateInstanceFilter("reviewStatus", event.target.value)}><option value="">Alle reviewstatussen</option>{Object.entries(REVIEW_LABELS).map(([value, label]) => <option value={value} key={value}>{label}</option>)}</select></label>
-                <label className="ui-stack-sm"><strong>Open punten</strong><select value={instanceFilters.hasOpenPoints} onChange={(event) => updateInstanceFilter("hasOpenPoints", event.target.value)}><option value="">Alle</option><option value="1">Met open punten</option><option value="0">Zonder open punten</option></select></label>
+                <label className="ui-stack-sm"><strong>Opvolgreview</strong><select className="cf-input" value={instanceFilters.reviewStatus} onChange={(event) => updateInstanceFilter("reviewStatus", event.target.value)}><option value="">Alle reviewstatussen</option>{Object.entries(REVIEW_LABELS).map(([value, label]) => <option value={value} key={value}>{label}</option>)}</select></label>
+                <label className="ui-stack-sm"><strong>Open punten</strong><select className="cf-input" value={instanceFilters.hasOpenPoints} onChange={(event) => updateInstanceFilter("hasOpenPoints", event.target.value)}><option value="">Alle</option><option value="1">Met open punten</option><option value="0">Zonder open punten</option></select></label>
               </div>
               <div className="ui-row forms-hub-dialog-actions">
                 <button type="button" className="btn btn-secondary" onClick={() => { setInstanceFilters(EMPTY_INSTANCE_FILTERS); void applyInstanceFilters(EMPTY_INSTANCE_FILTERS); }}>Wissen</button>

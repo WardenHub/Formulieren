@@ -4,10 +4,32 @@ on:
   push:
     branches:
       - main
+    paths:
+      - "src/**"
+      - "public/**"
+      - "index.html"
+      - "package.json"
+      - "package-lock.json"
+      - "vite.config.js"
+      - "postcss.config.js"
+      - "tailwind.config.js"
+      - "staticwebapp.config.json"
+      - ".github/workflows/azure-static-web-apps-blue-pond-0d6c5d703.yml"
   pull_request:
     types: [opened, synchronize, reopened, closed]
     branches:
       - main
+    paths:
+      - "src/**"
+      - "public/**"
+      - "index.html"
+      - "package.json"
+      - "package-lock.json"
+      - "vite.config.js"
+      - "postcss.config.js"
+      - "tailwind.config.js"
+      - "staticwebapp.config.json"
+      - ".github/workflows/azure-static-web-apps-blue-pond-0d6c5d703.yml"
 
 jobs:
   build_and_deploy_job:

@@ -7,6 +7,16 @@ console.log("api base", import.meta.env.VITE_API_BASE);
 const protectedObjectFailureCache = new Map();
 const PROTECTED_OBJECT_FAILURE_TTL_MS = 30000;
 
+export class ApiError extends Error {
+  constructor(message, { status = null, correlationId = null, payload = null } = {}) {
+    super(message);
+    this.name = "ApiError";
+    this.status = status;
+    this.correlationId = correlationId;
+    this.payload = payload;
+  }
+}
+
 function buildUrl(path) {
   if (/^https?:\/\//i.test(path)) return path;
   const p = path.startsWith("/") ? path : `/${path}`;
@@ -69,7 +79,11 @@ export async function httpJson(path, options = {}) {
     const ct = res.headers.get("content-type") || "";
     if (ct.includes("application/json")) {
       const data = await res.json().catch(() => null);
-      throw new Error(data?.error || `Request failed (${res.status})`);
+      throw new ApiError(data?.error || `Request failed (${res.status})`, {
+        status: res.status,
+        correlationId: data?.correlation_id || null,
+        payload: data,
+      });
     }
 
     const text = await res.text().catch(() => "");

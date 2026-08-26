@@ -127,6 +127,18 @@ export function getInstallationWorkflowItems(code) {
   return apiGet(`/installations/${encodeURIComponent(code)}/workflow-items`);
 }
 
+export function createInstallationFollowUp(code, payload = {}) {
+  return apiPost(`/installations/${encodeURIComponent(code)}/follow-ups`, payload);
+}
+
+export function getInstallationFollowUpCatalog(code) {
+  return apiGet(`/installations/${encodeURIComponent(code)}/follow-ups/catalog`);
+}
+
+export function updateInstallationFollowUpStatus(code, followUpActionId, status) {
+  return apiPut(`/installations/${encodeURIComponent(code)}/follow-ups/${encodeURIComponent(followUpActionId)}/status`, { status });
+}
+
 export function getInstallationTypes() {
   return apiGet("/installation-types");
 }
@@ -336,6 +348,15 @@ export function getInstallationsMap(filters = {}) {
   });
 
   return apiGet(`/installations/map?${qs.toString()}`);
+}
+
+export function getInstallationsMapViewport(filters = {}, options = {}) {
+  const qs = new URLSearchParams();
+  Object.entries(filters || {}).forEach(([key, value]) => {
+    if (value == null || value === "") return;
+    qs.set(key, String(value));
+  });
+  return httpJson(`/installations/map/viewport?${qs.toString()}`, options);
 }
 
 export function getInstallationOperationalSummary(code) {

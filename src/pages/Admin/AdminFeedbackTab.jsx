@@ -58,6 +58,9 @@ export default function AdminFeedbackTab() {
   const [filters, setFilters] = useState({
     status: "",
     sentiment: "",
+    form: "",
+    topic: "",
+    user: "",
   });
   const [selectedFeedbackId, setSelectedFeedbackId] = useState("");
   const [savingStatus, setSavingStatus] = useState(false);
@@ -91,9 +94,27 @@ export default function AdminFeedbackTab() {
   }, [filters.status, filters.sentiment]);
 
   const items = Array.isArray(payload?.items) ? payload.items : [];
+  const visibleItems = useMemo(() => items.filter((item) => {
+    const formNeedle = String(filters.form || "").trim().toLowerCase();
+    const topicNeedle = String(filters.topic || "").trim().toLowerCase();
+    const userNeedle = String(filters.user || "").trim().toLowerCase();
+    if (formNeedle && !String(item.form_instance_id || item.source_path || "").toLowerCase().includes(formNeedle)) return false;
+    if (topicNeedle && !`${item.source_path || ""} ${item.message_markdown || ""}`.toLowerCase().includes(topicNeedle)) return false;
+    if (userNeedle && !`${item.user_display_name_snapshot || ""} ${item.user_email_snapshot || ""}`.toLowerCase().includes(userNeedle)) return false;
+    return true;
+  }), [filters.form, filters.topic, filters.user, items]);
+  const groupedItems = useMemo(() => {
+    const groups = new Map();
+    for (const item of visibleItems) {
+      const key = item.form_instance_id ? `Formulier #${item.form_instance_id}` : item.source_path || "Algemene feedback";
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key).push(item);
+    }
+    return Array.from(groups, ([label, groupItems]) => ({ label, items: groupItems }));
+  }, [visibleItems]);
   const selectedItem = useMemo(
-    () => items.find((item) => item.feedback_id === selectedFeedbackId) || null,
-    [items, selectedFeedbackId]
+    () => visibleItems.find((item) => item.feedback_id === selectedFeedbackId) || visibleItems[0] || null,
+    [visibleItems, selectedFeedbackId]
   );
 
   useEffect(() => {
@@ -224,6 +245,9 @@ export default function AdminFeedbackTab() {
               </option>
             ))}
           </select>
+          <input className="cf-input" value={filters.form} onChange={(event) => setFilters((prev) => ({ ...prev, form: event.target.value }))} placeholder="Formulier" style={{ maxWidth: 220 }} />
+          <input className="cf-input" value={filters.topic} onChange={(event) => setFilters((prev) => ({ ...prev, topic: event.target.value }))} placeholder="Norm, vraag of onderwerp" style={{ maxWidth: 240 }} />
+          <input className="cf-input" value={filters.user} onChange={(event) => setFilters((prev) => ({ ...prev, user: event.target.value }))} placeholder="Gebruiker" style={{ maxWidth: 220 }} />
 
           <select
             className="cf-input"
@@ -254,10 +278,13 @@ export default function AdminFeedbackTab() {
         <div className="card" style={{ padding: 12, display: "grid", gap: 10, alignContent: "start" }}>
           {loading ? (
             <div className="muted">Feedback laden...</div>
-          ) : !items.length ? (
+          ) : !visibleItems.length ? (
             <div className="ui-empty">Geen feedbackitems gevonden.</div>
           ) : (
-            items.map((item) => {
+            groupedItems.map((group) => (
+              <section key={group.label} className="feedback-group">
+                <div className="feedback-group__head"><strong>{group.label}</strong><span className="monitor-tag monitor-tag--muted">{group.items.length}</span></div>
+                {group.items.map((item) => {
               const statusMeta = getStatusMeta(item.status);
               const sentimentMeta = getSentimentMeta(item.sentiment);
               const selected = item.feedback_id === selectedFeedbackId;
@@ -298,7 +325,9 @@ export default function AdminFeedbackTab() {
                   </div>
                 </button>
               );
-            })
+                })}
+              </section>
+            ))
           )}
         </div>
 
