@@ -1,0 +1,2583 @@
+{
+  "fixture_version": 1,
+  "exported_at": "2026-08-21",
+  "source": {
+    "server": "ember-sql.database.windows.net",
+    "database": "ember-sql-db",
+    "form_code": "MAINT_BMI"
+  },
+  "form": {
+    "code": "MAINT_BMI",
+    "name": "Rapport van Onderhoud BMI",
+    "description": null,
+    "document_profile_key": null,
+    "workflow_profile_key": "certified_maintenance",
+    "official_document_number": "23",
+    "status": "A",
+    "sort_order": 0
+  },
+  "version": {
+    "version": 1,
+    "version_label": "1.0",
+    "published_at": "2026-06-12T12:56:51.608000",
+    "published_by": "Jesse Local",
+    "survey_json": {
+      "title": "Onderhoudsrapport Brandmeldinstallaties",
+      "checkErrorsMode": "onComplete",
+      "showTOC": true,
+      "showProgressBar": "off",
+      "showNavigationButtons": true,
+      "tocLocation": "right",
+      "tocMode": "expanded",
+      "pagePrevText": "Vorige",
+      "pageNextText": "Volgende",
+      "completeText": "Afronden",
+      "locale": "nl",
+      "ember": {
+        "report": {
+          "activeDisciplines": [
+            "brandbeveiliging",
+            "service_onderhoud"
+          ],
+          "signaturePage": {
+            "blocks": [
+              {
+                "title": "Verklaring",
+                "text": "De opsteller van dit rapport van onderhoud verklaart dat de resultaten van het onderhoud en de controle van de brandmeldinstallatie is vastgelegd in dit rapport. De controle heeft plaatsgevonden op basis van NEN 2654-1.",
+                "fields": [
+                  {
+                    "label": "Naam onderhouder",
+                    "answer": "onderhouder_naam"
+                  },
+                  {
+                    "label": "Datum",
+                    "answer": "datum_onderhoud"
+                  }
+                ],
+                "signatureLabel": "Handtekening",
+                "footerText": "Indien alle onderdelen uit D.2.2.1 ‘Bevindingen deel A’ van het rapport van onderhoud met ‘Ja’ zijn beoordeeld en alle onderdelen uit D.2.2.2 ‘Bevindingen deel B’ van het rapport van onderhoud waar noodzakelijk van een advies zijn voorzien, mag door het onderhoudsbedrijf een positief oordeel worden gegeven en een verklaring worden verstrekt dat het uitgevoerde onderhoud voldoet aan de eisen zoals vastgelegd in NEN 2654-1. Indien onderdelen uit D.2.2.1 ‘Bevindingen deel A’ van het rapport met ‘Nee’ zijn beoordeeld moeten deze eerst worden hersteld. Na herstel mag door het onderhoudsbedrijf een positief oordeel worden gegeven."
+              }
+            ],
+            "closingText": [
+              "Indien alle onderdelen uit D.2.2.1 ‘Bevindingen deel A’ en D.2.2.2 ‘Bevindingen deel B’ van het rapport van onderhoud met ‘Ja’ zijn beoordeeld, mag door het onderhoudsbedrijf tevens een verklaring worden verstrekt dat de brandmeldinstallatie zich in nominale staat bevindt. Indien onderdelen uit D.2.2.2 ‘Bevindingen deel B’ van het rapport met ‘Nee’ zijn beoordeeld, moeten deze eerst worden hersteld. De beheerder/gebruiker is ervoor verantwoordelijk dat deze correcties aan de brandmeldinstallatie worden uitgevoerd. Na correctie mag door het onderhoudsbedrijf een verklaring worden verstrekt dat de brandmeldinstallatie zich in nominale staat bevindt."
+            ]
+          }
+        }
+      },
+      "pages": [
+        {
+          "name": "algemeen",
+          "title": "Algemeen",
+          "elements": [
+            {
+              "type": "text",
+              "name": "datum_onderhoud",
+              "title": "Datum onderhoud",
+              "inputType": "date",
+              "width": "50%",
+              "startWithNewLine": true,
+              "ember": {
+                "bind": {
+                  "kind": "calculated",
+                  "key": "today",
+                  "mode": "overwrite-if-empty",
+                  "refreshable": true
+                }
+              }
+            },
+            {
+              "type": "text",
+              "name": "documentnummer",
+              "title": "Documentnummer",
+              "width": "50%",
+              "startWithNewLine": false,
+              "readOnly": true
+            },
+            {
+              "type": "panel",
+              "name": "bouwwerk",
+              "title": "Bouwwerk",
+              "showCollapseButton": true,
+              "state": "collapsed",
+              "elements": [
+                {
+                  "type": "text",
+                  "name": "bouwwerk_naam",
+                  "title": "Naam",
+                  "startWithNewLine": true,
+                  "ember": {
+                    "bind": {
+                      "kind": "prefill",
+                      "key": "fc_atrium_obj_naam",
+                      "mode": "overwrite-if-unchanged",
+                      "refreshable": true
+                    }
+                  }
+                },
+                {
+                  "type": "dropdown",
+                  "name": "bouwwerk_soort",
+                  "title": "Soort",
+                  "width": "100%",
+                  "ember": {
+                    "choices": {
+                      "key": "fc_obj_gebruikersfunctie"
+                    },
+                    "bind": {
+                      "kind": "prefill",
+                      "key": "fc_obj_gebruikersfunctie",
+                      "mode": "overwrite-if-unchanged",
+                      "refreshable": true
+                    }
+                  }
+                },
+                {
+                  "type": "dropdown",
+                  "name": "eisende_partij",
+                  "title": "Eisende partij",
+                  "width": "100%",
+                  "ember": {
+                    "choices": {
+                      "key": "fc_inst_eisende_partijen"
+                    },
+                    "bind": {
+                      "kind": "prefill",
+                      "key": "fc_inst_eisende_partijen",
+                      "mode": "overwrite-if-unchanged",
+                      "refreshable": true
+                    }
+                  }
+                },
+                {
+                  "type": "text",
+                  "name": "bouwwerk_straat",
+                  "title": "Straat",
+                  "startWithNewLine": true,
+                  "ember": {
+                    "bind": {
+                      "kind": "prefill",
+                      "key": "fc_atrium_obj_adr_straat",
+                      "mode": "overwrite-if-unchanged",
+                      "refreshable": true
+                    }
+                  }
+                },
+                {
+                  "type": "text",
+                  "name": "bouwwerk_plaats",
+                  "title": "Plaats",
+                  "width": "70%",
+                  "startWithNewLine": true,
+                  "ember": {
+                    "bind": {
+                      "kind": "prefill",
+                      "key": "fc_atrium_obj_adr_plaats",
+                      "mode": "overwrite-if-unchanged",
+                      "refreshable": true
+                    }
+                  }
+                },
+                {
+                  "type": "text",
+                  "name": "bouwwerk_postcode",
+                  "title": "Postcode",
+                  "startWithNewLine": false,
+                  "width": "30%",
+                  "ember": {
+                    "bind": {
+                      "kind": "prefill",
+                      "key": "fc_atrium_obj_adr_postcode",
+                      "mode": "overwrite-if-unchanged",
+                      "refreshable": true
+                    }
+                  }
+                }
+              ]
+            },
+            {
+              "type": "panel",
+              "name": "p_onderhoudsbedrijf",
+              "title": "Onderhoudsbedrijf",
+              "showCollapseButton": true,
+              "state": "collapsed",
+              "elements": [
+                {
+                  "type": "text",
+                  "name": "onderhoudsbedrijf_naam",
+                  "title": "Naam",
+                  "ember": {
+                    "bind": {
+                      "kind": "prefill",
+                      "key": "fc_bmi_onderhouder_naam",
+                      "mode": "overwrite-if-empty",
+                      "refreshable": true
+                    }
+                  }
+                },
+                {
+                  "type": "text",
+                  "name": "onderhoudsbedrijf_straat_huisnr",
+                  "title": "Straat en huisnummer",
+                  "width": "70%",
+                  "startWithNewLine": true,
+                  "ember": {
+                    "bind": {
+                      "kind": "prefill",
+                      "key": "fc_bmi_onderhouder_straat",
+                      "mode": "overwrite-if-empty",
+                      "refreshable": true
+                    }
+                  }
+                },
+                {
+                  "type": "text",
+                  "name": "onderhoudsbedrijf_postcode_plaats",
+                  "title": "Plaats & Postcode",
+                  "width": "30%",
+                  "startWithNewLine": false,
+                  "ember": {
+                    "bind": {
+                      "kind": "prefill",
+                      "key": "fc_bmi_onderhouder_pc_plaats",
+                      "mode": "overwrite-if-empty",
+                      "refreshable": true
+                    }
+                  }
+                }
+              ]
+            },
+            {
+              "type": "panel",
+              "name": "p_installateur",
+              "title": "Brandmeldinstallatiebedrijf",
+              "showCollapseButton": true,
+              "state": "collapsed",
+              "elements": [
+                {
+                  "type": "text",
+                  "name": "brandmeldinstallatiebedrijf_naam",
+                  "title": "Naam",
+                  "ember": {
+                    "bind": {
+                      "kind": "prefill",
+                      "key": "fc_bmi_installateur_naam",
+                      "mode": "overwrite-if-empty",
+                      "refreshable": true
+                    }
+                  }
+                },
+                {
+                  "type": "text",
+                  "name": "brandmeldinstallatiebedrijf_straat_huisnr",
+                  "title": "Straat en huisnummer",
+                  "ember": {
+                    "bind": {
+                      "kind": "prefill",
+                      "key": "fc_bmi_installateur_straat",
+                      "mode": "overwrite-if-empty",
+                      "refreshable": true
+                    }
+                  }
+                },
+                {
+                  "type": "text",
+                  "name": "brandmeldinstallatiebedrijf_postcode_plaats",
+                  "title": "Plaats & Postcode",
+                  "ember": {
+                    "bind": {
+                      "kind": "prefill",
+                      "key": "fc_bmi_installateur_pc_plaats",
+                      "mode": "overwrite-if-empty",
+                      "refreshable": true
+                    }
+                  }
+                }
+              ]
+            },
+            {
+              "type": "panel",
+              "name": "p_eigenaar",
+              "title": "Eigenaar",
+              "showCollapseButton": true,
+              "state": "collapsed",
+              "elements": [
+                {
+                  "type": "text",
+                  "name": "eigenaar_naam",
+                  "title": "Naam",
+                  "ember": {
+                    "bind": {
+                      "kind": "prefill",
+                      "key": "fc_atrium_eigenaar_naam",
+                      "mode": "overwrite-if-empty",
+                      "refreshable": true
+                    }
+                  }
+                },
+                {
+                  "type": "text",
+                  "name": "eigenaar_adres",
+                  "title": "Eigenaar Adres",
+                  "ember": {
+                    "bind": {
+                      "kind": "prefill",
+                      "key": "fc_atrium_eigenaar_bezoek_adres",
+                      "mode": "overwrite-if-empty",
+                      "refreshable": true
+                    }
+                  }
+                }
+              ]
+            },
+            {
+              "type": "panel",
+              "name": "p_gebruiker",
+              "title": "Gebruiker",
+              "showCollapseButton": true,
+              "state": "collapsed",
+              "elements": [
+                {
+                  "type": "text",
+                  "name": "gebruiker_naam",
+                  "title": "Naam",
+                  "ember": {
+                    "bind": {
+                      "kind": "prefill",
+                      "key": "fc_atrium_gebruiker_naam",
+                      "mode": "overwrite-if-empty",
+                      "refreshable": true
+                    }
+                  }
+                },
+                {
+                  "type": "text",
+                  "name": "gebruiker_adres",
+                  "title": "Gebruiker Adres",
+                  "ember": {
+                    "bind": {
+                      "kind": "prefill",
+                      "key": "fc_atrium_gebruiker_bezoek_adres",
+                      "mode": "overwrite-if-empty",
+                      "refreshable": true
+                    }
+                  }
+                }
+              ]
+            },
+            {
+              "type": "panel",
+              "name": "p_doormelding",
+              "title": "Doormelding",
+              "showCollapseButton": true,
+              "state": "collapsed",
+              "elements": [
+                {
+                  "type": "text",
+                  "name": "kiezer_omschrijving",
+                  "title": "Kiezer",
+                  "width": "70%",
+                  "startWithNewLine": true,
+                  "ember": {
+                    "bind": {
+                      "kind": "prefill",
+                      "key": "fc_atrium_kiezer_omschrijving",
+                      "mode": "overwrite-if-empty",
+                      "refreshable": true
+                    }
+                  }
+                },
+                {
+                  "type": "text",
+                  "name": "kiezer_lijnkeuze",
+                  "title": "Kiezer lijnkeuze",
+                  "width": "30%",
+                  "startWithNewLine": false,
+                  "ember": {
+                    "bind": {
+                      "kind": "prefill",
+                      "key": "fc_atrium_kiezer_lijnkeuze",
+                      "mode": "overwrite-if-empty",
+                      "refreshable": true
+                    }
+                  }
+                },
+                {
+                  "type": "panel",
+                  "name": "p_doormelding_brand",
+                  "title": "Doormelding brand",
+                  "showCollapseButton": true,
+                  "state": "expanded",
+                  "elements": [
+                    {
+                      "type": "text",
+                      "name": "brand_ontvangststation",
+                      "title": "Ontvangststation",
+                      "titleLocation": "top",
+                      "width": "34%",
+                      "startWithNewLine": true,
+                      "ember": {
+                        "bind": {
+                          "kind": "prefill",
+                          "key": "fc_atrium_meldkamer_omschrijving",
+                          "mode": "overwrite-if-empty",
+                          "refreshable": true
+                        }
+                      }
+                    },
+                    {
+                      "type": "text",
+                      "name": "brand_telefoon",
+                      "title": "Telefoon",
+                      "titleLocation": "top",
+                      "inputType": "tel",
+                      "width": "33%",
+                      "startWithNewLine": false,
+                      "ember": {
+                        "bind": {
+                          "kind": "prefill",
+                          "key": "fc_atrium_meldbank_tel1",
+                          "mode": "overwrite-if-empty",
+                          "refreshable": true
+                        }
+                      }
+                    },
+                    {
+                      "type": "text",
+                      "name": "brand_meldcode",
+                      "title": "Meldcode",
+                      "titleLocation": "top",
+                      "width": "33%",
+                      "startWithNewLine": false,
+                      "ember": {
+                        "bind": {
+                          "kind": "prefill",
+                          "key": "fc_atrium_meldkamer_promnummer",
+                          "mode": "overwrite-if-empty",
+                          "refreshable": true
+                        }
+                      }
+                    }
+                  ]
+                },
+                {
+                  "type": "panel",
+                  "name": "p_doormelding_storing",
+                  "title": "Doormelding storing",
+                  "showCollapseButton": true,
+                  "state": "expanded",
+                  "elements": [
+                    {
+                      "type": "text",
+                      "name": "storing_ontvangststation",
+                      "title": "Ontvangststation",
+                      "titleLocation": "top",
+                      "width": "34%",
+                      "startWithNewLine": true,
+                      "ember": {
+                        "bind": {
+                          "kind": "prefill",
+                          "key": "fc_atrium_meldkamer_omschrijving",
+                          "mode": "overwrite-if-empty",
+                          "refreshable": true
+                        }
+                      }
+                    },
+                    {
+                      "type": "text",
+                      "name": "storing_telefoon",
+                      "title": "Telefoon",
+                      "titleLocation": "top",
+                      "inputType": "tel",
+                      "width": "33%",
+                      "startWithNewLine": false,
+                      "ember": {
+                        "bind": {
+                          "kind": "prefill",
+                          "key": "fc_atrium_meldbank_tel1",
+                          "mode": "overwrite-if-empty",
+                          "refreshable": true
+                        }
+                      }
+                    },
+                    {
+                      "type": "text",
+                      "name": "storing_meldcode",
+                      "title": "Meldcode",
+                      "titleLocation": "top",
+                      "width": "33%",
+                      "startWithNewLine": false,
+                      "ember": {
+                        "bind": {
+                          "kind": "prefill",
+                          "key": "fc_atrium_meldkamer_promnummer",
+                          "mode": "overwrite-if-empty",
+                          "refreshable": true
+                        }
+                      }
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "documenten",
+          "title": "Documenten",
+          "elements": [
+            {
+              "type": "html",
+              "name": "doc_info",
+              "html": "Documenten worden gevuld vanuit de installatie (Documenten-tab). In dit formulier zijn ze alleen ter inzage."
+            },
+            {
+              "type": "paneldynamic",
+              "name": "doc_groepen",
+              "titleLocation": "hidden",
+              "renderMode": "list",
+              "allowAddPanel": false,
+              "allowRemovePanel": false,
+              "panelRemoveButtonLocation": "hidden",
+              "ember": {
+                "bind": {
+                  "kind": "prefill",
+                  "key": "doc_groepen",
+                  "mode": "always-overwrite",
+                  "refreshable": true
+                }
+              },
+              "templateTitle": "{panel.groep_naam}",
+              "templateElements": [
+                {
+                  "type": "paneldynamic",
+                  "name": "types",
+                  "valueName": "types",
+                  "titleLocation": "hidden",
+                  "renderMode": "list",
+                  "allowAddPanel": false,
+                  "allowRemovePanel": false,
+                  "panelRemoveButtonLocation": "hidden",
+                  "templateTitle": "{panel.doc_type_naam}",
+                  "templateElements": [
+                    {
+                      "type": "matrixdynamic",
+                      "name": "documents",
+                      "valueName": "documents",
+                      "titleLocation": "hidden",
+                      "allowAddRows": false,
+                      "allowRemoveRows": false,
+                      "columns": [
+                        {
+                          "name": "doc_titel",
+                          "title": "Titel",
+                          "cellType": "text",
+                          "readOnly": true
+                        },
+                        {
+                          "name": "doc_nummer",
+                          "title": "Documentnr",
+                          "cellType": "text",
+                          "readOnly": true
+                        },
+                        {
+                          "name": "doc_datum",
+                          "title": "Datum",
+                          "cellType": "text",
+                          "readOnly": true
+                        },
+                        {
+                          "name": "doc_revisie",
+                          "title": "Revisie",
+                          "cellType": "text",
+                          "readOnly": true
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "bevindingen",
+          "title": "Bevindingen",
+          "elements": [
+            {
+              "type": "html",
+              "name": "bevindingen_info",
+              "html": "<p>Vul per onderdeel in of het voldoet. Bij <b>Nee</b> is een opmerking verplicht.</p>"
+            },
+            {
+              "type": "panel",
+              "name": "p_melders",
+              "title": "Melders",
+              "elements": [
+                {
+                  "type": "matrixdynamic",
+                  "name": "melders_items",
+                  "titleLocation": "hidden",
+                  "allowAddRows": false,
+                  "allowRemoveRows": false,
+                  "defaultValue": [
+                    {
+                      "item_code": "1.1",
+                      "onderwerp": "Automatische brandmelders",
+                      "voldoet": "",
+                      "opmerking": ""
+                    },
+                    {
+                      "item_code": "1.2",
+                      "onderwerp": "Nevenindicatoren",
+                      "voldoet": "",
+                      "opmerking": ""
+                    },
+                    {
+                      "item_code": "1.3",
+                      "onderwerp": "Handbrandmelders",
+                      "voldoet": "",
+                      "opmerking": ""
+                    }
+                  ],
+                  "columns": [
+                    {
+                      "name": "item_code",
+                      "title": "Nr",
+                      "cellType": "text",
+                      "readOnly": true,
+                      "width": "6%"
+                    },
+                    {
+                      "name": "onderwerp",
+                      "title": "Onderwerp",
+                      "cellType": "text",
+                      "readOnly": true,
+                      "width": "54%"
+                    },
+                    {
+                      "name": "voldoet",
+                      "title": "Voldoet",
+                      "cellType": "radiogroup",
+                      "isRequired": true,
+                      "requiredErrorText": "Kies Ja, Nee of N.V.T.",
+                      "choices": [
+                        {
+                          "value": "Ja",
+                          "text": "Ja"
+                        },
+                        {
+                          "value": "Nee",
+                          "text": "Nee"
+                        },
+                        {
+                          "value": "NVT",
+                          "text": "N.V.T."
+                        }
+                      ],
+                      "colCount": 3,
+                      "width": "18%"
+                    },
+                    {
+                      "name": "opmerking",
+                      "title": "Opmerking",
+                      "cellType": "comment",
+                      "placeholder": "Toelichting bij Nee."
+                    }
+                  ],
+                  "validators": [
+                    {
+                      "type": "expression",
+                      "text": "Bij 'Nee' is een opmerking verplicht.",
+                      "expression": "{melders_items}.all(iif(item.voldoet = 'Nee', notempty(item.opmerking), true))"
+                    }
+                  ],
+                  "ember": {
+                    "followUp": {
+                      "kind": "workflow",
+                      "mode": "on-condition",
+                      "condition": {
+                        "field": "voldoet",
+                        "equals": "Nee"
+                      },
+                      "itemCodeField": "item_code",
+                      "workflowtitleField": "onderwerp",
+                      "descriptionField": "opmerking",
+                      "category": "bevindingen",
+                      "certificateImpact": {
+                        "mode": "fixed",
+                        "value": "yes"
+                      }
+                    }
+                  }
+                }
+              ]
+            },
+            {
+              "type": "panel",
+              "name": "p_brandmeldcentrale",
+              "title": "Brandmeldcentrale",
+              "elements": [
+                {
+                  "type": "matrixdynamic",
+                  "name": "bmc_items",
+                  "titleLocation": "hidden",
+                  "allowAddRows": false,
+                  "allowRemoveRows": false,
+                  "defaultValue": [
+                    {
+                      "item_code": "1.4",
+                      "onderwerp": "Teksten zijn juist en goed leesbaar",
+                      "voldoet": "",
+                      "opmerking": ""
+                    },
+                    {
+                      "item_code": "1.5",
+                      "onderwerp": "De behuizing is intact",
+                      "voldoet": "",
+                      "opmerking": ""
+                    },
+                    {
+                      "item_code": "1.6",
+                      "onderwerp": "Interne bekabeling en componenten zijn onbeschadigd en in goede staat",
+                      "voldoet": "",
+                      "opmerking": ""
+                    },
+                    {
+                      "item_code": "1.7",
+                      "onderwerp": "De instellingen voldoen aan de specificaties",
+                      "voldoet": "",
+                      "opmerking": ""
+                    },
+                    {
+                      "item_code": "1.8",
+                      "onderwerp": "Meldingen van brand, storing, breuk, onderbreking en kortsluiting in alle meldergroepen en stuurleidingen met lijnbewaking en de energievoorzieningen functioneren adequaat",
+                      "voldoet": "",
+                      "opmerking": ""
+                    }
+                  ],
+                  "columns": [
+                    {
+                      "name": "item_code",
+                      "title": "Nr",
+                      "cellType": "text",
+                      "readOnly": true,
+                      "width": "6%"
+                    },
+                    {
+                      "name": "onderwerp",
+                      "title": "Onderwerp",
+                      "cellType": "text",
+                      "readOnly": true,
+                      "width": "54%"
+                    },
+                    {
+                      "name": "voldoet",
+                      "title": "Voldoet",
+                      "cellType": "radiogroup",
+                      "isRequired": true,
+                      "requiredErrorText": "Kies Ja, Nee of N.V.T.",
+                      "choices": [
+                        {
+                          "value": "Ja",
+                          "text": "Ja"
+                        },
+                        {
+                          "value": "Nee",
+                          "text": "Nee"
+                        },
+                        {
+                          "value": "NVT",
+                          "text": "N.V.T."
+                        }
+                      ],
+                      "colCount": 3,
+                      "width": "18%"
+                    },
+                    {
+                      "name": "opmerking",
+                      "title": "Opmerking",
+                      "cellType": "comment",
+                      "placeholder": "Toelichting bij Nee."
+                    }
+                  ],
+                  "validators": [
+                    {
+                      "type": "expression",
+                      "text": "Bij 'Nee' is een opmerking verplicht.",
+                      "expression": "{bmc_items}.all(iif(item.voldoet = 'Nee', notempty(item.opmerking), true))"
+                    }
+                  ],
+                  "ember": {
+                    "followUp": {
+                      "kind": "workflow",
+                      "mode": "on-condition",
+                      "condition": {
+                        "field": "voldoet",
+                        "equals": "Nee"
+                      },
+                      "itemCodeField": "item_code",
+                      "workflowtitleField": "onderwerp",
+                      "descriptionField": "opmerking",
+                      "category": "bevindingen",
+                      "certificateImpact": {
+                        "mode": "fixed",
+                        "value": "yes"
+                      }
+                    }
+                  }
+                }
+              ]
+            },
+            {
+              "type": "panel",
+              "name": "p_overig",
+              "title": "Overig",
+              "elements": [
+                {
+                  "type": "matrixdynamic",
+                  "name": "overig_items",
+                  "titleLocation": "hidden",
+                  "allowAddRows": false,
+                  "allowRemoveRows": false,
+                  "defaultValue": [
+                    {
+                      "item_code": "1.9",
+                      "onderwerp": "Brandalarmeringsapparatuur",
+                      "voldoet": "",
+                      "opmerking": ""
+                    },
+                    {
+                      "item_code": "1.10",
+                      "onderwerp": "Doormelding brandmelding",
+                      "voldoet": "",
+                      "opmerking": ""
+                    },
+                    {
+                      "item_code": "1.11",
+                      "onderwerp": "Doormelding storingsmelding",
+                      "voldoet": "",
+                      "opmerking": ""
+                    },
+                    {
+                      "item_code": "1.12",
+                      "onderwerp": "Brandweerpaneel",
+                      "voldoet": "",
+                      "opmerking": ""
+                    },
+                    {
+                      "item_code": "1.13",
+                      "onderwerp": "Nevenpaneel",
+                      "voldoet": "",
+                      "opmerking": ""
+                    },
+                    {
+                      "item_code": "1.14",
+                      "onderwerp": "Stuursignalen t/m uitgaande contacten brandmeldinstallatie",
+                      "voldoet": "",
+                      "opmerking": ""
+                    },
+                    {
+                      "item_code": "1.15",
+                      "onderwerp": "Energie-voorziening",
+                      "voldoet": "",
+                      "opmerking": ""
+                    }
+                  ],
+                  "columns": [
+                    {
+                      "name": "item_code",
+                      "title": "Nr",
+                      "cellType": "text",
+                      "readOnly": true,
+                      "width": "6%"
+                    },
+                    {
+                      "name": "onderwerp",
+                      "title": "Onderwerp",
+                      "cellType": "text",
+                      "readOnly": true,
+                      "width": "54%"
+                    },
+                    {
+                      "name": "voldoet",
+                      "title": "Voldoet",
+                      "cellType": "radiogroup",
+                      "isRequired": true,
+                      "requiredErrorText": "Kies Ja, Nee of N.V.T.",
+                      "choices": [
+                        {
+                          "value": "Ja",
+                          "text": "Ja"
+                        },
+                        {
+                          "value": "Nee",
+                          "text": "Nee"
+                        },
+                        {
+                          "value": "NVT",
+                          "text": "N.V.T."
+                        }
+                      ],
+                      "colCount": 3,
+                      "width": "18%"
+                    },
+                    {
+                      "name": "opmerking",
+                      "title": "Opmerking",
+                      "cellType": "comment",
+                      "placeholder": "Toelichting bij Nee."
+                    }
+                  ],
+                  "validators": [
+                    {
+                      "type": "expression",
+                      "text": "Bij 'Nee' is een opmerking verplicht.",
+                      "expression": "{overig_items}.all(iif(item.voldoet = 'Nee', notempty(item.opmerking), true))"
+                    }
+                  ],
+                  "ember": {
+                    "followUp": {
+                      "kind": "workflow",
+                      "mode": "on-condition",
+                      "condition": {
+                        "field": "voldoet",
+                        "equals": "Nee"
+                      },
+                      "itemCodeField": "item_code",
+                      "workflowtitleField": "onderwerp",
+                      "descriptionField": "opmerking",
+                      "category": "bevindingen",
+                      "certificateImpact": {
+                        "mode": "fixed",
+                        "value": "yes"
+                      }
+                    }
+                  }
+                }
+              ]
+            },
+            {
+              "type": "panel",
+              "name": "p_functionele_beproeving",
+              "title": "Functionele beproeving",
+              "elements": [
+                {
+                  "type": "radiogroup",
+                  "name": "checklist_a_functionele_beproeving",
+                  "title": "Afsluitend is de installatie functioneel beproefd en werkvaardig bevonden.",
+                  "isRequired": true,
+                  "choices": [
+                    {
+                      "value": "Ja",
+                      "text": "Ja"
+                    },
+                    {
+                      "value": "Nee",
+                      "text": "Nee"
+                    }
+                  ],
+                  "colCount": 2
+                }
+              ]
+            },
+            {
+              "type": "panel",
+              "name": "p_projectie_beheerder",
+              "title": "Projectie / beheerder",
+              "elements": [
+                {
+                  "type": "matrixdynamic",
+                  "name": "bevindingen_b_items",
+                  "titleLocation": "hidden",
+                  "allowAddRows": false,
+                  "allowRemoveRows": false,
+                  "defaultValue": [
+                    {
+                      "item_code": "2.1",
+                      "onderwerp": "Automatische brandmelders (de projectie voldoet?)",
+                      "voldoet": "",
+                      "opmerking": ""
+                    },
+                    {
+                      "item_code": "2.2",
+                      "onderwerp": "Nevenindicatoren (de projectie voldoet?)",
+                      "voldoet": "",
+                      "opmerking": ""
+                    },
+                    {
+                      "item_code": "2.3",
+                      "onderwerp": "Handbrandmelders (de projectie voldoet?)",
+                      "voldoet": "",
+                      "opmerking": ""
+                    },
+                    {
+                      "item_code": "2.4",
+                      "onderwerp": "Brandalarmeringsapparatuur (de projectie voldoet?)",
+                      "voldoet": "",
+                      "opmerking": ""
+                    },
+                    {
+                      "item_code": "2.5",
+                      "onderwerp": "Brandweer- en nevenpanelen (de projectie voldoet?)",
+                      "voldoet": "",
+                      "opmerking": ""
+                    }
+                  ],
+                  "columns": [
+                    {
+                      "name": "item_code",
+                      "title": "Nr",
+                      "cellType": "text",
+                      "readOnly": true,
+                      "width": "6%"
+                    },
+                    {
+                      "name": "onderwerp",
+                      "title": "Onderwerp",
+                      "cellType": "text",
+                      "readOnly": true,
+                      "width": "54%"
+                    },
+                    {
+                      "name": "voldoet",
+                      "title": "Voldoet",
+                      "cellType": "radiogroup",
+                      "isRequired": true,
+                      "requiredErrorText": "Kies Ja, Nee of N.V.T.",
+                      "choices": [
+                        {
+                          "value": "Ja",
+                          "text": "Ja"
+                        },
+                        {
+                          "value": "Nee",
+                          "text": "Nee"
+                        },
+                        {
+                          "value": "NVT",
+                          "text": "N.V.T."
+                        }
+                      ],
+                      "colCount": 3,
+                      "width": "18%"
+                    },
+                    {
+                      "name": "opmerking",
+                      "title": "Opmerking",
+                      "cellType": "comment",
+                      "placeholder": "Toelichting bij Nee."
+                    }
+                  ],
+                  "validators": [
+                    {
+                      "type": "expression",
+                      "text": "Bij 'Nee' is een opmerking verplicht.",
+                      "expression": "{bevindingen_b_items}.all(iif(item.voldoet = 'Nee', notempty(item.opmerking), true))"
+                    }
+                  ],
+                  "ember": {
+                    "followUp": {
+                      "kind": "workflow",
+                      "mode": "on-condition",
+                      "condition": {
+                        "field": "voldoet",
+                        "equals": "Nee"
+                      },
+                      "itemCodeField": "item_code",
+                      "workflowtitleField": "onderwerp",
+                      "descriptionField": "opmerking",
+                      "category": "bevindingen",
+                      "certificateImpact": {
+                        "mode": "fixed",
+                        "value": "yes"
+                      }
+                    }
+                  }
+                },
+                {
+                  "type": "comment",
+                  "name": "advies_beheerder_gebruiker",
+                  "title": "Advies voor beheerder/gebruiker",
+                  "titleLocation": "top",
+                  "rows": 12,
+                  "placeHolder": "Geef hier advies hoe de met 'Nee' beoordeelde punten verbeterd kunnen worden.",
+                  "validators": [
+                    {
+                      "text": "Vul advies in als er één of meer items met 'Nee' zijn beoordeeld."
+                    }
+                  ]
+                },
+                {
+                  "type": "html",
+                  "name": "bevindingen_b_voetnoot",
+                  "html": "De met ‘Nee’ beoordeelde punten zijn negatief van invloed op de brandveiligheid en hebben betrekking op activiteiten van de beheerder. De brandveiligheid kan hierdoor sterk worden beïnvloed. Het rapport behoort te zijn voorzien van een advies hoe de met ‘Nee’ beoordeelde punten verbeterd kunnen worden. Het is aan de opdrachtgever om dit verder op te lossen."
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "bijlage_a_prestatie_eisen",
+          "title": "Prestatie-eisen (A)",
+          "elements": [
+            {
+              "type": "html",
+              "name": "perf_intro",
+              "html": "<div><strong>Bijlage A; informatie over realisatie prestatie-eisen en beheer</strong><br>De gegevens voor de calculaties zijn automatisch overgenomen uit de installatiepagina prestatie-eisen.</div>"
+            },
+            {
+              "type": "text",
+              "name": "performance_normering_view",
+              "title": "Geldende normeis",
+              "readOnly": true,
+              "ember": {
+                "bind": {
+                  "kind": "prefill",
+                  "key": "performance_normering",
+                  "mode": "always-overwrite"
+                }
+              }
+            },
+            {
+              "type": "matrixdynamic",
+              "name": "performance_data_view",
+              "title": "Overzicht prestatie-eisen per regel",
+              "readOnly": true,
+              "allowAddRows": false,
+              "allowRemoveRows": false,
+              "allowRowsDragAndDrop": false,
+              "rowCount": 0,
+              "minRowCount": 0,
+              "alternateRows": false,
+              "columns": [
+                {
+                  "name": "pr_gebruikersfunctie_naam",
+                  "title": "Gebruikersfunctie",
+                  "cellType": "text",
+                  "readOnly": true,
+                  "width": "22%"
+                },
+                {
+                  "name": "pr_label",
+                  "title": "Label",
+                  "cellType": "text",
+                  "readOnly": true,
+                  "width": "16%"
+                },
+                {
+                  "name": "pr_doormelding_label",
+                  "title": "Doormelding",
+                  "cellType": "text",
+                  "readOnly": true,
+                  "width": "16%"
+                },
+                {
+                  "name": "pr_aantal_auto",
+                  "title": "A",
+                  "cellType": "text",
+                  "readOnly": true,
+                  "width": "4%"
+                },
+                {
+                  "name": "pr_aantal_hand",
+                  "title": "H",
+                  "cellType": "text",
+                  "readOnly": true,
+                  "width": "4%"
+                },
+                {
+                  "name": "pr_aantal_vlam",
+                  "title": "V",
+                  "cellType": "text",
+                  "readOnly": true,
+                  "width": "4%"
+                },
+                {
+                  "name": "pr_aantal_lijn",
+                  "title": "L",
+                  "cellType": "text",
+                  "readOnly": true,
+                  "width": "4%"
+                },
+                {
+                  "name": "pr_aantal_asp",
+                  "title": "ASP",
+                  "cellType": "text",
+                  "readOnly": true,
+                  "width": "5%"
+                },
+                {
+                  "name": "pr_risico_intern",
+                  "title": "Intern",
+                  "cellType": "text",
+                  "readOnly": true,
+                  "width": "5%"
+                },
+                {
+                  "name": "pr_risico_extern",
+                  "title": "Extern",
+                  "cellType": "text",
+                  "readOnly": true,
+                  "width": "5%"
+                },
+                {
+                  "name": "pr_max_intern",
+                  "title": "Max intern",
+                  "cellType": "text",
+                  "readOnly": true,
+                  "width": "7%"
+                },
+                {
+                  "name": "pr_max_extern",
+                  "title": "Max extern",
+                  "cellType": "text",
+                  "readOnly": true,
+                  "width": "8%"
+                }
+              ],
+              "ember": {
+                "bind": {
+                  "kind": "prefill",
+                  "key": "performance_data",
+                  "mode": "always-overwrite"
+                }
+              }
+            },
+            {
+              "type": "html",
+              "name": "performance_legenda",
+              "html": "<div><i>A = automatische melders; H = handmelders; V = vlamdetectoren; L = lijnrookmelders; ASP = aspiratie openingen.</i></div>"
+            },
+            {
+              "type": "panel",
+              "name": "performance_totals_panel",
+              "title": "Calculatie maximum aantal onechte of ongewenste meldingen",
+              "elements": [
+                {
+                  "type": "text",
+                  "name": "performance_total_max_met_intern_view",
+                  "title": "Met vertraging; intern",
+                  "readOnly": true,
+                  "width": "33%",
+                  "startWithNewLine": true,
+                  "ember": {
+                    "bind": {
+                      "kind": "prefill",
+                      "key": "performance_total_max_met_intern",
+                      "mode": "always-overwrite"
+                    }
+                  }
+                },
+                {
+                  "type": "text",
+                  "name": "performance_total_max_met_extern_view",
+                  "title": "Met vertraging; extern",
+                  "readOnly": true,
+                  "width": "33%",
+                  "startWithNewLine": false,
+                  "ember": {
+                    "bind": {
+                      "kind": "prefill",
+                      "key": "performance_total_max_met_extern",
+                      "mode": "always-overwrite"
+                    }
+                  }
+                },
+                {
+                  "type": "text",
+                  "name": "performance_total_max_zonder_extern_view",
+                  "title": "Zonder vertraging; extern",
+                  "readOnly": true,
+                  "width": "34%",
+                  "startWithNewLine": false,
+                  "ember": {
+                    "bind": {
+                      "kind": "prefill",
+                      "key": "performance_total_max_zonder_extern",
+                      "mode": "always-overwrite"
+                    }
+                  }
+                }
+              ]
+            },
+            {
+              "type": "panel",
+              "name": "panel_a1",
+              "title": "A1; Ongewenste en onechte meldingen",
+              "elements": [
+                {
+                  "type": "matrixdynamic",
+                  "name": "a1_items",
+                  "titleLocation": "hidden",
+                  "allowAddRows": false,
+                  "allowRemoveRows": false,
+                  "defaultValue": [
+                    {
+                      "item_code": "A1",
+                      "onderwerp": "Ongewenste en onechte meldingen",
+                      "voldoet": "",
+                      "opmerking": ""
+                    }
+                  ],
+                  "columns": [
+                    {
+                      "name": "item_code",
+                      "title": "Nr",
+                      "cellType": "text",
+                      "readOnly": true,
+                      "width": "6%"
+                    },
+                    {
+                      "name": "onderwerp",
+                      "title": "Onderwerp",
+                      "cellType": "text",
+                      "readOnly": true,
+                      "width": "24%"
+                    },
+                    {
+                      "name": "voldoet",
+                      "title": "Voldoet",
+                      "cellType": "radiogroup",
+                      "isRequired": true,
+                      "requiredErrorText": "Kies Ja, Nee of N.V.T.",
+                      "choices": [
+                        {
+                          "value": "Ja",
+                          "text": "Ja"
+                        },
+                        {
+                          "value": "Nee",
+                          "text": "Nee"
+                        },
+                        {
+                          "value": "NVT",
+                          "text": "N.V.T."
+                        }
+                      ],
+                      "colCount": 3,
+                      "width": "20%"
+                    },
+                    {
+                      "name": "opmerking",
+                      "title": "Opmerking",
+                      "cellType": "comment",
+                      "placeholder": "Toelichting bij Nee."
+                    }
+                  ],
+                  "validators": [
+                    {
+                      "type": "expression",
+                      "text": "Bij 'Nee' is een opmerking verplicht.",
+                      "expression": "{a1_items}.all(iif(item.voldoet = 'Nee', notempty(item.opmerking), true))"
+                    }
+                  ],
+                  "ember": {
+                    "followUp": {
+                      "kind": "workflow",
+                      "mode": "on-condition",
+                      "condition": {
+                        "field": "voldoet",
+                        "equals": "Nee"
+                      },
+                      "itemCodeField": "item_code",
+                      "workflowtitleField": "onderwerp",
+                      "descriptionField": "opmerking",
+                      "category": "prestatie_eisen",
+                      "certificateImpact": {
+                        "mode": "fixed",
+                        "value": "yes"
+                      }
+                    }
+                  }
+                }
+              ]
+            },
+            {
+              "type": "panel",
+              "name": "panel_a2_calc",
+              "title": "A2; Systeembeschikbaarheid",
+              "elements": [
+                {
+                  "type": "html",
+                  "name": "a2_info_html",
+                  "html": "<div><strong>Calculatie systeembeschikbaarheid</strong><br>Leg hieronder de perioden vast waarin melders niet beschikbaar waren.</div>"
+                },
+                {
+                  "type": "matrixdynamic",
+                  "name": "a2_buitenbedrijfstellingen",
+                  "title": "Perioden niet beschikbaar",
+                  "allowAddRows": true,
+                  "allowRemoveRows": true,
+                  "addRowText": "Regel toevoegen",
+                  "removeRowText": "Verwijderen",
+                  "rowCount": 1,
+                  "columns": [
+                    {
+                      "name": "datum",
+                      "title": "Datum",
+                      "cellType": "text",
+                      "inputType": "date",
+                      "width": "12%"
+                    },
+                    {
+                      "name": "tijd_begin",
+                      "title": "Tijd begin",
+                      "cellType": "text",
+                      "inputType": "time",
+                      "width": "11%"
+                    },
+                    {
+                      "name": "tijd_einde",
+                      "title": "Tijd einde",
+                      "cellType": "text",
+                      "inputType": "time",
+                      "width": "11%"
+                    },
+                    {
+                      "name": "tijdsduur_dagen",
+                      "title": "Tijdsduur (dagen)",
+                      "cellType": "text",
+                      "inputType": "number",
+                      "defaultValue": 1,
+                      "width": "10%"
+                    },
+                    {
+                      "name": "uren_pd_niet_beschikbaar",
+                      "title": "Uren pd. niet beschikbaar",
+                      "cellType": "text",
+                      "readOnly": true,
+                      "width": "14%"
+                    },
+                    {
+                      "name": "melders_niet_beschikbaar",
+                      "title": "# melders niet beschikbaar",
+                      "cellType": "text",
+                      "inputType": "number",
+                      "width": "15%"
+                    },
+                    {
+                      "name": "melduren_niet_beschikbaar",
+                      "title": "# melduren niet beschikbaar",
+                      "cellType": "text",
+                      "readOnly": true,
+                      "width": "15%"
+                    },
+                    {
+                      "name": "omschrijving",
+                      "title": "Omschrijving",
+                      "cellType": "comment",
+                      "rows": 2,
+                      "width": "22%"
+                    }
+                  ]
+                },
+                {
+                  "type": "html",
+                  "name": "a2_info_melduren",
+                  "html": "<div>De melduren hebben een nummernotatie. Bijvoorbeeld; <strong>0,5</strong> melduren is gelijk aan <strong>30 minuten</strong>.</div>"
+                },
+                {
+                  "type": "panel",
+                  "name": "a2_resultaat_panel",
+                  "title": "Resultaat",
+                  "elements": [
+                    {
+                      "type": "text",
+                      "name": "a2_melduren_buiten_werking",
+                      "title": "Melduren buiten werking",
+                      "readOnly": true,
+                      "width": "25%"
+                    },
+                    {
+                      "type": "text",
+                      "name": "a2_aantal_melders",
+                      "title": "Aantal melders",
+                      "readOnly": true,
+                      "width": "25%",
+                      "startWithNewLine": false
+                    },
+                    {
+                      "type": "text",
+                      "name": "a2_systeembeschikbaarheid_pve",
+                      "title": "Systeembeschikbaarheid volgens PvE (%)",
+                      "inputType": "number",
+                      "defaultValue": 99.7,
+                      "width": "25%",
+                      "startWithNewLine": false
+                    },
+                    {
+                      "type": "text",
+                      "name": "a2_systeembeschikbaarheid_geconstateerd",
+                      "title": "Geconstateerde systeembeschikbaarheid (%)",
+                      "readOnly": true,
+                      "width": "25%",
+                      "startWithNewLine": false
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "panel",
+              "name": "panel_a_beheer",
+              "title": "Beoordeling prestatie-eisen en beheer",
+              "elements": [
+                {
+                  "type": "matrixdynamic",
+                  "name": "a_beheer_items",
+                  "titleLocation": "hidden",
+                  "allowAddRows": false,
+                  "allowRemoveRows": false,
+                  "defaultValue": [
+                    {
+                      "item_code": "A2",
+                      "onderwerp": "Systeembeschikbaarheid",
+                      "voldoet": "",
+                      "opmerking": ""
+                    },
+                    {
+                      "item_code": "A3",
+                      "onderwerp": "Buitenbedrijfstellingen",
+                      "voldoet": "",
+                      "opmerking": ""
+                    },
+                    {
+                      "item_code": "A4",
+                      "onderwerp": "Controles",
+                      "voldoet": "",
+                      "opmerking": ""
+                    },
+                    {
+                      "item_code": "A5",
+                      "onderwerp": "Logboek",
+                      "voldoet": "",
+                      "opmerking": ""
+                    },
+                    {
+                      "item_code": "A6",
+                      "onderwerp": "Veranderingen",
+                      "voldoet": "",
+                      "opmerking": ""
+                    }
+                  ],
+                  "columns": [
+                    {
+                      "name": "item_code",
+                      "title": "Nr",
+                      "cellType": "text",
+                      "readOnly": true,
+                      "width": "6%"
+                    },
+                    {
+                      "name": "onderwerp",
+                      "title": "Onderwerp",
+                      "cellType": "text",
+                      "readOnly": true,
+                      "width": "24%"
+                    },
+                    {
+                      "name": "voldoet",
+                      "title": "Voldoet",
+                      "cellType": "radiogroup",
+                      "isRequired": true,
+                      "requiredErrorText": "Kies Ja, Nee of N.V.T.",
+                      "choices": [
+                        {
+                          "value": "Ja",
+                          "text": "Ja"
+                        },
+                        {
+                          "value": "Nee",
+                          "text": "Nee"
+                        },
+                        {
+                          "value": "NVT",
+                          "text": "N.V.T."
+                        }
+                      ],
+                      "colCount": 3,
+                      "width": "20%"
+                    },
+                    {
+                      "name": "opmerking",
+                      "title": "Opmerking",
+                      "cellType": "comment",
+                      "placeholder": "Toelichting bij Nee."
+                    }
+                  ],
+                  "validators": [
+                    {
+                      "type": "expression",
+                      "text": "Bij 'Nee' is een opmerking verplicht.",
+                      "expression": "{a_beheer_items}.all(iif(item.voldoet = 'Nee', notempty(item.opmerking), true))"
+                    }
+                  ],
+                  "ember": {
+                    "followUp": {
+                      "kind": "workflow",
+                      "mode": "on-condition",
+                      "condition": {
+                        "field": "voldoet",
+                        "equals": "Nee"
+                      },
+                      "itemCodeField": "item_code",
+                      "workflowtitleField": "onderwerp",
+                      "descriptionField": "opmerking",
+                      "category": "prestatie_eisen",
+                      "certificateImpact": {
+                        "mode": "fixed",
+                        "value": "yes"
+                      }
+                    }
+                  }
+                },
+                {
+                  "type": "comment",
+                  "name": "advies_aan_beheerder",
+                  "title": "Advies aan beheerder",
+                  "titleLocation": "top",
+                  "rows": 14,
+                  "placeHolder": "Geef hier advies hoe de met 'Nee' beoordeelde punten verbeterd kunnen worden.",
+                  "validators": [
+                    {
+                      "text": "Vul advies in als er één of meer items met 'Nee' zijn beoordeeld."
+                    }
+                  ]
+                },
+                {
+                  "type": "html",
+                  "name": "a_beheer_voetnoot",
+                  "html": "<div><em>Opmerking</em>; de met [ NEE ] beoordeelde punten zijn negatief van invloed op de brandveiligheid en hebben betrekking op activiteiten van de beheerder. Bovenstaande opmerkingen zijn een advies over hoe de met [ NEE ] beoordeelde punten verbeterd kunnen worden. Het is aan de opdrachtgever om deze op te lossen. Ten aanzien van constateringen die buiten het onderhoud vallen wordt geen volledigheid gegarandeerd.</div>"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "meetresultaten_b",
+          "title": "Meetresultaten (B)",
+          "elements": [
+            {
+              "type": "panel",
+              "name": "es_header",
+              "titleLocation": "hidden",
+              "elements": [
+                {
+                  "type": "text",
+                  "name": "es_verouderingsfactor",
+                  "title": "Verouderingsfactor",
+                  "inputType": "number",
+                  "defaultValue": 1.25,
+                  "width": "50%",
+                  "startWithNewLine": false,
+                  "validators": [
+                    {
+                      "type": "numeric",
+                      "minValue": 1,
+                      "text": "Verouderingsfactor moet ≥ 1 zijn."
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "matrixdynamic",
+              "name": "es_regels",
+              "title": "Energievoorzieningen",
+              "titleLocation": "top",
+              "allowAddRows": false,
+              "allowRemoveRows": false,
+              "rowCount": 0,
+              "ember": {
+                "bind": {
+                  "kind": "prefill",
+                  "key": "es_regels",
+                  "mode": "always-overwrite",
+                  "refreshable": true
+                }
+              },
+              "columns": [
+                {
+                  "name": "es_datum",
+                  "title": "Plaatsingsdatum",
+                  "cellType": "text",
+                  "inputType": "date",
+                  "width": "12%"
+                },
+                {
+                  "name": "es_aantal",
+                  "title": "Aantal",
+                  "cellType": "text",
+                  "inputType": "number",
+                  "width": "6%"
+                },
+                {
+                  "name": "es_capaciteit_ah",
+                  "title": "Cap per accu (Ah)",
+                  "cellType": "text",
+                  "inputType": "number",
+                  "width": "10%"
+                },
+                {
+                  "name": "es_schakeling",
+                  "title": "Schakeling",
+                  "cellType": "dropdown",
+                  "width": "10%",
+                  "choices": [
+                    {
+                      "value": "single",
+                      "text": "single (geen)"
+                    },
+                    {
+                      "value": "series",
+                      "text": "series"
+                    },
+                    {
+                      "value": "parallel",
+                      "text": "parallel"
+                    },
+                    {
+                      "value": "unknown",
+                      "text": "onbekend"
+                    }
+                  ],
+                  "defaultValue": "single"
+                },
+                {
+                  "name": "es_merk_type",
+                  "title": "Merk/type",
+                  "cellType": "dropdown",
+                  "width": "12%",
+                  "ember": {
+                    "choices": {
+                      "key": "k_energy_brand_types",
+                      "mode": "replace",
+                      "valueField": "value",
+                      "textField": "text"
+                    },
+                    "bind": {
+                      "kind": "prefill",
+                      "key": "es_merk_type",
+                      "mode": "overwrite-if-unchanged",
+                      "refreshable": true
+                    }
+                  }
+                },
+                {
+                  "name": "es_effectieve_ah",
+                  "title": "Aanwezige cap (Ah)",
+                  "cellType": "text",
+                  "inputType": "number",
+                  "width": "10%"
+                },
+                {
+                  "name": "es_alarmstroom_ma",
+                  "title": "Alarm (mA)",
+                  "cellType": "text",
+                  "inputType": "number",
+                  "width": "8%"
+                },
+                {
+                  "name": "es_ruststroom_ma",
+                  "title": "Rust (mA)",
+                  "cellType": "text",
+                  "inputType": "number",
+                  "width": "8%"
+                },
+                {
+                  "name": "es_benodigd_ah",
+                  "title": "Benodigd (Ah)",
+                  "cellType": "text",
+                  "inputType": "number",
+                  "width": "10%",
+                  "readOnly": true
+                },
+                {
+                  "name": "es_opmerking",
+                  "title": "Opmerking",
+                  "cellType": "comment",
+                  "rows": 2,
+                  "width": "14%"
+                },
+                {
+                  "name": "es_overbrugging_uren",
+                  "title": "Overbrugging (uren)",
+                  "cellType": "text",
+                  "inputType": "number",
+                  "width": "8%"
+                },
+                {
+                  "name": "es_accu1_v",
+                  "title": "Accu 1 [V]",
+                  "cellType": "text",
+                  "inputType": "number",
+                  "width": "7%"
+                },
+                {
+                  "name": "es_accu2_v",
+                  "title": "Accu 2 [V]",
+                  "cellType": "text",
+                  "inputType": "number",
+                  "width": "7%"
+                },
+                {
+                  "name": "es_t0_v",
+                  "title": "V t0",
+                  "cellType": "text",
+                  "inputType": "number",
+                  "width": "7%"
+                },
+                {
+                  "name": "es_t1_v",
+                  "title": "V t1",
+                  "cellType": "text",
+                  "inputType": "number",
+                  "width": "7%"
+                },
+                {
+                  "name": "es_laadspanning_v_gemeten",
+                  "title": "Laadspanning [V]",
+                  "cellType": "text",
+                  "inputType": "number",
+                  "width": "8%"
+                }
+              ],
+              "validators": [
+                {
+                  "type": "expression",
+                  "text": "Aanwezige capaciteit is lager dan benodigd (controleer accu's / overbrugging / stromen / factor).",
+                  "expression": "{es_regels}.all(iif(notempty(item.es_effectieve_ah) and notempty(item.es_ruststroom_ma) and notempty(item.es_alarmstroom_ma) and notempty(item.es_overbrugging_uren), (toNumber(item.es_effectieve_ah) >= round((((toNumber(item.es_ruststroom_ma) / 1000) * (toNumber(item.es_overbrugging_uren) - 0.5)) + ((toNumber(item.es_alarmstroom_ma) / 1000) * 0.5)) * toNumber({es_verouderingsfactor}), 3)), true))"
+                }
+              ]
+            },
+            {
+              "type": "html",
+              "name": "es_voetnoot_accuspanning",
+              "html": "<sup>1</sup> De accuspanning is gemeten na ten minste 1 uur op noodstroom (tijdstippen metingen t0 en t1 + waarden)."
+            },
+            {
+              "type": "matrixdynamic",
+              "name": "melders_regels",
+              "title": "Melders",
+              "titleLocation": "top",
+              "allowAddRows": true,
+              "allowRemoveRows": true,
+              "rowCount": 5,
+              "addRowText": "Melder toevoegen",
+              "columns": [
+                {
+                  "name": "meldertype",
+                  "title": "Meldertype",
+                  "cellType": "dropdown",
+                  "width": "28%",
+                  "choices": [
+                    {
+                      "value": "multisensor_ot",
+                      "text": "Multisensor (O/T) melder"
+                    },
+                    {
+                      "value": "multisensor_otco",
+                      "text": "Multisensor (O/T/CO) melder"
+                    },
+                    {
+                      "value": "multisensor_otchem",
+                      "text": "Multisensor (O/T/Chemisch) melder"
+                    },
+                    {
+                      "value": "ionisatie",
+                      "text": "Ionisatie melder"
+                    },
+                    {
+                      "value": "optisch",
+                      "text": "Optische melder"
+                    },
+                    {
+                      "value": "temperatuur",
+                      "text": "Temperatuur melder"
+                    }
+                  ]
+                },
+                {
+                  "name": "meldernummer",
+                  "title": "Meldernummer",
+                  "cellType": "text",
+                  "width": "14%"
+                },
+                {
+                  "name": "ruimte",
+                  "title": "Ruimte",
+                  "cellType": "text",
+                  "width": "20%"
+                },
+                {
+                  "name": "instelling",
+                  "title": "Instelling",
+                  "cellType": "text",
+                  "width": "12%"
+                },
+                {
+                  "name": "tijd_van",
+                  "title": "Tijd van",
+                  "cellType": "text",
+                  "inputType": "time",
+                  "width": "10%"
+                },
+                {
+                  "name": "tijd_tot",
+                  "title": "Tijd t/m",
+                  "cellType": "text",
+                  "inputType": "time",
+                  "width": "10%"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "bijlage_c_sturingen",
+          "title": "Bevindingen ten aanzien van sturingen (C)",
+          "elements": [
+            {
+              "type": "panel",
+              "name": "p_stuurfunctiematrix_header",
+              "title": "Stuurfunctiematrix",
+              "elements": [
+                {
+                  "type": "matrixdynamic",
+                  "name": "stuurfunctiematrix_docs_c",
+                  "titleLocation": "hidden",
+                  "allowAddRows": false,
+                  "allowRemoveRows": false,
+                  "rowCount": 0,
+                  "readOnly": true,
+                  "columns": [
+                    {
+                      "name": "doc_titel",
+                      "title": "Titel",
+                      "cellType": "text",
+                      "readOnly": true,
+                      "width": "38%"
+                    },
+                    {
+                      "name": "doc_nummer",
+                      "title": "Documentnr",
+                      "cellType": "text",
+                      "readOnly": true,
+                      "width": "20%"
+                    },
+                    {
+                      "name": "doc_datum",
+                      "title": "Datum",
+                      "cellType": "text",
+                      "readOnly": true,
+                      "width": "16%"
+                    },
+                    {
+                      "name": "doc_revisie",
+                      "title": "Revisie",
+                      "cellType": "text",
+                      "readOnly": true,
+                      "width": "12%"
+                    },
+                    {
+                      "name": "doc_type",
+                      "title": "Type",
+                      "cellType": "text",
+                      "readOnly": true,
+                      "visible": false
+                    }
+                  ],
+                  "ember": {
+                    "bind": {
+                      "kind": "prefill",
+                      "key": "doc_regels",
+                      "mode": "always-overwrite",
+                      "refreshable": true
+                    },
+                    "filter": {
+                      "panelField": "doc_type",
+                      "equals": "stuurfunctiematrix"
+                    }
+                  }
+                }
+              ]
+            },
+            {
+              "type": "matrixdynamic",
+              "name": "bijlage_c_items",
+              "titleLocation": "hidden",
+              "allowAddRows": false,
+              "allowRemoveRows": false,
+              "defaultValue": [
+                {
+                  "item_code": "C1",
+                  "onderwerp": "Doormelding brandmeldingen",
+                  "voldoet": "",
+                  "opmerking": ""
+                },
+                {
+                  "item_code": "C2",
+                  "onderwerp": "Doormelding storingsmeldingen",
+                  "voldoet": "",
+                  "opmerking": ""
+                },
+                {
+                  "item_code": "C3",
+                  "onderwerp": "Ontruimingsalarminstallatie B (geïntegreerde installaties)",
+                  "voldoet": "",
+                  "opmerking": ""
+                },
+                {
+                  "item_code": "C4",
+                  "onderwerp": "Ontruimingsalarminstallatie A, B (niet-geïntegreerde installaties)",
+                  "voldoet": "",
+                  "opmerking": ""
+                },
+                {
+                  "item_code": "C5",
+                  "onderwerp": "Voorzieningen voor deuren",
+                  "voldoet": "",
+                  "opmerking": ""
+                },
+                {
+                  "item_code": "C6",
+                  "onderwerp": "Besturing brandweer- en nevenpanelen",
+                  "voldoet": "",
+                  "opmerking": ""
+                },
+                {
+                  "item_code": "C7",
+                  "onderwerp": "Luchtbehandelings- en ventilatieinstallatie",
+                  "voldoet": "",
+                  "opmerking": ""
+                },
+                {
+                  "item_code": "C8",
+                  "onderwerp": "(Brandweer)liften",
+                  "voldoet": "",
+                  "opmerking": ""
+                },
+                {
+                  "item_code": "C9",
+                  "onderwerp": "Brandweeringang",
+                  "voldoet": "",
+                  "opmerking": ""
+                },
+                {
+                  "item_code": "C10",
+                  "onderwerp": "Flitslamp(en)",
+                  "voldoet": "",
+                  "opmerking": ""
+                },
+                {
+                  "item_code": "C11",
+                  "onderwerp": "",
+                  "voldoet": "",
+                  "opmerking": ""
+                },
+                {
+                  "item_code": "C12",
+                  "onderwerp": "",
+                  "voldoet": "",
+                  "opmerking": ""
+                },
+                {
+                  "item_code": "C13",
+                  "onderwerp": "",
+                  "voldoet": "",
+                  "opmerking": ""
+                },
+                {
+                  "item_code": "C14",
+                  "onderwerp": "",
+                  "voldoet": "",
+                  "opmerking": ""
+                },
+                {
+                  "item_code": "C15",
+                  "onderwerp": "",
+                  "voldoet": "",
+                  "opmerking": ""
+                },
+                {
+                  "item_code": "C16",
+                  "onderwerp": "",
+                  "voldoet": "",
+                  "opmerking": ""
+                },
+                {
+                  "item_code": "C17",
+                  "onderwerp": "",
+                  "voldoet": "",
+                  "opmerking": ""
+                }
+              ],
+              "columns": [
+                {
+                  "name": "item_code",
+                  "title": "Nr",
+                  "cellType": "text",
+                  "readOnly": true,
+                  "width": "6%"
+                },
+                {
+                  "name": "onderwerp",
+                  "title": "Onderwerp",
+                  "cellType": "text",
+                  "width": "44%",
+                  "placeHolder": "Overige.. (vul onderwerp in)",
+                  "validators": [
+                    {
+                      "type": "expression",
+                      "text": "Vul een onderwerp in voor deze regel, of laat 'Voldoet' leeg.",
+                      "expression": "iif(notempty(item.voldoet), notempty(item.onderwerp), true)"
+                    }
+                  ]
+                },
+                {
+                  "name": "voldoet",
+                  "title": "Voldoet",
+                  "cellType": "radiogroup",
+                  "isRequired": true,
+                  "requiredErrorText": "Kies Ja, Nee of N.V.T.",
+                  "choices": [
+                    {
+                      "value": "Ja",
+                      "text": "Ja"
+                    },
+                    {
+                      "value": "Nee",
+                      "text": "Nee"
+                    },
+                    {
+                      "value": "NVT",
+                      "text": "N.V.T."
+                    }
+                  ],
+                  "colCount": 3,
+                  "width": "20%"
+                },
+                {
+                  "name": "opmerking",
+                  "title": "Opmerking",
+                  "cellType": "comment",
+                  "placeholder": "Toelichting bij Nee."
+                }
+              ],
+              "validators": [
+                {
+                  "type": "expression",
+                  "text": "Bij 'Nee' is een opmerking verplicht.",
+                  "expression": "{bijlage_c_items}.all(iif(item.voldoet = 'Nee', notempty(item.opmerking), true))"
+                },
+                {
+                  "type": "expression",
+                  "text": "Voor ingevulde 'Overige' regels moet ook een onderwerp ingevuld zijn.",
+                  "expression": "{bijlage_c_items}.all(iif(notempty(item.voldoet), notempty(item.onderwerp), true))"
+                }
+              ],
+              "ember": {
+                "followUp": {
+                  "kind": "report-only",
+                  "mode": "on-condition",
+                  "condition": {
+                    "field": "voldoet",
+                    "equals": "Nee"
+                  },
+                  "itemCodeField": "item_code",
+                  "workflowtitleField": "onderwerp",
+                  "descriptionField": "opmerking",
+                  "category": "bijlage_c",
+                  "certificateImpact": {
+                    "mode": "none"
+                  }
+                }
+              }
+            },
+            {
+              "type": "html",
+              "name": "bijlage_c_voetnoot",
+              "html": "Bij <b>‘Nee’</b> altijd invullen bij <b>Opmerking</b>."
+            }
+          ]
+        },
+        {
+          "name": "bijlage_d_gestuurde_voorzieningen",
+          "title": "Bevindingen ten aanzien van gestuurde voorzieningen (D)",
+          "elements": [
+            {
+              "type": "panel",
+              "name": "p_stuurfunctiematrix_header_d",
+              "title": "Stuurfunctiematrix",
+              "elements": [
+                {
+                  "type": "matrixdynamic",
+                  "name": "stuurfunctiematrix_docs_d",
+                  "titleLocation": "hidden",
+                  "allowAddRows": false,
+                  "allowRemoveRows": false,
+                  "rowCount": 0,
+                  "readOnly": true,
+                  "columns": [
+                    {
+                      "name": "doc_titel",
+                      "title": "Titel",
+                      "cellType": "text",
+                      "readOnly": true,
+                      "width": "38%"
+                    },
+                    {
+                      "name": "doc_nummer",
+                      "title": "Documentnr",
+                      "cellType": "text",
+                      "readOnly": true,
+                      "width": "20%"
+                    },
+                    {
+                      "name": "doc_datum",
+                      "title": "Datum",
+                      "cellType": "text",
+                      "readOnly": true,
+                      "width": "16%"
+                    },
+                    {
+                      "name": "doc_revisie",
+                      "title": "Revisie",
+                      "cellType": "text",
+                      "readOnly": true,
+                      "width": "12%"
+                    },
+                    {
+                      "name": "doc_type",
+                      "title": "Type",
+                      "cellType": "text",
+                      "readOnly": true,
+                      "visible": false
+                    }
+                  ],
+                  "ember": {
+                    "bind": {
+                      "kind": "prefill",
+                      "key": "doc_regels",
+                      "mode": "always-overwrite",
+                      "refreshable": true
+                    },
+                    "filter": {
+                      "panelField": "doc_type",
+                      "equals": "stuurfunctiematrix"
+                    }
+                  }
+                }
+              ]
+            },
+            {
+              "type": "matrixdynamic",
+              "name": "bijlage_d_items",
+              "titleLocation": "hidden",
+              "allowAddRows": false,
+              "allowRemoveRows": false,
+              "defaultValue": [
+                {
+                  "item_code": "D1",
+                  "onderwerp": "Doormelding brandmeldingen",
+                  "voldoet": "",
+                  "opmerking": ""
+                },
+                {
+                  "item_code": "D2",
+                  "onderwerp": "Doormelding storingsmeldingen",
+                  "voldoet": "",
+                  "opmerking": ""
+                },
+                {
+                  "item_code": "D3",
+                  "onderwerp": "Ontruimingsalarminstallatie B (geïntegreerde installaties)",
+                  "voldoet": "",
+                  "opmerking": ""
+                },
+                {
+                  "item_code": "D4",
+                  "onderwerp": "Ontruimingsalarminstallatie A, B (niet-geïntegreerde installaties)",
+                  "voldoet": "",
+                  "opmerking": ""
+                },
+                {
+                  "item_code": "D5",
+                  "onderwerp": "Voorzieningen voor deuren",
+                  "voldoet": "",
+                  "opmerking": ""
+                },
+                {
+                  "item_code": "D6",
+                  "onderwerp": "Besturing brandweer- en nevenpanelen",
+                  "voldoet": "",
+                  "opmerking": ""
+                },
+                {
+                  "item_code": "D7",
+                  "onderwerp": "Luchtbehandelings- en ventilatieinstallatie",
+                  "voldoet": "",
+                  "opmerking": ""
+                },
+                {
+                  "item_code": "D8",
+                  "onderwerp": "(Brandweer)liften",
+                  "voldoet": "",
+                  "opmerking": ""
+                },
+                {
+                  "item_code": "D9",
+                  "onderwerp": "Brandweeringang",
+                  "voldoet": "",
+                  "opmerking": ""
+                },
+                {
+                  "item_code": "D10",
+                  "onderwerp": "Flitslamp(en)",
+                  "voldoet": "",
+                  "opmerking": ""
+                },
+                {
+                  "item_code": "D11",
+                  "onderwerp": "",
+                  "voldoet": "",
+                  "opmerking": ""
+                },
+                {
+                  "item_code": "D12",
+                  "onderwerp": "",
+                  "voldoet": "",
+                  "opmerking": ""
+                },
+                {
+                  "item_code": "D13",
+                  "onderwerp": "",
+                  "voldoet": "",
+                  "opmerking": ""
+                },
+                {
+                  "item_code": "D14",
+                  "onderwerp": "",
+                  "voldoet": "",
+                  "opmerking": ""
+                },
+                {
+                  "item_code": "D15",
+                  "onderwerp": "",
+                  "voldoet": "",
+                  "opmerking": ""
+                },
+                {
+                  "item_code": "D16",
+                  "onderwerp": "",
+                  "voldoet": "",
+                  "opmerking": ""
+                },
+                {
+                  "item_code": "D17",
+                  "onderwerp": "",
+                  "voldoet": "",
+                  "opmerking": ""
+                },
+                {
+                  "item_code": "D18",
+                  "onderwerp": "",
+                  "voldoet": "",
+                  "opmerking": ""
+                },
+                {
+                  "item_code": "D19",
+                  "onderwerp": "",
+                  "voldoet": "",
+                  "opmerking": ""
+                },
+                {
+                  "item_code": "D20",
+                  "onderwerp": "",
+                  "voldoet": "",
+                  "opmerking": ""
+                }
+              ],
+              "columns": [
+                {
+                  "name": "item_code",
+                  "title": "Nr",
+                  "cellType": "text",
+                  "readOnly": true,
+                  "width": "6%"
+                },
+                {
+                  "name": "onderwerp",
+                  "title": "Onderwerp",
+                  "cellType": "text",
+                  "width": "44%",
+                  "placeHolder": "Overige.. (vul onderwerp in)",
+                  "readOnlyIf": "toNumber(substring({row.item_code}, 1)) <= 10"
+                },
+                {
+                  "name": "voldoet",
+                  "title": "Voldoet",
+                  "cellType": "radiogroup",
+                  "choices": [
+                    {
+                      "value": "Ja",
+                      "text": "Ja"
+                    },
+                    {
+                      "value": "Nee",
+                      "text": "Nee"
+                    },
+                    {
+                      "value": "NVT",
+                      "text": "N.V.T."
+                    }
+                  ],
+                  "colCount": 3,
+                  "width": "20%",
+                  "readOnlyIf": "toNumber(substring({row.item_code}, 1)) <= 10"
+                },
+                {
+                  "name": "opmerking",
+                  "title": "Opmerking",
+                  "cellType": "comment",
+                  "placeholder": "Toelichting bij Nee."
+                }
+              ],
+              "validators": [
+                {
+                  "type": "expression",
+                  "text": "Bij 'Nee' is een opmerking verplicht (alleen bij invulbare 'Overige' regels).",
+                  "expression": "{bijlage_d_items}.all(iif(toNumber(substring(item.item_code, 1)) <= 10, true, iif(item.voldoet = 'Nee', notempty(item.opmerking), true)))"
+                },
+                {
+                  "type": "expression",
+                  "text": "Voor ingevulde 'Overige' regels moet ook een onderwerp ingevuld zijn.",
+                  "expression": "{bijlage_d_items}.all(iif(toNumber(substring(item.item_code, 1)) <= 10, true, iif(notempty(item.voldoet), notempty(item.onderwerp), true)))"
+                }
+              ],
+              "ember": {
+                "followUp": {
+                  "kind": "report-only",
+                  "mode": "on-condition",
+                  "condition": {
+                    "field": "voldoet",
+                    "equals": "Nee"
+                  },
+                  "itemCodeField": "item_code",
+                  "workflowtitleField": "onderwerp",
+                  "descriptionField": "opmerking",
+                  "category": "bijlage_d",
+                  "certificateImpact": {
+                    "mode": "none"
+                  }
+                }
+              }
+            },
+            {
+              "type": "html",
+              "name": "bijlage_d_voetnoot",
+              "html": "Bij <b>‘Nee’</b> altijd invullen bij <b>Opmerking</b>. Alleen de regels <b>D11 t/m D20</b> (Overige..) zijn invulbaar."
+            }
+          ]
+        },
+        {
+          "name": "aanvullende_opmerkingen",
+          "title": "Aanvullende opmerkingen",
+          "elements": [
+            {
+              "type": "html",
+              "name": "aanvullende_opmerkingen_info",
+              "html": "<div>Leg hieronder aanvullende opmerkingen vast. Geef per opmerking aan of deze gevolg heeft voor het certificaat.</div>"
+            },
+            {
+              "type": "matrixdynamic",
+              "name": "aanvullende_opmerkingen_items",
+              "titleLocation": "hidden",
+              "allowAddRows": true,
+              "allowRemoveRows": true,
+              "addRowText": "Regel toevoegen",
+              "removeRowText": "Verwijderen",
+              "rowCount": 0,
+              "defaultValue": [
+                {
+                  "omschrijving": "",
+                  "gevolg_certificaat": null
+                }
+              ],
+              "columns": [
+                {
+                  "name": "omschrijving",
+                  "title": "Omschrijving",
+                  "cellType": "comment",
+                  "rows": 4,
+                  "isRequired": true,
+                  "requiredErrorText": "Vul een aanvullende opmerking in.",
+                  "placeHolder": "Vul hier de aanvullende opmerking in.",
+                  "width": "80%"
+                },
+                {
+                  "name": "gevolg_certificaat",
+                  "title": "Gevolg op certificaat",
+                  "cellType": "dropdown",
+                  "isRequired": true,
+                  "requiredErrorText": "Kies Ja of Nee.",
+                  "choices": [
+                    {
+                      "value": "Ja",
+                      "text": "Ja"
+                    },
+                    {
+                      "value": "Nee",
+                      "text": "Nee"
+                    }
+                  ],
+                  "width": "20%"
+                }
+              ],
+              "validators": [
+                {
+                  "type": "expression",
+                  "text": "Elke ingevulde regel moet een omschrijving en een keuze voor gevolg op certificaat hebben.",
+                  "expression": "{aanvullende_opmerkingen_items}.all(iif(notempty(item.omschrijving) or notempty(item.gevolg_certificaat), notempty(item.omschrijving) and notempty(item.gevolg_certificaat), true))"
+                }
+              ],
+              "ember": {
+                "followUp": [
+                  {
+                    "kind": "workflow",
+                    "mode": "on-condition",
+                    "condition": {
+                      "field": "gevolg_certificaat",
+                      "equals": "Ja"
+                    },
+                    "workflowtitleField": "omschrijving",
+                    "descriptionField": "omschrijving",
+                    "category": "aanvullende_opmerkingen",
+                    "certificateImpact": {
+                      "mode": "field",
+                      "field": "gevolg_certificaat"
+                    }
+                  },
+                  {
+                    "kind": "report-only",
+                    "mode": "on-condition",
+                    "condition": {
+                      "field": "gevolg_certificaat",
+                      "equals": "Nee"
+                    },
+                    "workflowtitleField": "omschrijving",
+                    "descriptionField": "omschrijving",
+                    "category": "aanvullende_opmerkingen",
+                    "certificateImpact": {
+                      "mode": "none"
+                    }
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  }
+}
