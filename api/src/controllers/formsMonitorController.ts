@@ -1,4 +1,5 @@
 //api/src/controllers/formsMonitorController.ts
+import { randomUUID } from "node:crypto";
 import type { Request, Response } from "express";
 import * as service from "../services/formsMonitorService.js";
 import { buildFormReportPdf } from "../services/formReportPdfService.js";
@@ -125,8 +126,16 @@ export async function getFormsMonitorDetail(req: any, res: Response) {
       return res.status(404).json({ error: "not found" });
     }
 
-    console.error(err);
-    return res.status(500).json({ error: "getFormsMonitorDetail failed" });
+    const correlationId = randomUUID();
+    console.error("[forms monitor detail] technical failure", {
+      correlationId,
+      formInstanceId: String(req.params.formInstanceId || ""),
+      error: err,
+    });
+    return res.status(500).json({
+      error: "technical error",
+      correlation_id: correlationId,
+    });
   }
 }
 
@@ -151,8 +160,13 @@ export async function getFormsMonitorFollowUps(req: any, res: Response) {
       return res.status(404).json({ error: "not found" });
     }
 
-    console.error(err);
-    return res.status(500).json({ error: "getFormsMonitorFollowUps failed" });
+    const correlationId = randomUUID();
+    console.error("[forms monitor follow-ups] technical failure", {
+      correlationId,
+      formInstanceId: String(req.params.formInstanceId || ""),
+      error: err,
+    });
+    return res.status(500).json({ error: "technical error", correlation_id: correlationId });
   }
 }
 

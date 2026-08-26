@@ -241,7 +241,8 @@ select top 1
   fi.instance_note,
   fi.parent_instance_id,
   fi.atrium_installation_code,
-  fi.answers_json,
+  fa.answers_json,
+  fa.calculated_json,
   fi.created_at,
   fi.created_by,
   fi.updated_at,
@@ -258,6 +259,79 @@ select top 1
   fd.name as form_name,
   fv.version,
   fv.version_label,
+  fv.survey_json,
+
+  coalesce((
+    select
+      fic.form_instance_context_id,
+      fic.context_type,
+      fic.source_system,
+      fic.business_unit,
+      fic.source_key,
+      fic.display_code_snapshot,
+      fic.display_label_snapshot,
+      fic.metadata_snapshot_json,
+      fic.is_primary,
+      fic.derivation_type,
+      fic.selected_at,
+      fic.selected_by,
+      fic.source_modified_at,
+      fic.last_verified_at,
+      fic.verification_status
+    from dbo.FormInstanceContext fic
+    where fic.form_instance_id = fi.form_instance_id
+    order by fic.is_primary desc, fic.context_type, fic.display_label_snapshot
+    for json path
+  ), N'[]') as contexts_json,
+
+  coalesce((
+    select
+      fid.form_instance_document_id,
+      fid.parent_document_id,
+      fid.relation_type,
+      fid.title,
+      fid.note,
+      fid.document_number,
+      fid.document_date,
+      fid.revision,
+      sf.file_name,
+      sf.mime_type,
+      sf.file_extension,
+      sf.file_size_bytes,
+      sf.uploaded_at,
+      sf.uploaded_by,
+      fid.source_system,
+      fid.source_reference,
+      fid.is_active,
+      fid.created_at,
+      fid.created_by,
+      fid.updated_at,
+      fid.updated_by
+    from dbo.FormInstanceDocument fid
+    left join dbo.StoredFile sf
+      on sf.stored_file_id = fid.stored_file_id
+     and sf.is_deleted = 0
+    where fid.form_instance_id = fi.form_instance_id
+      and isnull(fid.is_active, 1) = 1
+    order by fid.created_at desc, fid.form_instance_document_id
+    for json path
+  ), N'[]') as documents_json,
+
+  coalesce((
+    select
+      audit.assignment_audit_id,
+      audit.action_type,
+      audit.previous_assigned_user_object_id,
+      audit.previous_assigned_display_name_snapshot,
+      audit.assigned_user_object_id,
+      audit.assigned_display_name_snapshot,
+      audit.changed_at,
+      audit.changed_by
+    from dbo.FormInstanceAssignmentAudit audit
+    where audit.form_instance_id = fi.form_instance_id
+    order by audit.changed_at desc, audit.assignment_audit_id desc
+    for json path
+  ), N'[]') as assignment_audit_json,
 
   ab.installatie_code,
   ab.installatie_naam,
@@ -280,6 +354,8 @@ join dbo.FormDefinitionVersion fv
   on fv.form_version_id = fi.form_version_id
 join dbo.FormDefinition fd
   on fd.form_id = fv.form_id
+left join dbo.FormAnswer fa
+  on fa.form_instance_id = fi.form_instance_id
 left join dbo.AtriumInstallationBase ab
   on ab.installatie_code = fi.atrium_installation_code
 where fi.form_instance_id = @formInstanceId;

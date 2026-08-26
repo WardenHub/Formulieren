@@ -15,6 +15,9 @@ import {
   reimportInstallationLogbookDocument,
   getInstallationNotes,
   getInstallationWorkflowItems,
+  postInstallationFollowUp,
+  getInstallationFollowUpCatalog,
+  putInstallationFollowUpStatus,
   putInstallationType,
   postInstallationNote,
   putInstallationNote,
@@ -42,6 +45,7 @@ import {
   postCertificateSendHistory,
   searchInstallations,
   getInstallationMap,
+  getInstallationMapViewport,
   getInstallationOperationalSummary,
   getEnergySupplies,
   putEnergySupplies,
@@ -116,6 +120,7 @@ const documentRoles = ["admin", "gebruiker", "documentbeheerder"] as const;
 
 router.get("/search", requireRole("admin", "gebruiker"), searchInstallations);
 router.get("/map", requireRole("admin", "gebruiker"), getInstallationMap);
+router.get("/map/viewport", requireRole("admin", "gebruiker"), getInstallationMapViewport);
 router.get("/map/summary", requireRole("admin", "gebruiker"), getInstallationMap);
 
 // stroomvoorziening e.d.
@@ -182,6 +187,9 @@ router.post(
   postInstallationNoteReaction
 );
 router.get("/:code/workflow-items", requireRole(...documentRoles), getInstallationWorkflowItems);
+router.get("/:code/follow-ups/catalog", requireRole(...documentRoles), getInstallationFollowUpCatalog);
+router.post("/:code/follow-ups", requireRole(...documentRoles), postInstallationFollowUp);
+router.put("/:code/follow-ups/:followUpActionId/status", requireRole(...documentRoles), putInstallationFollowUpStatus);
 router.put("/:code/custom-values", requireRole("admin", "gebruiker"), putCustomValues);
 
 router.get("/:code/documents", requireRole(...documentRoles), getDocuments);

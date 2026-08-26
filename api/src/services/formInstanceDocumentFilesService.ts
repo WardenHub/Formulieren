@@ -42,15 +42,14 @@ function sanitizeFileName(value: string | null | undefined, fallback = "bijlage"
 }
 
 function buildRenamedFileName(currentFileName: string | null | undefined, requestedFileName: string) {
-  const safeRequested = sanitizeFileName(requestedFileName, currentFileName || "bijlage");
+  const rawRequested = String(requestedFileName || "").trim();
+  if (!rawRequested) throw new Error("invalid file name");
+  const safeRequested = sanitizeFileName(rawRequested, "");
   const currentExt = getFileExtension(currentFileName);
   const requestedExt = getFileExtension(safeRequested);
-
-  if (!currentExt || requestedExt) {
-    return safeRequested;
-  }
-
-  return `${safeRequested}.${currentExt}`;
+  const requestedBase = requestedExt ? safeRequested.slice(0, -(requestedExt.length + 1)).trim() : safeRequested;
+  if (!requestedBase) throw new Error("invalid file name");
+  return currentExt ? `${requestedBase}.${currentExt}` : requestedBase;
 }
 
 function sha256Hex(buffer: Buffer) {
@@ -84,7 +83,7 @@ function parseImageMeta(file: Express.Multer.File) {
 }
 
 function buildAttachmentDisposition(fileName: string | null) {
-  const safe = String(fileName || "document").replace(/["\r\n]/g, "").trim() || "document";
+  const safe = String(fileName || "document").replace(/["\n]/g, "").trim() || "document";
   return `attachment; filename="${safe}"`;
 }
 

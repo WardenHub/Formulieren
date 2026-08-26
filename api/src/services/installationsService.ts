@@ -54,6 +54,9 @@ import {
   getInstallationNoteByIdSql,
   getInstallationNotesSql,
   getInstallationWorkflowItemsSql,
+  getInstallationFollowUpCatalogSql,
+  createManualInstallationFollowUpSql,
+  updateInstallationFollowUpStatusSql,
   insertInstallationNoteSql,
   insertUserNotificationEventSql,
   markInstallationNoteNotificationsReadSql,
@@ -996,6 +999,8 @@ export async function getInstallationWorkflowItems(code: string) {
     parent_instance_id: row.parent_instance_id ?? null,
     form_title: row.form_title ?? row.form_code ?? "Formulier",
     drawing_pins: parseJsonArray(row.drawing_pins_json),
+    attachments: parseJsonArray(row.attachments_json),
+    events: parseJsonArray(row.events_json),
   }));
 
   const activeItems = items.filter((item) => WORKFLOW_ACTIVE_STATUSES.has(String(item.status || "").trim().toUpperCase()));
@@ -1014,6 +1019,85 @@ export async function getInstallationWorkflowItems(code: string) {
       historical: historicalItems.length,
     },
   };
+}
+
+export async function getInstallationFollowUpCatalog(code: string) {
+  const cleanCode = String(code || "").trim();
+  const result: any = await sqlQueryRaw(getInstallationFollowUpCatalogSql, { code: cleanCode });
+  const recordsets = Array.isArray(result?.recordsets) ? result.recordsets : [];
+  return {
+    statuses: Array.isArray(recordsets[0]) ? recordsets[0] : [],
+    workflow_roles: Array.isArray(recordsets[1]) ? recordsets[1] : [],
+    attachments: Array.isArray(recordsets[2]) ? recordsets[2] : [],
+  };
+}
+
+export async function createManualInstallationFollowUp(code: string, payload: any, user: any) {
+  const cleanCode = String(code || "").trim();
+  await assertInstallationWritable(cleanCode);
+  const title = normalizeOptionalString(payload?.title ?? payload?.workflow_title);
+  if (!title) throw new Error("follow-up title required");
+  if (title.length > 300) throw new Error("follow-up title too long");
+  const description = normalizeOptionalString(payload?.description ?? payload?.workflow_description);
+  const priority = String(payload?.priority || "NORMAL").trim().toUpperCase();
+  if (!["LOW", "NORMAL", "HIGH", "CRITICAL"].includes(priority)) throw new Error("follow-up priority invalid");
+  const responsibilityType = String(payload?.responsibility_type || "WARDENBURG").trim().toUpperCase();
+  if (!["WARDENBURG", "CUSTOMER", "THIRD_PARTY", "UNSPECIFIED"].includes(responsibilityType)) throw new Error("follow-up responsibility invalid");
+  const status = String(payload?.status || "OPEN").trim().toUpperCase();
+  if (!["OPEN", "PLANNING_NODIG", "WACHTENOPDERDEN", "GEPLAND"].includes(status)) throw new Error("follow-up status invalid");
+  const assignedUserObjectId = normalizeOptionalString(payload?.assigned_user_object_id);
+  const assignedRoleCode = normalizeOptionalString(payload?.assigned_role_code);
+  if (assignedUserObjectId && assignedRoleCode) throw new Error("follow-up assignment invalid");
+  const assignmentType = assignedUserObjectId ? "USER" : assignedRoleCode ? "ROLE" : "NONE";
+  const dueDate = normalizeOptionalString(payload?.due_date);
+  if (dueDate && !/^\d{4}-\d{2}-\d{2}$/.test(dueDate)) throw new Error("follow-up due date invalid");
+  const drawingPinId = normalizeOptionalString(payload?.drawing_pin_id);
+  if (drawingPinId && !/^[0-9a-f-]{36}$/i.test(drawingPinId)) throw new Error("drawing pin invalid");
+  const attachmentIds = Array.from(new Set((Array.isArray(payload?.attachment_stored_file_ids) ? payload.attachment_stored_file_ids : [])
+    .map((value: any) => String(value || "").trim())
+    .filter((value: string) => /^[0-9a-f-]{36}$/i.test(value))));
+
+  const rows = await sqlQuery(createManualInstallationFollowUpSql, {
+    code: cleanCode,
+    title,
+    description,
+    category: normalizeOptionalString(payload?.category ?? payload?.tags),
+    priority,
+    responsibilityType,
+    status,
+    assignmentType,
+    assignedUserObjectId,
+    assignedRoleCode,
+    assignedDisplayName: normalizeOptionalString(payload?.assigned_display_name_snapshot),
+    assignedEmail: normalizeOptionalString(payload?.assigned_email_snapshot),
+    dueDate,
+    drawingPinId,
+    attachmentIdsJson: JSON.stringify(attachmentIds),
+    actor: getUserAuditActor(user),
+    actorUserObjectId: getUserObjectId(user),
+    actorDisplayName: getUserDisplayNameSnapshot(user),
+    actorEmail: getUserEmail(user),
+  });
+  return { ok: true, follow_up_action_id: rows?.[0]?.follow_up_action_id };
+}
+
+export async function updateInstallationFollowUpStatus(code: string, followUpActionId: string, payload: any, user: any) {
+  const cleanCode = String(code || "").trim();
+  await assertInstallationWritable(cleanCode);
+  const cleanId = String(followUpActionId || "").trim();
+  if (!/^[0-9a-f-]{36}$/i.test(cleanId)) throw new Error("follow-up action not found");
+  const nextStatus = String(payload?.status || "").trim().toUpperCase();
+  if (!nextStatus) throw new Error("follow-up status invalid");
+  await sqlQuery(updateInstallationFollowUpStatusSql, {
+    code: cleanCode,
+    followUpActionId: cleanId,
+    nextStatus,
+    actor: getUserAuditActor(user),
+    actorUserObjectId: getUserObjectId(user),
+    actorDisplayName: getUserDisplayNameSnapshot(user),
+    actorEmail: getUserEmail(user),
+  });
+  return { ok: true };
 }
 
 export async function upsertInstallationDocuments(code: string, documents: any[], user: any) {

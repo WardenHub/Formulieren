@@ -592,6 +592,64 @@ export async function getInstallationMap(req: any, res: Response) {
   }
 }
 
+export async function postInstallationFollowUp(req: any, res: Response) {
+  try {
+    const data = await service.createManualInstallationFollowUp(String(req.params.code || ""), req.body || {}, req.user);
+    return res.status(201).json(data);
+  } catch (err: any) {
+    const message = String(err?.message || err || "");
+    if (isHistoricalReadOnlyMessage(message)) return res.status(409).json({ error: "historical installation read-only" });
+    if (message.toLowerCase().includes("not found")) return res.status(404).json({ error: message });
+    if (message.toLowerCase().includes("invalid") || message.toLowerCase().includes("required") || message.toLowerCase().includes("too long")) return res.status(400).json({ error: message });
+    console.error(err);
+    return res.status(500).json({ error: "follow-up action could not be created" });
+  }
+}
+
+export async function getInstallationFollowUpCatalog(req: any, res: Response) {
+  try {
+    return res.json(await service.getInstallationFollowUpCatalog(String(req.params.code || "")));
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ error: "follow-up catalog could not be loaded" });
+  }
+}
+
+export async function putInstallationFollowUpStatus(req: any, res: Response) {
+  try {
+    const data = await service.updateInstallationFollowUpStatus(String(req.params.code || ""), String(req.params.followUpActionId || ""), req.body || {}, req.user);
+    return res.json(data);
+  } catch (err: any) {
+    const message = String(err?.message || err || "");
+    if (isHistoricalReadOnlyMessage(message)) return res.status(409).json({ error: "historical installation read-only" });
+    if (message.toLowerCase().includes("not found")) return res.status(404).json({ error: message });
+    if (message.toLowerCase().includes("invalid")) return res.status(400).json({ error: message });
+    console.error(err);
+    return res.status(500).json({ error: "follow-up status could not be changed" });
+  }
+}
+
+export async function getInstallationMapViewport(req: any, res: Response) {
+  try {
+    const data = await operationalService.getInstallationMapViewport({
+      q: req.query?.q,
+      take: req.query?.take ? Number(req.query.take) : undefined,
+      north: req.query?.north,
+      south: req.query?.south,
+      east: req.query?.east,
+      west: req.query?.west,
+      zoom: req.query?.zoom,
+      onlyCurrent: req.query?.onlyCurrent,
+      installationType: req.query?.installationType,
+      followUpMode: req.query?.followUpMode,
+    });
+    return res.json(data);
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ error: "installation map could not be loaded" });
+  }
+}
+
 export async function getInstallationOperationalSummary(req: any, res: Response) {
   try {
     const data = await operationalService.getInstallationOperationalSummary(String(req.params.code || ""));

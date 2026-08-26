@@ -33,9 +33,9 @@ evaluated as (
     ra.*,
     r.reviewed_at,
     r.status_at_review,
-    rule.requires_assignment,
-    rule.requires_due_date,
-    rule.requires_attachment,
+    category_rule.requires_assignment,
+    category_rule.requires_due_date,
+    category_rule.requires_attachment,
     attachment_count = (
       select count(*)
       from dbo.FollowUpActionAttachmentMap am
@@ -47,9 +47,9 @@ evaluated as (
   left join dbo.FollowUpActionReview r
     on r.follow_up_review_batch_id = lb.follow_up_review_batch_id
    and r.follow_up_action_id = ra.follow_up_action_id
-  left join dbo.FollowUpCategoryRule rule
-    on rule.category = ra.category
-   and rule.is_active = 1
+  left join dbo.FollowUpCategoryRule category_rule
+    on category_rule.category = ra.category
+   and category_rule.is_active = 1
 )
 `;
 

@@ -446,6 +446,38 @@ select
     order by d.title, p.page_number, p.label
     for json path
   ), N'[]') as drawing_pins_json
+  ,coalesce((
+    select
+      attachment_map.stored_file_id,
+      attachment_map.attachment_role,
+      attachment_map.is_primary,
+      attachment_map.customer_visible,
+      stored_file.file_name,
+      stored_file.mime_type,
+      stored_file.file_size_bytes
+    from dbo.FollowUpActionAttachmentMap attachment_map
+    join dbo.StoredFile stored_file
+      on stored_file.stored_file_id = attachment_map.stored_file_id
+     and stored_file.is_deleted = 0
+    where attachment_map.follow_up_action_id = a.follow_up_action_id
+    order by attachment_map.is_primary desc, stored_file.file_name
+    for json path
+  ), N'[]') as attachments_json
+  ,coalesce((
+    select
+      event.follow_up_action_event_id,
+      event.event_type,
+      event.old_values_json,
+      event.new_values_json,
+      event.actor_user_object_id,
+      event.actor_display_name_snapshot,
+      event.actor_email_snapshot,
+      event.created_at
+    from dbo.FollowUpActionEvent event
+    where event.follow_up_action_id = a.follow_up_action_id
+    order by event.created_at desc, event.follow_up_action_event_id desc
+    for json path
+  ), N'[]') as events_json
 from dbo.FollowUpAction a
 left join dbo.FollowUpActionFormSource fs
   on fs.follow_up_action_id = a.follow_up_action_id
@@ -466,4 +498,132 @@ order by
   sd.sort_order asc,
   coalesce(a.updated_at, a.created_at) desc,
   a.created_at desc;
+`;
+
+export const getInstallationFollowUpCatalogSql = `
+select status_code, display_name, sort_order, is_terminal
+from dbo.FollowUpStatusDefinition
+where is_active = 1
+order by sort_order, status_code;
+
+select role_code, display_name, description
+from dbo.WorkflowRoleDefinition
+where is_active = 1
+order by display_name, role_code;
+
+select distinct
+  stored_file.stored_file_id,
+  stored_file.file_name,
+  stored_file.mime_type,
+  stored_file.file_size_bytes,
+  document.document_id,
+  document.title,
+  document.document_type_key
+from dbo.InstallationDocument document
+join dbo.StoredFile stored_file
+  on stored_file.stored_file_id = document.stored_file_id
+ and stored_file.is_deleted = 0
+where document.atrium_installation_code = @code
+  and document.is_active = 1
+order by stored_file.file_name, document.title;
+`;
+
+export const createManualInstallationFollowUpSql = `
+set nocount on;
+set xact_abort on;
+
+declare @installationId uniqueidentifier;
+declare @followUpActionId uniqueidentifier = newid();
+select @installationId = installation_id from dbo.Installation where atrium_installation_code = @code;
+if @installationId is null throw 50000, 'installation not found', 1;
+if @assignmentType = N'ROLE' and not exists (
+  select 1 from dbo.WorkflowRoleDefinition where role_code = @assignedRoleCode and is_active = 1
+) throw 50000, 'workflow role invalid', 1;
+if @drawingPinId is not null and not exists (
+  select 1 from dbo.DrawingPin pin
+  join dbo.InstallationDocument document on document.document_id = pin.installation_document_id
+  where pin.drawing_pin_id = @drawingPinId and pin.is_deleted = 0 and document.atrium_installation_code = @code
+) throw 50000, 'drawing pin not found', 1;
+if exists (
+  select 1
+  from openjson(@attachmentIdsJson) source_attachment
+  where not exists (
+    select 1
+    from dbo.InstallationDocument document
+    join dbo.StoredFile stored_file
+      on stored_file.stored_file_id = document.stored_file_id
+     and stored_file.is_deleted = 0
+    where document.atrium_installation_code = @code
+      and document.is_active = 1
+      and stored_file.stored_file_id = try_convert(uniqueidentifier, source_attachment.value)
+  )
+) throw 50000, 'follow-up attachment invalid', 1;
+
+begin transaction;
+insert dbo.FollowUpAction (
+  follow_up_action_id, source_type, kind, workflow_title, workflow_description, category,
+  priority, responsibility_type, certificate_impact, status, status_set_at, status_set_by,
+  assignment_type, assigned_user_object_id, assigned_role_code,
+  assigned_display_name_snapshot, assigned_email_snapshot, due_date, created_by
+) values (
+  @followUpActionId, N'MANUAL', N'workflow', @title, @description, @category,
+  @priority, @responsibilityType, N'no', @status, sysutcdatetime(), @actor,
+  @assignmentType, @assignedUserObjectId, @assignedRoleCode,
+  @assignedDisplayName, @assignedEmail, @dueDate, @actor
+);
+insert dbo.FollowUpActionInstallationContext (
+  follow_up_action_id, installation_id, atrium_installation_code, is_primary,
+  display_snapshot, verified_at, created_by
+) values (@followUpActionId, @installationId, @code, 1, @code, sysutcdatetime(), @actor);
+if @drawingPinId is not null
+  insert dbo.FollowUpActionDrawingPinMap (follow_up_action_id, drawing_pin_id, created_by)
+  values (@followUpActionId, @drawingPinId, @actor);
+insert dbo.FollowUpActionAttachmentMap (
+  follow_up_action_id, stored_file_id, attachment_role, is_primary, customer_visible, created_by
+)
+select @followUpActionId, try_convert(uniqueidentifier, source_attachment.value), N'EVIDENCE',
+       case when source_attachment.[key] = 0 then 1 else 0 end, 0, @actor
+from openjson(@attachmentIdsJson) source_attachment
+where try_convert(uniqueidentifier, source_attachment.value) is not null;
+insert dbo.FollowUpActionEvent (
+  follow_up_action_id, event_type, new_values_json, actor_user_object_id,
+  actor_display_name_snapshot, actor_email_snapshot
+) values (
+  @followUpActionId, N'CREATED',
+  (select @title as workflow_title, @description as workflow_description, @status as status,
+          @priority as priority, @responsibilityType as responsibility_type, @dueDate as due_date,
+          @assignmentType as assignment_type, @assignedUserObjectId as assigned_user_object_id,
+          @assignedRoleCode as assigned_role_code, @drawingPinId as drawing_pin_id,
+          json_query(@attachmentIdsJson) as attachment_stored_file_ids
+   for json path, without_array_wrapper),
+  @actorUserObjectId, @actorDisplayName, @actorEmail
+);
+commit transaction;
+select @followUpActionId as follow_up_action_id;
+`;
+
+export const updateInstallationFollowUpStatusSql = `
+set nocount on;
+declare @oldStatus nvarchar(30);
+select @oldStatus = action.status
+from dbo.FollowUpAction action
+join dbo.FollowUpActionInstallationContext context on context.follow_up_action_id = action.follow_up_action_id
+where action.follow_up_action_id = @followUpActionId and context.atrium_installation_code = @code;
+if @oldStatus is null throw 50000, 'follow-up action not found', 1;
+if not exists (select 1 from dbo.FollowUpStatusDefinition where status_code = @nextStatus and is_active = 1)
+  throw 50000, 'follow-up status invalid', 1;
+update dbo.FollowUpAction
+set status = @nextStatus, status_set_at = sysutcdatetime(), status_set_by = @actor,
+    resolved_at = case when @nextStatus = N'AFGEHANDELD' then sysutcdatetime() else null end,
+    resolved_by = case when @nextStatus = N'AFGEHANDELD' then @actor else null end,
+    updated_at = sysutcdatetime(), updated_by = @actor
+where follow_up_action_id = @followUpActionId;
+insert dbo.FollowUpActionEvent (follow_up_action_id, event_type, old_values_json, new_values_json, actor_user_object_id, actor_display_name_snapshot, actor_email_snapshot)
+values (
+  @followUpActionId,
+  case when @oldStatus = N'AFGEHANDELD' and @nextStatus <> N'AFGEHANDELD' then N'REOPENED' when @nextStatus = N'AFGEHANDELD' then N'CLOSED' else N'STATUS_CHANGED' end,
+  (select @oldStatus as status for json path, without_array_wrapper),
+  (select @nextStatus as status for json path, without_array_wrapper),
+  @actorUserObjectId, @actorDisplayName, @actorEmail
+);
 `;

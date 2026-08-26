@@ -503,11 +503,23 @@ export async function getMonitorDetail(formInstanceIdRaw: any, context: DetailCo
     if (!item) return { error: "not found" };
   }
 
-  const [parent, children, followUpSummaryRaw, finalizeGate] = await Promise.all([
+  item = {
+    ...item,
+    contexts: parseJsonArray(item.contexts_json),
+    documents: parseJsonArray(item.documents_json),
+    assignment_audit: parseJsonArray(item.assignment_audit_json),
+    contexts_json: undefined,
+    documents_json: undefined,
+    assignment_audit_json: undefined,
+  };
+
+  const [parent, children, followUpSummaryRaw, finalizeGate, followUpRows, reviewRows] = await Promise.all([
     getParentRow(formInstanceId),
     getChildrenRows(formInstanceId),
     getFollowUpChainSummary(formInstanceId),
     getFinalizeGate(formInstanceId),
+    sqlQuery(getFormFollowUpsMonitorByChainSql, { formInstanceId }),
+    sqlQuery(getFollowUpReviewItemsSql, { formInstanceId }),
   ]);
   const followUpSummary = {
     ...followUpSummaryRaw,
@@ -521,6 +533,16 @@ export async function getMonitorDetail(formInstanceIdRaw: any, context: DetailCo
     item,
     parent,
     children,
+    follow_ups: (followUpRows || []).map((row: any) => ({
+      ...row,
+      drawing_pins: parseJsonArray(row.drawing_pins_json),
+      drawing_pins_json: undefined,
+    })),
+    follow_up_reviews: (reviewRows || []).map((row: any) => ({
+      ...row,
+      drawing_pins: parseJsonArray(row.drawing_pins_json),
+      drawing_pins_json: undefined,
+    })),
     follow_up_summary: followUpSummary,
     finalize_gate: finalizeGate,
     compliment_points: Array.isArray(complimentPoints) ? complimentPoints : [],

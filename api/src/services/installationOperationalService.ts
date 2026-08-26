@@ -1,5 +1,5 @@
 import { sqlQuery } from "../db/index.js";
-import { getInstallationOperationalRowsSql } from "../db/queries/installationOperational.sql.js";
+import { getInstallationMapViewportSql, getInstallationOperationalRowsSql } from "../db/queries/installationOperational.sql.js";
 
 export type InstallationOperationalFilters = {
   q?: string | null;
@@ -16,6 +16,14 @@ export type InstallationOperationalFilters = {
   certificationRequiredOnly?: boolean;
   certificateStatus?: "VALID" | "EXPIRING" | "EXPIRED" | "MISSING" | "REVOKED" | "UNKNOWN" | null;
   activeInspectionOnly?: boolean;
+};
+
+export type InstallationMapViewportFilters = InstallationOperationalFilters & {
+  north?: number;
+  south?: number;
+  east?: number;
+  west?: number;
+  zoom?: number;
 };
 
 const SERVICE_STATUSES = new Set(["ACTIVE", "INACTIVE", "UNKNOWN"]);
@@ -176,6 +184,69 @@ export async function getInstallationMap(filters: InstallationOperationalFilters
         (sum, item) => sum + item.missing_required_document_count,
         0
       ),
+    },
+  };
+}
+
+function boundedNumber(value: unknown, fallback: number, min: number, max: number) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? Math.min(max, Math.max(min, parsed)) : fallback;
+}
+
+export async function getInstallationMapViewport(filters: InstallationMapViewportFilters = {}) {
+  const q = String(filters.q || "").trim();
+  if (q && q.length < 2) return { markers: [], meta: { minimum_search_length: 2 } };
+
+  const zoom = Math.round(boundedNumber(filters.zoom, 7, 5, 19));
+  const cellSize = q || zoom >= 15 ? 0.000001
+    : zoom >= 13 ? 0.002
+      : zoom >= 11 ? 0.008
+        : zoom >= 9 ? 0.03
+          : zoom >= 7 ? 0.12
+            : 0.35;
+  const params = queryParams({
+    ...filters,
+    take: Math.min(750, Math.max(25, Number(filters.take || 750))),
+  }, null);
+
+  const startedAt = Date.now();
+  const rows = await sqlQuery(getInstallationMapViewportSql, {
+    ...params,
+    north: boundedNumber(filters.north, 53.8, -90, 90),
+    south: boundedNumber(filters.south, 50.5, -90, 90),
+    east: boundedNumber(filters.east, 7.4, -180, 180),
+    west: boundedNumber(filters.west, 3.1, -180, 180),
+    zoom,
+    cellSize,
+  });
+
+  return {
+    markers: (rows || []).map((row: any) => {
+      const installationCount = Number(row.installation_count || 0);
+      return {
+        ...row,
+        latitude: Number(row.latitude),
+        longitude: Number(row.longitude),
+        installation_count: installationCount,
+        open_follow_up_count: Number(row.open_follow_up_count || 0),
+        overdue_follow_up_count: Number(row.overdue_follow_up_count || 0),
+        installations: installationCount === 1 && row.representative_installation_code
+          ? [{
+              atrium_installation_code: row.representative_installation_code,
+              installation_name: row.representative_installation_name,
+              installation_type_key: row.installation_type_key,
+              installation_type_name: row.installation_type_name,
+            }]
+          : [],
+        representative_installation_code: undefined,
+        representative_installation_name: undefined,
+      };
+    }),
+    meta: {
+      zoom,
+      cell_size: cellSize,
+      query_ms: Date.now() - startedAt,
+      truncated: Number(rows?.length || 0) >= Number(params.take),
     },
   };
 }

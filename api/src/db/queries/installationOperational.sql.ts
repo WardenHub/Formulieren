@@ -429,3 +429,113 @@ order by
   o.object_name,
   o.atrium_installation_code;
 `;
+
+export const getInstallationMapViewportSql = `
+;with open_actions as (
+  select
+    context.atrium_installation_code,
+    count_big(*) as open_follow_up_count,
+    sum(case when action.due_date < cast(sysutcdatetime() as date) then 1 else 0 end) as overdue_follow_up_count
+  from dbo.FollowUpActionInstallationContext context
+  join dbo.FollowUpAction action
+    on action.follow_up_action_id = context.follow_up_action_id
+  join dbo.FollowUpStatusDefinition status_definition
+    on status_definition.status_code = action.status
+   and status_definition.is_terminal = 0
+  group by context.atrium_installation_code
+),
+points as (
+  select
+    a.installatie_code as atrium_installation_code,
+    coalesce(nullif(a.installatie_naam, N''), nullif(a.obj_naam, N''), a.installatie_code) as installation_name,
+    a.obj_naam as object_name,
+    a.obj_adr_formatted as formatted_address,
+    try_convert(float, a.obj_adr_latitude) as latitude,
+    try_convert(float, a.obj_adr_longitude) as longitude,
+    coalesce(nullif(a.gebruiker_naam, N''), nullif(a.eigenaar_naam, N''), nullif(a.debiteur_naam, N'')) as relation_name,
+    i.installation_type_key,
+    it.display_name as installation_type_name,
+    coalesce(actions.open_follow_up_count, 0) as open_follow_up_count,
+    coalesce(actions.overdue_follow_up_count, 0) as overdue_follow_up_count
+  from dbo.AtriumInstallationBase a
+  left join dbo.Installation i
+    on i.atrium_installation_code = a.installatie_code
+  left join dbo.InstallationType it
+    on it.installation_type_key = i.installation_type_key
+  left join open_actions actions
+    on actions.atrium_installation_code = a.installatie_code
+  where try_convert(float, a.obj_adr_latitude) between -90 and 90
+    and try_convert(float, a.obj_adr_longitude) between -180 and 180
+    and not (try_convert(float, a.obj_adr_latitude) = 0 and try_convert(float, a.obj_adr_longitude) = 0)
+    and (@onlyCurrent = 0 or upper(coalesce(a.installation_status, N'')) <> N'J')
+    and (@installationType is null or i.installation_type_key = @installationType)
+    and (
+      @followUpMode = N'ALL'
+      or (@followUpMode = N'OPEN' and coalesce(actions.open_follow_up_count, 0) > 0)
+      or (@followUpMode = N'NONE' and coalesce(actions.open_follow_up_count, 0) = 0)
+      or (@followUpMode = N'OVERDUE' and coalesce(actions.overdue_follow_up_count, 0) > 0)
+    )
+    and (
+      @qLike is null
+      or a.installatie_code like @qLike
+      or a.installatie_naam like @qLike
+      or a.obj_naam like @qLike
+      or a.obj_adr_formatted like @qLike
+      or a.gebruiker_naam like @qLike
+      or a.eigenaar_naam like @qLike
+      or a.debiteur_naam like @qLike
+    )
+    and (
+      @qLike is not null
+      or (
+        try_convert(float, a.obj_adr_latitude) between @south and @north
+        and try_convert(float, a.obj_adr_longitude) between @west and @east
+      )
+    )
+),
+gridded as (
+  select
+    *,
+    floor(latitude / @cellSize) * @cellSize as grid_latitude,
+    floor(longitude / @cellSize) * @cellSize as grid_longitude
+  from points
+),
+groups as (
+  select
+    grid_latitude,
+    grid_longitude,
+    count_big(*) as installation_count,
+    avg(latitude) as latitude,
+    avg(longitude) as longitude,
+    min(installation_type_key) as first_type_key,
+    max(installation_type_key) as last_type_key,
+    max(installation_type_name) as installation_type_name,
+    max(atrium_installation_code) as representative_installation_code,
+    max(installation_name) as representative_installation_name,
+    max(object_name) as object_name,
+    max(formatted_address) as formatted_address,
+    max(relation_name) as relation_name,
+    sum(open_follow_up_count) as open_follow_up_count,
+    sum(overdue_follow_up_count) as overdue_follow_up_count
+  from gridded
+  group by grid_latitude, grid_longitude
+)
+select top (@take)
+  concat(N'GRID|', convert(nvarchar(40), g.grid_latitude), N'|', convert(nvarchar(40), g.grid_longitude)) as marker_group_key,
+  g.latitude,
+  g.longitude,
+  convert(bigint, g.installation_count) as installation_count,
+  case when g.first_type_key = g.last_type_key then g.first_type_key else null end as installation_type_key,
+  case when g.first_type_key = g.last_type_key then g.installation_type_name else N'Gemengd' end as installation_type_name,
+  case when g.installation_count = 1 then g.object_name else concat(g.installation_count, N' installaties') end as object_name,
+  case when g.installation_count = 1 then g.formatted_address else null end as formatted_address,
+  case when g.installation_count = 1 then g.relation_name else null end as relation,
+  case when g.overdue_follow_up_count > 0 then N'CRITICAL' when g.open_follow_up_count > 0 then N'ATTENTION' else N'OK' end as attention_status,
+  case when g.overdue_follow_up_count > 0 then N'Verlopen opvolging' when g.open_follow_up_count > 0 then N'Open opvolging' else N'Geen operationele signalen' end as attention_reason,
+  convert(bigint, g.open_follow_up_count) as open_follow_up_count,
+  convert(bigint, g.overdue_follow_up_count) as overdue_follow_up_count,
+  g.representative_installation_code,
+  g.representative_installation_name
+from groups g
+order by g.installation_count desc, g.grid_latitude, g.grid_longitude;
+`;
