@@ -379,34 +379,38 @@ where recipient_user_object_id = @recipientUserObjectId
 
 export const getInstallationWorkflowItemsSql = `
 select
-  fwa.follow_up_action_id,
-  fwa.form_instance_id,
-  fwa.installation_id,
-  fwa.atrium_installation_code,
-  fwa.source_question_name,
-  fwa.source_question_type,
-  fwa.source_row_index,
-  fwa.source_item_code,
-  fwa.kind,
-  fwa.workflow_title,
-  fwa.workflow_description,
-  fwa.category,
-  fwa.certificate_impact,
-  fwa.certificate_impact_override,
-  fwa.status,
-  fwa.status_set_at,
-  fwa.status_set_by,
-  fwa.assigned_to,
-  fwa.due_date,
-  fwa.note,
-  fwa.resolution_note,
-  fwa.resolution_outcome,
-  fwa.resolved_at,
-  fwa.resolved_by,
-  fwa.created_at,
-  fwa.created_by,
-  fwa.updated_at,
-  fwa.updated_by,
+  a.follow_up_action_id,
+  a.source_type,
+  fs.form_instance_id,
+  ic.installation_id,
+  ic.atrium_installation_code,
+  fs.source_question_name,
+  fs.source_question_type,
+  fs.source_row_index,
+  fs.source_item_code,
+  a.kind,
+  a.workflow_title,
+  a.workflow_description,
+  a.category,
+  a.priority,
+  a.responsibility_type,
+  a.customer_visible,
+  a.certificate_impact,
+  a.certificate_impact_override,
+  a.status,
+  a.status_set_at,
+  a.status_set_by,
+  coalesce(a.assigned_display_name_snapshot, a.assigned_email_snapshot, a.assigned_role_code) as assigned_to,
+  a.due_date,
+  a.internal_note as note,
+  a.resolution_note,
+  a.resolution_outcome,
+  a.resolved_at,
+  a.resolved_by,
+  a.created_at,
+  a.created_by,
+  a.updated_at,
+  a.updated_by,
   fi.form_instance_id as instance_number,
   fd.code as form_code,
   fi.status as form_status,
@@ -415,22 +419,51 @@ select
     nullif(ltrim(rtrim(fi.instance_title)), N''),
     nullif(ltrim(rtrim(fd.name)), N''),
     nullif(ltrim(rtrim(fd.code)), N''),
+    case when a.source_type = N'MANUAL' then N'Handmatige opvolging' end,
+    case when a.source_type = N'INSPECTION_CASE' then N'Inspectieopvolging' end,
+    case when a.source_type = N'IMPORT' then N'Geïmporteerde opvolging' end,
     convert(nvarchar(50), fi.form_instance_id)
-  ) as form_title
-from dbo.FormFollowUpAction fwa
-join dbo.FormInstance fi
-  on fi.form_instance_id = fwa.form_instance_id
-join dbo.FormDefinitionVersion fdv
+  ) as form_title,
+  coalesce((
+    select
+      p.drawing_pin_id,
+      p.installation_document_id,
+      p.stored_file_id,
+      p.page_number,
+      p.label as pin_label,
+      d.title as drawing_title,
+      sf.file_name as drawing_file_name
+    from dbo.FollowUpActionDrawingPinMap pin_map
+    join dbo.DrawingPin p
+      on p.drawing_pin_id = pin_map.drawing_pin_id
+     and p.is_deleted = 0
+    join dbo.InstallationDocument d
+      on d.document_id = p.installation_document_id
+    left join dbo.StoredFile sf
+      on sf.stored_file_id = p.stored_file_id
+     and sf.is_deleted = 0
+    where pin_map.follow_up_action_id = a.follow_up_action_id
+    order by d.title, p.page_number, p.label
+    for json path
+  ), N'[]') as drawing_pins_json
+from dbo.FollowUpAction a
+left join dbo.FollowUpActionFormSource fs
+  on fs.follow_up_action_id = a.follow_up_action_id
+join dbo.FollowUpActionInstallationContext ic
+  on ic.follow_up_action_id = a.follow_up_action_id
+ and ic.is_primary = 1
+join dbo.FollowUpStatusDefinition sd
+  on sd.status_code = a.status
+left join dbo.FormInstance fi
+  on fi.form_instance_id = fs.form_instance_id
+left join dbo.FormDefinitionVersion fdv
   on fdv.form_version_id = fi.form_version_id
-join dbo.FormDefinition fd
+left join dbo.FormDefinition fd
   on fd.form_id = fdv.form_id
-where fwa.atrium_installation_code = @code
+where ic.atrium_installation_code = @code
 order by
-  case
-    when fwa.status in (N'OPEN', N'PLANNING_NODIG', N'WACHTENOPDERDEN') then 0
-    when fwa.status = N'GEPLAND' then 1
-    else 2
-  end,
-  coalesce(fwa.updated_at, fwa.created_at) desc,
-  fwa.created_at desc;
+  sd.is_terminal asc,
+  sd.sort_order asc,
+  coalesce(a.updated_at, a.created_at) desc,
+  a.created_at desc;
 `;

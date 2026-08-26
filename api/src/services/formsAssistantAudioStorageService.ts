@@ -60,8 +60,10 @@ export async function uploadAssistantAudioToBlob(args: {
   if (!connectionString) {
     return {
       storage_provider: null,
+      storage_container: null,
       storage_key: null,
       storage_url: null,
+      file_extension: getExtension(args.fileName, args.mimeType),
       checksum_sha256: sha256Hex(args.buffer),
       skipped: true,
       reason: "missing storage connection string",
@@ -101,8 +103,10 @@ export async function uploadAssistantAudioToBlob(args: {
 
   return {
     storage_provider: "blob",
+    storage_container: containerName,
     storage_key: storageKey,
     storage_url: blockBlob.url,
+    file_extension: ext,
     checksum_sha256: sha256Hex(args.buffer),
     skipped: false,
     reason: null,

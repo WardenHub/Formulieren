@@ -37,12 +37,15 @@ select
   gma.media_kind,
   gma.source_kind,
   gma.external_url,
-  gma.file_name,
-  gma.mime_type,
-  gma.file_size_bytes,
-  gma.storage_provider,
-  gma.storage_key,
-  gma.storage_url,
+  sf.file_name,
+  sf.mime_type,
+  sf.file_extension,
+  sf.file_size_bytes,
+  sf.storage_provider,
+  sf.storage_container,
+  sf.storage_key,
+  sf.storage_url,
+  sf.checksum_sha256,
   gma.caption,
   gma.is_active,
   gma.uploaded_at,
@@ -54,6 +57,9 @@ select
   gma.updated_at,
   gma.updated_by
 from dbo.FormGuidanceMediaAsset gma
+left join dbo.StoredFile sf
+  on sf.stored_file_id = gma.stored_file_id
+ and sf.is_deleted = 0
 order by gma.guidance_id asc, gma.media_kind asc, gma.created_at desc;
 
 select
@@ -192,6 +198,42 @@ end;
 
 begin tran;
 
+declare @storedFileId uniqueidentifier = null;
+
+if @sourceKind = N'upload'
+begin
+  set @storedFileId = newid();
+
+  insert into dbo.StoredFile (
+    stored_file_id,
+    storage_provider,
+    storage_container,
+    storage_key,
+    storage_url,
+    file_name,
+    mime_type,
+    file_extension,
+    file_size_bytes,
+    checksum_sha256,
+    uploaded_by,
+    created_by
+  )
+  values (
+    @storedFileId,
+    @storageProvider,
+    @storageContainer,
+    @storageKey,
+    @storageUrl,
+    @fileName,
+    @mimeType,
+    @fileExtension,
+    @fileSizeBytes,
+    @checksumSha256,
+    @actor,
+    @actor
+  );
+end;
+
 if @isActive = 1
 begin
   update dbo.FormGuidanceMediaAsset
@@ -212,12 +254,7 @@ insert into dbo.FormGuidanceMediaAsset (
   media_kind,
   source_kind,
   external_url,
-  file_name,
-  mime_type,
-  file_size_bytes,
-  storage_provider,
-  storage_key,
-  storage_url,
+  stored_file_id,
   caption,
   is_active,
   uploaded_at,
@@ -233,12 +270,7 @@ values (
   @mediaKind,
   @sourceKind,
   @externalUrl,
-  @fileName,
-  @mimeType,
-  @fileSizeBytes,
-  @storageProvider,
-  @storageKey,
-  @storageUrl,
+  @storedFileId,
   @caption,
   @isActive,
   sysutcdatetime(),
@@ -261,12 +293,15 @@ select top 1
   gma.media_kind,
   gma.source_kind,
   gma.external_url,
-  gma.file_name,
-  gma.mime_type,
-  gma.file_size_bytes,
-  gma.storage_provider,
-  gma.storage_key,
-  gma.storage_url,
+  sf.file_name,
+  sf.mime_type,
+  sf.file_extension,
+  sf.file_size_bytes,
+  sf.storage_provider,
+  sf.storage_container,
+  sf.storage_key,
+  sf.storage_url,
+  sf.checksum_sha256,
   gma.caption,
   gma.is_active,
   gma.uploaded_at,
@@ -278,6 +313,9 @@ select top 1
   gma.updated_at,
   gma.updated_by
 from dbo.FormGuidanceMediaAsset gma
+left join dbo.StoredFile sf
+  on sf.stored_file_id = gma.stored_file_id
+ and sf.is_deleted = 0
 where gma.guidance_id = @guidanceId
   and gma.guidance_media_id = @guidanceMediaId;
 `;

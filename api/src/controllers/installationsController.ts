@@ -7,9 +7,54 @@ import * as documentFilesService from "../services/installationDocumentFilesServ
 import * as formDocumentFilesService from "../services/formInstanceDocumentFilesService.js";
 import * as softwareService from "../services/installationSoftwareService.js";
 import * as logbookService from "../services/installationLogbookService.js";
+import * as operationalService from "../services/installationOperationalService.js";
+import * as drawingPinService from "../services/drawingPinService.js";
+import * as certificationService from "../services/certificationService.js";
 
 function isHistoricalReadOnlyMessage(msg: string) {
   return String(msg || "").toLowerCase().includes("historical installation read-only");
+}
+
+function drawingErrorResponse(res: Response, err: any, fallback: string) {
+  const message = String(err?.message || err || "");
+  const clean = message.toLowerCase();
+  if (isHistoricalReadOnlyMessage(clean)) {
+    return res.status(409).json({ error: "historical installation read-only" });
+  }
+  if (clean.includes("version conflict")) {
+    return res.status(409).json({ error: "drawing pin version conflict" });
+  }
+  if (clean.includes("not found")) {
+    return res.status(404).json({ error: message });
+  }
+  if (
+    clean.includes("required")
+    || clean.includes("invalid")
+    || clean.includes("too long")
+  ) {
+    return res.status(400).json({ error: message });
+  }
+  console.error(err);
+  return res.status(500).json({ error: fallback });
+}
+
+function certificationErrorResponse(res: Response, err: any, fallback: string) {
+  const message = String(err?.message || err || "");
+  const clean = message.toLowerCase();
+  if (isHistoricalReadOnlyMessage(clean)) {
+    return res.status(409).json({ error: "historical installation read-only" });
+  }
+  if (clean.includes("version conflict")) {
+    return res.status(409).json({ error: message });
+  }
+  if (clean.includes("not found")) {
+    return res.status(404).json({ error: message });
+  }
+  if (clean.includes("required") || clean.includes("invalid") || clean.includes("too long")) {
+    return res.status(400).json({ error: message });
+  }
+  console.error(err);
+  return res.status(500).json({ error: fallback });
 }
 
 // -------------------- Installations --------------------
@@ -519,6 +564,45 @@ export async function searchInstallations(req: any, res: Response) {
   } catch (err) {
     console.error(err);
     return res.status(500).json({ error: "searchInstallations failed" });
+  }
+}
+
+export async function getInstallationMap(req: any, res: Response) {
+  try {
+    const data = await operationalService.getInstallationMap({
+      q: req.query?.q,
+      take: req.query?.take ? Number(req.query.take) : undefined,
+      onlyCurrent: req.query?.onlyCurrent,
+      installationType: req.query?.installationType,
+      coordinateMode: req.query?.coordinateMode,
+      followUpMode: req.query?.followUpMode,
+      openFormsOnly: req.query?.openFormsOnly,
+      missingDocumentsOnly: req.query?.missingDocumentsOnly,
+      maintenanceStatus: req.query?.maintenanceStatus,
+      inspectionServiceStatus: req.query?.inspectionServiceStatus,
+      monitoringServiceStatus: req.query?.monitoringServiceStatus,
+      certificationRequiredOnly: req.query?.certificationRequiredOnly,
+      certificateStatus: req.query?.certificateStatus,
+      activeInspectionOnly: req.query?.activeInspectionOnly,
+    });
+    return res.json(data);
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ error: "getInstallationMap failed" });
+  }
+}
+
+export async function getInstallationOperationalSummary(req: any, res: Response) {
+  try {
+    const data = await operationalService.getInstallationOperationalSummary(String(req.params.code || ""));
+    if (!data.item) return res.status(404).json({ error: "installation not found" });
+    return res.json(data);
+  } catch (err: any) {
+    if (String(err?.message || err).includes("installation code required")) {
+      return res.status(400).json({ error: "installation code required" });
+    }
+    console.error(err);
+    return res.status(500).json({ error: "getInstallationOperationalSummary failed" });
   }
 }
 
@@ -1172,6 +1256,174 @@ export async function downloadDocumentFile(req: any, res: any) {
 
     console.error(err);
     return res.status(500).json({ error: "downloadDocumentFile failed" });
+  }
+}
+
+export async function getInstallationDrawings(req: any, res: Response) {
+  try {
+    const data = await drawingPinService.getInstallationDrawings(String(req.params.code || ""));
+    return res.json(data);
+  } catch (err: any) {
+    return drawingErrorResponse(res, err, "getInstallationDrawings failed");
+  }
+}
+
+export async function getDrawingPins(req: any, res: Response) {
+  try {
+    const data = await drawingPinService.getDrawingPins(
+      String(req.params.code || ""),
+      String(req.params.documentId || "")
+    );
+    return res.json(data);
+  } catch (err: any) {
+    return drawingErrorResponse(res, err, "getDrawingPins failed");
+  }
+}
+
+export async function postDrawingPin(req: any, res: Response) {
+  try {
+    const data = await drawingPinService.createDrawingPin(
+      String(req.params.code || ""),
+      String(req.params.documentId || ""),
+      req.body || {},
+      req.user
+    );
+    return res.status(201).json(data);
+  } catch (err: any) {
+    return drawingErrorResponse(res, err, "postDrawingPin failed");
+  }
+}
+
+export async function putDrawingPin(req: any, res: Response) {
+  try {
+    const data = await drawingPinService.updateDrawingPin(
+      String(req.params.code || ""),
+      String(req.params.drawingPinId || ""),
+      req.body || {},
+      req.user
+    );
+    return res.json(data);
+  } catch (err: any) {
+    return drawingErrorResponse(res, err, "putDrawingPin failed");
+  }
+}
+
+export async function deleteDrawingPin(req: any, res: Response) {
+  try {
+    const data = await drawingPinService.deleteDrawingPin(
+      String(req.params.code || ""),
+      String(req.params.drawingPinId || ""),
+      req.body || {},
+      req.user
+    );
+    return res.json(data);
+  } catch (err: any) {
+    return drawingErrorResponse(res, err, "deleteDrawingPin failed");
+  }
+}
+
+export async function postDrawingPinActionLink(req: any, res: Response) {
+  try {
+    const data = await drawingPinService.linkDrawingPinAction(
+      String(req.params.code || ""),
+      String(req.params.drawingPinId || ""),
+      String(req.params.followUpActionId || ""),
+      req.user
+    );
+    return res.json(data);
+  } catch (err: any) {
+    return drawingErrorResponse(res, err, "postDrawingPinActionLink failed");
+  }
+}
+
+export async function deleteDrawingPinActionLink(req: any, res: Response) {
+  try {
+    const data = await drawingPinService.unlinkDrawingPinAction(
+      String(req.params.code || ""),
+      String(req.params.drawingPinId || ""),
+      String(req.params.followUpActionId || ""),
+      req.user
+    );
+    return res.json(data);
+  } catch (err: any) {
+    return drawingErrorResponse(res, err, "deleteDrawingPinActionLink failed");
+  }
+}
+
+export async function postManualFollowUpForDrawingPin(req: any, res: Response) {
+  try {
+    const data = await drawingPinService.createManualFollowUpForPin(
+      String(req.params.code || ""),
+      String(req.params.drawingPinId || ""),
+      req.body || {},
+      req.user
+    );
+    return res.status(201).json(data);
+  } catch (err: any) {
+    return drawingErrorResponse(res, err, "postManualFollowUpForDrawingPin failed");
+  }
+}
+
+export async function getInstallationCertification(req: any, res: Response) {
+  try {
+    const data = await certificationService.getCertificationOverview(String(req.params.code || ""));
+    return res.json(data);
+  } catch (err: any) {
+    return certificationErrorResponse(res, err, "getInstallationCertification failed");
+  }
+}
+
+export async function putInstallationCertificationRequirement(req: any, res: Response) {
+  try {
+    const data = await certificationService.upsertCertificationRequirement(
+      String(req.params.code || ""),
+      { ...(req.body || {}), scope: req.params.scope },
+      req.user
+    );
+    return res.json(data);
+  } catch (err: any) {
+    return certificationErrorResponse(res, err, "putInstallationCertificationRequirement failed");
+  }
+}
+
+export async function postInstallationCertificate(req: any, res: Response) {
+  try {
+    const data = await certificationService.createInstallationCertificate(
+      String(req.params.code || ""),
+      req.body || {},
+      req.user
+    );
+    return res.status(201).json(data);
+  } catch (err: any) {
+    return certificationErrorResponse(res, err, "postInstallationCertificate failed");
+  }
+}
+
+export async function putInstallationCertificate(req: any, res: Response) {
+  try {
+    const data = await certificationService.updateInstallationCertificate(
+      String(req.params.code || ""),
+      String(req.params.certificateId || ""),
+      req.body || {},
+      req.user
+    );
+    return res.json(data);
+  } catch (err: any) {
+    return certificationErrorResponse(res, err, "putInstallationCertificate failed");
+  }
+}
+
+export async function postCertificateSendHistory(req: any, res: Response) {
+  try {
+    const data = await certificationService.recordCertificateSend(
+      String(req.params.code || ""),
+      String(req.params.certificateId || ""),
+      req.body || {},
+      req.user
+    );
+    return res.status(201).json(data);
+  } catch (err: any) {
+    return certificationErrorResponse(res, err, "postCertificateSendHistory failed");
   }
 }
 

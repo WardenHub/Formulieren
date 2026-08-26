@@ -90,23 +90,28 @@ select
   p.title,
   p.note,
   p.programming_date,
-  p.file_name,
-  p.mime_type,
-  p.file_size_bytes,
-  p.uploaded_at,
-  p.uploaded_by,
-  p.file_last_modified_at,
-  p.file_last_modified_by,
-  p.storage_provider,
-  p.storage_key,
-  p.storage_url,
-  p.checksum_sha256,
+  sf.file_name,
+  sf.mime_type,
+  sf.file_extension,
+  sf.file_size_bytes,
+  sf.uploaded_at,
+  sf.uploaded_by,
+  sf.file_last_modified_at,
+  sf.file_last_modified_by,
+  sf.storage_provider,
+  sf.storage_container,
+  sf.storage_key,
+  sf.storage_url,
+  sf.checksum_sha256,
   p.is_active,
   p.created_at,
   p.created_by,
   p.updated_at,
   p.updated_by
 from dbo.InstallationProgramming p
+left join dbo.StoredFile sf
+  on sf.stored_file_id = p.stored_file_id
+ and sf.is_deleted = 0
 where p.atrium_installation_code = @code
 order by
   case when p.is_active = 1 then 0 else 1 end,
@@ -378,23 +383,28 @@ select top 1
   p.title,
   p.note,
   p.programming_date,
-  p.file_name,
-  p.mime_type,
-  p.file_size_bytes,
-  p.uploaded_at,
-  p.uploaded_by,
-  p.file_last_modified_at,
-  p.file_last_modified_by,
-  p.storage_provider,
-  p.storage_key,
-  p.storage_url,
-  p.checksum_sha256,
+  sf.file_name,
+  sf.mime_type,
+  sf.file_extension,
+  sf.file_size_bytes,
+  sf.uploaded_at,
+  sf.uploaded_by,
+  sf.file_last_modified_at,
+  sf.file_last_modified_by,
+  sf.storage_provider,
+  sf.storage_container,
+  sf.storage_key,
+  sf.storage_url,
+  sf.checksum_sha256,
   p.is_active,
   p.created_at,
   p.created_by,
   p.updated_at,
   p.updated_by
 from dbo.InstallationProgramming p
+left join dbo.StoredFile sf
+  on sf.stored_file_id = p.stored_file_id
+ and sf.is_deleted = 0
 where p.programming_id = @newId;
 `;
 
@@ -410,23 +420,28 @@ select top 1
   p.title,
   p.note,
   p.programming_date,
-  p.file_name,
-  p.mime_type,
-  p.file_size_bytes,
-  p.uploaded_at,
-  p.uploaded_by,
-  p.file_last_modified_at,
-  p.file_last_modified_by,
-  p.storage_provider,
-  p.storage_key,
-  p.storage_url,
-  p.checksum_sha256,
+  sf.file_name,
+  sf.mime_type,
+  sf.file_extension,
+  sf.file_size_bytes,
+  sf.uploaded_at,
+  sf.uploaded_by,
+  sf.file_last_modified_at,
+  sf.file_last_modified_by,
+  sf.storage_provider,
+  sf.storage_container,
+  sf.storage_key,
+  sf.storage_url,
+  sf.checksum_sha256,
   p.is_active,
   p.created_at,
   p.created_by,
   p.updated_at,
   p.updated_by
 from dbo.InstallationProgramming p
+left join dbo.StoredFile sf
+  on sf.stored_file_id = p.stored_file_id
+ and sf.is_deleted = 0
 where p.atrium_installation_code = @code
   and p.programming_id = @programmingId;
 `;
@@ -448,24 +463,58 @@ begin
   throw 50000, 'programming not found', 1;
 end;
 
+set xact_abort on;
+
+declare @storedFileId uniqueidentifier = newid();
+
+begin tran;
+
+insert into dbo.StoredFile (
+  stored_file_id,
+  storage_provider,
+  storage_container,
+  storage_key,
+  storage_url,
+  file_name,
+  mime_type,
+  file_extension,
+  file_size_bytes,
+  checksum_sha256,
+  uploaded_by,
+  created_by
+)
+values (
+  @storedFileId,
+  @storageProvider,
+  @storageContainer,
+  @storageKey,
+  @storageUrl,
+  @fileName,
+  @mimeType,
+  @fileExtension,
+  @fileSizeBytes,
+  @checksumSha256,
+  @updatedBy,
+  @updatedBy
+);
+
 update p
 set
-  p.file_name = @fileName,
-  p.mime_type = @mimeType,
-  p.file_size_bytes = @fileSizeBytes,
-  p.uploaded_at = sysutcdatetime(),
-  p.uploaded_by = @updatedBy,
-  p.file_last_modified_at = sysutcdatetime(),
-  p.file_last_modified_by = @updatedBy,
-  p.storage_provider = @storageProvider,
-  p.storage_key = @storageKey,
-  p.storage_url = @storageUrl,
-  p.checksum_sha256 = @checksumSha256,
+  p.stored_file_id = @storedFileId,
   p.updated_at = sysutcdatetime(),
   p.updated_by = @updatedBy
 from dbo.InstallationProgramming p
 where p.atrium_installation_code = @code
-  and p.programming_id = @programmingId;
+  and p.programming_id = @programmingId
+  and p.stored_file_id is null;
+
+if @@rowcount = 0
+begin
+  rollback tran;
+  throw 50000, 'programming file could not be linked', 1;
+end;
+
+commit tran;
 
 select top 1
   p.programming_id,
@@ -474,23 +523,28 @@ select top 1
   p.title,
   p.note,
   p.programming_date,
-  p.file_name,
-  p.mime_type,
-  p.file_size_bytes,
-  p.uploaded_at,
-  p.uploaded_by,
-  p.file_last_modified_at,
-  p.file_last_modified_by,
-  p.storage_provider,
-  p.storage_key,
-  p.storage_url,
-  p.checksum_sha256,
+  sf.file_name,
+  sf.mime_type,
+  sf.file_extension,
+  sf.file_size_bytes,
+  sf.uploaded_at,
+  sf.uploaded_by,
+  sf.file_last_modified_at,
+  sf.file_last_modified_by,
+  sf.storage_provider,
+  sf.storage_container,
+  sf.storage_key,
+  sf.storage_url,
+  sf.checksum_sha256,
   p.is_active,
   p.created_at,
   p.created_by,
   p.updated_at,
   p.updated_by
 from dbo.InstallationProgramming p
+left join dbo.StoredFile sf
+  on sf.stored_file_id = p.stored_file_id
+ and sf.is_deleted = 0
 where p.programming_id = @programmingId;
 `;
 

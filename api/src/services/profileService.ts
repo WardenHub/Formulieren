@@ -39,6 +39,12 @@ function sha256Hex(buffer: Buffer) {
   return crypto.createHash("sha256").update(buffer).digest("hex");
 }
 
+function fileExtension(fileName: string) {
+  const safe = String(fileName || "").trim();
+  const index = safe.lastIndexOf(".");
+  return index > 0 && index < safe.length - 1 ? safe.slice(index + 1).toLowerCase() : null;
+}
+
 function looksLikeGuid(value: any) {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
     String(value || "").trim()
@@ -409,7 +415,12 @@ export async function uploadMyAvatar(file: Express.Multer.File, user: any) {
   if (!avatar?.avatar_id) throw new Error("avatar create failed");
 
   const checksum = sha256Hex(file.buffer);
-  let uploaded: { storageProvider: string; storageKey: string; storageUrl: string | null } | null = null;
+  let uploaded: {
+    storageProvider: string;
+    storageContainer: string;
+    storageKey: string;
+    storageUrl: string | null;
+  } | null = null;
 
   try {
     uploaded = await uploadUserProfileAvatarBlob({
@@ -425,8 +436,10 @@ export async function uploadMyAvatar(file: Express.Multer.File, user: any) {
       avatarId: avatar.avatar_id,
       fileName: file.originalname,
       mimeType: file.mimetype || "application/octet-stream",
+      fileExtension: fileExtension(file.originalname),
       fileSizeBytes: file.size ?? file.buffer.length,
       storageProvider: uploaded.storageProvider,
+      storageContainer: uploaded.storageContainer,
       storageKey: uploaded.storageKey,
       storageUrl: uploaded.storageUrl,
       checksumSha256: checksum,
@@ -514,7 +527,12 @@ export async function uploadMySignature(file: Express.Multer.File, user: any) {
   if (!signature?.signature_id) throw new Error("signature create failed");
 
   const checksum = sha256Hex(file.buffer);
-  let uploaded: { storageProvider: string; storageKey: string; storageUrl: string | null } | null = null;
+  let uploaded: {
+    storageProvider: string;
+    storageContainer: string;
+    storageKey: string;
+    storageUrl: string | null;
+  } | null = null;
 
   try {
     uploaded = await uploadUserProfileSignatureBlob({
@@ -530,8 +548,10 @@ export async function uploadMySignature(file: Express.Multer.File, user: any) {
       signatureId: signature.signature_id,
       fileName: file.originalname,
       mimeType: file.mimetype || "application/octet-stream",
+      fileExtension: fileExtension(file.originalname),
       fileSizeBytes: file.size ?? file.buffer.length,
       storageProvider: uploaded.storageProvider,
+      storageContainer: uploaded.storageContainer,
       storageKey: uploaded.storageKey,
       storageUrl: uploaded.storageUrl,
       checksumSha256: checksum,

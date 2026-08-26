@@ -330,24 +330,28 @@ export async function transcribeAssistantAudio(
     assistantTurnId: turn.assistant_turn_id,
   });
 
-  const audioRows = await sqlQuery(createAssistantAudioSql, {
-    assistantSessionId: session.assistant_session_id,
-    assistantTurnId: turn.assistant_turn_id,
-    formInstanceId: ctx.form_instance_id,
-    installationId: ctx.installation_id,
-    code: ctx.atrium_installation_code,
+  const audioRows = blob.skipped
+    ? []
+    : await sqlQuery(createAssistantAudioSql, {
+        assistantSessionId: session.assistant_session_id,
+        assistantTurnId: turn.assistant_turn_id,
+        formInstanceId: ctx.form_instance_id,
+        installationId: ctx.installation_id,
+        code: ctx.atrium_installation_code,
 
-    fileName: file.originalname || null,
-    mimeType: file.mimetype || null,
-    fileSizeBytes: file.size ?? file.buffer.length,
-    durationMs: body?.duration_ms == null ? null : Number(body.duration_ms),
+        fileName: file.originalname || "audio.webm",
+        mimeType: file.mimetype || null,
+        fileExtension: blob.file_extension || null,
+        fileSizeBytes: file.size ?? file.buffer.length,
+        durationMs: body?.duration_ms == null ? null : Number(body.duration_ms),
 
-    storageProvider: blob.storage_provider,
-    storageKey: blob.storage_key,
-    storageUrl: blob.storage_url,
-    checksumSha256: blob.checksum_sha256,
-    capturedBy: getUserAuditActor(user),
-  });
+        storageProvider: blob.storage_provider,
+        storageContainer: blob.storage_container,
+        storageKey: blob.storage_key,
+        storageUrl: blob.storage_url,
+        checksumSha256: blob.checksum_sha256,
+        capturedBy: getUserAuditActor(user),
+      });
 
   return {
     ok: true,

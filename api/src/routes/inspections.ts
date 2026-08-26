@@ -1,0 +1,22 @@
+import { Router } from "express";
+import { requirePermission } from "../middleware/permissionMiddleware.js";
+import * as controller from "../controllers/inspectionsController.js";
+
+const router = Router();
+router.get("/", requirePermission("inspection.view"), controller.overview);
+router.post("/signal", requirePermission("inspection.create"), controller.signal);
+router.get("/cases", requirePermission("inspection.view"), controller.list);
+router.post("/cases", requirePermission("inspection.create"), controller.create);
+router.get("/cases/:caseId", requirePermission("inspection.view"), controller.get);
+router.put("/cases/:caseId", requirePermission("inspection.update"), controller.update);
+router.put("/cases/:caseId/assignment", requirePermission("inspection.assign"), controller.assignment);
+router.get("/cases/:caseId/events", requirePermission("inspection.audit.view"), controller.events);
+router.post("/cases/:caseId/workorders/refresh", requirePermission("inspection.refresh_workorder"), controller.refresh);
+router.put("/cases/:caseId/checklist/:requirementId", requirePermission("inspection.checklist.manage"), controller.checklist);
+router.post("/cases/:caseId/packages", requirePermission("inspection.package.prepare"), controller.preparePackage);
+router.post("/cases/:caseId/packages/:packageId/send", requirePermission("inspection.package.send"), controller.sendPackage);
+router.post("/cases/:caseId/reports", requirePermission("inspection.report.register"), controller.report);
+router.post("/cases/:caseId/conclusion", requirePermission("inspection.conclusion.process"), controller.conclusion);
+router.post("/cases/:caseId/reinspection", requirePermission("inspection.reinspection.create"), controller.reinspection);
+router.post("/cases/:caseId/complete", requirePermission("inspection.complete"), controller.complete);
+export default router;

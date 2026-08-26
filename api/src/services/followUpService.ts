@@ -1,7 +1,7 @@
 /* =========================================================
    /api/src/services/followUpService.ts
    ---------------------------------------------------------
-   Sync extracted follow-up candidates to dbo.FormFollowUpAction
+   Sync extracted follow-up candidates to the generic dbo.FollowUpAction domain
    ========================================================= */
 
 import { sqlQuery } from "../db/index.js";
@@ -20,8 +20,8 @@ import { getUserAuditActor } from "../utils/userIdentity.js";
 type SyncFollowUpsInput = {
   formInstance: {
     form_instance_id: number | string;
-    installation_id: string;
-    atrium_installation_code: string;
+    installation_id?: string | null;
+    atrium_installation_code?: string | null;
   };
   surveyJson: any;
   answers: Record<string, any>;
@@ -74,18 +74,10 @@ export async function previewFormFollowUps(input: PreviewFollowUpsInput) {
 
 export async function syncFormFollowUps(input: SyncFollowUpsInput) {
   const formInstanceId = parseFormInstanceId(input?.formInstance?.form_instance_id);
-  const installationId = String(input?.formInstance?.installation_id || "").trim();
-  const atriumCode = String(input?.formInstance?.atrium_installation_code || "").trim();
   const actor = getUserAuditActor(input?.user);
 
   if (formInstanceId == null) {
     throw new Error("syncFormFollowUps: form_instance_id ontbreekt");
-  }
-  if (!installationId) {
-    throw new Error("syncFormFollowUps: installation_id ontbreekt");
-  }
-  if (!atriumCode) {
-    throw new Error("syncFormFollowUps: atrium_installation_code ontbreekt");
   }
 
   const extracted = dedupeCandidates(
@@ -117,8 +109,6 @@ export async function syncFormFollowUps(input: SyncFollowUpsInput) {
     if (!current) {
       await insertFollowUp({
         formInstanceId,
-        installationId,
-        atriumCode,
         actor,
         candidate,
       });
@@ -174,19 +164,15 @@ async function getExistingFollowUps(formInstanceId: number): Promise<ExistingFol
 
 async function insertFollowUp(args: {
   formInstanceId: number;
-  installationId: string;
-  atriumCode: string;
   actor: string;
   candidate: FollowUpCandidate;
 }) {
-  const { formInstanceId, installationId, atriumCode, actor, candidate } = args;
+  const { formInstanceId, actor, candidate } = args;
 
   const initialStatus = candidate.kind === "report-only" ? "INFORMATIEF" : "OPEN";
 
   await sqlQuery(insertFormFollowUpSql, {
     formInstanceId,
-    installationId,
-    atriumCode,
     sourceQuestionName: candidate.questionName,
     sourceQuestionType: candidate.questionType || null,
     sourceRowIndex: candidate.rowIndex ?? null,

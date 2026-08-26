@@ -132,23 +132,28 @@ export const getActiveUserProfileAvatarSql = `
 select top 1
   a.avatar_id,
   a.user_object_id,
-  a.file_name,
-  a.mime_type,
-  a.file_size_bytes,
-  a.uploaded_at,
-  a.uploaded_by,
-  a.file_last_modified_at,
-  a.file_last_modified_by,
-  a.storage_provider,
-  a.storage_key,
-  a.storage_url,
-  a.checksum_sha256,
+  a.stored_file_id,
+  sf.file_name,
+  sf.mime_type,
+  sf.file_size_bytes,
+  sf.uploaded_at,
+  sf.uploaded_by,
+  sf.file_last_modified_at,
+  sf.file_last_modified_by,
+  sf.storage_provider,
+  sf.storage_container,
+  sf.storage_key,
+  sf.storage_url,
+  sf.checksum_sha256,
   a.is_active,
   a.created_at,
   a.created_by,
   a.updated_at,
   a.updated_by
 from dbo.UserProfileAvatar a
+left join dbo.StoredFile sf
+  on sf.stored_file_id = a.stored_file_id
+ and sf.is_deleted = 0
 where a.user_object_id = @userObjectId
   and isnull(a.is_active, 1) = 1
 order by a.created_at desc, a.avatar_id desc;
@@ -158,17 +163,19 @@ export const getActiveUserProfileSignatureSql = `
 select top 1
   s.signature_id,
   s.user_object_id,
-  s.file_name,
-  s.mime_type,
-  s.file_size_bytes,
-  s.uploaded_at,
-  s.uploaded_by,
-  s.file_last_modified_at,
-  s.file_last_modified_by,
-  s.storage_provider,
-  s.storage_key,
-  s.storage_url,
-  s.checksum_sha256,
+  s.stored_file_id,
+  sf.file_name,
+  sf.mime_type,
+  sf.file_size_bytes,
+  sf.uploaded_at,
+  sf.uploaded_by,
+  sf.file_last_modified_at,
+  sf.file_last_modified_by,
+  sf.storage_provider,
+  sf.storage_container,
+  sf.storage_key,
+  sf.storage_url,
+  sf.checksum_sha256,
   s.image_width_px,
   s.image_height_px,
   s.is_active,
@@ -177,6 +184,9 @@ select top 1
   s.updated_at,
   s.updated_by
 from dbo.UserProfileSignature s
+left join dbo.StoredFile sf
+  on sf.stored_file_id = s.stored_file_id
+ and sf.is_deleted = 0
 where s.user_object_id = @userObjectId
   and isnull(s.is_active, 1) = 1
 order by s.created_at desc, s.signature_id desc;
@@ -244,72 +254,125 @@ values (
 );
 
 select top 1
-  avatar_id,
-  user_object_id,
+  a.avatar_id,
+  a.user_object_id,
+  a.stored_file_id,
+  sf.file_name,
+  sf.mime_type,
+  sf.file_size_bytes,
+  sf.uploaded_at,
+  sf.uploaded_by,
+  sf.file_last_modified_at,
+  sf.file_last_modified_by,
+  sf.storage_provider,
+  sf.storage_container,
+  sf.storage_key,
+  sf.storage_url,
+  sf.checksum_sha256,
+  a.is_active,
+  a.created_at,
+  a.created_by,
+  a.updated_at,
+  a.updated_by
+from dbo.UserProfileAvatar a
+left join dbo.StoredFile sf
+  on sf.stored_file_id = a.stored_file_id
+ and sf.is_deleted = 0
+where a.avatar_id = @avatarId;
+`;
+
+export const setUserProfileAvatarFileSql = `
+declare @storedFileId uniqueidentifier = newid();
+
+insert into dbo.StoredFile (
+  stored_file_id,
+  storage_provider,
+  storage_container,
+  storage_key,
+  storage_url,
   file_name,
   mime_type,
+  file_extension,
   file_size_bytes,
+  checksum_sha256,
   uploaded_at,
   uploaded_by,
   file_last_modified_at,
   file_last_modified_by,
-  storage_provider,
-  storage_key,
-  storage_url,
-  checksum_sha256,
-  is_active,
   created_at,
-  created_by,
-  updated_at,
-  updated_by
-from dbo.UserProfileAvatar
-where avatar_id = @avatarId;
-`;
+  created_by
+)
+values (
+  @storedFileId,
+  @storageProvider,
+  @storageContainer,
+  @storageKey,
+  @storageUrl,
+  @fileName,
+  @mimeType,
+  @fileExtension,
+  @fileSizeBytes,
+  @checksumSha256,
+  sysutcdatetime(),
+  @actor,
+  sysutcdatetime(),
+  @actor,
+  sysutcdatetime(),
+  @actor
+);
 
-export const setUserProfileAvatarFileSql = `
 update dbo.UserProfileAvatar
 set
-  file_name = @fileName,
-  mime_type = @mimeType,
-  file_size_bytes = @fileSizeBytes,
-  uploaded_at = sysutcdatetime(),
-  uploaded_by = @actor,
-  file_last_modified_at = sysutcdatetime(),
-  file_last_modified_by = @actor,
-  storage_provider = @storageProvider,
-  storage_key = @storageKey,
-  storage_url = @storageUrl,
-  checksum_sha256 = @checksumSha256,
+  stored_file_id = @storedFileId,
   updated_at = sysutcdatetime(),
   updated_by = @actor
 where avatar_id = @avatarId
   and user_object_id = @userObjectId;
 
 select top 1
-  avatar_id,
-  user_object_id,
-  file_name,
-  mime_type,
-  file_size_bytes,
-  uploaded_at,
-  uploaded_by,
-  file_last_modified_at,
-  file_last_modified_by,
-  storage_provider,
-  storage_key,
-  storage_url,
-  checksum_sha256,
-  is_active,
-  created_at,
-  created_by,
-  updated_at,
-  updated_by
-from dbo.UserProfileAvatar
-where avatar_id = @avatarId
-  and user_object_id = @userObjectId;
+  a.avatar_id,
+  a.user_object_id,
+  a.stored_file_id,
+  sf.file_name,
+  sf.mime_type,
+  sf.file_size_bytes,
+  sf.uploaded_at,
+  sf.uploaded_by,
+  sf.file_last_modified_at,
+  sf.file_last_modified_by,
+  sf.storage_provider,
+  sf.storage_container,
+  sf.storage_key,
+  sf.storage_url,
+  sf.checksum_sha256,
+  a.is_active,
+  a.created_at,
+  a.created_by,
+  a.updated_at,
+  a.updated_by
+from dbo.UserProfileAvatar a
+join dbo.StoredFile sf
+  on sf.stored_file_id = a.stored_file_id
+ and sf.is_deleted = 0
+where a.avatar_id = @avatarId
+  and a.user_object_id = @userObjectId;
 `;
 
 export const deactivateActiveUserProfileAvatarSql = `
+update sf
+set
+  is_deleted = 1,
+  deleted_at = sysutcdatetime(),
+  deleted_by = @actor,
+  updated_at = sysutcdatetime(),
+  updated_by = @actor
+from dbo.StoredFile sf
+join dbo.UserProfileAvatar a
+  on a.stored_file_id = sf.stored_file_id
+where a.user_object_id = @userObjectId
+  and isnull(a.is_active, 1) = 1
+  and sf.is_deleted = 0;
+
 update dbo.UserProfileAvatar
 set
   is_active = 0,
@@ -350,44 +413,78 @@ values (
 );
 
 select top 1
-  signature_id,
-  user_object_id,
+  s.signature_id,
+  s.user_object_id,
+  s.stored_file_id,
+  sf.file_name,
+  sf.mime_type,
+  sf.file_size_bytes,
+  sf.uploaded_at,
+  sf.uploaded_by,
+  sf.file_last_modified_at,
+  sf.file_last_modified_by,
+  sf.storage_provider,
+  sf.storage_container,
+  sf.storage_key,
+  sf.storage_url,
+  sf.checksum_sha256,
+  s.image_width_px,
+  s.image_height_px,
+  s.is_active,
+  s.created_at,
+  s.created_by,
+  s.updated_at,
+  s.updated_by
+from dbo.UserProfileSignature s
+left join dbo.StoredFile sf
+  on sf.stored_file_id = s.stored_file_id
+ and sf.is_deleted = 0
+where s.signature_id = @signatureId;
+`;
+
+export const setUserProfileSignatureFileSql = `
+declare @storedFileId uniqueidentifier = newid();
+
+insert into dbo.StoredFile (
+  stored_file_id,
+  storage_provider,
+  storage_container,
+  storage_key,
+  storage_url,
   file_name,
   mime_type,
+  file_extension,
   file_size_bytes,
+  checksum_sha256,
   uploaded_at,
   uploaded_by,
   file_last_modified_at,
   file_last_modified_by,
-  storage_provider,
-  storage_key,
-  storage_url,
-  checksum_sha256,
-  image_width_px,
-  image_height_px,
-  is_active,
   created_at,
-  created_by,
-  updated_at,
-  updated_by
-from dbo.UserProfileSignature
-where signature_id = @signatureId;
-`;
+  created_by
+)
+values (
+  @storedFileId,
+  @storageProvider,
+  @storageContainer,
+  @storageKey,
+  @storageUrl,
+  @fileName,
+  @mimeType,
+  @fileExtension,
+  @fileSizeBytes,
+  @checksumSha256,
+  sysutcdatetime(),
+  @actor,
+  sysutcdatetime(),
+  @actor,
+  sysutcdatetime(),
+  @actor
+);
 
-export const setUserProfileSignatureFileSql = `
 update dbo.UserProfileSignature
 set
-  file_name = @fileName,
-  mime_type = @mimeType,
-  file_size_bytes = @fileSizeBytes,
-  uploaded_at = sysutcdatetime(),
-  uploaded_by = @actor,
-  file_last_modified_at = sysutcdatetime(),
-  file_last_modified_by = @actor,
-  storage_provider = @storageProvider,
-  storage_key = @storageKey,
-  storage_url = @storageUrl,
-  checksum_sha256 = @checksumSha256,
+  stored_file_id = @storedFileId,
   image_width_px = @imageWidthPx,
   image_height_px = @imageHeightPx,
   updated_at = sysutcdatetime(),
@@ -396,32 +493,51 @@ where signature_id = @signatureId
   and user_object_id = @userObjectId;
 
 select top 1
-  signature_id,
-  user_object_id,
-  file_name,
-  mime_type,
-  file_size_bytes,
-  uploaded_at,
-  uploaded_by,
-  file_last_modified_at,
-  file_last_modified_by,
-  storage_provider,
-  storage_key,
-  storage_url,
-  checksum_sha256,
-  image_width_px,
-  image_height_px,
-  is_active,
-  created_at,
-  created_by,
-  updated_at,
-  updated_by
-from dbo.UserProfileSignature
-where signature_id = @signatureId
-  and user_object_id = @userObjectId;
+  s.signature_id,
+  s.user_object_id,
+  s.stored_file_id,
+  sf.file_name,
+  sf.mime_type,
+  sf.file_size_bytes,
+  sf.uploaded_at,
+  sf.uploaded_by,
+  sf.file_last_modified_at,
+  sf.file_last_modified_by,
+  sf.storage_provider,
+  sf.storage_container,
+  sf.storage_key,
+  sf.storage_url,
+  sf.checksum_sha256,
+  s.image_width_px,
+  s.image_height_px,
+  s.is_active,
+  s.created_at,
+  s.created_by,
+  s.updated_at,
+  s.updated_by
+from dbo.UserProfileSignature s
+join dbo.StoredFile sf
+  on sf.stored_file_id = s.stored_file_id
+ and sf.is_deleted = 0
+where s.signature_id = @signatureId
+  and s.user_object_id = @userObjectId;
 `;
 
 export const deactivateActiveUserProfileSignatureSql = `
+update sf
+set
+  is_deleted = 1,
+  deleted_at = sysutcdatetime(),
+  deleted_by = @actor,
+  updated_at = sysutcdatetime(),
+  updated_by = @actor
+from dbo.StoredFile sf
+join dbo.UserProfileSignature s
+  on s.stored_file_id = sf.stored_file_id
+where s.user_object_id = @userObjectId
+  and isnull(s.is_active, 1) = 1
+  and sf.is_deleted = 0;
+
 update dbo.UserProfileSignature
 set
   is_active = 0,
@@ -457,11 +573,13 @@ follow_up_stats as (
     sum(case when status = N'AFGEWEZEN' then 1 else 0 end) as rejected_count,
     sum(case when status = N'VERVALLEN' then 1 else 0 end) as expired_count,
     sum(case when status = N'INFORMATIEF' then 1 else 0 end) as informative_count
-  from dbo.FormFollowUpAction fua
+  from dbo.FollowUpAction fua
+  join dbo.FollowUpActionFormSource fufs
+    on fufs.follow_up_action_id = fua.follow_up_action_id
   where exists (
     select 1
     from dbo.FormInstance fi
-    where fi.form_instance_id = fua.form_instance_id
+    where fi.form_instance_id = fufs.form_instance_id
       and (
         fi.created_by = @actorObjectId
         or fi.created_by = @actorEmail
@@ -504,8 +622,10 @@ follow_up_counts as (
     sum(case when fua.status in (N'OPEN', N'PLANNING_NODIG', N'WACHTENOPDERDEN') then 1 else 0 end) as open_follow_ups,
     sum(case when fua.status = N'AFGEHANDELD' then 1 else 0 end) as done_follow_ups
   from dbo.FormInstance fi
-  left join dbo.FormFollowUpAction fua
-    on fua.form_instance_id = fi.form_instance_id
+  left join dbo.FollowUpActionFormSource fufs
+    on fufs.form_instance_id = fi.form_instance_id
+  left join dbo.FollowUpAction fua
+    on fua.follow_up_action_id = fufs.follow_up_action_id
   group by fi.created_by
 )
 select
@@ -519,11 +639,11 @@ select
   up.updated_at,
 
   a.avatar_id,
-  a.file_name as avatar_file_name,
-  a.mime_type as avatar_mime_type,
-  a.file_size_bytes as avatar_file_size_bytes,
-  a.storage_key as avatar_storage_key,
-  a.storage_url as avatar_storage_url,
+  sf.file_name as avatar_file_name,
+  sf.mime_type as avatar_mime_type,
+  sf.file_size_bytes as avatar_file_size_bytes,
+  sf.storage_key as avatar_storage_key,
+  sf.storage_url as avatar_storage_url,
   a.created_at as avatar_created_at,
 
   isnull(fc.total_forms, 0) as total_forms,
@@ -546,6 +666,9 @@ left join (
   where x.rn = 1
 ) a
   on a.user_object_id = up.user_object_id
+left join dbo.StoredFile sf
+  on sf.stored_file_id = a.stored_file_id
+ and sf.is_deleted = 0
 left join form_counts fc
   on fc.created_by = up.user_object_id
   or fc.created_by = up.email_snapshot

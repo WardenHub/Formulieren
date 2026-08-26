@@ -143,50 +143,90 @@ VALUES (
 `;
 
 export const createAssistantAudioSql = `
+SET XACT_ABORT ON;
+
+DECLARE @storedFileId uniqueidentifier = NEWID();
+
+BEGIN TRAN;
+
+INSERT INTO dbo.StoredFile (
+  stored_file_id,
+  storage_provider,
+  storage_container,
+  storage_key,
+  storage_url,
+  file_name,
+  mime_type,
+  file_extension,
+  file_size_bytes,
+  checksum_sha256,
+  uploaded_by,
+  created_by
+)
+VALUES (
+  @storedFileId,
+  @storageProvider,
+  @storageContainer,
+  @storageKey,
+  @storageUrl,
+  @fileName,
+  @mimeType,
+  @fileExtension,
+  @fileSizeBytes,
+  @checksumSha256,
+  @capturedBy,
+  @capturedBy
+);
+
 INSERT INTO dbo.FormAssistantAudio (
   assistant_session_id,
   assistant_turn_id,
   form_instance_id,
   installation_id,
   atrium_installation_code,
-  file_name,
-  mime_type,
-  file_size_bytes,
+  stored_file_id,
   duration_ms,
-  storage_provider,
-  storage_key,
-  storage_url,
-  checksum_sha256,
   captured_by
 )
-OUTPUT
-  inserted.assistant_audio_id,
-  inserted.assistant_session_id,
-  inserted.assistant_turn_id,
-  inserted.file_name,
-  inserted.mime_type,
-  inserted.file_size_bytes,
-  inserted.storage_provider,
-  inserted.storage_key,
-  inserted.storage_url,
-  inserted.checksum_sha256,
-  inserted.captured_at
 VALUES (
   @assistantSessionId,
   @assistantTurnId,
   @formInstanceId,
   @installationId,
   @code,
-  @fileName,
-  @mimeType,
-  @fileSizeBytes,
+  @storedFileId,
   @durationMs,
-  @storageProvider,
-  @storageKey,
-  @storageUrl,
-  @checksumSha256,
   @capturedBy
 );
+
+DECLARE @assistantAudioId uniqueidentifier = (
+  SELECT TOP 1 assistant_audio_id
+  FROM dbo.FormAssistantAudio
+  WHERE assistant_turn_id = @assistantTurnId
+    AND stored_file_id = @storedFileId
+  ORDER BY captured_at DESC
+);
+
+COMMIT TRAN;
+
+SELECT
+  a.assistant_audio_id,
+  a.assistant_session_id,
+  a.assistant_turn_id,
+  sf.file_name,
+  sf.mime_type,
+  sf.file_extension,
+  sf.file_size_bytes,
+  sf.storage_provider,
+  sf.storage_container,
+  sf.storage_key,
+  sf.storage_url,
+  sf.checksum_sha256,
+  a.captured_at
+FROM dbo.FormAssistantAudio a
+JOIN dbo.StoredFile sf
+  ON sf.stored_file_id = a.stored_file_id
+WHERE a.assistant_audio_id = @assistantAudioId;
 `;
 
 export const createAssistantPatchSql = `
