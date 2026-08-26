@@ -26,6 +26,40 @@ const WORKFLOW_PROFILE_OPTIONS = [
   { value: "certified_maintenance", label: "Gecertificeerd onderhoud" },
 ];
 
+const CONTEXT_OPTIONS = [
+  { value: "RELATION", label: "Relatie" },
+  { value: "PROJECT", label: "Project" },
+  { value: "WORK_ORDER", label: "Werkbon" },
+  { value: "INSTALLATION", label: "Installatie" },
+  { value: "EMPLOYEE", label: "Medewerker" },
+];
+
+const FOLLOW_UP_TRIGGER_OPTIONS = [
+  { value: "ON_SUBMIT", label: "Bij opslaan of indienen" },
+  { value: "ON_FINALIZE", label: "Bij definitief afronden" },
+  { value: "CONDITIONAL", label: "Als een voorwaarde waar is" },
+];
+
+function newFollowUpRule(index) {
+  return {
+    form_follow_up_rule_id: null,
+    _client_key: `new-${Date.now()}-${index}`,
+    trigger_type: "ON_FINALIZE",
+    condition_json_text: "",
+    action_title_template: "",
+    action_description_template: "",
+    category: "",
+    priority: "NORMAL",
+    responsibility_type: "WARDENBURG",
+    assigned_role_code: "",
+    due_after_days: null,
+    certificate_impact: "",
+    visibility: "INTERNAL_ONLY",
+    sort_order: (index + 1) * 10,
+    is_active: true,
+  };
+}
+
 function normalizeDraftFromForm(selectedForm) {
   if (!selectedForm) return null;
 
@@ -37,6 +71,10 @@ function normalizeDraftFromForm(selectedForm) {
     document_profile_key: selectedForm.document_profile_key ?? "",
     workflow_profile_key: selectedForm.workflow_profile_key ?? "",
     official_document_number: selectedForm.official_document_number ?? "",
+    owner_department: selectedForm.owner_department ?? "",
+    owner_display_name: selectedForm.owner_display_name ?? "",
+    knowledge_base_reference: selectedForm.knowledge_base_reference ?? "",
+    requires_installation_review: Boolean(selectedForm.requires_installation_review),
     status: selectedForm.status ?? "A",
     applicability_type_keys: [...(selectedForm.applicability_type_keys || [])],
     preflight: {
@@ -49,6 +87,13 @@ function normalizeDraftFromForm(selectedForm) {
       custom_severity: selectedForm.preflight?.custom_severity ?? "warning",
       is_active: selectedForm.preflight?.is_active ?? true,
     },
+    context_rules: (selectedForm.context_rules || []).map((rule) => ({ ...rule })),
+    follow_up_rules: (selectedForm.follow_up_rules || []).map((rule, index) => ({
+      ...rule,
+      _client_key: rule.form_follow_up_rule_id || `loaded-${index}`,
+      condition_json_text: rule.condition ? JSON.stringify(rule.condition, null, 2) : "",
+    })),
+    workflow_roles: (selectedForm.workflow_roles || []).map((role) => ({ ...role })),
   };
 }
 
@@ -182,6 +227,61 @@ const AdminFormsConfigTab = forwardRef(function AdminFormsConfigTab(
     });
   }
 
+  function toggleContext(contextType) {
+    setDraft((prev) => {
+      const current = prev.context_rules || [];
+      const existing = current.find((rule) => rule.context_type === contextType);
+      if (existing) {
+        const remaining = current.filter((rule) => rule.context_type !== contextType);
+        if (existing.is_primary && remaining.length > 0) remaining[0] = { ...remaining[0], is_primary: true };
+        return { ...prev, context_rules: remaining };
+      }
+      const next = [...current, {
+        context_type: contextType,
+        is_required: false,
+        is_primary: current.length === 0,
+        selection_order: (current.length + 1) * 10,
+        is_active: true,
+      }];
+      return { ...prev, context_rules: next };
+    });
+  }
+
+  function setContextField(contextType, key, value) {
+    setDraft((prev) => ({
+      ...prev,
+      context_rules: (prev.context_rules || []).map((rule) => {
+        if (key === "is_primary") {
+          return { ...rule, is_primary: rule.context_type === contextType ? value : false };
+        }
+        return rule.context_type === contextType ? { ...rule, [key]: value } : rule;
+      }),
+    }));
+  }
+
+  function addFollowUpRule() {
+    setDraft((prev) => ({
+      ...prev,
+      follow_up_rules: [...(prev.follow_up_rules || []), newFollowUpRule((prev.follow_up_rules || []).length)],
+    }));
+  }
+
+  function setFollowUpRuleField(index, key, value) {
+    setDraft((prev) => ({
+      ...prev,
+      follow_up_rules: (prev.follow_up_rules || []).map((rule, ruleIndex) =>
+        ruleIndex === index ? { ...rule, [key]: value } : rule
+      ),
+    }));
+  }
+
+  function removeFollowUpRule(index) {
+    setDraft((prev) => ({
+      ...prev,
+      follow_up_rules: (prev.follow_up_rules || []).filter((_rule, ruleIndex) => ruleIndex !== index),
+    }));
+  }
+
   async function save() {
     if (!draft || saving || !isDirty) return;
 
@@ -190,6 +290,14 @@ const AdminFormsConfigTab = forwardRef(function AdminFormsConfigTab(
     try {
       await onSaveConfig?.({
         ...draft,
+        follow_up_rules: (draft.follow_up_rules || []).map((rule, index) => ({
+          ...rule,
+          condition: rule.condition_json_text,
+          due_after_days: normalizeNullableNumber(rule.due_after_days),
+          sort_order: normalizeNullableNumber(rule.sort_order) ?? (index + 1) * 10,
+          _client_key: undefined,
+          condition_json_text: undefined,
+        })),
         preflight: {
           ...draft.preflight,
           perf_min_rows: normalizeNullableNumber(draft.preflight.perf_min_rows),
@@ -265,7 +373,7 @@ const AdminFormsConfigTab = forwardRef(function AdminFormsConfigTab(
         title={`Configuratie${selectedForm ? `; ${selectedForm.name}` : ""}`}
         subtitle={
           selectedForm
-            ? "Beheer formuliermetadata, beschikbaarheid en preflight-controles."
+            ? "Beheer formuliermetadata, context, beschikbaarheid en automatische opvolging."
             : "Selecteer eerst een formulier."
         }
         actions={
@@ -302,6 +410,37 @@ const AdminFormsConfigTab = forwardRef(function AdminFormsConfigTab(
 
                   <div className="cf-control">
                     <input className="input" value={draft.code} readOnly />
+                  </div>
+                </div>
+
+                <div className="cf-row">
+                  <div className="cf-label"><div className="cf-label-text">Verantwoordelijke afdeling</div></div>
+                  <div className="cf-control">
+                    <input className="input" value={draft.owner_department} onChange={(e) => setField("owner_department", e.target.value)} />
+                  </div>
+                </div>
+
+                <div className="cf-row">
+                  <div className="cf-label"><div className="cf-label-text">Functioneel eigenaar</div></div>
+                  <div className="cf-control">
+                    <input className="input" value={draft.owner_display_name} onChange={(e) => setField("owner_display_name", e.target.value)} />
+                  </div>
+                </div>
+
+                <div className="cf-row wide">
+                  <div className="cf-label"><div className="cf-label-text">Kennisbankverwijzing</div></div>
+                  <div className="cf-control">
+                    <input className="input" value={draft.knowledge_base_reference} onChange={(e) => setField("knowledge_base_reference", e.target.value)} placeholder="URL of herkenbare paginaverwijzing" />
+                  </div>
+                </div>
+
+                <div className="cf-row">
+                  <div className="cf-label"><div className="cf-label-text">Installatiebeoordeling vereist</div></div>
+                  <div className="cf-control">
+                    <select className="input" value={draft.requires_installation_review ? "1" : "0"} onChange={(e) => setField("requires_installation_review", e.target.value === "1")}>
+                      <option value="0">Nee</option>
+                      <option value="1">Ja</option>
+                    </select>
                   </div>
                 </div>
 
@@ -406,6 +545,136 @@ const AdminFormsConfigTab = forwardRef(function AdminFormsConfigTab(
                   </div>
                 </div>
               </div>
+            </div>
+
+            <div className="admin-subcard">
+              <SectionHeader
+                title="Formuliercontext"
+                subtitle="Bepaal aan welke bedrijfsobjecten een formulier wordt gekoppeld. Kies bij gebruik precies één primaire context."
+              >
+                <span className="ember-label ember-label--muted">{draft.context_rules.length} actief</span>
+              </SectionHeader>
+
+              <div className="admin-check-grid">
+                {CONTEXT_OPTIONS.map((option) => {
+                  const rule = draft.context_rules.find((item) => item.context_type === option.value);
+                  return (
+                    <div key={option.value} className={`admin-compact-row ${rule ? "ember-accent-active" : ""}`}>
+                      <div className="admin-compact-row-main">
+                        <input type="checkbox" checked={Boolean(rule)} onChange={() => toggleContext(option.value)} />
+                        <div className="admin-compact-row-title-wrap">
+                          <div className="admin-compact-row-title">{option.label}</div>
+                          <div className="admin-compact-row-sub">{option.value}</div>
+                        </div>
+                      </div>
+                      {rule ? (
+                        <div className="admin-compact-row-right ember-label-row">
+                          <label className="ember-label ember-label--muted">
+                            <input type="checkbox" checked={Boolean(rule.is_required)} onChange={(e) => setContextField(option.value, "is_required", e.target.checked)} /> verplicht
+                          </label>
+                          <label className="ember-label ember-label--muted">
+                            <input type="radio" name="primary-form-context" checked={Boolean(rule.is_primary)} onChange={() => setContextField(option.value, "is_primary", true)} /> primair
+                          </label>
+                        </div>
+                      ) : null}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div className="admin-subcard">
+              <SectionHeader
+                title="Automatische opvolging"
+                subtitle="Maak herhaalbare acties vanuit de formulierdefinitie. Waarden uit antwoorden kunnen met {{veldnaam}} in titel en omschrijving worden gebruikt."
+              >
+                <button type="button" className="btn btn-secondary" onClick={addFollowUpRule}>Regel toevoegen</button>
+              </SectionHeader>
+
+              {(draft.follow_up_rules || []).length === 0 ? (
+                <div className="admin-empty-note">Geen automatische opvolgregels ingesteld.</div>
+              ) : (
+                <div className="admin-check-grid">
+                  {draft.follow_up_rules.map((rule, index) => (
+                    <div className="admin-subcard" key={rule._client_key || rule.form_follow_up_rule_id || index}>
+                      <SectionHeader title={`Opvolgregel ${index + 1}`} subtitle={rule.action_title_template || "Nieuwe opvolgregel"}>
+                        <button type="button" className="btn btn-secondary" onClick={() => removeFollowUpRule(index)}>Verwijderen</button>
+                      </SectionHeader>
+
+                      <div className="cf-grid">
+                        <div className="cf-row">
+                          <div className="cf-label"><div className="cf-label-text">Moment</div></div>
+                          <div className="cf-control">
+                            <select className="input" value={rule.trigger_type} onChange={(e) => setFollowUpRuleField(index, "trigger_type", e.target.value)}>
+                              {FOLLOW_UP_TRIGGER_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+                            </select>
+                          </div>
+                        </div>
+
+                        <div className="cf-row wide">
+                          <div className="cf-label"><div className="cf-label-text">Actietitel</div></div>
+                          <div className="cf-control"><input className="input" value={rule.action_title_template} onChange={(e) => setFollowUpRuleField(index, "action_title_template", e.target.value)} /></div>
+                        </div>
+
+                        <div className="cf-row wide">
+                          <div className="cf-label"><div className="cf-label-text">Omschrijving</div></div>
+                          <div className="cf-control"><textarea rows={3} className="cf-textarea" value={rule.action_description_template || ""} onChange={(e) => setFollowUpRuleField(index, "action_description_template", e.target.value)} /></div>
+                        </div>
+
+                        <div className="cf-row">
+                          <div className="cf-label"><div className="cf-label-text">Categorie</div></div>
+                          <div className="cf-control"><input className="input" value={rule.category || ""} onChange={(e) => setFollowUpRuleField(index, "category", e.target.value)} /></div>
+                        </div>
+
+                        <div className="cf-row">
+                          <div className="cf-label"><div className="cf-label-text">Prioriteit</div></div>
+                          <div className="cf-control"><select className="input" value={rule.priority} onChange={(e) => setFollowUpRuleField(index, "priority", e.target.value)}><option value="LOW">Laag</option><option value="NORMAL">Normaal</option><option value="HIGH">Hoog</option><option value="CRITICAL">Kritiek</option></select></div>
+                        </div>
+
+                        <div className="cf-row">
+                          <div className="cf-label"><div className="cf-label-text">Verantwoordelijkheid</div></div>
+                          <div className="cf-control"><select className="input" value={rule.responsibility_type} onChange={(e) => setFollowUpRuleField(index, "responsibility_type", e.target.value)}><option value="WARDENBURG">Wardenburg</option><option value="CUSTOMER">Klant</option><option value="THIRD_PARTY">Derde partij</option><option value="UNSPECIFIED">Nog te bepalen</option></select></div>
+                        </div>
+
+                        <div className="cf-row">
+                          <div className="cf-label"><div className="cf-label-text">Workflowrol</div></div>
+                          <div className="cf-control"><select className="input" value={rule.assigned_role_code || ""} onChange={(e) => setFollowUpRuleField(index, "assigned_role_code", e.target.value)}><option value="">Niet toegewezen</option>{(draft.workflow_roles || []).map((role) => <option key={role.role_code} value={role.role_code}>{role.display_name}</option>)}</select></div>
+                        </div>
+
+                        <div className="cf-row">
+                          <div className="cf-label"><div className="cf-label-text">Afhandelen binnen dagen</div></div>
+                          <div className="cf-control"><input type="number" min="0" className="input" value={rule.due_after_days ?? ""} onChange={(e) => setFollowUpRuleField(index, "due_after_days", e.target.value)} /></div>
+                        </div>
+
+                        <div className="cf-row">
+                          <div className="cf-label"><div className="cf-label-text">Certificaatgevolg</div></div>
+                          <div className="cf-control"><select className="input" value={rule.certificate_impact || ""} onChange={(e) => setFollowUpRuleField(index, "certificate_impact", e.target.value)}><option value="">Niet vooraf bepaald</option><option value="yes">Ja</option><option value="no">Nee</option></select></div>
+                        </div>
+
+                        <div className="cf-row">
+                          <div className="cf-label"><div className="cf-label-text">Zichtbaarheid</div></div>
+                          <div className="cf-control"><select className="input" value={rule.visibility} onChange={(e) => setFollowUpRuleField(index, "visibility", e.target.value)}><option value="INTERNAL_ONLY">Alleen intern</option><option value="CUSTOMER_VISIBLE">Zichtbaar voor klant</option></select></div>
+                        </div>
+
+                        <div className="cf-row">
+                          <div className="cf-label"><div className="cf-label-text">Actief</div></div>
+                          <div className="cf-control"><select className="input" value={rule.is_active ? "1" : "0"} onChange={(e) => setFollowUpRuleField(index, "is_active", e.target.value === "1")}><option value="1">Ja</option><option value="0">Nee</option></select></div>
+                        </div>
+
+                        {rule.trigger_type === "CONDITIONAL" ? (
+                          <div className="cf-row wide">
+                            <div className="cf-label"><div className="cf-label-text">Voorwaarde</div></div>
+                            <div className="cf-control">
+                              <textarea rows={5} className="cf-textarea" value={rule.condition_json_text || ""} onChange={(e) => setFollowUpRuleField(index, "condition_json_text", e.target.value)} placeholder={'{"field":"vraagcode","operator":"equals","value":"Ja"}'} />
+                              <div className="admin-panel-subtitle">Gebruik een veilig JSON-object met field, operator en value. all, any en not zijn beschikbaar voor samengestelde voorwaarden.</div>
+                            </div>
+                          </div>
+                        ) : null}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
 
             <div className="admin-subcard">

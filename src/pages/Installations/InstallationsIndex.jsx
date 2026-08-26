@@ -1,24 +1,182 @@
-// /src/pages/Installations/InstallationsIndex.jsx
-// /src/pages/Installations/InstallationsIndex.jsx
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 
-import { searchInstallations } from "@/api/emberApi.js";
+import {
+  getInstallationTypes,
+  getInstallationsMap,
+} from "@/api/emberApi.js";
 import ApiStartupLoader, { useApiStartupLoader } from "@/components/ApiStartupLoader.jsx";
-import { SearchIcon } from "@/components/ui/search";
 import InstallationTypeTag from "@/components/InstallationTypeTag.jsx";
+import { SearchIcon } from "@/components/ui/search";
 import {
   getInstallationStatusClassName,
   getInstallationStatusLabel,
 } from "@/lib/installationStatus.js";
+import InstallationsMap from "./InstallationsMap.jsx";
+
+const DEFAULT_FILTERS = {
+  followUpMode: "ALL",
+  installationType: "",
+  coordinateMode: "ALL",
+  maintenanceStatus: "",
+  inspectionServiceStatus: "",
+  monitoringServiceStatus: "",
+  certificateStatus: "",
+  openFormsOnly: false,
+  missingDocumentsOnly: false,
+  certificationRequiredOnly: false,
+  activeInspectionOnly: false,
+};
+
+function serviceTone(status) {
+  const clean = String(status || "").toUpperCase();
+  if (["EXPIRED", "MISSING", "REVOKED"].includes(clean)) return "danger";
+  if (["EXPIRING", "UNKNOWN"].includes(clean)) return "warning";
+  if (["ACTIVE", "VALID"].includes(clean)) return "success";
+  return "muted";
+}
+
+function serviceLabel(status) {
+  const labels = {
+    ACTIVE: "actief",
+    INACTIVE: "niet actief",
+    UNKNOWN: "onbekend",
+    VALID: "geldig",
+    EXPIRING: "verloopt binnenkort",
+    EXPIRED: "verlopen",
+    MISSING: "ontbreekt",
+    REVOKED: "ingetrokken",
+  };
+  return labels[String(status || "").toUpperCase()] || String(status || "onbekend").toLowerCase();
+}
+
+function FilterSelect({ label, value, onChange, children }) {
+  return (
+    <label className="installations-filter-field">
+      <span>{label}</span>
+      <select value={value} onChange={(event) => onChange(event.target.value)}>
+        {children}
+      </select>
+    </label>
+  );
+}
+
+function CheckFilter({ label, checked, onChange }) {
+  return (
+    <label className="installations-filter-check">
+      <input
+        type="checkbox"
+        checked={checked}
+        onChange={(event) => onChange(event.target.checked)}
+      />
+      <span>{label}</span>
+    </label>
+  );
+}
+
+function InstallationRow({ item }) {
+  return (
+    <Link
+      to={`/installaties/${encodeURIComponent(item.atrium_installation_code)}`}
+      className="installations-row"
+    >
+      <div className="installations-row__main">
+        <div className="installations-row__top">
+          <div className="installations-row__code">{item.atrium_installation_code}</div>
+          {item.installation_status ? (
+            <span className={getInstallationStatusClassName(item.installation_status)}>
+              {getInstallationStatusLabel(item.installation_status)}
+            </span>
+          ) : null}
+          {item.BedrijfUnit ? (
+            <span className="ember-label ember-label--muted">{item.BedrijfUnit}</span>
+          ) : null}
+          {item.installation_type_key ? (
+            <InstallationTypeTag
+              typeKey={item.installation_type_key}
+              label={item.installation_type_name}
+            />
+          ) : null}
+          <span className={`ember-label ember-label--${item.attention_status === "CRITICAL" ? "danger" : item.attention_status === "ATTENTION" ? "warning" : "success"}`}>
+            {item.attention_reason || "Geen operationele signalen"}
+          </span>
+        </div>
+
+        <div className="installations-row__name">
+          {item.installation_name || "Geen naam"}
+          {item.formatted_address ? `; ${item.formatted_address}` : ""}
+        </div>
+
+        <div className="installations-row__meta">
+          {Number(item.open_follow_up_count || 0) > 0 ? (
+            <span className="ember-label ember-label--warning">
+              {item.open_follow_up_count} open opvolging
+            </span>
+          ) : null}
+          {Number(item.overdue_follow_up_count || 0) > 0 ? (
+            <span className="ember-label ember-label--danger">
+              {item.overdue_follow_up_count} verlopen
+            </span>
+          ) : null}
+          {Number(item.open_form_count || 0) > 0 ? (
+            <span className="ember-label ember-label--info">{item.open_form_count} open formulier</span>
+          ) : null}
+          {Number(item.missing_required_document_count || 0) > 0 ? (
+            <span className="ember-label ember-label--danger">
+              {item.missing_required_document_count} verplicht document ontbreekt
+            </span>
+          ) : null}
+          {item.has_maintenance_service ? (
+            <span className={`ember-label ember-label--${serviceTone(item.maintenance_contract_status)}`}>
+              Onderhoud; {serviceLabel(item.maintenance_contract_status)}
+            </span>
+          ) : null}
+          {item.has_inspection_service ? (
+            <span className={`ember-label ember-label--${serviceTone(item.inspection_service_status)}`}>
+              Inspectie; {serviceLabel(item.inspection_service_status)}
+            </span>
+          ) : null}
+          {item.has_monitoring_service ? (
+            <span className={`ember-label ember-label--${serviceTone(item.monitoring_service_status)}`}>
+              Meldkamer; {serviceLabel(item.monitoring_service_status)}
+            </span>
+          ) : null}
+          {item.certification_required ? (
+            <span className={`ember-label ember-label--${serviceTone(item.certificate_status)}`}>
+              Certificaat; {serviceLabel(item.certificate_status)}
+            </span>
+          ) : null}
+          {!item.has_valid_coordinates ? (
+            <span className="ember-label ember-label--muted">Geen geldige coördinaten</span>
+          ) : null}
+        </div>
+      </div>
+    </Link>
+  );
+}
 
 export default function InstallationsIndex() {
   const [q, setQ] = useState("");
-  const [items, setItems] = useState([]);
+  const [mode, setMode] = useState("map");
+  const [onlyCurrent, setOnlyCurrent] = useState(true);
+  const [filters, setFilters] = useState(DEFAULT_FILTERS);
+  const [data, setData] = useState({ items: [], markers: [], without_coordinates: [], summary: {} });
+  const [installationTypes, setInstallationTypes] = useState([]);
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState(null);
-  const [onlyCurrent, setOnlyCurrent] = useState(true);
   const startupLoader = useApiStartupLoader(loading);
+
+  useEffect(() => {
+    let cancelled = false;
+    getInstallationTypes()
+      .then((response) => {
+        if (!cancelled) setInstallationTypes((response?.types || []).filter((item) => item.is_active));
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -26,29 +184,41 @@ export default function InstallationsIndex() {
     async function run() {
       setErr(null);
       setLoading(true);
-
       try {
-        const res = await searchInstallations(q, 25);
-        if (!cancelled) setItems(res?.items || []);
-      } catch (e) {
-        if (!cancelled) setErr(e?.message || String(e));
+        const response = await getInstallationsMap({
+          ...filters,
+          q: q.trim(),
+          onlyCurrent,
+          take: 20000,
+        });
+        if (!cancelled) {
+          setData({
+            items: response?.items || [],
+            markers: response?.markers || [],
+            without_coordinates: response?.without_coordinates || [],
+            summary: response?.summary || {},
+          });
+        }
+      } catch (error) {
+        if (!cancelled) setErr(error?.message || String(error));
       } finally {
         if (!cancelled) setLoading(false);
       }
     }
 
-    const t = setTimeout(run, 200);
+    const timer = setTimeout(run, 300);
     return () => {
       cancelled = true;
-      clearTimeout(t);
+      clearTimeout(timer);
     };
-  }, [q]);
+  }, [filters, onlyCurrent, q]);
 
-  const hasQuery = useMemo(() => q.trim().length > 0, [q]);
-  const visibleItems = useMemo(() => {
-    if (!onlyCurrent) return items;
-    return items.filter((item) => String(item.installation_status || "").toUpperCase() !== "J");
-  }, [items, onlyCurrent]);
+  const visibleList = useMemo(() => data.items.slice(0, 500), [data.items]);
+  const summary = data.summary || {};
+
+  function setFilter(key, value) {
+    setFilters((current) => ({ ...current, [key]: value }));
+  }
 
   return (
     <div className="installations-index">
@@ -56,121 +226,145 @@ export default function InstallationsIndex() {
         <div className="page-hero__title-wrap">
           <h1 className="page-hero__title">Installaties</h1>
           <div className="page-hero__subtitle">
-            Zoek een installatie op code, naam, object of relatie.
+            Vind installaties en zie direct waar operationele aandacht nodig is.
           </div>
         </div>
 
         <div className="installations-index__hero-actions">
+          <div className="ember-segmented" aria-label="Weergave kiezen">
+            <button type="button" className={mode === "map" ? "is-active" : ""} onClick={() => setMode("map")}>
+              Kaart
+            </button>
+            <button type="button" className={mode === "list" ? "is-active" : ""} onClick={() => setMode("list")}>
+              Lijst
+            </button>
+          </div>
           <button
             type="button"
             role="switch"
             aria-checked={onlyCurrent ? "true" : "false"}
             className={`ember-toggle${onlyCurrent ? " is-on" : " is-off"}`}
-            onClick={() => setOnlyCurrent((prev) => !prev)}
+            onClick={() => setOnlyCurrent((current) => !current)}
           >
-            <span className="ember-toggle__track">
-              <span className="ember-toggle__thumb" />
-            </span>
+            <span className="ember-toggle__track"><span className="ember-toggle__thumb" /></span>
             <span className="ember-toggle__label">
-              {onlyCurrent ? "Alleen actuele installaties" : "Historische installaties tonen"}
+              {onlyCurrent ? "Alleen actueel" : "Inclusief historisch"}
             </span>
           </button>
         </div>
       </div>
 
-      <div className="searchbar installations-search">
-        <SearchIcon size={16} className="muted" />
-        <input
-          className="searchbar-input"
-          value={q}
-          onChange={(e) => setQ(e.target.value)}
-          placeholder="zoek op installatiecode of naam"
-          autoComplete="off"
-        />
-      </div>
+      <div className="installations-workspace">
+        <aside className="installations-filter-panel" aria-label="Installatiefilters">
+          <div className="searchbar installations-search">
+            <SearchIcon size={16} className="muted" />
+            <input
+              className="searchbar-input"
+              value={q}
+              onChange={(event) => setQ(event.target.value)}
+              placeholder="Code, naam, object of relatie"
+              autoComplete="off"
+            />
+          </div>
 
-      {err && <p className="doc-error">{err}</p>}
+          <FilterSelect label="Opvolging" value={filters.followUpMode} onChange={(value) => setFilter("followUpMode", value)}>
+            <option value="ALL">Alle installaties</option>
+            <option value="OPEN">Met open opvolging</option>
+            <option value="OVERDUE">Met verlopen opvolging</option>
+            <option value="NONE">Zonder open opvolging</option>
+          </FilterSelect>
 
-      <ApiStartupLoader state={startupLoader} />
+          <FilterSelect label="Installatiesoort" value={filters.installationType} onChange={(value) => setFilter("installationType", value)}>
+            <option value="">Alle soorten</option>
+            {installationTypes.map((type) => (
+              <option key={type.installation_type_key} value={type.installation_type_key}>
+                {type.display_name || type.installation_type_key}
+              </option>
+            ))}
+          </FilterSelect>
 
-      {!loading && !hasQuery && (
-        <div className="ui-empty">typ een code om te zoeken</div>
-      )}
+          <FilterSelect label="Locatiegegevens" value={filters.coordinateMode} onChange={(value) => setFilter("coordinateMode", value)}>
+            <option value="ALL">Met en zonder coördinaten</option>
+            <option value="WITH">Met geldige coördinaten</option>
+            <option value="WITHOUT">Zonder geldige coördinaten</option>
+          </FilterSelect>
 
-      {!loading && hasQuery && visibleItems.length === 0 && items.length === 0 && (
-        <div className="ui-empty">geen resultaten</div>
-      )}
+          <details className="installations-advanced-filters">
+            <summary>Meer filters</summary>
+            <div className="installations-advanced-filters__content">
+              <FilterSelect label="Onderhoudsdienst" value={filters.maintenanceStatus} onChange={(value) => setFilter("maintenanceStatus", value)}>
+                <option value="">Alle statussen</option>
+                <option value="ACTIVE">Actief</option>
+                <option value="INACTIVE">Niet actief</option>
+                <option value="UNKNOWN">Onbekend</option>
+              </FilterSelect>
+              <FilterSelect label="Inspectiedienst" value={filters.inspectionServiceStatus} onChange={(value) => setFilter("inspectionServiceStatus", value)}>
+                <option value="">Alle statussen</option>
+                <option value="ACTIVE">Actief</option>
+                <option value="INACTIVE">Niet actief</option>
+                <option value="UNKNOWN">Onbekend</option>
+              </FilterSelect>
+              <FilterSelect label="Meldkamerdienst" value={filters.monitoringServiceStatus} onChange={(value) => setFilter("monitoringServiceStatus", value)}>
+                <option value="">Alle statussen</option>
+                <option value="ACTIVE">Actief</option>
+                <option value="INACTIVE">Niet actief</option>
+                <option value="UNKNOWN">Onbekend</option>
+              </FilterSelect>
+              <FilterSelect label="Certificaatstatus" value={filters.certificateStatus} onChange={(value) => setFilter("certificateStatus", value)}>
+                <option value="">Alle statussen</option>
+                <option value="VALID">Geldig</option>
+                <option value="EXPIRING">Verloopt binnenkort</option>
+                <option value="EXPIRED">Verlopen</option>
+                <option value="MISSING">Ontbreekt</option>
+                <option value="REVOKED">Ingetrokken</option>
+                <option value="UNKNOWN">Onbekend</option>
+              </FilterSelect>
+              <CheckFilter label="Alleen open formulieren" checked={filters.openFormsOnly} onChange={(value) => setFilter("openFormsOnly", value)} />
+              <CheckFilter label="Alleen missende documenten" checked={filters.missingDocumentsOnly} onChange={(value) => setFilter("missingDocumentsOnly", value)} />
+              <CheckFilter label="Alleen certificaatplichtig" checked={filters.certificationRequiredOnly} onChange={(value) => setFilter("certificationRequiredOnly", value)} />
+              <CheckFilter label="Alleen actieve inspectiecases" checked={filters.activeInspectionOnly} onChange={(value) => setFilter("activeInspectionOnly", value)} />
+            </div>
+          </details>
 
-      {!loading && hasQuery && visibleItems.length === 0 && items.length > 0 && onlyCurrent && (
-        <div className="ui-empty">
-          geen actuele resultaten; zet 'alleen actuele installaties' uit om het archief mee te nemen
-        </div>
-      )}
+          <button type="button" className="btn btn-secondary" onClick={() => setFilters(DEFAULT_FILTERS)}>
+            Filters wissen
+          </button>
+        </aside>
 
-      {!loading && visibleItems.length > 0 && (
-        <div className="installations-list">
-          {visibleItems.map((i) => (
-            <Link
-              key={i.atrium_installation_code}
-              to={`/installaties/${i.atrium_installation_code}`}
-              className="installations-row"
-            >
-              <div className="installations-row__main">
-                <div className="installations-row__top">
-                  <div className="installations-row__code">
-                    {i.atrium_installation_code}
-                  </div>
+        <main className="installations-results">
+          <div className="installations-summary" aria-live="polite">
+            <span className="ember-label ember-label--muted">{summary.result_count || 0} installaties</span>
+            <span className="ember-label ember-label--danger">{summary.critical_count || 0} kritisch</span>
+            <span className="ember-label ember-label--warning">{summary.attention_count || 0} aandacht</span>
+            <span className="ember-label ember-label--info">{summary.open_follow_up_count || 0} open opvolgingen</span>
+            <span className="ember-label ember-label--muted">{summary.without_coordinates_count || 0} zonder coördinaten</span>
+          </div>
 
-                  {i.installation_status ? (
-                    <span className={getInstallationStatusClassName(i.installation_status)}>
-                      {getInstallationStatusLabel(i.installation_status)}
-                    </span>
-                  ) : null}
+          {err ? <p className="doc-error">{err}</p> : null}
+          <ApiStartupLoader state={startupLoader} />
 
-                  {i.BedrijfUnit ? (
-                    <span className="ember-label ember-label--muted">{i.BedrijfUnit}</span>
-                  ) : null}
+          {!loading && !err && data.items.length === 0 ? (
+            <div className="ui-empty">Geen installaties binnen deze selectie.</div>
+          ) : null}
 
-                  {i.installation_type_key && (
-                    <InstallationTypeTag
-                      typeKey={i.installation_type_key}
-                      label={i.installation_type_name}
-                    />
-                  )}
+          {!err && mode === "map" ? <InstallationsMap markers={data.markers} /> : null}
+
+          {!loading && !err && mode === "list" && visibleList.length > 0 ? (
+            <>
+              {data.items.length > visibleList.length ? (
+                <div className="ember-alert ember-alert--info">
+                  De eerste {visibleList.length} van {data.items.length} resultaten worden getoond. Gebruik filters om de lijst te verfijnen.
                 </div>
-
-                <div className="installations-row__name">
-                  {i.installation_name || "geen naam"}
-                </div>
-
-                {(i.management_portal_name || Number(i.required_document_count || 0) > 0) ? (
-                  <div className="installations-row__meta">
-                    {i.management_portal_name ? (
-                      <span className="ember-label ember-label--info">
-                        Beheerportaal; {i.management_portal_name}
-                      </span>
-                    ) : null}
-
-                    {Number(i.required_document_count || 0) > 0 ? (
-                      Number(i.missing_required_document_count || 0) > 0 ? (
-                        <span className="ember-label ember-label--danger">
-                          {Number(i.missing_required_document_count) === 1
-                            ? "1 verplicht document ontbreekt"
-                            : `${Number(i.missing_required_document_count)} verplichte documenten ontbreken`}
-                        </span>
-                      ) : (
-                        <span className="ember-label ember-label--success">
-                          Verplichte documenten compleet
-                        </span>
-                      )
-                    ) : null}
-                  </div>
-                ) : null}
+              ) : null}
+              <div className="installations-list">
+                {visibleList.map((item) => (
+                  <InstallationRow key={item.atrium_installation_code} item={item} />
+                ))}
               </div>
-            </Link>
-          ))}
-        </div>
-      )}
+            </>
+          ) : null}
+        </main>
+      </div>
     </div>
   );
 }

@@ -13,6 +13,10 @@ import ComponentsTab from "./ComponentsTab.jsx";
 import SoftwareTab from "./SoftwareTab.jsx";
 import NotesTab from "./NotesTab.jsx";
 import LogbookTab from "./LogbookTab.jsx";
+import InstallationOverviewTab from "./InstallationOverviewTab.jsx";
+import DrawingPinsTab from "./DrawingPinsTab.jsx";
+import CertificatesTab from "./CertificatesTab.jsx";
+import InspectionCasesTab from "./InspectionCasesTab.jsx";
 
 import SaveButton from "../../components/SaveButton.jsx";
 import Tabs from "../../components/Tabs.jsx";
@@ -32,7 +36,7 @@ import { CogIcon } from "@/components/ui/cog";
 import { MonitorCheckIcon } from "@/components/ui/monitor-check";
 import { BookTextIcon } from "@/components/ui/book-text";
 import { RefreshCWIcon } from "@/components/ui/refresh-cw";
-import { MessageSquareText } from "lucide-react";
+import { BadgeCheck, ClipboardCheck, MapPin, MapPinned, MessageSquareText } from "lucide-react";
 import { pushRecentHomeItem } from "../../lib/recentHomeItems.js";
 import {
   getInstallationStatusClassName,
@@ -341,7 +345,7 @@ export default function InstallationDetails() {
 
   const [activeTab, setActiveTab] = useState(() => {
     const requestedTab = String(searchParams.get("tab") || "").trim().toLowerCase();
-    return requestedTab || "documents";
+    return requestedTab || "overview";
   });
 
   const [installation, setInstallation] = useState(null);
@@ -844,6 +848,17 @@ export default function InstallationDetails() {
 
     return [
       {
+        key: "overview",
+        label: "Overzicht",
+        Icon: MapPin,
+        content: (
+          <InstallationOverviewTab
+            code={code}
+            onOpenTab={(tabKey) => setActiveTab(tabKey)}
+          />
+        ),
+      },
+      {
         key: "notes",
         label: (
           <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
@@ -954,6 +969,34 @@ export default function InstallationDetails() {
             onAnyOpenChange={(v) => setAnyOpen("documents", v)}
           />
         ),
+      },
+      {
+        key: "drawings",
+        label: "Tekeningen",
+        Icon: MapPinned,
+        content: (
+          <DrawingPinsTab
+            code={code}
+            readOnly={isHistorical}
+          />
+        ),
+      },
+      {
+        key: "certificates",
+        label: "Certificaten",
+        Icon: BadgeCheck,
+        content: (
+          <CertificatesTab
+            code={code}
+            readOnly={isHistorical}
+          />
+        ),
+      },
+      {
+        key: "inspections",
+        label: "Inspecties",
+        Icon: ClipboardCheck,
+        content: <InspectionCasesTab code={code} />,
       },
       {
         key: "software",

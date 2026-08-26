@@ -40,6 +40,13 @@ import {
   previewSubmitFormInstance,
   withdrawFormInstance,
   reopenFormInstance,
+  getFormInstanceFromHub,
+  putFormInstanceMetadataFromHub,
+  putFormAnswersFromHub,
+  previewSubmitFormInstanceFromHub,
+  submitFormInstanceFromHub,
+  withdrawFormInstanceFromHub,
+  reopenFormInstanceFromHub,
 } from "../../api/emberApi.js";
 
 import FormPageNavigator from "./shared/FormPageNavigator.jsx";
@@ -590,6 +597,7 @@ export default function FormRunnerBase({ mode }) {
   const isDebug = mode === "debug";
 
   const { code, instanceId } = useParams();
+  const isGeneric = !String(code || "").trim();
   const navigate = useNavigate();
 
   const [instance, setInstance] = useState(null);
@@ -624,7 +632,9 @@ export default function FormRunnerBase({ mode }) {
 
   const [currentPageIndex, setCurrentPageIndex] = useState(() => {
     const routePageStorageKey =
-      code && instanceId ? `ember-form-page::${String(code)}::${String(instanceId)}` : "";
+      instanceId
+        ? `ember-form-page::${String(code || "generic")}::${String(instanceId)}`
+        : "";
 
     return readStoredPageIndex(routePageStorageKey) ?? 0;
   });
@@ -707,8 +717,8 @@ export default function FormRunnerBase({ mode }) {
   const status = useMemo(() => String(instance?.status || ""), [instance]);
   const statusLbl = useMemo(() => statusLabel(status), [status]);
   const pageStorageKey = useMemo(() => {
-    if (!code || !instanceId) return "";
-    return `ember-form-page::${String(code)}::${String(instanceId)}`;
+    if (!instanceId) return "";
+    return `ember-form-page::${String(code || "generic")}::${String(instanceId)}`;
   }, [code, instanceId]);
 
   const surveyParsed = useMemo(() => safeSurveyParse(instance?.survey_json), [instance]);
@@ -795,17 +805,68 @@ export default function FormRunnerBase({ mode }) {
     return normalizeMetadataParentId(instanceMetadata?.parent_instance_id);
   }, [instanceMetadata]);
 
+  const instanceContexts = useMemo(
+    () => (Array.isArray(instance?.contexts) ? instance.contexts : []),
+    [instance]
+  );
+
+  function loadCurrentInstance() {
+    return isGeneric
+      ? getFormInstanceFromHub(instanceId)
+      : getFormInstance(code, instanceId);
+  }
+
+  function saveCurrentMetadata(payload) {
+    return isGeneric
+      ? putFormInstanceMetadataFromHub(instanceId, payload)
+      : putFormInstanceMetadata(code, instanceId, payload);
+  }
+
+  function saveCurrentAnswers(payload) {
+    return isGeneric
+      ? putFormAnswersFromHub(instanceId, payload)
+      : putFormAnswers(code, instanceId, payload);
+  }
+
+  function previewCurrentSubmit(payload) {
+    return isGeneric
+      ? previewSubmitFormInstanceFromHub(instanceId, payload)
+      : previewSubmitFormInstance(code, instanceId, payload);
+  }
+
+  function submitCurrentInstance() {
+    return isGeneric
+      ? submitFormInstanceFromHub(instanceId)
+      : submitFormInstance(code, instanceId);
+  }
+
+  function withdrawCurrentInstance() {
+    return isGeneric
+      ? withdrawFormInstanceFromHub(instanceId)
+      : withdrawFormInstance(code, instanceId);
+  }
+
+  function reopenCurrentInstance() {
+    return isGeneric
+      ? reopenFormInstanceFromHub(instanceId)
+      : reopenFormInstance(code, instanceId);
+  }
+
   useEffect(() => {
-    if (!code || !instanceId || !instance) return;
+    if (!instanceId || !instance) return;
+
+    const formRoute = isGeneric
+      ? `/formulieren/${encodeURIComponent(instanceId)}`
+      : `/installaties/${encodeURIComponent(code)}/formulieren/${encodeURIComponent(instanceId)}`;
 
     pushRecentHomeItem({
       kind: "form",
       key: String(instanceId),
       title: instance.instance_title || instance.form_name || instance.form_code || `Formulier ${instanceId}`,
       subtitle: `${statusLabel(instance.status)} ; ${instance.form_name || instance.form_code || ""}`.trim(),
-      to: `/installaties/${encodeURIComponent(code)}/formulieren/${encodeURIComponent(instanceId)}`,
+      to: formRoute,
     });
-  }, [code, instanceId, instance]);
+  }, [code, instanceId, instance, isGeneric]);
 
   useEffect(() => {
     const hasTitle = String(savedInstanceMetadata?.instance_title || "").trim().length > 0;
@@ -1288,7 +1349,7 @@ export default function FormRunnerBase({ mode }) {
         expected_draft_rev: workingDraftRev,
       };
 
-      const metadataRes = await putFormInstanceMetadata(code, instanceId, metadataPayload);
+      const metadataRes = await saveCurrentMetadata(metadataPayload);
       const metadataRow = metadataRes?.result ?? metadataRes ?? null;
 
       didSaveSomething = true;
@@ -1313,7 +1374,7 @@ export default function FormRunnerBase({ mode }) {
     }
 
     if (dirty || forceAnswerSave) {
-      await putFormAnswers(code, instanceId, {
+      await saveCurrentAnswers({
         answers_json: curValue,
         expected_draft_rev: workingDraftRev,
       });
@@ -1459,7 +1520,7 @@ export default function FormRunnerBase({ mode }) {
 
     try {
       logReloadStep("instance-fetch-start");
-      const res = await getFormInstance(code, instanceId);
+      const res = await loadCurrentInstance();
       logReloadStep("instance-fetch-done");
       if (!isLatestReload()) {
         logReloadStep("stale-after-instance-fetch");
@@ -1669,9 +1730,9 @@ export default function FormRunnerBase({ mode }) {
   }
 
   useEffect(() => {
-    if (!code || !instanceId) return undefined;
+    if (!instanceId) return undefined;
 
-    const bootKey = `${String(code)}::${String(instanceId)}::${String(mode || "normal")}`;
+    const bootKey = `${String(code || "generic")}::${String(instanceId)}::${String(mode || "normal")}`;
     let cancelled = false;
 
     const bootTimer = window.setTimeout(() => {
@@ -1797,6 +1858,7 @@ export default function FormRunnerBase({ mode }) {
 
   async function handleRefreshPrefill() {
     if (isDebug) return;
+    if (isGeneric) return;
     if (!canEditAnswers) return;
     if (!surveyModelRef.current) return;
 
@@ -1950,7 +2012,7 @@ export default function FormRunnerBase({ mode }) {
         return;
       }
 
-      const preview = await previewSubmitFormInstance(code, instanceId, {
+      const preview = await previewCurrentSubmit({
         answers_json: cur.value,
       });
 
@@ -1963,7 +2025,9 @@ export default function FormRunnerBase({ mode }) {
       }
 
       const previewSummary = normalizePreviewFollowUps(preview);
-      const attachmentSummary = await loadFormAttachmentSummary(code, instanceId);
+      const attachmentSummary = isGeneric
+        ? { formAttachmentCount: 0, documents: [] }
+        : await loadFormAttachmentSummary(code, instanceId);
 
       setSubmitDialog({
         rawPreview: preview,
@@ -2027,14 +2091,14 @@ export default function FormRunnerBase({ mode }) {
         await persistPendingChanges(cur.value, { reloadAfter: false, animateSave: false });
       }
 
-      const submitRes = await submitFormInstance(code, instanceId);
+      const submitRes = await submitCurrentInstance();
       const syncCounts = normalizeSubmitSyncCounts(submitRes);
 
       const selectedDocs = (submitDialog.documents || []).filter(
         (doc) => Array.isArray(doc.selectedFingerprints) && doc.selectedFingerprints.length > 0
       );
 
-      if (selectedDocs.length > 0) {
+      if (!isGeneric && selectedDocs.length > 0) {
         const followUpsRes = await getFormsMonitorFollowUps(instanceId);
         const actualFollowUps = normalizeFormsMonitorFollowUps(followUpsRes);
 
@@ -2131,7 +2195,7 @@ export default function FormRunnerBase({ mode }) {
     setError(null);
 
     try {
-      await withdrawFormInstance(code, instanceId);
+      await withdrawCurrentInstance();
       await reload({ forceEditor: false });
     } catch (e) {
       setError(translateApiError(e, status));
@@ -2150,7 +2214,7 @@ export default function FormRunnerBase({ mode }) {
     setError(null);
 
     try {
-      await reopenFormInstance(code, instanceId);
+      await reopenCurrentInstance();
       setSubmitSummary(null);
       await reload({ forceEditor: false });
     } catch (e) {
@@ -2352,7 +2416,19 @@ export default function FormRunnerBase({ mode }) {
                   alignItems: "center",
                 }}
               >
-                <span>installatie: {code}</span>
+                {isGeneric ? (
+                  instanceContexts.map((context) => (
+                    <span
+                      key={`${context.context_type}:${context.source_system}:${context.source_key}`}
+                      style={themedChip({ fontSize: 12 })}
+                      title={`${context.context_type} ; ${context.source_system}`}
+                    >
+                      {context.display_code || context.display_label || context.source_key}
+                    </span>
+                  ))
+                ) : (
+                  <span>installatie: {code}</span>
+                )}
                 <span>status: {statusLbl}</span>
 
                 {formVersionLabel ? (
@@ -2430,7 +2506,7 @@ export default function FormRunnerBase({ mode }) {
                       boxShadow: "var(--shadow-panel, var(--shadow))",
                     }}
                   >
-                    {canEditAnswers && (
+                    {canEditAnswers && !isGeneric && (
                       <button
                         type="button"
                         className="menu-item"
@@ -2460,11 +2536,13 @@ export default function FormRunnerBase({ mode }) {
                       onMouseLeave={() => debugJsonIconRef.current?.stopAnimation?.()}
                       onClick={() => {
                         setActionsMenuOpen(false);
-                        navigate(
-                          `/installaties/${encodeURIComponent(code)}/formulieren/${encodeURIComponent(
-                            instanceId
-                          )}/debug`
-                        );
+                          navigate(
+                            isGeneric
+                              ? `/formulieren/${encodeURIComponent(instanceId)}/debug`
+                              : `/installaties/${encodeURIComponent(code)}/formulieren/${encodeURIComponent(
+                                  instanceId
+                                )}/debug`
+                          );
                       }}
                     >
                       <AirVentIcon ref={debugJsonIconRef} size={18} className="nav-anim-icon" />
@@ -2530,9 +2608,11 @@ export default function FormRunnerBase({ mode }) {
                   disabled={busy}
                   onClick={() =>
                     navigate(
-                      `/installaties/${encodeURIComponent(code)}/formulieren/${encodeURIComponent(
-                        instanceId
-                      )}`
+                      isGeneric
+                        ? `/formulieren/${encodeURIComponent(instanceId)}`
+                        : `/installaties/${encodeURIComponent(code)}/formulieren/${encodeURIComponent(
+                            instanceId
+                          )}`
                     )
                   }
                 >
@@ -2911,7 +2991,7 @@ export default function FormRunnerBase({ mode }) {
 
       {!isDebug && (
         <>
-          {canEditAnswers && !contextPanelOpen && !assistantPanelOpen && (
+          {!isGeneric && canEditAnswers && !contextPanelOpen && !assistantPanelOpen && (
             <>
               <div className="form-runner-floating-actions form-runner-floating-actions--middle">
                 <button
@@ -2941,7 +3021,7 @@ export default function FormRunnerBase({ mode }) {
             </>
           )}
 
-          {assistantPanelOpen && (
+          {!isGeneric && assistantPanelOpen && (
             <>
               <button
                 type="button"
@@ -2993,7 +3073,7 @@ export default function FormRunnerBase({ mode }) {
             </>
           )}
 
-          {contextPanelOpen && (
+          {!isGeneric && contextPanelOpen && (
             <>
               <button
                 type="button"

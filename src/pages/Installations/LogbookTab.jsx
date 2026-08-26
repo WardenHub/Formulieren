@@ -163,17 +163,28 @@ function SyncModal({ preview, documentTypes, busy, progressLabel, onChange, onCl
         <div className="doc-bulk-modal__head">
           <div>
             <div className="doc-bulk-modal__title">Documenten uit Digitaal Logboek</div>
-            <div className="muted doc-bulk-modal__subtitle">
-              Alleen nieuwe of gewijzigde bestanden staan hieronder. Kies wat Ember moet downloaden.
-            </div>
+            <div className="muted doc-bulk-modal__subtitle">Kies welke bestanden Ember moet downloaden.</div>
           </div>
           <button type="button" className="btn btn-secondary" onClick={onClose} disabled={busy}>Sluiten</button>
         </div>
 
         <div className="doc-bulk-list">
           {items.length === 0 ? (
-            <div className="muted doc-empty-box">Er zijn geen nieuwe of gewijzigde documenten.</div>
-          ) : items.map((item) => {
+            <div className="muted doc-empty-box">Er zijn geen documenten beschikbaar in dit logboek.</div>
+          ) : [
+            ["PENDING", "Nieuwe of gewijzigde bestanden", "Deze bestanden zijn nog niet gesynchroniseerd, of zijn online gewijzigd."],
+            ["SKIPPED", "Eerder overgeslagen bestanden", "Deze bestanden kun je alsnog importeren."],
+            ["IMPORTED", "Al gesynchroniseerde bestanden", "Opnieuw importeren maakt in Ember een vervangende versie van het huidige document."],
+          ].map(([category, title, description]) => {
+            const categoryItems = items.filter((item) => item.sync_category === category);
+            if (!categoryItems.length) return null;
+            return (
+              <div className="logbook-sync-category" key={category}>
+                <div className="logbook-sync-category__head">
+                  <strong>{title}</strong>
+                  <span className="muted">{description}</span>
+                </div>
+                {categoryItems.map((item) => {
             const decision = decisions[item.remote_document_id] || {};
             return (
               <div className="doc-bulk-item" key={item.remote_document_id}>
@@ -208,11 +219,14 @@ function SyncModal({ preview, documentTypes, busy, progressLabel, onChange, onCl
                 </div>
               </div>
             );
+                })}
+              </div>
+            );
           })}
         </div>
 
         <div className="doc-bulk-modal__foot">
-          <div className="muted doc-text-sm">Niet gekozen bestanden worden voor deze versie overgeslagen.</div>
+          <div className="muted doc-text-sm">Niet gekozen nieuwe bestanden worden overgeslagen. Eerder behandelde bestanden blijven ongewijzigd.</div>
           <div className="doc-inline-actions">
             <button type="button" className="btn btn-secondary" onClick={onClose} disabled={busy}>Annuleren</button>
             <button type="button" className="btn" onClick={onConfirm} disabled={!canConfirm || busy}>
@@ -375,7 +389,7 @@ export default function LogbookTab({
         return {
           remote_document_id: item.remote_document_id,
           remote_time_last_modified: item.remote_time_last_modified,
-          action: choice.selected ? "IMPORT" : "SKIP",
+          action: choice.selected ? "IMPORT" : (item.sync_category === "PENDING" ? "SKIP" : "NONE"),
           document_type_key: choice.selected ? choice.document_type_key : null,
         };
       });

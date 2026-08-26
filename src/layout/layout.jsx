@@ -10,6 +10,7 @@ import { HomeIcon } from "@/components/ui/home";
 import { SearchIcon } from "@/components/ui/search";
 import { BrainIcon } from "@/components/ui/brain";
 import { MonitorCheckIcon } from "@/components/ui/monitor-check";
+import { FileCheckIcon } from "@/components/ui/file-check";
 import { IdCardIcon } from "@/components/ui/id-card";
 import { MenuIcon } from "@/components/ui/menu";
 import { BookTextIcon } from "@/components/ui/book-text";
@@ -18,6 +19,7 @@ import { GavelIcon } from "@/components/ui/gavel";
 import { CircleHelpIcon } from "@/components/ui/circle-help";
 import { buildInitials, resolveProfileAvatarPath } from "../lib/avatar.js";
 import NotificationCenter from "../components/NotificationCenter.jsx";
+import { ClipboardCheck } from "lucide-react";
 
 function initialsFromProfilePayload(profileData, meData) {
   return buildInitials(
@@ -48,6 +50,7 @@ export default function Layout() {
   const [navOpen, setNavOpen] = useState(false);
   const [avatarOpen, setAvatarOpen] = useState(false);
   const [roles, setRoles] = useState([]);
+  const [permissions, setPermissions] = useState([]);
   const [meData, setMeData] = useState(null);
   const [profileData, setProfileData] = useState(null);
   const [avatarObjectUrl, setAvatarObjectUrl] = useState(null);
@@ -167,11 +170,13 @@ export default function Layout() {
 
         setMeData(data || null);
         setRoles(data?.roles ?? []);
+        setPermissions(data?.permissions ?? []);
       } catch (err) {
         console.error("me fetch failed", err);
         if (!cancelled) {
           setMeData(null);
           setRoles([]);
+          setPermissions([]);
         }
       }
     }
@@ -409,8 +414,12 @@ export default function Layout() {
             Installaties
           </AnimatedNavButton>
 
-          <AnimatedNavButton to="/monitor/formulieren" Icon={MonitorCheckIcon}>
-            Monitor
+          <AnimatedNavButton to="/formulieren" Icon={FileCheckIcon}>
+            Formulieren
+          </AnimatedNavButton>
+
+          <AnimatedNavButton to="/inspecties" Icon={ClipboardCheck}>
+            Inspecties
           </AnimatedNavButton>
 
           <AnimatedNavButton to="/smoelenboek" Icon={IdCardIcon}>
@@ -432,7 +441,7 @@ export default function Layout() {
       </aside>
 
       <main className="content">
-        <Outlet context={{ roles }} />
+        <Outlet context={{ roles, permissions }} />
       </main>
     </div>
   );

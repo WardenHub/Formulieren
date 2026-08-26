@@ -61,6 +61,12 @@ export function collectRuntimePrefillKeys(preparedSurveyJson) {
 
 export async function loadRuntimePrefill({ code, formCode, preparedSurveyJson }) {
   const keys = collectRuntimePrefillKeys(preparedSurveyJson);
+  if (!String(code || "").trim()) {
+    return {
+      keys,
+      prefillPayload: emptyRuntimePrefillPayload(),
+    };
+  }
   const prefillPayload = await getFormPrefill(code, formCode, keys);
 
   return {

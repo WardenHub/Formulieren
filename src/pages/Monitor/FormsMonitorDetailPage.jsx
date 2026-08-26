@@ -1,10 +1,12 @@
 // src/pages/Monitor/FormsMonitorDetailPage.jsx
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useNavigate, useParams, useSearchParams } from "react-router-dom";
+import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 
 import {
   getFormsMonitorDetail,
   getFormsMonitorFollowUps,
+  getFormsMonitorFollowUpReview,
+  postFormsMonitorFollowUpReview,
   postFormsMonitorStatusAction,
   putFormsMonitorAssignment,
   putFormsMonitorComplimentPoint,
@@ -271,6 +273,7 @@ function getFollowUpStatusButtonClass(currentStatus, buttonStatus) {
 
 function ActionFooter({
   canFinish,
+  finishLabel,
   finishBusy,
   pdfExporting,
   pdfExportElapsedSeconds,
@@ -330,9 +333,136 @@ function ActionFooter({
           onMouseLeave={() => footerFinishIconRef.current?.stopAnimation?.()}
         >
           <ClipboardCheckIcon ref={footerFinishIconRef} size={18} className="nav-anim-icon" />
-          Formulier definitief maken
+          {finishLabel || "Formulier definitief maken"}
         </button>
       )}
+    </div>
+  );
+}
+
+function FollowUpReviewDialog({ installationCode, items, drafts, loading, saving, onDraftChange, onCancel, onSubmit }) {
+  return (
+    <div className="form-guidance-modal-backdrop" onClick={() => !saving && onCancel()}>
+      <section
+        className="card form-guidance-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Opvolging installatie beoordelen"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <div className="ui-row-between">
+          <div className="ui-stack-sm">
+            <h2>Opvolging installatie</h2>
+            <div className="muted">
+              Beoordeel alle actuele actiepunten van deze installatie voordat het formulier definitief wordt.
+            </div>
+          </div>
+          <button type="button" className="icon-btn" onClick={onCancel} disabled={saving} aria-label="Sluiten">×</button>
+        </div>
+
+        {loading ? (
+          <div className="muted">Actiepunten worden geladen.</div>
+        ) : items.length === 0 ? (
+          <div className="card card--subtle">Er zijn geen actiepunten die review vereisen.</div>
+        ) : (
+          <div className="ui-stack-sm">
+            {items.map((item) => {
+              const id = String(item.follow_up_action_id);
+              const draft = drafts[id] || {};
+              return (
+                <article key={id} className="card card--subtle ui-stack-sm">
+                  <div className="ui-row-between">
+                    <div>
+                      <strong>{item.source_item_code ? `${item.source_item_code} ; ` : ""}{item.workflow_title}</strong>
+                      <div className="muted">{statusLabel(item.status)} ; {Number(item.attachment_count || 0)} bijlage(n)</div>
+                    </div>
+                    <span className="ember-label ember-label--muted">formulier #{item.source_form_instance_id}</span>
+                  </div>
+
+                  <div className="admin-form-grid">
+                    <label className="admin-field">
+                      <span>Beoordeling</span>
+                      <select
+                        className="input"
+                        value={draft.review_decision || "APPROVED"}
+                        onChange={(event) => onDraftChange(id, "review_decision", event.target.value)}
+                      >
+                        <option value="APPROVED">Bevestigd</option>
+                        <option value="UPDATED">Bijgesteld</option>
+                        <option value="DEFERRED">Later beoordelen</option>
+                        <option value="NOT_APPLICABLE">Niet van toepassing</option>
+                      </select>
+                    </label>
+
+                    <label className="admin-field">
+                      <span>Invloed op certificaat</span>
+                      <select
+                        className="input"
+                        value={draft.certificate_impact || ""}
+                        onChange={(event) => onDraftChange(id, "certificate_impact", event.target.value)}
+                      >
+                        <option value="">Kies ja of nee</option>
+                        <option value="yes">Ja</option>
+                        <option value="no">Nee</option>
+                      </select>
+                    </label>
+                  </div>
+
+                  <div className="ember-label-row">
+                    <label className="ember-label ember-label--muted">
+                      <input
+                        type="checkbox"
+                        checked={Boolean(draft.customer_discussed)}
+                        onChange={(event) => onDraftChange(id, "customer_discussed", event.target.checked)}
+                      />
+                      Met klant besproken
+                    </label>
+                    <label className="ember-label ember-label--muted">
+                      <input
+                        type="checkbox"
+                        checked={Boolean(draft.customer_visible)}
+                        onChange={(event) => onDraftChange(id, "customer_visible", event.target.checked)}
+                      />
+                      Klantgericht zichtbaar
+                    </label>
+                  </div>
+
+                  {(item.drawing_pins || []).length ? (
+                    <div className="monitor-followup-drawing-links">
+                      {(item.drawing_pins || []).map((pin) => (
+                        <Link
+                          key={pin.drawing_pin_id}
+                          className="btn btn-secondary"
+                          to={`/installaties/${encodeURIComponent(installationCode)}?tab=drawings&drawing=${encodeURIComponent(pin.installation_document_id)}&page=${encodeURIComponent(pin.page_number)}&pin=${encodeURIComponent(pin.drawing_pin_id)}`}
+                        >
+                          Open op tekening; {pin.drawing_title || pin.drawing_file_name || "tekening"}; pagina {pin.page_number}; {pin.pin_label}
+                        </Link>
+                      ))}
+                    </div>
+                  ) : null}
+
+                  <label className="admin-field">
+                    <span>Reviewnotitie; optioneel</span>
+                    <textarea
+                      className="input"
+                      rows={2}
+                      value={draft.review_note || ""}
+                      onChange={(event) => onDraftChange(id, "review_note", event.target.value)}
+                    />
+                  </label>
+                </article>
+              );
+            })}
+          </div>
+        )}
+
+        <div className="ui-row-between">
+          <button type="button" className="btn btn-secondary" onClick={onCancel} disabled={saving}>Annuleren</button>
+          <button type="button" className="btn btn-primary" onClick={onSubmit} disabled={loading || saving}>
+            {saving ? "Review wordt vastgelegd" : "Review vastleggen en definitief maken"}
+          </button>
+        </div>
+      </section>
     </div>
   );
 }
@@ -1419,7 +1549,6 @@ export default function FormsMonitorDetailPage() {
 
   const [detail, setDetail] = useState(null);
   const [followUps, setFollowUps] = useState([]);
-  const [followUpSummary, setFollowUpSummary] = useState(null);
   const [evidenceDocuments, setEvidenceDocuments] = useState([]);
   const [evidenceDocumentsLoaded, setEvidenceDocumentsLoaded] = useState(false);
   const [evidenceAttachmentDelta, setEvidenceAttachmentDelta] = useState(null);
@@ -1431,6 +1560,11 @@ export default function FormsMonitorDetailPage() {
   const [complimentSaving, setComplimentSaving] = useState(false);
 
   const [formActionBusy, setFormActionBusy] = useState(false);
+  const [reviewDialogOpen, setReviewDialogOpen] = useState(false);
+  const [reviewLoading, setReviewLoading] = useState(false);
+  const [reviewSaving, setReviewSaving] = useState(false);
+  const [reviewItems, setReviewItems] = useState([]);
+  const [reviewDrafts, setReviewDrafts] = useState({});
   const [followUpBusyId, setFollowUpBusyId] = useState(null);
   const [certificateMenuOpenId, setCertificateMenuOpenId] = useState(null);
   const [manualFollowUpOpen, setManualFollowUpOpen] = useState(false);
@@ -1891,7 +2025,6 @@ export default function FormsMonitorDetailPage() {
       setError("Ongeldige formulierafhandeling.");
       setDetail(null);
       setFollowUps([]);
-      setFollowUpSummary(null);
       setDetailLoading(false);
       setFollowUpsLoading(false);
       return;
@@ -1918,7 +2051,6 @@ export default function FormsMonitorDetailPage() {
 
         const rows = Array.isArray(followUpsRes?.items) ? followUpsRes.items : [];
         setFollowUps(rows);
-        setFollowUpSummary(followUpsRes?.summary || detailRes?.follow_up_summary || null);
 
         setNoteDrafts((prev) => {
           const next = { ...prev };
@@ -1962,7 +2094,6 @@ export default function FormsMonitorDetailPage() {
           setError(e?.message || String(e));
           setDetail(null);
           setFollowUps([]);
-          setFollowUpSummary(null);
           setDetailLoading(false);
           setFollowUpsLoading(false);
           return;
@@ -2081,6 +2212,11 @@ export default function FormsMonitorDetailPage() {
     const currentItem = detail?.item;
     if (!currentItem?.form_instance_id || !action || formActionBusy) return;
 
+    if (action === "set_afgehandeld" && allowedActions.review_followups) {
+      await openFollowUpReview();
+      return;
+    }
+
     const needsConfirm = action === "set_ingediend" || action === "set_concept";
 
     if (needsConfirm) {
@@ -2130,6 +2266,81 @@ export default function FormsMonitorDetailPage() {
       window.alert(e?.message || String(e));
     } finally {
       setFollowUpBusyId(null);
+    }
+  }
+
+  async function openFollowUpReview() {
+    if (!item?.form_instance_id || reviewLoading || reviewSaving) return;
+    setReviewDialogOpen(true);
+    setReviewLoading(true);
+    try {
+      const result = await getFormsMonitorFollowUpReview(item.form_instance_id);
+      const rows = Array.isArray(result?.items) ? result.items : [];
+      setReviewItems(rows);
+      setReviewDrafts(Object.fromEntries(rows.map((row) => [
+        String(row.follow_up_action_id),
+        {
+          review_decision: "APPROVED",
+          customer_discussed: false,
+          customer_visible: Boolean(row.customer_visible),
+          certificate_impact: row.effective_certificate_impact || "",
+          review_note: "",
+        },
+      ])));
+    } catch (e) {
+      setReviewDialogOpen(false);
+      window.alert(e?.message || String(e));
+    } finally {
+      setReviewLoading(false);
+    }
+  }
+
+  function updateReviewDraft(followUpActionId, key, value) {
+    setReviewDrafts((prev) => ({
+      ...prev,
+      [followUpActionId]: { ...(prev[followUpActionId] || {}), [key]: value },
+    }));
+  }
+
+  async function submitFollowUpReview() {
+    if (!item?.form_instance_id || reviewSaving || reviewLoading) return;
+
+    const payloadItems = reviewItems.map((row) => ({
+      follow_up_action_id: row.follow_up_action_id,
+      ...(reviewDrafts[String(row.follow_up_action_id)] || {}),
+    }));
+    if (payloadItems.some((row) => !["yes", "no"].includes(String(row.certificate_impact || "")))) {
+      window.alert("Kies voor ieder actiepunt of het invloed heeft op het certificaat.");
+      return;
+    }
+
+    setReviewSaving(true);
+    try {
+      const reviewResult = await postFormsMonitorFollowUpReview(item.form_instance_id, { items: payloadItems });
+      if (!reviewResult?.gate?.can_finalize) {
+        const gate = reviewResult?.gate || {};
+        window.alert(
+          `De review is vastgelegd, maar definitief maken is nog geblokkeerd. ` +
+          `Ontbrekende review: ${gate.missing_review_count || 0}; ` +
+          `verantwoordelijke: ${gate.missing_assignment_count || 0}; ` +
+          `deadline: ${gate.missing_due_date_count || 0}; ` +
+          `bijlage: ${gate.missing_attachment_count || 0}.`
+        );
+        setReviewDialogOpen(false);
+        await refreshDetailOnly();
+        return;
+      }
+
+      await postFormsMonitorStatusAction(item.form_instance_id, "set_afgehandeld");
+      setReviewDialogOpen(false);
+      await refreshDetailOnly();
+      setShowFinishCelebration(true);
+      if (successTimerRef.current) window.clearTimeout(successTimerRef.current);
+      successTimerRef.current = window.setTimeout(() => setShowFinishCelebration(false), 2400);
+    } catch (e) {
+      window.alert(e?.message || String(e));
+    } finally {
+      setReviewSaving(false);
     }
   }
 
@@ -2508,6 +2719,19 @@ export default function FormsMonitorDetailPage() {
 
   return (
     <div className="monitor-detail-page">
+      {reviewDialogOpen ? (
+        <FollowUpReviewDialog
+          installationCode={item?.atrium_installation_code}
+          items={reviewItems}
+          drafts={reviewDrafts}
+          loading={reviewLoading}
+          saving={reviewSaving}
+          onDraftChange={updateReviewDraft}
+          onCancel={() => !reviewSaving && setReviewDialogOpen(false)}
+          onSubmit={submitFollowUpReview}
+        />
+      ) : null}
+
       {showFinishCelebration && (
         <div className="monitor-detail-celebration">
           <div className="card monitor-detail-celebration__card">
@@ -2740,7 +2964,7 @@ export default function FormsMonitorDetailPage() {
                         : "PDF"}
                     </button>
 
-                    {allowedActions.set_afgehandeld && (
+                    {(allowedActions.set_afgehandeld || allowedActions.review_followups) && (
                       <button
                         type="button"
                         className="btn btn-primary monitor-form-status-btn"
@@ -2750,7 +2974,7 @@ export default function FormsMonitorDetailPage() {
                         onMouseLeave={() => finishIconRef.current?.stopAnimation?.()}
                       >
                         <ClipboardCheckIcon ref={finishIconRef} size={18} className="nav-anim-icon" />
-                        Formulier definitief maken
+                        {allowedActions.review_followups ? "Opvolging beoordelen" : "Formulier definitief maken"}
                       </button>
                     )}
                   </div>
@@ -3577,6 +3801,20 @@ export default function FormsMonitorDetailPage() {
                                           Laatste wijziging; {formatDateTime(row.updated_at || row.created_at)}
                                         </div>
 
+                                        {(row.drawing_pins || []).length ? (
+                                          <div className="monitor-followup-drawing-links">
+                                            {(row.drawing_pins || []).map((pin) => (
+                                              <Link
+                                                key={pin.drawing_pin_id}
+                                                className="btn btn-secondary"
+                                                to={`/installaties/${encodeURIComponent(item.atrium_installation_code)}?tab=drawings&drawing=${encodeURIComponent(pin.installation_document_id)}&page=${encodeURIComponent(pin.page_number)}&pin=${encodeURIComponent(pin.drawing_pin_id)}`}
+                                              >
+                                                Toon op tekening; {pin.drawing_title || pin.drawing_file_name || "tekening"}; pagina {pin.page_number}; {pin.pin_label}
+                                              </Link>
+                                            ))}
+                                          </div>
+                                        ) : null}
+
                                         {isWorkflow ? null : (
                                           <div className="monitor-followup-note-box">
                                             <div className="ui-row">
@@ -3857,7 +4095,8 @@ export default function FormsMonitorDetailPage() {
             ) : null}
 
             <ActionFooter
-              canFinish={allowedActions.set_afgehandeld}
+              canFinish={allowedActions.set_afgehandeld || allowedActions.review_followups}
+              finishLabel={allowedActions.review_followups ? "Opvolging beoordelen" : "Formulier definitief maken"}
               finishBusy={formActionBusy}
               onFinish={() => handleFormAction("set_afgehandeld")}
               onOpenForm={() => {

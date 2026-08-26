@@ -6,6 +6,7 @@ import InstallationsIndex from "../pages/Installations/InstallationsIndex.jsx";
 import InstallationDetails from "../pages/Installations/InstallationDetails.jsx";
 import FormRunner from "../pages/Forms/FormRunner.jsx";
 import FormRunnerDebug from "../pages/Forms/FormRunnerDebug.jsx";
+import FormsHubPage from "../pages/Forms/FormsHubPage.jsx";
 import SurveyDesigner from "../pages/dev/FormDesigner.jsx";
 import AdminPage from "../pages/Admin/AdminPage.jsx";
 import GuidanceAdminPage from "../pages/Guidance/GuidanceAdminPage.jsx";
@@ -15,6 +16,8 @@ import NotFound from "../pages/NotFound.jsx";
 import ProfilePage from "../pages/Profile/ProfilePage.jsx";
 import DirectoryPage from "../pages/Profile/DirectoryPage.jsx";
 import FeedbackPage from "../pages/Feedback/FeedbackPage.jsx";
+import InspectionsPage from "../pages/Inspections/InspectionsPage.jsx";
+import InspectionCasePage from "../pages/Inspections/InspectionCasePage.jsx";
 
 export default function AppRoutes() {
   return (
@@ -23,6 +26,11 @@ export default function AppRoutes() {
         <Route path="/" element={<Home />} />
         <Route path="/installaties" element={<InstallationsIndex />} />
         <Route path="/installaties/:code" element={<InstallationDetails />} />
+        <Route path="/inspecties" element={<InspectionsPage />} />
+        <Route path="/inspecties/:caseId" element={<InspectionCasePage />} />
+        <Route path="/formulieren" element={<FormsHubPage />} />
+        <Route path="/formulieren/:instanceId" element={<FormRunner />} />
+        <Route path="/formulieren/:instanceId/debug" element={<FormRunnerDebug />} />
 
         <Route path="/installaties/:code/formulieren/:instanceId" element={<FormRunner />} />
         <Route

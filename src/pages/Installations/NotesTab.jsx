@@ -1184,11 +1184,9 @@ export default function NotesTab({
             ) : null}
 
             {(workflowData?.activeItems || []).map((item) => (
-              <Link
+              <div
                 key={item.follow_up_action_id}
                 className={`${getCardToneClass(item.status)} installation-workflow-card`}
-                to={`/monitor/formulieren/${encodeURIComponent(item.form_instance_id)}`}
-                title="Open formulierafhandeling"
               >
                 <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
                   <div style={{ fontWeight: 800 }}>
@@ -1197,7 +1195,7 @@ export default function NotesTab({
                   </div>
                   <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", justifyContent: "flex-end" }}>
                     <span className={getToneClass(getStatusTone(item.status))}>{statusLabel(item.status)}</span>
-                    <ArrowBigRightIcon size={18} className="nav-anim-icon" />
+                    {item.form_instance_id ? <ArrowBigRightIcon size={18} className="nav-anim-icon" /> : null}
                   </div>
                 </div>
                 {item.workflow_description ? <div>{item.workflow_description}</div> : null}
@@ -1212,8 +1210,24 @@ export default function NotesTab({
                   <div className="muted" style={{ fontSize: 13 }}>
                     Laatste wijziging; {formatDateTime(item.updated_at || item.created_at)}
                   </div>
+                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                    {item.form_instance_id ? (
+                      <Link className="btn btn-secondary" to={`/monitor/formulieren/${encodeURIComponent(item.form_instance_id)}`}>
+                        Open formulierafhandeling
+                      </Link>
+                    ) : null}
+                    {(item.drawing_pins || []).map((pin) => (
+                      <Link
+                        key={pin.drawing_pin_id}
+                        className="btn btn-secondary"
+                        to={`/installaties/${encodeURIComponent(code)}?tab=drawings&drawing=${encodeURIComponent(pin.installation_document_id)}&page=${encodeURIComponent(pin.page_number)}&pin=${encodeURIComponent(pin.drawing_pin_id)}`}
+                      >
+                        Toon op tekening; {pin.pin_label}
+                      </Link>
+                    ))}
+                  </div>
                 </div>
-              </Link>
+              </div>
             ))}
           </div>
 
@@ -1242,6 +1256,19 @@ export default function NotesTab({
                       <div className="muted" style={{ fontSize: 13 }}>
                         Laatste wijziging; {formatDateTime(item.updated_at || item.created_at)}
                       </div>
+                      {(item.drawing_pins || []).length ? (
+                        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                          {(item.drawing_pins || []).map((pin) => (
+                            <Link
+                              key={pin.drawing_pin_id}
+                              className="btn btn-secondary"
+                              to={`/installaties/${encodeURIComponent(code)}?tab=drawings&drawing=${encodeURIComponent(pin.installation_document_id)}&page=${encodeURIComponent(pin.page_number)}&pin=${encodeURIComponent(pin.drawing_pin_id)}`}
+                            >
+                              Toon op tekening; {pin.pin_label}
+                            </Link>
+                          ))}
+                        </div>
+                      ) : null}
                     </div>
                   ))
                 ) : (

@@ -218,12 +218,128 @@ export function createInstallationDocumentAttachment(code, documentId, payload =
   );
 }
 
+export function getInstallationDrawings(code) {
+  return apiGet(`/installations/${encodeURIComponent(code)}/drawings`);
+}
+
+export function getDrawingPins(code, documentId) {
+  return apiGet(
+    `/installations/${encodeURIComponent(code)}/drawings/${encodeURIComponent(documentId)}/pins`
+  );
+}
+
+export function createDrawingPin(code, documentId, payload = {}) {
+  return apiPost(
+    `/installations/${encodeURIComponent(code)}/drawings/${encodeURIComponent(documentId)}/pins`,
+    payload
+  );
+}
+
+export function updateDrawingPin(code, drawingPinId, payload = {}) {
+  return apiPut(
+    `/installations/${encodeURIComponent(code)}/drawing-pins/${encodeURIComponent(drawingPinId)}`,
+    payload
+  );
+}
+
+export function deleteDrawingPin(code, drawingPinId, rowVersion) {
+  return httpJson(
+    `/installations/${encodeURIComponent(code)}/drawing-pins/${encodeURIComponent(drawingPinId)}`,
+    {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ row_version: rowVersion }),
+    }
+  );
+}
+
+export function linkDrawingPinAction(code, drawingPinId, followUpActionId) {
+  return apiPost(
+    `/installations/${encodeURIComponent(code)}/drawing-pins/${encodeURIComponent(drawingPinId)}/actions/${encodeURIComponent(followUpActionId)}`,
+    {}
+  );
+}
+
+export function unlinkDrawingPinAction(code, drawingPinId, followUpActionId) {
+  return httpJson(
+    `/installations/${encodeURIComponent(code)}/drawing-pins/${encodeURIComponent(drawingPinId)}/actions/${encodeURIComponent(followUpActionId)}`,
+    { method: "DELETE" }
+  );
+}
+
+export function createManualFollowUpForDrawingPin(code, drawingPinId, payload = {}) {
+  return apiPost(
+    `/installations/${encodeURIComponent(code)}/drawing-pins/${encodeURIComponent(drawingPinId)}/actions`,
+    payload
+  );
+}
+
+export function getInstallationCertification(code) {
+  return apiGet(`/installations/${encodeURIComponent(code)}/certification`);
+}
+
+export function putInstallationCertificationRequirement(code, scope, payload = {}) {
+  return apiPut(
+    `/installations/${encodeURIComponent(code)}/certification/requirements/${encodeURIComponent(scope)}`,
+    payload
+  );
+}
+
+export function createInstallationCertificate(code, payload = {}) {
+  return apiPost(`/installations/${encodeURIComponent(code)}/certificates`, payload);
+}
+
+export function updateInstallationCertificate(code, certificateId, payload = {}) {
+  return apiPut(
+    `/installations/${encodeURIComponent(code)}/certificates/${encodeURIComponent(certificateId)}`,
+    payload
+  );
+}
+
+export function recordInstallationCertificateSend(code, certificateId, payload = {}) {
+  return apiPost(
+    `/installations/${encodeURIComponent(code)}/certificates/${encodeURIComponent(certificateId)}/send-history`,
+    payload
+  );
+}
+
 export async function searchInstallations(q, take = 25) {
   const qs = new URLSearchParams();
   if (q && String(q).trim()) qs.set("q", String(q).trim());
   qs.set("take", String(take));
 
   return apiGet(`/installations/search?${qs.toString()}`);
+}
+
+export function getInstallationsMap(filters = {}) {
+  const qs = new URLSearchParams();
+  const entries = {
+    q: filters.q,
+    take: filters.take,
+    onlyCurrent: filters.onlyCurrent,
+    installationType: filters.installationType,
+    coordinateMode: filters.coordinateMode,
+    followUpMode: filters.followUpMode,
+    openFormsOnly: filters.openFormsOnly,
+    missingDocumentsOnly: filters.missingDocumentsOnly,
+    maintenanceStatus: filters.maintenanceStatus,
+    inspectionServiceStatus: filters.inspectionServiceStatus,
+    monitoringServiceStatus: filters.monitoringServiceStatus,
+    certificationRequiredOnly: filters.certificationRequiredOnly,
+    certificateStatus: filters.certificateStatus,
+    activeInspectionOnly: filters.activeInspectionOnly,
+  };
+
+  Object.entries(entries).forEach(([key, value]) => {
+    if (value == null || value === "") return;
+    qs.set(key, String(value));
+  });
+
+  return apiGet(`/installations/map?${qs.toString()}`);
+}
+
+export function getInstallationOperationalSummary(code) {
+  return apiGet(`/installations/${encodeURIComponent(code)}/operational-summary`);
 }
 
 export function getEnergySupplyBrandTypes() {
@@ -415,6 +531,91 @@ export function reopenFormInstance(code, formInstanceId) {
   );
 }
 
+// central forms hub
+export function getAvailableForms() {
+  return apiGet("/forms/definitions");
+}
+
+export function getMyForms(params = {}) {
+  const qs = new URLSearchParams();
+  if (params.q && String(params.q).trim()) qs.set("q", String(params.q).trim());
+  if (params.status && String(params.status).trim()) {
+    qs.set("status", String(params.status).trim());
+  }
+  for (const key of ["formCode", "contextQ", "dateFrom", "dateTo", "reviewStatus"]) {
+    if (params[key] && String(params[key]).trim()) qs.set(key, String(params[key]).trim());
+  }
+  if (params.hasOpenPoints === true) qs.set("hasOpenPoints", "1");
+  if (params.hasOpenPoints === false) qs.set("hasOpenPoints", "0");
+  if (params.mine === false) qs.set("mine", "0");
+  const suffix = qs.toString();
+  return apiGet(`/forms/instances${suffix ? `?${suffix}` : ""}`);
+}
+
+export function searchFormContext(contextType, q, businessUnit = null) {
+  const qs = new URLSearchParams();
+  qs.set("q", String(q || "").trim());
+  if (businessUnit && String(businessUnit).trim()) {
+    qs.set("businessUnit", String(businessUnit).trim());
+  }
+  return apiGet(
+    `/forms/contexts/${encodeURIComponent(contextType)}/search?${qs.toString()}`
+  );
+}
+
+export function resolveFormContext(contextType, sourceSystem, sourceKey) {
+  const qs = new URLSearchParams();
+  qs.set("sourceSystem", String(sourceSystem || "").trim());
+  qs.set("sourceKey", String(sourceKey || "").trim());
+  return apiGet(
+    `/forms/contexts/${encodeURIComponent(contextType)}/resolve?${qs.toString()}`
+  );
+}
+
+export function startFormFromHub(formCode, payload = {}) {
+  return apiPost(
+    `/forms/definitions/${encodeURIComponent(formCode)}/start`,
+    payload ?? {}
+  );
+}
+
+export function getFormInstanceFromHub(formInstanceId) {
+  return apiGet(`/forms/instances/${encodeURIComponent(formInstanceId)}`);
+}
+
+export function putFormInstanceMetadataFromHub(formInstanceId, payload) {
+  return apiPut(
+    `/forms/instances/${encodeURIComponent(formInstanceId)}/metadata`,
+    payload ?? {}
+  );
+}
+
+export function putFormAnswersFromHub(formInstanceId, payload) {
+  return apiPut(
+    `/forms/instances/${encodeURIComponent(formInstanceId)}/answers`,
+    payload ?? {}
+  );
+}
+
+export function previewSubmitFormInstanceFromHub(formInstanceId, payload = {}) {
+  return apiPost(
+    `/forms/instances/${encodeURIComponent(formInstanceId)}/submit-preview`,
+    payload ?? {}
+  );
+}
+
+export function submitFormInstanceFromHub(formInstanceId) {
+  return apiPost(`/forms/instances/${encodeURIComponent(formInstanceId)}/submit`, {});
+}
+
+export function withdrawFormInstanceFromHub(formInstanceId) {
+  return apiPost(`/forms/instances/${encodeURIComponent(formInstanceId)}/withdraw`, {});
+}
+
+export function reopenFormInstanceFromHub(formInstanceId) {
+  return apiPost(`/forms/instances/${encodeURIComponent(formInstanceId)}/reopen`, {});
+}
+
 export function getFormPrefill(code, formCode, keys) {
   return apiPost(
     `/installations/${encodeURIComponent(code)}/forms/${encodeURIComponent(formCode)}/prefill`,
@@ -568,6 +769,17 @@ export function getFormsMonitorDetail(formInstanceId, options = {}) {
 
 export function getFormsMonitorFollowUps(formInstanceId) {
   return apiGet(`/forms-monitor/${encodeURIComponent(formInstanceId)}/follow-ups`);
+}
+
+export function getFormsMonitorFollowUpReview(formInstanceId) {
+  return apiGet(`/forms-monitor/${encodeURIComponent(formInstanceId)}/follow-up-review`);
+}
+
+export function postFormsMonitorFollowUpReview(formInstanceId, payload) {
+  return apiPost(
+    `/forms-monitor/${encodeURIComponent(formInstanceId)}/follow-up-review`,
+    payload ?? {}
+  );
 }
 
 export function postFormsMonitorStatusAction(formInstanceId, action) {
@@ -886,3 +1098,35 @@ export function getFormsMonitorPdfUrl(formInstanceId) {
 export function initializeInstallationTypesFromAtrium(payload = {}) {
   return apiPost("/admin/installations/type-initialization/run", payload ?? {});
 }
+
+// inspecties
+export function getInspectionCases(params = {}) {
+  const qs = new URLSearchParams();
+  for (const [key, value] of Object.entries(params || {})) {
+    if (value === undefined || value === null || value === "") continue;
+    qs.set(key, String(value));
+  }
+  return apiGet(`/inspections/cases${qs.toString() ? `?${qs.toString()}` : ""}`);
+}
+export function getInspectionOverview(params = {}) {
+  const qs = new URLSearchParams();
+  for (const [key, value] of Object.entries(params || {})) {
+    if (value === undefined || value === null || value === "") continue;
+    qs.set(key, String(value));
+  }
+  return apiGet(`/inspections${qs.toString() ? `?${qs.toString()}` : ""}`);
+}
+export function getInspectionCase(caseId) { return apiGet(`/inspections/cases/${encodeURIComponent(caseId)}`); }
+export function createInspectionCase(payload) { return apiPost("/inspections/cases", payload ?? {}); }
+export function updateInspectionCase(caseId, payload) { return apiPut(`/inspections/cases/${encodeURIComponent(caseId)}`, payload ?? {}); }
+export function updateInspectionAssignment(caseId, payload) { return apiPut(`/inspections/cases/${encodeURIComponent(caseId)}/assignment`, payload ?? {}); }
+export function refreshInspectionWorkOrders(caseId) { return apiPost(`/inspections/cases/${encodeURIComponent(caseId)}/workorders/refresh`, {}); }
+export function updateInspectionChecklistItem(caseId, requirementId, payload) { return apiPut(`/inspections/cases/${encodeURIComponent(caseId)}/checklist/${encodeURIComponent(requirementId)}`, payload ?? {}); }
+export function prepareInspectionPackage(caseId, payload) { return apiPost(`/inspections/cases/${encodeURIComponent(caseId)}/packages`, payload ?? {}); }
+export function sendInspectionPackage(caseId, packageId, payload) { return apiPost(`/inspections/cases/${encodeURIComponent(caseId)}/packages/${encodeURIComponent(packageId)}/send`, payload ?? {}); }
+export function registerInspectionReport(caseId, payload) { return apiPost(`/inspections/cases/${encodeURIComponent(caseId)}/reports`, payload ?? {}); }
+export function processInspectionConclusion(caseId, payload) { return apiPost(`/inspections/cases/${encodeURIComponent(caseId)}/conclusion`, payload ?? {}); }
+export function createInspectionReinspection(caseId, payload) { return apiPost(`/inspections/cases/${encodeURIComponent(caseId)}/reinspection`, payload ?? {}); }
+export function completeInspectionCase(caseId, payload) { return apiPost(`/inspections/cases/${encodeURIComponent(caseId)}/complete`, payload ?? {}); }
+export function signalInspectionCases() { return apiPost("/inspections/signal", {}); }
+export function getInspectionCaseEvents(caseId) { return apiGet(`/inspections/cases/${encodeURIComponent(caseId)}/events`); }
