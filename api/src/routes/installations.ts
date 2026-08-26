@@ -27,7 +27,22 @@ import {
   downloadDocumentFile,
   createDocumentReplacement,
   createDocumentAttachment,
+  getInstallationDrawings,
+  getDrawingPins,
+  postDrawingPin,
+  putDrawingPin,
+  deleteDrawingPin,
+  postDrawingPinActionLink,
+  deleteDrawingPinActionLink,
+  postManualFollowUpForDrawingPin,
+  getInstallationCertification,
+  putInstallationCertificationRequirement,
+  postInstallationCertificate,
+  putInstallationCertificate,
+  postCertificateSendHistory,
   searchInstallations,
+  getInstallationMap,
+  getInstallationOperationalSummary,
   getEnergySupplies,
   putEnergySupplies,
   getInstallationSoftware,
@@ -100,6 +115,8 @@ const assistantAudioUpload = multer({
 const documentRoles = ["admin", "gebruiker", "documentbeheerder"] as const;
 
 router.get("/search", requireRole("admin", "gebruiker"), searchInstallations);
+router.get("/map", requireRole("admin", "gebruiker"), getInstallationMap);
+router.get("/map/summary", requireRole("admin", "gebruiker"), getInstallationMap);
 
 // stroomvoorziening e.d.
 router.get("/energy-supply-brand-types", requireRole("admin", "gebruiker"), getEnergySupplyBrandTypes);
@@ -146,6 +163,7 @@ router.get("/:code/forms/:formCode/preflight", requireRole("admin", "gebruiker")
 
 // basis installatie data
 router.get("/:code", getInstallation);
+router.get("/:code/operational-summary", requireRole("admin", "gebruiker"), getInstallationOperationalSummary);
 router.get("/:code/catalog", getCatalog);
 router.get("/:code/custom-values", getCustomValues);
 router.get("/:code/components", requireRole("admin", "gebruiker"), getInstallationComponents);
@@ -199,6 +217,65 @@ router.post(
   "/:code/documents/:documentId/attachments",
   requireRole(...documentRoles),
   createDocumentAttachment
+);
+
+router.get("/:code/drawings", requireRole(...documentRoles), getInstallationDrawings);
+router.get("/:code/drawings/:documentId/pins", requireRole(...documentRoles), getDrawingPins);
+router.post(
+  "/:code/drawings/:documentId/pins",
+  requireRole(...documentRoles),
+  postDrawingPin
+);
+router.put(
+  "/:code/drawing-pins/:drawingPinId",
+  requireRole(...documentRoles),
+  putDrawingPin
+);
+router.delete(
+  "/:code/drawing-pins/:drawingPinId",
+  requireRole(...documentRoles),
+  deleteDrawingPin
+);
+router.post(
+  "/:code/drawing-pins/:drawingPinId/actions/:followUpActionId",
+  requireRole(...documentRoles),
+  postDrawingPinActionLink
+);
+router.delete(
+  "/:code/drawing-pins/:drawingPinId/actions/:followUpActionId",
+  requireRole(...documentRoles),
+  deleteDrawingPinActionLink
+);
+router.post(
+  "/:code/drawing-pins/:drawingPinId/actions",
+  requireRole(...documentRoles),
+  postManualFollowUpForDrawingPin
+);
+
+router.get(
+  "/:code/certification",
+  requireRole(...documentRoles),
+  getInstallationCertification
+);
+router.put(
+  "/:code/certification/requirements/:scope",
+  requireRole(...documentRoles),
+  putInstallationCertificationRequirement
+);
+router.post(
+  "/:code/certificates",
+  requireRole(...documentRoles),
+  postInstallationCertificate
+);
+router.put(
+  "/:code/certificates/:certificateId",
+  requireRole(...documentRoles),
+  putInstallationCertificate
+);
+router.post(
+  "/:code/certificates/:certificateId/send-history",
+  requireRole(...documentRoles),
+  postCertificateSendHistory
 );
 
 router.put("/:code/type", requireRole("admin", "gebruiker"), putInstallationType);

@@ -27,6 +27,10 @@ import {
   syncFormFollowUps,
 } from "./followUpService.js";
 import {
+  previewDefinitionFollowUps,
+  syncDefinitionFollowUps,
+} from "./formDefinitionFollowUpRuleService.js";
+import {
   assertInstallationWritable,
   getInstallationArchiveState,
 } from "./installationsService.js";
@@ -670,12 +674,21 @@ export async function previewSubmitFormInstance(
     };
   }
 
-  const preview = await previewFormFollowUps({
-    surveyJson,
-    answers: effectiveAnswers || {},
-  });
+  const [preview, definitionItems] = await Promise.all([
+    previewFormFollowUps({
+      surveyJson,
+      answers: effectiveAnswers || {},
+    }),
+    previewDefinitionFollowUps({
+      formInstanceId: item.form_instance_id,
+      answers: effectiveAnswers || {},
+    }),
+  ]);
 
-  const followUpItems = Array.isArray(preview?.items) ? preview.items : [];
+  const followUpItems = [
+    ...(Array.isArray(preview?.items) ? preview.items : []),
+    ...definitionItems,
+  ];
   const workflowCount = followUpItems.filter(
     (x: any) => String(x?.kind || "") === "workflow"
   ).length;
@@ -751,11 +764,19 @@ export async function submitFormInstance(code: string, instanceId: number | stri
     answers: answers || {},
     user,
   });
+  const definitionRuleSync = await syncDefinitionFollowUps({
+    formInstanceId: item.form_instance_id ?? id,
+    answers: answers || {},
+    user,
+  });
 
   return {
     ok: true,
     result: submitResult,
-    follow_up_sync: followUpSync,
+    follow_up_sync: {
+      ...followUpSync,
+      definition_rules: definitionRuleSync,
+    },
   };
 }
 

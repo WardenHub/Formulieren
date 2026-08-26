@@ -28,6 +28,12 @@ function sha256Hex(buffer: Buffer) {
   return crypto.createHash("sha256").update(buffer).digest("hex");
 }
 
+function fileExtension(fileName: any) {
+  const raw = String(fileName || "").trim();
+  const index = raw.lastIndexOf(".");
+  return index > 0 && index < raw.length - 1 ? raw.slice(index + 1).toLowerCase() : null;
+}
+
 function isZipFile(file: Express.Multer.File | null | undefined) {
   if (!file?.originalname) return false;
   return String(file.originalname).toLowerCase().endsWith(".zip");
@@ -197,7 +203,12 @@ export async function uploadInstallationProgramming(
 
   const checksum = sha256Hex(file.buffer);
 
-  let uploaded: { storageProvider: string; storageKey: string; storageUrl: string | null } | null = null;
+  let uploaded: {
+    storageProvider: string;
+    storageContainer: string;
+    storageKey: string;
+    storageUrl: string | null;
+  } | null = null;
 
   try {
     uploaded = await uploadInstallationProgrammingBlob({
@@ -213,8 +224,10 @@ export async function uploadInstallationProgramming(
       programmingId,
       fileName: file.originalname,
       mimeType: file.mimetype || "application/zip",
+      fileExtension: fileExtension(file.originalname),
       fileSizeBytes: file.size ?? file.buffer.length,
       storageProvider: uploaded.storageProvider,
+      storageContainer: uploaded.storageContainer,
       storageKey: uploaded.storageKey,
       storageUrl: uploaded.storageUrl,
       checksumSha256: checksum,

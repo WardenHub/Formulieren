@@ -115,6 +115,7 @@ async function uploadBlob(args: {
 
   return {
     storageProvider: "azure_blob",
+    storageContainer: getContainerName(),
     storageKey,
     storageUrl: null,
   };
@@ -353,6 +354,7 @@ export async function renameFormInstanceDocumentBlob(args: {
   if (String(args.currentStorageKey || "") === String(nextStorageKey || "")) {
     return {
       storageProvider: "azure_blob",
+      storageContainer: getContainerName(),
       storageKey: nextStorageKey,
       storageUrl: null,
     };
@@ -368,6 +370,7 @@ export async function renameFormInstanceDocumentBlob(args: {
 
   return {
     storageProvider: "azure_blob",
+    storageContainer: getContainerName(),
     storageKey: nextStorageKey,
     storageUrl: null,
   };

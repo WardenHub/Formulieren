@@ -48,6 +48,125 @@ function isPlainObject(value: any) {
   return !!value && typeof value === "object" && !Array.isArray(value);
 }
 
+const CONTEXT_TYPES = new Set(["RELATION", "PROJECT", "WORK_ORDER", "INSTALLATION", "EMPLOYEE"]);
+const FOLLOW_UP_TRIGGERS = new Set(["ON_SUBMIT", "ON_FINALIZE", "CONDITIONAL"]);
+const FOLLOW_UP_PRIORITIES = new Set(["LOW", "NORMAL", "HIGH", "CRITICAL"]);
+const RESPONSIBILITY_TYPES = new Set(["WARDENBURG", "CUSTOMER", "THIRD_PARTY", "UNSPECIFIED"]);
+const FOLLOW_UP_VISIBILITIES = new Set(["INTERNAL_ONLY", "CUSTOMER_VISIBLE"]);
+const CONDITION_OPERATORS = new Set([
+  "equals", "not_equals", "contains", "in", "not_in", "is_empty", "is_not_empty",
+  "truthy", "falsy", "greater_than", "greater_or_equal", "less_than", "less_or_equal",
+]);
+
+function validateConditionNode(value: any, path = "condition"): string | null {
+  if (!isPlainObject(value)) return `${path} moet een object zijn`;
+  const branchKeys = ["all", "any", "not"].filter((key) => value[key] !== undefined);
+  if (branchKeys.length > 1) return `${path} bevat meerdere logische operatoren`;
+  if (value.all !== undefined || value.any !== undefined) {
+    const key = value.all !== undefined ? "all" : "any";
+    if (!Array.isArray(value[key]) || value[key].length === 0) return `${path}.${key} moet een gevulde array zijn`;
+    for (let index = 0; index < value[key].length; index += 1) {
+      const error = validateConditionNode(value[key][index], `${path}.${key}[${index}]`);
+      if (error) return error;
+    }
+    return null;
+  }
+  if (value.not !== undefined) return validateConditionNode(value.not, `${path}.not`);
+  const field = String(value.field || "").trim();
+  const operator = String(value.operator || "equals").trim().toLowerCase();
+  if (!field) return `${path}.field is verplicht`;
+  if (!CONDITION_OPERATORS.has(operator)) return `${path}.operator wordt niet ondersteund`;
+  if (["in", "not_in"].includes(operator) && !Array.isArray(value.value)) {
+    return `${path}.value moet voor ${operator} een array zijn`;
+  }
+  return null;
+}
+
+function normalizeContextRules(value: any) {
+  const rows = Array.isArray(value) ? value : [];
+  const seen = new Set<string>();
+  let primaryCount = 0;
+  const items = rows.map((row: any, index: number) => {
+    const context_type = String(row?.context_type || "").trim().toUpperCase();
+    if (!CONTEXT_TYPES.has(context_type)) throw new Error(`context_rules[${index}] heeft een ongeldig contexttype`);
+    if (seen.has(context_type)) throw new Error(`contexttype ${context_type} komt dubbel voor`);
+    seen.add(context_type);
+    const is_active = row?.is_active === false ? false : true;
+    const is_required = row?.is_required === true;
+    const is_primary = row?.is_primary === true;
+    const selection_order = normalizeNullableNumber(row?.selection_order) ?? (index + 1) * 10;
+    if (selection_order < 0) throw new Error(`context_rules[${index}].selection_order is ongeldig`);
+    if (!is_active && (is_required || is_primary)) throw new Error(`inactieve context ${context_type} kan niet verplicht of primair zijn`);
+    if (is_primary) primaryCount += 1;
+    return { context_type, is_required, is_primary, selection_order, is_active };
+  });
+  if (primaryCount > 1) throw new Error("slechts één context mag primair zijn");
+  if (items.some((item) => item.is_active) && primaryCount !== 1) {
+    throw new Error("kies precies één primaire context");
+  }
+  return items;
+}
+
+function normalizeFollowUpRules(value: any) {
+  const rows = Array.isArray(value) ? value : [];
+  const seenIds = new Set<string>();
+  return rows.map((row: any, index: number) => {
+    const id = normalizeNullableString(row?.form_follow_up_rule_id);
+    if (id && !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id)) {
+      throw new Error(`follow_up_rules[${index}] heeft een ongeldig regel-id`);
+    }
+    if (id && seenIds.has(id.toLowerCase())) throw new Error(`follow_up_rules[${index}] gebruikt een dubbel regel-id`);
+    if (id) seenIds.add(id.toLowerCase());
+    const trigger_type = String(row?.trigger_type || "").trim().toUpperCase();
+    const priority = String(row?.priority || "NORMAL").trim().toUpperCase();
+    const responsibility_type = String(row?.responsibility_type || "WARDENBURG").trim().toUpperCase();
+    const visibility = String(row?.visibility || "INTERNAL_ONLY").trim().toUpperCase();
+    const title = String(row?.action_title_template || "").trim();
+    if (!FOLLOW_UP_TRIGGERS.has(trigger_type)) throw new Error(`follow_up_rules[${index}] heeft een ongeldige trigger`);
+    if (!title) throw new Error(`follow_up_rules[${index}] mist een actietitel`);
+    if (title.length > 300) throw new Error(`follow_up_rules[${index}] actietitel is langer dan 300 tekens`);
+    if (!FOLLOW_UP_PRIORITIES.has(priority)) throw new Error(`follow_up_rules[${index}] heeft een ongeldige prioriteit`);
+    if (!RESPONSIBILITY_TYPES.has(responsibility_type)) throw new Error(`follow_up_rules[${index}] heeft een ongeldige verantwoordelijkheid`);
+    if (!FOLLOW_UP_VISIBILITIES.has(visibility)) throw new Error(`follow_up_rules[${index}] heeft een ongeldige zichtbaarheid`);
+    const due_after_days = normalizeNullableNumber(row?.due_after_days);
+    if (due_after_days != null && due_after_days < 0) throw new Error(`follow_up_rules[${index}] heeft een ongeldige doorlooptijd`);
+    const certificate_impact = normalizeNullableString(row?.certificate_impact)?.toLowerCase() ?? null;
+    if (certificate_impact && !["yes", "no"].includes(certificate_impact)) {
+      throw new Error(`follow_up_rules[${index}] heeft een ongeldig certificaatgevolg`);
+    }
+    let condition = row?.condition ?? row?.condition_json ?? null;
+    if (typeof condition === "string") {
+      try { condition = condition.trim() ? JSON.parse(condition) : null; }
+      catch { throw new Error(`follow_up_rules[${index}].condition is geen geldige JSON`); }
+    }
+    if (condition != null) {
+      const error = validateConditionNode(condition, `follow_up_rules[${index}].condition`);
+      if (error) throw new Error(error);
+    }
+    if (trigger_type === "CONDITIONAL" && condition == null) {
+      throw new Error(`follow_up_rules[${index}] met trigger CONDITIONAL mist een voorwaarde`);
+    }
+    const sort_order = normalizeNullableNumber(row?.sort_order) ?? (index + 1) * 10;
+    if (sort_order < 0) throw new Error(`follow_up_rules[${index}].sort_order is ongeldig`);
+    return {
+      form_follow_up_rule_id: id,
+      trigger_type,
+      condition,
+      action_title_template: title,
+      action_description_template: normalizeNullableString(row?.action_description_template),
+      category: normalizeNullableString(row?.category),
+      priority,
+      responsibility_type,
+      assigned_role_code: normalizeNullableString(row?.assigned_role_code),
+      due_after_days,
+      certificate_impact,
+      visibility,
+      sort_order,
+      is_active: row?.is_active === false ? false : true,
+    };
+  });
+}
+
 function validateSurveyJson(surveyJson: any) {
   if (!isPlainObject(surveyJson)) {
     return {
@@ -145,6 +264,9 @@ export async function getAdminFormDetail(formId: string) {
   const versionRows: any[] = Array.isArray(recordsets?.[1]) ? recordsets[1] : [];
   const applicabilityRows: any[] = Array.isArray(recordsets?.[2]) ? recordsets[2] : [];
   const preflightRow: any = recordsets?.[3]?.[0] ?? null;
+  const contextRuleRows: any[] = Array.isArray(recordsets?.[4]) ? recordsets[4] : [];
+  const followUpRuleRows: any[] = Array.isArray(recordsets?.[5]) ? recordsets[5] : [];
+  const workflowRoleRows: any[] = Array.isArray(recordsets?.[6]) ? recordsets[6] : [];
 
   const versions = versionRows.map((r: any, index: number) => ({
     form_version_id: r.form_version_id,
@@ -164,6 +286,10 @@ export async function getAdminFormDetail(formId: string) {
     document_profile_key: normalizeNullableString(formRow.document_profile_key),
     workflow_profile_key: normalizeNullableString(formRow.workflow_profile_key),
     official_document_number: normalizeNullableString(formRow.official_document_number),
+    owner_department: normalizeNullableString(formRow.owner_department),
+    owner_display_name: normalizeNullableString(formRow.owner_display_name),
+    knowledge_base_reference: normalizeNullableString(formRow.knowledge_base_reference),
+    requires_installation_review: formRow.requires_installation_review === true,
     status: formRow.status ?? null,
     sort_order: formRow.sort_order == null ? null : Number(formRow.sort_order),
     active_survey_json: parseJsonObject(formRow.active_survey_json, null),
@@ -186,6 +312,35 @@ export async function getAdminFormDetail(formId: string) {
       custom_severity: String(preflightRow?.custom_severity || "warning").toLowerCase(),
       is_active: preflightRow?.is_active === false ? false : true,
     },
+    context_rules: contextRuleRows.map((r: any) => ({
+      context_type: String(r.context_type || "").trim().toUpperCase(),
+      is_required: r.is_required === true,
+      is_primary: r.is_primary === true,
+      selection_order: Number(r.selection_order ?? 0),
+      is_active: r.is_active === false ? false : true,
+    })),
+    follow_up_rules: followUpRuleRows.map((r: any) => ({
+      form_follow_up_rule_id: r.form_follow_up_rule_id,
+      trigger_type: String(r.trigger_type || "").trim().toUpperCase(),
+      condition: parseJsonObject(r.condition_json, null),
+      action_title_template: r.action_title_template,
+      action_description_template: r.action_description_template ?? null,
+      category: r.category ?? null,
+      priority: String(r.priority || "NORMAL").trim().toUpperCase(),
+      responsibility_type: String(r.responsibility_type || "WARDENBURG").trim().toUpperCase(),
+      assigned_role_code: r.assigned_role_code ?? null,
+      due_after_days: r.due_after_days == null ? null : Number(r.due_after_days),
+      certificate_impact: r.certificate_impact ?? null,
+      visibility: String(r.visibility || "INTERNAL_ONLY").trim().toUpperCase(),
+      sort_order: Number(r.sort_order ?? 0),
+      is_active: r.is_active === false ? false : true,
+    })),
+    workflow_roles: workflowRoleRows.map((r: any) => ({
+      role_code: r.role_code,
+      display_name: r.display_name,
+      description: r.description ?? null,
+      is_active: r.is_active === false ? false : true,
+    })),
   };
 
   return { item };
@@ -255,6 +410,10 @@ export async function saveAdminFormConfig(formId: string, payload: any, user: an
   const documentProfileKey = normalizeNullableString(payload?.document_profile_key);
   const workflowProfileKey = normalizeNullableString(payload?.workflow_profile_key);
   const officialDocumentNumber = normalizeNullableString(payload?.official_document_number);
+  const ownerDepartment = normalizeNullableString(payload?.owner_department);
+  const ownerDisplayName = normalizeNullableString(payload?.owner_display_name);
+  const knowledgeBaseReference = normalizeNullableString(payload?.knowledge_base_reference);
+  const requiresInstallationReview = payload?.requires_installation_review === true;
   const status = String(payload?.status || "").trim().toUpperCase();
 
   if (!name) return { ok: false, error: "name is verplicht" };
@@ -267,6 +426,14 @@ export async function saveAdminFormConfig(formId: string, payload: any, user: an
     : [];
 
   const preflight = payload?.preflight || {};
+  let contextRules: any[];
+  let followUpRules: any[];
+  try {
+    contextRules = normalizeContextRules(payload?.context_rules);
+    followUpRules = normalizeFollowUpRules(payload?.follow_up_rules);
+  } catch (error: any) {
+    return { ok: false, error: error?.message || "ongeldige formulierconfiguratie" };
+  }
 
   const updatedBy = getUserAuditActor(user);
 
@@ -277,6 +444,10 @@ export async function saveAdminFormConfig(formId: string, payload: any, user: an
     documentProfileKey,
     workflowProfileKey,
     officialDocumentNumber,
+    ownerDepartment,
+    ownerDisplayName,
+    knowledgeBaseReference,
+    requiresInstallationReview,
     status,
     applicabilityJson: JSON.stringify(applicability_type_keys),
     requiresType: preflight?.requires_type === false ? false : true,
@@ -287,6 +458,8 @@ export async function saveAdminFormConfig(formId: string, payload: any, user: an
     customMinFilled: normalizeNullableNumber(preflight?.custom_min_filled),
     customSeverity: String(preflight?.custom_severity || "warning").toLowerCase(),
     preflightIsActive: preflight?.is_active === false ? false : true,
+    contextRulesJson: JSON.stringify(contextRules),
+    followUpRulesJson: JSON.stringify(followUpRules),
     updatedBy,
   });
 

@@ -131,20 +131,24 @@ base as (
 ),
 fu as (
   select
-    f.form_instance_id,
+    fs.form_instance_id,
     count(*) as follow_up_total_count,
     sum(case when f.status = N'OPEN' then 1 else 0 end) as follow_up_open_count,
     sum(case when f.status = N'PLANNING_NODIG' then 1 else 0 end) as follow_up_planning_needed_count,
     sum(case when f.status = N'WACHTENOPDERDEN' then 1 else 0 end) as follow_up_waiting_count,
     sum(case when f.status = N'GEPLAND' then 1 else 0 end) as follow_up_planned_count,
-    sum(case when f.status in (N'OPEN', N'PLANNING_NODIG', N'WACHTENOPDERDEN') then 1 else 0 end) as follow_up_actionable_count,
+    sum(case when sd.is_actionable = 1 then 1 else 0 end) as follow_up_actionable_count,
     sum(case when f.status = N'AFGEHANDELD' then 1 else 0 end) as follow_up_done_count,
     sum(case when f.status = N'AFGEWEZEN' then 1 else 0 end) as follow_up_rejected_count,
     sum(case when f.status = N'VERVALLEN' then 1 else 0 end) as follow_up_expired_count,
     sum(case when f.status = N'INFORMATIEF' then 1 else 0 end) as follow_up_informative_count,
-    sum(case when f.status in (N'AFGEHANDELD', N'AFGEWEZEN', N'VERVALLEN', N'INFORMATIEF') then 1 else 0 end) as follow_up_terminal_count
-  from dbo.FormFollowUpAction f
-  group by f.form_instance_id
+    sum(case when sd.is_terminal = 1 then 1 else 0 end) as follow_up_terminal_count
+  from dbo.FollowUpAction f
+  join dbo.FollowUpActionFormSource fs
+    on fs.follow_up_action_id = f.follow_up_action_id
+  join dbo.FollowUpStatusDefinition sd
+    on sd.status_code = f.status
+  group by fs.form_instance_id
 ),
 filtered as (
   select
@@ -237,6 +241,7 @@ select top 1
   fi.instance_note,
   fi.parent_instance_id,
   fi.atrium_installation_code,
+  fi.answers_json,
   fi.created_at,
   fi.created_by,
   fi.updated_at,

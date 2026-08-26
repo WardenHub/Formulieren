@@ -156,6 +156,50 @@ export async function getFormsMonitorFollowUps(req: any, res: Response) {
   }
 }
 
+export async function getFormsMonitorFollowUpReview(req: any, res: Response) {
+  try {
+    const data = await service.getMonitorFollowUpReview(req.params.formInstanceId, {
+      user: req.user,
+      roles: req.roles || [],
+    });
+    if (data?.error === "not found") return res.status(404).json({ error: "not found" });
+    return res.json(data);
+  } catch (err: any) {
+    const msg = String(err?.message || err).toLowerCase();
+    if (isHistoricalReadOnlyMessage(msg)) {
+      return res.status(409).json({ error: "historical installation read-only" });
+    }
+    console.error(err);
+    return res.status(500).json({ error: "getFormsMonitorFollowUpReview failed" });
+  }
+}
+
+export async function postFormsMonitorFollowUpReview(req: any, res: Response) {
+  try {
+    const data = await service.createMonitorFollowUpReview(
+      req.params.formInstanceId,
+      req.body || {},
+      { user: req.user, roles: req.roles || [] }
+    );
+    if (data?.error === "not found") return res.status(404).json({ error: "not found" });
+    return res.status(201).json(data);
+  } catch (err: any) {
+    const msg = String(err?.message || err).toLowerCase();
+    if (msg.includes("forbidden")) return res.status(403).json({ error: "forbidden" });
+    if (msg.includes("invalid status transition")) {
+      return res.status(409).json({ error: "invalid status transition" });
+    }
+    if (msg.includes("follow-up review")) {
+      return res.status(409).json({ error: String(err?.message || err) });
+    }
+    if (isHistoricalReadOnlyMessage(msg)) {
+      return res.status(409).json({ error: "historical installation read-only" });
+    }
+    console.error(err);
+    return res.status(500).json({ error: "postFormsMonitorFollowUpReview failed" });
+  }
+}
+
 export async function postFormsMonitorStatusAction(req: any, res: Response) {
   try {
     const formInstanceId = String(req.params.formInstanceId || "");

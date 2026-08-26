@@ -7,6 +7,8 @@ import { getDbConnection } from "./db/index.js";
 import installationsRouter from "./routes/installations.js";
 import installationTypesRouter from "./routes/installationTypes.js";
 import formsMonitorRouter from "./routes/formsMonitor.js";
+import formsHubRouter from "./routes/formsHub.js";
+import inspectionsRouter from "./routes/inspections.js";
 import adminFormsRouter from "./routes/adminForms.js";
 import adminInstallationsRouter from "./routes/adminInstallations.js";
 import adminGuidanceRouter from "./routes/adminGuidance.js";
@@ -18,6 +20,7 @@ import profileRouter from "./routes/profile.js";
 import meFeedbackRouter from "./routes/meFeedback.js";
 import * as profileService from "./services/profileService.js";
 import { getRuntimeStatusSnapshot } from "./services/runtimeStatusService.js";
+import { getPermissionsForRoles } from "./middleware/permissionMiddleware.js";
 
 const app = express();
 const RAW_ORIGINS = (process.env.CORS_ORIGINS || "")
@@ -194,12 +197,15 @@ app.use("/admin/guidance", adminGuidanceRouter);
 app.use("/admin/feedback", adminFeedbackRouter);
 app.use("/admin/ai", adminAssistantRouter);
 app.use("/forms-monitor", formsMonitorRouter);
+app.use("/forms", formsHubRouter);
+app.use("/inspections", inspectionsRouter);
 
 app.get("/me", async (req: any, res) => {
   try {
     const base = {
       user: req.user,
       roles: req.roles || [],
+      permissions: await getPermissionsForRoles(req.roles || []),
     };
 
     if (!req.user?.objectId) {
@@ -222,16 +228,9 @@ app.get("/me", async (req: any, res) => {
     return res.json({
       user: req.user,
       roles: req.roles || [],
+      permissions: [],
     });
   }
-});
-
-app.get("/forms/definitions", requireRole("admin"), (req, res) => {
-  res.json({ ok: true, data: [] });
-});
-
-app.get("/forms/instances", requireRole("admin", "gebruiker"), (req, res) => {
-  res.json({ ok: true, data: [] });
 });
 
 export default app;

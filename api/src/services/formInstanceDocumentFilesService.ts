@@ -317,6 +317,7 @@ export async function uploadDocumentFile(
 
   let uploaded: {
     storageProvider: string;
+    storageContainer: string;
     storageKey: string;
     storageUrl: string | null;
   } | null = null;
@@ -337,8 +338,10 @@ export async function uploadDocumentFile(
       documentId,
       fileName: file.originalname,
       mimeType: file.mimetype || "application/octet-stream",
+      fileExtension: getFileExtension(file.originalname).toLowerCase() || null,
       fileSizeBytes: file.size ?? file.buffer.length,
       storageProvider: uploaded.storageProvider,
+      storageContainer: uploaded.storageContainer,
       storageKey: uploaded.storageKey,
       storageUrl: uploaded.storageUrl,
       checksumSha256: checksum,
@@ -402,7 +405,9 @@ export async function renameDocumentFile(
       instanceId,
       documentId,
       fileName: nextFileName,
+      fileExtension: getFileExtension(nextFileName).toLowerCase() || null,
       storageProvider: uploaded.storageProvider,
+      storageContainer: uploaded.storageContainer,
       storageKey: uploaded.storageKey,
       storageUrl: uploaded.storageUrl,
       updatedBy: getUserAuditActor(user),
@@ -499,16 +504,16 @@ export async function deleteDocument(
     throw new Error("form instance not editable");
   }
 
-  if (document.storage_key) {
-    await deleteFormInstanceDocumentBlob(String(document.storage_key));
-  }
-
   const rows = await sqlQuery(deleteFormInstanceDocumentSql, {
     code,
     instanceId,
     documentId,
     updatedBy: getUserAuditActor(user),
   });
+
+  if (document.storage_key) {
+    await deleteFormInstanceDocumentBlob(String(document.storage_key));
+  }
 
   return {
     ok: true,

@@ -186,7 +186,16 @@ async function scanPending(logbook: any) {
     const current: any = tracked.get(document.remote_document_id);
     return !current || !sameRemoteVersion(current.handled_remote_time_last_modified, document.remote_time_last_modified);
   });
-  return { remoteLogbook, documents, pending };
+  const pendingIds = new Set(pending.map((document: any) => document.remote_document_id));
+  const selectable = documents.map((document: any) => {
+    const current: any = tracked.get(document.remote_document_id);
+    const handledStatus = String(current?.handled_status || "").toUpperCase();
+    const category = pendingIds.has(document.remote_document_id)
+      ? "PENDING"
+      : (handledStatus === "SKIPPED" ? "SKIPPED" : "IMPORTED");
+    return { ...document, sync_category: category };
+  });
+  return { remoteLogbook, documents, pending, selectable };
 }
 
 export async function previewInstallationLogbookSync(code: string) {
@@ -197,7 +206,7 @@ export async function previewInstallationLogbookSync(code: string) {
     ok: true,
     scanned_at: new Date().toISOString(),
     remote_document_count: scanned.documents.length,
-    pending_documents: scanned.pending,
+    pending_documents: scanned.selectable,
   };
 }
 
@@ -216,17 +225,19 @@ export async function synchronizeInstallationLogbook(code: string, payload: any,
     decisionById.set(id, decision);
   }
 
-  const pendingIds = new Set(scanned.pending.map((document: any) => document.remote_document_id));
-  if (decisionById.size !== pendingIds.size || [...decisionById.keys()].some((id) => !pendingIds.has(id))) {
+  const selectableIds = new Set(scanned.selectable.map((document: any) => document.remote_document_id));
+  if (decisionById.size !== selectableIds.size || [...decisionById.keys()].some((id) => !selectableIds.has(id))) {
     throw new Error("sync preview stale");
   }
-  for (const document of scanned.pending) {
+  for (const document of scanned.selectable) {
     const decision = decisionById.get(document.remote_document_id);
     if (!sameRemoteVersion(decision?.remote_time_last_modified, document.remote_time_last_modified)) {
       throw new Error("sync preview stale");
     }
     const action = String(decision?.action || "").toUpperCase();
-    if (!['IMPORT', 'SKIP'].includes(action)) throw new Error("sync decision invalid");
+    if (!['IMPORT', 'SKIP', 'NONE'].includes(action)) throw new Error("sync decision invalid");
+    if (action === "SKIP" && document.sync_category !== "PENDING") throw new Error("sync decision invalid");
+    if (action === "NONE" && document.sync_category === "PENDING") throw new Error("sync decision invalid");
     if (action === 'IMPORT' && !String(decision?.document_type_key || "").trim()) {
       throw new Error("document type required");
     }
@@ -238,7 +249,7 @@ export async function synchronizeInstallationLogbook(code: string, payload: any,
     syncId,
     installationLogbookId: logbook.installation_logbook_id,
     remoteDocumentCount: scanned.documents.length,
-    pendingDocumentCount: scanned.pending.length,
+    pendingDocumentCount: scanned.selectable.length,
     createdBy: actor,
   });
 
@@ -247,8 +258,9 @@ export async function synchronizeInstallationLogbook(code: string, payload: any,
   let failedCount = 0;
   const errors: Array<{ remote_document_id: string; error: string }> = [];
 
-  for (const document of scanned.pending) {
+  for (const document of scanned.selectable) {
     const decision = decisionById.get(document.remote_document_id);
+    if (String(decision.action).toUpperCase() === "NONE") continue;
     if (String(decision.action).toUpperCase() === "SKIP") {
       try {
         await sqlQuery(markInstallationLogbookDocumentSkippedSql, {
@@ -363,6 +375,9 @@ export async function undoInstallationLogbookSync(code: string, syncIdValue: any
   }
   if (rows.some((row) => Number(row.active_related_document_count || 0) > 0)) {
     throw new Error("logbook document has active related documents");
+  }
+  if (rows.some((row) => Number(row.audit_reference_count || 0) > 0)) {
+    throw new Error("logbook document has audit references");
   }
 
   const actor = getUserAuditActor(user);

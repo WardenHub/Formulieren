@@ -29,6 +29,10 @@ select
   fd.document_profile_key,
   fd.workflow_profile_key,
   fd.official_document_number,
+  fd.owner_department,
+  fd.owner_display_name,
+  fd.knowledge_base_reference,
+  fd.requires_installation_review,
   fd.status,
   fd.sort_order,
   isnull(vs.latest_version, 0) as latest_version,
@@ -52,6 +56,10 @@ select top 1
   fd.document_profile_key,
   fd.workflow_profile_key,
   fd.official_document_number,
+  fd.owner_department,
+  fd.owner_display_name,
+  fd.knowledge_base_reference,
+  fd.requires_installation_review,
   fd.status,
   fd.sort_order,
   lvr.survey_json as active_survey_json
@@ -99,6 +107,44 @@ select top 1
   fpr.updated_by
 from dbo.FormPreflightRule fpr
 where fpr.form_id = @formId;
+
+select
+  r.context_type,
+  r.is_required,
+  r.is_primary,
+  r.selection_order,
+  r.is_active
+from dbo.FormDefinitionContextRule r
+where r.form_id = @formId
+order by r.selection_order, r.context_type;
+
+select
+  r.form_follow_up_rule_id,
+  r.trigger_type,
+  r.condition_json,
+  r.action_title_template,
+  r.action_description_template,
+  r.category,
+  r.priority,
+  r.responsibility_type,
+  r.assigned_role_code,
+  r.due_after_days,
+  r.certificate_impact,
+  r.visibility,
+  r.sort_order,
+  r.is_active
+from dbo.FormDefinitionFollowUpRule r
+where r.form_id = @formId
+order by r.sort_order, r.form_follow_up_rule_id;
+
+select
+  role_code,
+  display_name,
+  description,
+  is_active
+from dbo.WorkflowRoleDefinition
+where is_active = 1
+order by display_name, role_code;
 `;
 
 export const createAdminFormSql = `
@@ -204,6 +250,8 @@ select cast(1 as bit) as ok;
 `;
 
 export const saveAdminFormConfigSql = `
+set xact_abort on;
+
 if not exists (
   select 1
   from dbo.FormDefinition
@@ -238,6 +286,130 @@ begin
   throw 50000, 'applicabilityJson must be valid json', 1;
 end;
 
+if isjson(@contextRulesJson) <> 1
+begin
+  throw 50000, 'contextRulesJson must be valid json', 1;
+end;
+
+if isjson(@followUpRulesJson) <> 1
+begin
+  throw 50000, 'followUpRulesJson must be valid json', 1;
+end;
+
+declare @contextRules table (
+  context_type nvarchar(30) not null,
+  is_required bit not null,
+  is_primary bit not null,
+  selection_order int not null,
+  is_active bit not null
+);
+
+insert into @contextRules
+select
+  upper(ltrim(rtrim(convert(nvarchar(30), json_value(j.value, '$.context_type'))))),
+  isnull(try_convert(bit, json_value(j.value, '$.is_required')), 0),
+  isnull(try_convert(bit, json_value(j.value, '$.is_primary')), 0),
+  isnull(try_convert(int, json_value(j.value, '$.selection_order')), 0),
+  isnull(try_convert(bit, json_value(j.value, '$.is_active')), 1)
+from openjson(@contextRulesJson) j;
+
+if exists (
+  select 1 from @contextRules
+  where context_type not in (N'RELATION', N'PROJECT', N'WORK_ORDER', N'INSTALLATION', N'EMPLOYEE')
+     or selection_order < 0
+     or (is_primary = 1 and is_active = 0)
+     or (is_required = 1 and is_active = 0)
+)
+begin
+  throw 50000, 'invalid context rule', 1;
+end;
+
+if exists (select context_type from @contextRules group by context_type having count(*) > 1)
+begin
+  throw 50000, 'duplicate context type', 1;
+end;
+
+if (select count(*) from @contextRules where is_primary = 1 and is_active = 1) > 1
+begin
+  throw 50000, 'only one active primary context is allowed', 1;
+end;
+
+if exists (select 1 from @contextRules where is_active = 1)
+   and not exists (select 1 from @contextRules where is_primary = 1 and is_active = 1)
+begin
+  throw 50000, 'an active context configuration requires one primary context', 1;
+end;
+
+declare @followUpRules table (
+  form_follow_up_rule_id uniqueidentifier not null,
+  trigger_type nvarchar(20) not null,
+  condition_json nvarchar(max) null,
+  action_title_template nvarchar(300) not null,
+  action_description_template nvarchar(2000) null,
+  category nvarchar(100) null,
+  priority nvarchar(20) not null,
+  responsibility_type nvarchar(30) not null,
+  assigned_role_code nvarchar(100) null,
+  due_after_days int null,
+  certificate_impact nvarchar(20) null,
+  visibility nvarchar(30) not null,
+  sort_order int not null,
+  is_active bit not null
+);
+
+insert into @followUpRules
+select
+  coalesce(try_convert(uniqueidentifier, json_value(j.value, '$.form_follow_up_rule_id')), newid()),
+  upper(ltrim(rtrim(convert(nvarchar(20), json_value(j.value, '$.trigger_type'))))),
+  nullif(ltrim(rtrim(convert(nvarchar(max), json_query(j.value, '$.condition')))), N''),
+  ltrim(rtrim(convert(nvarchar(300), json_value(j.value, '$.action_title_template')))),
+  nullif(ltrim(rtrim(convert(nvarchar(2000), json_value(j.value, '$.action_description_template')))), N''),
+  nullif(ltrim(rtrim(convert(nvarchar(100), json_value(j.value, '$.category')))), N''),
+  upper(isnull(nullif(ltrim(rtrim(convert(nvarchar(20), json_value(j.value, '$.priority')))), N''), N'NORMAL')),
+  upper(isnull(nullif(ltrim(rtrim(convert(nvarchar(30), json_value(j.value, '$.responsibility_type')))), N''), N'WARDENBURG')),
+  nullif(ltrim(rtrim(convert(nvarchar(100), json_value(j.value, '$.assigned_role_code')))), N''),
+  try_convert(int, json_value(j.value, '$.due_after_days')),
+  lower(nullif(ltrim(rtrim(convert(nvarchar(20), json_value(j.value, '$.certificate_impact')))), N'')),
+  upper(isnull(nullif(ltrim(rtrim(convert(nvarchar(30), json_value(j.value, '$.visibility')))), N''), N'INTERNAL_ONLY')),
+  isnull(try_convert(int, json_value(j.value, '$.sort_order')), 0),
+  isnull(try_convert(bit, json_value(j.value, '$.is_active')), 1)
+from openjson(@followUpRulesJson) j;
+
+if exists (
+  select 1 from @followUpRules
+  where trigger_type not in (N'ON_SUBMIT', N'ON_FINALIZE', N'CONDITIONAL')
+     or nullif(action_title_template, N'') is null
+     or priority not in (N'LOW', N'NORMAL', N'HIGH', N'CRITICAL')
+     or responsibility_type not in (N'WARDENBURG', N'CUSTOMER', N'THIRD_PARTY', N'UNSPECIFIED')
+     or due_after_days < 0
+     or (certificate_impact is not null and certificate_impact not in (N'yes', N'no'))
+     or visibility not in (N'INTERNAL_ONLY', N'CUSTOMER_VISIBLE')
+     or sort_order < 0
+     or (condition_json is not null and isjson(condition_json) <> 1)
+     or (trigger_type = N'CONDITIONAL' and condition_json is null)
+)
+begin
+  throw 50000, 'invalid follow-up rule', 1;
+end;
+
+if exists (
+  select 1
+  from @followUpRules r
+  where r.assigned_role_code is not null
+    and not exists (
+      select 1 from dbo.WorkflowRoleDefinition wr
+      where wr.role_code = r.assigned_role_code and wr.is_active = 1
+    )
+)
+begin
+  throw 50000, 'follow-up rule refers to an unknown active workflow role', 1;
+end;
+
+if exists (select form_follow_up_rule_id from @followUpRules group by form_follow_up_rule_id having count(*) > 1)
+begin
+  throw 50000, 'duplicate follow-up rule id', 1;
+end;
+
 begin tran;
 
 update dbo.FormDefinition
@@ -247,6 +419,10 @@ set
   document_profile_key = @documentProfileKey,
   workflow_profile_key = @workflowProfileKey,
   official_document_number = @officialDocumentNumber,
+  owner_department = @ownerDepartment,
+  owner_display_name = @ownerDisplayName,
+  knowledge_base_reference = @knowledgeBaseReference,
+  requires_installation_review = @requiresInstallationReview,
   status = @status,
   updated_at = sysutcdatetime(),
   updated_by = @updatedBy
@@ -330,12 +506,43 @@ begin
   );
 end;
 
+delete from dbo.FormDefinitionContextRule
+where form_id = @formId;
+
+insert into dbo.FormDefinitionContextRule (
+  form_id, context_type, is_required, is_primary, selection_order,
+  is_active, created_at, created_by
+)
+select
+  @formId, context_type, is_required, is_primary, selection_order,
+  is_active, sysutcdatetime(), @updatedBy
+from @contextRules;
+
+delete from dbo.FormDefinitionFollowUpRule
+where form_id = @formId;
+
+insert into dbo.FormDefinitionFollowUpRule (
+  form_follow_up_rule_id, form_id, trigger_type, condition_json,
+  action_title_template, action_description_template, category, priority,
+  responsibility_type, assigned_role_code, due_after_days, certificate_impact,
+  visibility, sort_order, is_active, created_at, created_by
+)
+select
+  form_follow_up_rule_id, @formId, trigger_type, condition_json,
+  action_title_template, action_description_template, category, priority,
+  responsibility_type, assigned_role_code, due_after_days, certificate_impact,
+  visibility, sort_order, is_active, sysutcdatetime(), @updatedBy
+from @followUpRules;
+
 commit tran;
 
 select cast(1 as bit) as ok;
 `;
 
 export const createAdminFormVersionSql = `
+set xact_abort on;
+begin transaction;
+
 if not exists (
   select 1
   from dbo.FormDefinition
@@ -357,6 +564,18 @@ where form_id = @formId;
 
 declare @versionLabel nvarchar(20) = concat(convert(nvarchar(10), @nextVersion), N'.0');
 declare @formVersionId uniqueidentifier = newid();
+declare @replacesFormVersionId uniqueidentifier = null;
+
+select top 1 @replacesFormVersionId = form_version_id
+from dbo.FormDefinitionVersion
+where form_id = @formId
+  and is_active = 1
+order by version desc;
+
+update dbo.FormDefinitionVersion
+set is_active = 0
+where form_id = @formId
+  and is_active = 1;
 
 insert into dbo.FormDefinitionVersion (
   form_version_id,
@@ -365,7 +584,11 @@ insert into dbo.FormDefinitionVersion (
   version_label,
   survey_json,
   published_at,
-  published_by
+  published_by,
+  effective_from,
+  issued_by,
+  replaces_form_version_id,
+  is_active
 )
 values (
   @formVersionId,
@@ -374,8 +597,14 @@ values (
   @versionLabel,
   @surveyJson,
   sysutcdatetime(),
-  @publishedBy
+  @publishedBy,
+  sysutcdatetime(),
+  @publishedBy,
+  @replacesFormVersionId,
+  1
 );
+
+commit transaction;
 
 select
   @formVersionId as form_version_id,

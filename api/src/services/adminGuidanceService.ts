@@ -1,4 +1,5 @@
 import crypto from "node:crypto";
+import path from "node:path";
 import { sqlQuery, sqlQueryRaw } from "../db/index.js";
 import {
   activateGuidanceMediaAssetSql,
@@ -26,6 +27,10 @@ function normalizeOptionalText(value: any) {
 
 function normalizeRequiredText(value: any) {
   return String(value || "").trim();
+}
+
+function fileExtension(fileName: any) {
+  return path.extname(String(fileName || "")).replace(/^\./, "").toLowerCase() || null;
 }
 
 function normalizeSortOrder(value: any, fallback = 0) {
@@ -499,7 +504,12 @@ export async function uploadGuidanceMedia(
 
   const guidanceMediaId = crypto.randomUUID();
   const actor = getUserAuditActor(user);
-  let uploaded: { storageProvider: string; storageKey: string; storageUrl: string | null } | null = null;
+  let uploaded: {
+    storageProvider: string;
+    storageContainer: string;
+    storageKey: string;
+    storageUrl: string | null;
+  } | null = null;
 
   try {
     uploaded = await uploadFormGuidanceMediaBlob({
@@ -518,10 +528,16 @@ export async function uploadGuidanceMedia(
       externalUrl: null,
       fileName: normalizeOptionalText(file?.originalname),
       mimeType: normalizeOptionalText(file?.mimetype),
+      fileExtension: fileExtension(file?.originalname),
       fileSizeBytes: file?.size ?? file?.buffer?.length ?? null,
       storageProvider: uploaded.storageProvider,
+      storageContainer: uploaded.storageContainer,
       storageKey: uploaded.storageKey,
       storageUrl: uploaded.storageUrl,
+      checksumSha256: crypto
+        .createHash("sha256")
+        .update(file?.buffer || Buffer.alloc(0))
+        .digest("hex"),
       caption: normalizeOptionalText(payload?.caption),
       isActive: payload?.is_active === false ? false : true,
       actor,
@@ -559,10 +575,13 @@ export async function addExternalGuidanceMedia(guidanceId: string, payload: any,
     externalUrl,
     fileName: null,
     mimeType: null,
+    fileExtension: null,
     fileSizeBytes: null,
     storageProvider: null,
+    storageContainer: null,
     storageKey: null,
     storageUrl: null,
+    checksumSha256: null,
     caption: normalizeOptionalText(payload?.caption),
     isActive: payload?.is_active === false ? false : true,
     actor: getUserAuditActor(user),

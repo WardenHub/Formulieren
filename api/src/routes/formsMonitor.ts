@@ -5,6 +5,8 @@ import {
   getFormsMonitorList,
   getFormsMonitorDetail,
   getFormsMonitorFollowUps,
+  getFormsMonitorFollowUpReview,
+  postFormsMonitorFollowUpReview,
   postFormsMonitorStatusAction,
   postFormsMonitorFollowUpStatusAction,
   postFormsMonitorManualFollowUp,
@@ -27,6 +29,8 @@ router.get("/pdf-jobs/:jobId", requireRole("admin", "gebruiker", "documentbeheer
 router.get("/pdf-jobs/:jobId/download", requireRole("admin", "gebruiker", "documentbeheerder"), downloadFormsMonitorPdfJob);
 router.get("/:formInstanceId/pdf", requireRole("admin", "gebruiker", "documentbeheerder"), downloadFormsMonitorPdf);
 router.get("/:formInstanceId/follow-ups", requireRole("admin", "gebruiker", "documentbeheerder"), getFormsMonitorFollowUps);
+router.get("/:formInstanceId/follow-up-review", requireRole("admin", "gebruiker", "documentbeheerder"), getFormsMonitorFollowUpReview);
+router.post("/:formInstanceId/follow-up-review", requireRole("admin", "documentbeheerder"), postFormsMonitorFollowUpReview);
 router.get("/:formInstanceId", requireRole("admin", "gebruiker", "documentbeheerder"), getFormsMonitorDetail);
 
 

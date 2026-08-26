@@ -79,6 +79,17 @@ function normalizeOptionalString(value: any) {
   return text.length ? text : null;
 }
 
+function parseJsonArray(value: any) {
+  if (Array.isArray(value)) return value;
+  if (typeof value !== "string" || !value.trim()) return [];
+  try {
+    const parsed = JSON.parse(value);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
 function normalizeInstallationNoteKind(value: any) {
   const normalized = String(value || "NOTE").trim().toUpperCase();
   if (!INSTALLATION_NOTE_KINDS.has(normalized)) {
@@ -948,6 +959,7 @@ export async function getInstallationWorkflowItems(code: string) {
   const rows = await sqlQuery(getInstallationWorkflowItemsSql, { code: cleanCode });
   const items = (rows || []).map((row: any) => ({
     follow_up_action_id: row.follow_up_action_id,
+    source_type: row.source_type ?? null,
     form_instance_id: row.form_instance_id,
     installation_id: row.installation_id,
     atrium_installation_code: row.atrium_installation_code,
@@ -959,6 +971,9 @@ export async function getInstallationWorkflowItems(code: string) {
     workflow_title: row.workflow_title ?? "",
     workflow_description: row.workflow_description ?? "",
     category: row.category ?? null,
+    priority: row.priority ?? "NORMAL",
+    responsibility_type: row.responsibility_type ?? "WARDENBURG",
+    customer_visible: Boolean(row.customer_visible),
     certificate_impact: row.certificate_impact ?? null,
     certificate_impact_override: row.certificate_impact_override ?? null,
     status: row.status ?? "OPEN",
@@ -980,6 +995,7 @@ export async function getInstallationWorkflowItems(code: string) {
     form_status: row.form_status ?? null,
     parent_instance_id: row.parent_instance_id ?? null,
     form_title: row.form_title ?? row.form_code ?? "Formulier",
+    drawing_pins: parseJsonArray(row.drawing_pins_json),
   }));
 
   const activeItems = items.filter((item) => WORKFLOW_ACTIVE_STATUSES.has(String(item.status || "").trim().toUpperCase()));

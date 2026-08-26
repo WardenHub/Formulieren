@@ -494,12 +494,15 @@ select
 from dbo.FormGuidanceLink fgl
 join dbo.FormGuidanceItem fgi
   on fgi.guidance_id = fgl.guidance_id
-outer apply (
+  outer apply (
   select top 1
     gma.external_url,
-    gma.file_name,
-    gma.storage_key
+    sf.file_name,
+    sf.storage_key
   from dbo.FormGuidanceMediaAsset gma
+  left join dbo.StoredFile sf
+    on sf.stored_file_id = gma.stored_file_id
+   and sf.is_deleted = 0
   where gma.guidance_id = fgi.guidance_id
     and gma.media_kind = N'video'
     and gma.is_active = 1
@@ -508,10 +511,13 @@ outer apply (
 outer apply (
   select top 1
     gma.external_url,
-    gma.file_name,
-    gma.storage_key,
+    sf.file_name,
+    sf.storage_key,
     gma.caption
   from dbo.FormGuidanceMediaAsset gma
+  left join dbo.StoredFile sf
+    on sf.stored_file_id = gma.stored_file_id
+   and sf.is_deleted = 0
   where gma.guidance_id = fgi.guidance_id
     and gma.media_kind = N'image'
     and gma.is_active = 1
@@ -695,6 +701,30 @@ order by fi.created_at desc;
 
 if @existingInstanceId is not null
 begin
+  if not exists (
+    select 1
+    from dbo.FormInstanceContext
+    where form_instance_id = @existingInstanceId
+      and context_type = N'INSTALLATION'
+      and source_system = N'FABRIC_GOLD'
+      and source_key = @code
+  )
+  begin
+    insert into dbo.FormInstanceContext (
+      form_instance_id, context_type, source_system, business_unit, source_key,
+      display_code_snapshot, display_label_snapshot, metadata_snapshot_json,
+      is_primary, derivation_type, selected_at, selected_by, last_verified_at, verification_status
+    )
+    select
+      @existingInstanceId, N'INSTALLATION', N'FABRIC_GOLD', ab.BedrijfUnit, @code,
+      @code, coalesce(nullif(ab.installatie_naam, N''), nullif(ab.obj_naam, N''), @code),
+      (select ab.object_code, ab.obj_naam, ab.obj_adr_formatted, ab.installatietype_code,
+              ab.installatietype_omschrijving for json path, without_array_wrapper),
+      1, N'SELECTED', sysutcdatetime(), @createdBy, sysutcdatetime(), N'VERIFIED'
+    from dbo.AtriumInstallationBase ab
+    where ab.installatie_code = @code;
+  end;
+
   select
     @existingInstanceId as form_instance_id,
     @formVersionId as form_version_id,
@@ -740,6 +770,20 @@ values (
 );
 
 declare @instanceId bigint = cast(scope_identity() as bigint);
+
+insert into dbo.FormInstanceContext (
+  form_instance_id, context_type, source_system, business_unit, source_key,
+  display_code_snapshot, display_label_snapshot, metadata_snapshot_json,
+  is_primary, derivation_type, selected_at, selected_by, last_verified_at, verification_status
+)
+select
+  @instanceId, N'INSTALLATION', N'FABRIC_GOLD', ab.BedrijfUnit, @code,
+  @code, coalesce(nullif(ab.installatie_naam, N''), nullif(ab.obj_naam, N''), @code),
+  (select ab.object_code, ab.obj_naam, ab.obj_adr_formatted, ab.installatietype_code,
+          ab.installatietype_omschrijving for json path, without_array_wrapper),
+  1, N'SELECTED', sysutcdatetime(), @createdBy, sysutcdatetime(), N'VERIFIED'
+from dbo.AtriumInstallationBase ab
+where ab.installatie_code = @code;
 
 insert into dbo.FormAnswer (
   form_instance_id,
@@ -865,6 +909,30 @@ order by fi.created_at desc;
 
 if @existingInstanceId is not null
 begin
+  if not exists (
+    select 1
+    from dbo.FormInstanceContext
+    where form_instance_id = @existingInstanceId
+      and context_type = N'INSTALLATION'
+      and source_system = N'FABRIC_GOLD'
+      and source_key = @code
+  )
+  begin
+    insert into dbo.FormInstanceContext (
+      form_instance_id, context_type, source_system, business_unit, source_key,
+      display_code_snapshot, display_label_snapshot, metadata_snapshot_json,
+      is_primary, derivation_type, selected_at, selected_by, last_verified_at, verification_status
+    )
+    select
+      @existingInstanceId, N'INSTALLATION', N'FABRIC_GOLD', ab.BedrijfUnit, @code,
+      @code, coalesce(nullif(ab.installatie_naam, N''), nullif(ab.obj_naam, N''), @code),
+      (select ab.object_code, ab.obj_naam, ab.obj_adr_formatted, ab.installatietype_code,
+              ab.installatietype_omschrijving for json path, without_array_wrapper),
+      1, N'INHERITED', sysutcdatetime(), @createdBy, sysutcdatetime(), N'VERIFIED'
+    from dbo.AtriumInstallationBase ab
+    where ab.installatie_code = @code;
+  end;
+
   select
     @existingInstanceId as form_instance_id,
     @formVersionId as form_version_id,
@@ -926,6 +994,20 @@ values (
 );
 
 declare @instanceId bigint = cast(scope_identity() as bigint);
+
+insert into dbo.FormInstanceContext (
+  form_instance_id, context_type, source_system, business_unit, source_key,
+  display_code_snapshot, display_label_snapshot, metadata_snapshot_json,
+  is_primary, derivation_type, selected_at, selected_by, last_verified_at, verification_status
+)
+select
+  @instanceId, N'INSTALLATION', N'FABRIC_GOLD', ab.BedrijfUnit, @code,
+  @code, coalesce(nullif(ab.installatie_naam, N''), nullif(ab.obj_naam, N''), @code),
+  (select ab.object_code, ab.obj_naam, ab.obj_adr_formatted, ab.installatietype_code,
+          ab.installatietype_omschrijving for json path, without_array_wrapper),
+  1, N'INHERITED', sysutcdatetime(), @createdBy, sysutcdatetime(), N'VERIFIED'
+from dbo.AtriumInstallationBase ab
+where ab.installatie_code = @code;
 
 insert into dbo.FormAnswer (
   form_instance_id,
@@ -1177,17 +1259,19 @@ select top 1
   d.document_number,
   d.document_date,
   d.revision,
-  d.file_name,
-  d.mime_type,
-  d.file_size_bytes,
-  d.uploaded_at,
-  d.uploaded_by,
-  d.file_last_modified_at,
-  d.file_last_modified_by,
-  d.storage_provider,
-  d.storage_key,
-  d.storage_url,
-  d.checksum_sha256,
+  sf.file_name,
+  sf.mime_type,
+  sf.file_extension,
+  sf.file_size_bytes,
+  sf.uploaded_at,
+  sf.uploaded_by,
+  sf.file_last_modified_at,
+  sf.file_last_modified_by,
+  sf.storage_provider,
+  sf.storage_container,
+  sf.storage_key,
+  sf.storage_url,
+  sf.checksum_sha256,
   d.source_system,
   d.source_reference,
   d.image_width_px,
@@ -1202,6 +1286,9 @@ select top 1
 from dbo.FormInstanceDocument d
 join dbo.FormInstance fi
   on fi.form_instance_id = d.form_instance_id
+left join dbo.StoredFile sf
+  on sf.stored_file_id = d.stored_file_id
+ and sf.is_deleted = 0
 where d.form_instance_document_id = @documentId
   and d.form_instance_id = @instanceId
   and d.atrium_installation_code = @code;
@@ -1227,17 +1314,19 @@ export const getFormInstanceDocumentsSql = `
     d.document_number,
     d.document_date,
     d.revision,
-    d.file_name,
-    d.mime_type,
-    d.file_size_bytes,
-    d.uploaded_at,
-    d.uploaded_by,
-    d.file_last_modified_at,
-    d.file_last_modified_by,
-    d.storage_provider,
-    d.storage_key,
-    d.storage_url,
-    d.checksum_sha256,
+    sf.file_name,
+    sf.mime_type,
+    sf.file_extension,
+    sf.file_size_bytes,
+    sf.uploaded_at,
+    sf.uploaded_by,
+    sf.file_last_modified_at,
+    sf.file_last_modified_by,
+    sf.storage_provider,
+    sf.storage_container,
+    sf.storage_key,
+    sf.storage_url,
+    sf.checksum_sha256,
     d.source_system,
     d.source_reference,
     d.image_width_px,
@@ -1249,6 +1338,9 @@ export const getFormInstanceDocumentsSql = `
     d.updated_at,
     d.updated_by
   from dbo.FormInstanceDocument d
+  left join dbo.StoredFile sf
+    on sf.stored_file_id = d.stored_file_id
+   and sf.is_deleted = 0
   where d.form_instance_id = @instanceId
     and d.atrium_installation_code = @code
     and isnull(d.is_active, 1) = 1
@@ -1267,16 +1359,21 @@ labels as (
 ),
 followups as (
   select
-    m.form_instance_document_id,
-    fa.follow_up_action_id,
-    fa.source_fingerprint,
-    fa.workflow_title,
-    fa.category,
-    fa.status,
+    d.form_instance_document_id,
+    a.follow_up_action_id,
+    fs.source_fingerprint,
+    a.workflow_title,
+    a.category,
+    a.status,
     m.is_primary
-  from dbo.FormInstanceDocumentFollowUpActionMap m
-  join dbo.FormFollowUpAction fa
-    on fa.follow_up_action_id = m.follow_up_action_id
+  from dbo.FollowUpActionAttachmentMap m
+  join dbo.FormInstanceDocument d
+    on d.stored_file_id = m.stored_file_id
+   and isnull(d.is_active, 1) = 1
+  join dbo.FollowUpAction a
+    on a.follow_up_action_id = m.follow_up_action_id
+  join dbo.FollowUpActionFormSource fs
+    on fs.follow_up_action_id = a.follow_up_action_id
 )
 select
   d.*,
@@ -1457,13 +1554,15 @@ select
   d.document_number,
   d.document_date,
   d.revision,
-  d.file_name,
-  d.mime_type,
-  d.file_size_bytes,
-  d.uploaded_at,
-  d.uploaded_by,
-  d.storage_provider,
-  d.storage_key,
+  sf.file_name,
+  sf.mime_type,
+  sf.file_extension,
+  sf.file_size_bytes,
+  sf.uploaded_at,
+  sf.uploaded_by,
+  sf.storage_provider,
+  sf.storage_container,
+  sf.storage_key,
   d.image_width_px,
   d.image_height_px,
   d.image_variant,
@@ -1473,6 +1572,9 @@ select
   d.updated_at,
   d.updated_by
 from dbo.FormInstanceDocument d
+left join dbo.StoredFile sf
+  on sf.stored_file_id = d.stored_file_id
+ and sf.is_deleted = 0
 where d.form_instance_id = @instanceId
   and d.atrium_installation_code = @code
 order by d.created_at desc;
@@ -1509,26 +1611,60 @@ begin
   throw 50000, 'form instance not editable', 1;
 end;
 
+set xact_abort on;
+
+declare @storedFileId uniqueidentifier = newid();
+
+begin tran;
+
+insert into dbo.StoredFile (
+  stored_file_id,
+  storage_provider,
+  storage_container,
+  storage_key,
+  storage_url,
+  file_name,
+  mime_type,
+  file_extension,
+  file_size_bytes,
+  checksum_sha256,
+  uploaded_by,
+  created_by
+)
+values (
+  @storedFileId,
+  @storageProvider,
+  @storageContainer,
+  @storageKey,
+  @storageUrl,
+  @fileName,
+  @mimeType,
+  @fileExtension,
+  @fileSizeBytes,
+  @checksumSha256,
+  @updatedBy,
+  @updatedBy
+);
+
 update dbo.FormInstanceDocument
 set
-  file_name = @fileName,
-  mime_type = @mimeType,
-  file_size_bytes = @fileSizeBytes,
-  uploaded_at = sysutcdatetime(),
-  uploaded_by = @updatedBy,
-  file_last_modified_at = sysutcdatetime(),
-  file_last_modified_by = @updatedBy,
-  storage_provider = @storageProvider,
-  storage_key = @storageKey,
-  storage_url = @storageUrl,
-  checksum_sha256 = @checksumSha256,
+  stored_file_id = @storedFileId,
   image_width_px = @imageWidthPx,
   image_height_px = @imageHeightPx,
   updated_at = sysutcdatetime(),
   updated_by = @updatedBy
 where form_instance_document_id = @documentId
   and form_instance_id = @instanceId
-  and atrium_installation_code = @code;
+  and atrium_installation_code = @code
+  and stored_file_id is null;
+
+if @@rowcount = 0
+begin
+  rollback tran;
+  throw 50000, 'form instance document file could not be linked', 1;
+end;
+
+commit tran;
 
 select top 1
   d.form_instance_document_id,
@@ -1540,17 +1676,19 @@ select top 1
   d.document_number,
   d.document_date,
   d.revision,
-  d.file_name,
-  d.mime_type,
-  d.file_size_bytes,
-  d.uploaded_at,
-  d.uploaded_by,
-  d.file_last_modified_at,
-  d.file_last_modified_by,
-  d.storage_provider,
-  d.storage_key,
-  d.storage_url,
-  d.checksum_sha256,
+  sf.file_name,
+  sf.mime_type,
+  sf.file_extension,
+  sf.file_size_bytes,
+  sf.uploaded_at,
+  sf.uploaded_by,
+  sf.file_last_modified_at,
+  sf.file_last_modified_by,
+  sf.storage_provider,
+  sf.storage_container,
+  sf.storage_key,
+  sf.storage_url,
+  sf.checksum_sha256,
   d.image_width_px,
   d.image_height_px,
   d.image_variant,
@@ -1560,6 +1698,9 @@ select top 1
   d.updated_at,
   d.updated_by
 from dbo.FormInstanceDocument d
+left join dbo.StoredFile sf
+  on sf.stored_file_id = d.stored_file_id
+ and sf.is_deleted = 0
 where d.form_instance_document_id = @documentId
   and d.form_instance_id = @instanceId
   and d.atrium_installation_code = @code;
@@ -1591,20 +1732,25 @@ begin
   throw 50000, 'form instance not editable', 1;
 end;
 
-update dbo.FormInstanceDocument
+update sf
 set
   file_name = @fileName,
+  file_extension = @fileExtension,
   storage_provider = @storageProvider,
+  storage_container = @storageContainer,
   storage_key = @storageKey,
   storage_url = @storageUrl,
   file_last_modified_at = sysutcdatetime(),
   file_last_modified_by = @updatedBy,
   updated_at = sysutcdatetime(),
   updated_by = @updatedBy
-where form_instance_document_id = @documentId
-  and form_instance_id = @instanceId
-  and atrium_installation_code = @code
-  and storage_key is not null;
+from dbo.StoredFile sf
+join dbo.FormInstanceDocument d
+  on d.stored_file_id = sf.stored_file_id
+where d.form_instance_document_id = @documentId
+  and d.form_instance_id = @instanceId
+  and d.atrium_installation_code = @code
+  and sf.is_deleted = 0;
 
 select top 1
   d.form_instance_document_id,
@@ -1616,17 +1762,19 @@ select top 1
   d.document_number,
   d.document_date,
   d.revision,
-  d.file_name,
-  d.mime_type,
-  d.file_size_bytes,
-  d.uploaded_at,
-  d.uploaded_by,
-  d.file_last_modified_at,
-  d.file_last_modified_by,
-  d.storage_provider,
-  d.storage_key,
-  d.storage_url,
-  d.checksum_sha256,
+  sf.file_name,
+  sf.mime_type,
+  sf.file_extension,
+  sf.file_size_bytes,
+  sf.uploaded_at,
+  sf.uploaded_by,
+  sf.file_last_modified_at,
+  sf.file_last_modified_by,
+  sf.storage_provider,
+  sf.storage_container,
+  sf.storage_key,
+  sf.storage_url,
+  sf.checksum_sha256,
   d.image_width_px,
   d.image_height_px,
   d.image_variant,
@@ -1636,6 +1784,9 @@ select top 1
   d.updated_at,
   d.updated_by
 from dbo.FormInstanceDocument d
+left join dbo.StoredFile sf
+  on sf.stored_file_id = d.stored_file_id
+ and sf.is_deleted = 0
 where d.form_instance_document_id = @documentId
   and d.form_instance_id = @instanceId
   and d.atrium_installation_code = @code;
@@ -1732,13 +1883,15 @@ select top 1
   d.document_number,
   d.document_date,
   d.revision,
-  d.file_name,
-  d.mime_type,
-  d.file_size_bytes,
-  d.uploaded_at,
-  d.uploaded_by,
-  d.storage_provider,
-  d.storage_key,
+  sf.file_name,
+  sf.mime_type,
+  sf.file_extension,
+  sf.file_size_bytes,
+  sf.uploaded_at,
+  sf.uploaded_by,
+  sf.storage_provider,
+  sf.storage_container,
+  sf.storage_key,
   d.image_width_px,
   d.image_height_px,
   d.image_variant,
@@ -1748,6 +1901,9 @@ select top 1
   d.updated_at,
   d.updated_by
 from dbo.FormInstanceDocument d
+left join dbo.StoredFile sf
+  on sf.stored_file_id = d.stored_file_id
+ and sf.is_deleted = 0
 where d.form_instance_document_id = @newId;
 `;
 
@@ -1842,13 +1998,15 @@ select top 1
   d.document_number,
   d.document_date,
   d.revision,
-  d.file_name,
-  d.mime_type,
-  d.file_size_bytes,
-  d.uploaded_at,
-  d.uploaded_by,
-  d.storage_provider,
-  d.storage_key,
+  sf.file_name,
+  sf.mime_type,
+  sf.file_extension,
+  sf.file_size_bytes,
+  sf.uploaded_at,
+  sf.uploaded_by,
+  sf.storage_provider,
+  sf.storage_container,
+  sf.storage_key,
   d.image_width_px,
   d.image_height_px,
   d.image_variant,
@@ -1858,6 +2016,9 @@ select top 1
   d.updated_at,
   d.updated_by
 from dbo.FormInstanceDocument d
+left join dbo.StoredFile sf
+  on sf.stored_file_id = d.stored_file_id
+ and sf.is_deleted = 0
 where d.form_instance_document_id = @newId;
 `;
 
@@ -1946,44 +2107,103 @@ begin
   throw 50000, 'form instance document not editable', 1;
 end;
 
-delete from dbo.FormInstanceDocumentFollowUpActionMap
-where form_instance_document_id = @documentId;
+declare @storedFileId uniqueidentifier = (
+  select stored_file_id
+  from dbo.FormInstanceDocument
+  where form_instance_document_id = @documentId
+);
 
-insert into dbo.FormInstanceDocumentFollowUpActionMap (
-  form_instance_document_id,
+if @storedFileId is null
+begin
+  throw 50000, 'form instance document has no stored file', 1;
+end;
+
+declare @affectedActions table (follow_up_action_id uniqueidentifier primary key);
+
+insert into @affectedActions (follow_up_action_id)
+select follow_up_action_id
+from dbo.FollowUpActionAttachmentMap
+where stored_file_id = @storedFileId;
+
+insert into @affectedActions (follow_up_action_id)
+select distinct try_convert(uniqueidentifier, json_value(j.value, '$.follow_up_action_id'))
+from openjson(@itemsJson) j
+where try_convert(uniqueidentifier, json_value(j.value, '$.follow_up_action_id')) is not null
+  and not exists (
+    select 1 from @affectedActions a
+    where a.follow_up_action_id = try_convert(uniqueidentifier, json_value(j.value, '$.follow_up_action_id'))
+  );
+
+delete from dbo.FollowUpActionAttachmentMap
+where stored_file_id = @storedFileId;
+
+update m
+set is_primary = 0
+from dbo.FollowUpActionAttachmentMap m
+where m.follow_up_action_id in (
+  select try_convert(uniqueidentifier, json_value(j.value, '$.follow_up_action_id'))
+  from openjson(@itemsJson) j
+  where isnull(try_convert(bit, json_value(j.value, '$.is_primary')), 0) = 1
+);
+
+insert into dbo.FollowUpActionAttachmentMap (
   follow_up_action_id,
+  stored_file_id,
+  attachment_role,
   is_primary,
+  customer_visible,
   created_at,
   created_by
 )
 select
-  @documentId,
   try_convert(uniqueidentifier, json_value(j.value, '$.follow_up_action_id')),
+  @storedFileId,
+  N'EVIDENCE',
   isnull(try_convert(bit, json_value(j.value, '$.is_primary')), 0),
+  0,
   sysutcdatetime(),
   @updatedBy
 from openjson(@itemsJson) j
 where try_convert(uniqueidentifier, json_value(j.value, '$.follow_up_action_id')) is not null
   and exists (
     select 1
-    from dbo.FormFollowUpAction fa
-    where fa.follow_up_action_id = try_convert(uniqueidentifier, json_value(j.value, '$.follow_up_action_id'))
-      and fa.form_instance_id = @instanceId
+    from dbo.FollowUpAction a
+    join dbo.FollowUpActionFormSource fs
+      on fs.follow_up_action_id = a.follow_up_action_id
+    where a.follow_up_action_id = try_convert(uniqueidentifier, json_value(j.value, '$.follow_up_action_id'))
+      and fs.form_instance_id = @instanceId
   );
 
+insert into dbo.FollowUpActionEvent
+  (follow_up_action_id, event_type, new_values_json, actor_display_name_snapshot)
 select
-  m.form_instance_document_id,
-  fa.follow_up_action_id,
-  fa.source_fingerprint,
-  fa.workflow_title,
-  fa.category,
-  fa.status,
+  affected.follow_up_action_id,
+  N'ATTACHMENTS_REPLACED',
+  (
+    select m.stored_file_id, m.attachment_role, m.is_primary, m.customer_visible
+    from dbo.FollowUpActionAttachmentMap m
+    where m.follow_up_action_id = affected.follow_up_action_id
+    order by m.is_primary desc, m.created_at asc
+    for json path
+  ),
+  @updatedBy
+from @affectedActions affected;
+
+select
+  @documentId as form_instance_document_id,
+  a.follow_up_action_id,
+  fs.source_fingerprint,
+  a.workflow_title,
+  a.category,
+  a.status,
   m.is_primary
-from dbo.FormInstanceDocumentFollowUpActionMap m
-join dbo.FormFollowUpAction fa
-  on fa.follow_up_action_id = m.follow_up_action_id
-where m.form_instance_document_id = @documentId
-order by m.is_primary desc, fa.workflow_title asc;
+from dbo.FollowUpActionAttachmentMap m
+join dbo.FollowUpAction a
+  on a.follow_up_action_id = m.follow_up_action_id
+join dbo.FollowUpActionFormSource fs
+  on fs.follow_up_action_id = a.follow_up_action_id
+where m.stored_file_id = @storedFileId
+order by m.is_primary desc, a.workflow_title asc;
 `;
 
 export const deleteFormInstanceDocumentSql = `
@@ -2015,6 +2235,21 @@ if not exists (
 begin
   throw 50000, 'form instance document not found', 1;
 end;
+
+update sf
+set
+  is_deleted = 1,
+  deleted_at = sysutcdatetime(),
+  deleted_by = @updatedBy,
+  updated_at = sysutcdatetime(),
+  updated_by = @updatedBy
+from dbo.StoredFile sf
+join dbo.FormInstanceDocument d
+  on d.stored_file_id = sf.stored_file_id
+where d.form_instance_document_id = @documentId
+  and d.form_instance_id = @instanceId
+  and d.atrium_installation_code = @code
+  and sf.is_deleted = 0;
 
 update dbo.FormInstanceDocument
 set

@@ -3,13 +3,17 @@
   "private": true,
   "version": "0.0.0",
   "type": "module",
+  "engines": {
+    "node": ">=24 <25"
+  },
   "scripts": {
     "dev": "node ./scripts/dev.mjs",
     "build": "node ./node_modules/typescript/bin/tsc",
     "start": "node dist/server.js",
     "playwright:install": "node ./scripts/playwright-install.mjs",
     "playwright:check": "node ./scripts/playwright-check.mjs",
-    "playwright:bundle-linux-libs": "bash ./scripts/playwright-bundle-linux-libs.sh"
+    "playwright:bundle-linux-libs": "bash ./scripts/playwright-bundle-linux-libs.sh",
+    "test:forms-hub-context": "node --import tsx --test ./tests/formsHubContext.test.ts"
   },
   "dependencies": {
     "@azure/identity": "^4.13.0",

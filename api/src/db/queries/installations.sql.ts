@@ -365,13 +365,15 @@ select
   d.document_number,
   d.document_date,
   d.revision,
-  d.file_name,
-  d.mime_type,
-  d.file_size_bytes,
-  d.storage_provider,
-  d.storage_key,
-  d.storage_url,
-  d.checksum_sha256,
+  sf.file_name,
+  sf.mime_type,
+  sf.file_extension,
+  sf.file_size_bytes,
+  sf.storage_provider,
+  sf.storage_container,
+  sf.storage_key,
+  sf.storage_url,
+  sf.checksum_sha256,
   d.source_system,
   d.source_reference,
   d.is_active as document_is_active,
@@ -381,6 +383,9 @@ from dbo.DocumentType dt
 left join dbo.InstallationDocument d
   on d.document_type_key = dt.document_type_key
   and d.atrium_installation_code = @code
+left join dbo.StoredFile sf
+  on sf.stored_file_id = d.stored_file_id
+ and sf.is_deleted = 0
 where dt.is_active = 1
 and (
   -- geen mappings => altijd zichtbaar
@@ -471,13 +476,6 @@ using (
     src.document_number,
     src.document_date,
     src.revision,
-    src.file_name,
-    src.mime_type,
-    src.file_size_bytes,
-    src.storage_provider,
-    src.storage_key,
-    src.storage_url,
-    src.checksum_sha256,
     src.source_system,
     src.source_reference,
     src.is_active
@@ -490,15 +488,6 @@ using (
     document_number nvarchar(100) '$.document_number',
     document_date date '$.document_date',
     revision nvarchar(50) '$.revision',
-
-    file_name nvarchar(260) '$.file_name',
-    mime_type nvarchar(120) '$.mime_type',
-    file_size_bytes bigint '$.file_size_bytes',
-
-    storage_provider nvarchar(64) '$.storage_provider',
-    storage_key nvarchar(1024) '$.storage_key',
-    storage_url nvarchar(2048) '$.storage_url',
-    checksum_sha256 nvarchar(128) '$.checksum_sha256',
 
     source_system nvarchar(64) '$.source_system',
     source_reference nvarchar(256) '$.source_reference',
@@ -521,15 +510,6 @@ when matched then update set
   tgt.document_date = s.document_date,
   tgt.revision = s.revision,
 
-  tgt.file_name = s.file_name,
-  tgt.mime_type = s.mime_type,
-  tgt.file_size_bytes = s.file_size_bytes,
-
-  tgt.storage_provider = s.storage_provider,
-  tgt.storage_key = s.storage_key,
-  tgt.storage_url = s.storage_url,
-  tgt.checksum_sha256 = s.checksum_sha256,
-
   tgt.source_system = s.source_system,
   tgt.source_reference = s.source_reference,
 
@@ -545,15 +525,6 @@ when not matched then insert (
   document_number,
   document_date,
   revision,
-
-  file_name,
-  mime_type,
-  file_size_bytes,
-
-  storage_provider,
-  storage_key,
-  storage_url,
-  checksum_sha256,
 
   source_system,
   source_reference,
@@ -571,15 +542,6 @@ when not matched then insert (
   s.document_number,
   s.document_date,
   s.revision,
-
-  s.file_name,
-  s.mime_type,
-  s.file_size_bytes,
-
-  s.storage_provider,
-  s.storage_key,
-  s.storage_url,
-  s.checksum_sha256,
 
   s.source_system,
   s.source_reference,
@@ -704,7 +666,7 @@ outer apply (
     where d.atrium_installation_code = m.atrium_installation_code
       and d.document_type_key = req.document_type_key
       and d.is_active = 1
-      and d.storage_key is not null
+      and d.stored_file_id is not null
     order by
       d.created_at desc,
       d.document_id desc

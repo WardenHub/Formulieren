@@ -61,18 +61,20 @@ select
   d.document_date,
   d.revision,
 
-  d.file_name,
-  d.mime_type,
-  d.file_size_bytes,
-  d.uploaded_at,
-  d.uploaded_by,
-  d.file_last_modified_at,
-  d.file_last_modified_by,
+  sf.file_name,
+  sf.mime_type,
+  sf.file_extension,
+  sf.file_size_bytes,
+  sf.uploaded_at,
+  sf.uploaded_by,
+  sf.file_last_modified_at,
+  sf.file_last_modified_by,
 
-  d.storage_provider,
-  d.storage_key,
-  d.storage_url,
-  d.checksum_sha256,
+  sf.storage_provider,
+  sf.storage_container,
+  sf.storage_key,
+  sf.storage_url,
+  sf.checksum_sha256,
 
   d.source_system,
   d.source_reference,
@@ -88,6 +90,9 @@ left join dbo.InstallationDocument d
  and d.atrium_installation_code = @code
 left join dbo.InstallationDocument pd
   on pd.document_id = d.parent_document_id
+left join dbo.StoredFile sf
+  on sf.stored_file_id = d.stored_file_id
+ and sf.is_deleted = 0
 left join dbo.DocumentType pdt
   on pdt.document_type_key = pd.document_type_key
 where dt.is_active = 1
@@ -274,22 +279,27 @@ select top 1
   d.document_number,
   d.document_date,
   d.revision,
-  d.file_name,
-  d.mime_type,
-  d.file_size_bytes,
-  d.uploaded_at,
-  d.uploaded_by,
-  d.file_last_modified_at,
-  d.file_last_modified_by,
-  d.storage_provider,
-  d.storage_key,
-  d.storage_url,
+  sf.file_name,
+  sf.mime_type,
+  sf.file_extension,
+  sf.file_size_bytes,
+  sf.uploaded_at,
+  sf.uploaded_by,
+  sf.file_last_modified_at,
+  sf.file_last_modified_by,
+  sf.storage_provider,
+  sf.storage_container,
+  sf.storage_key,
+  sf.storage_url,
   d.is_active,
   d.created_at,
   d.created_by,
   d.updated_at,
   d.updated_by
 from dbo.InstallationDocument d
+left join dbo.StoredFile sf
+  on sf.stored_file_id = d.stored_file_id
+ and sf.is_deleted = 0
 where d.atrium_installation_code = @code
   and d.document_id = @documentId;
 `;
@@ -363,22 +373,27 @@ select top 1
   d.document_number,
   d.document_date,
   d.revision,
-  d.file_name,
-  d.mime_type,
-  d.file_size_bytes,
-  d.uploaded_at,
-  d.uploaded_by,
-  d.file_last_modified_at,
-  d.file_last_modified_by,
-  d.storage_provider,
-  d.storage_key,
-  d.storage_url,
+  sf.file_name,
+  sf.mime_type,
+  sf.file_extension,
+  sf.file_size_bytes,
+  sf.uploaded_at,
+  sf.uploaded_by,
+  sf.file_last_modified_at,
+  sf.file_last_modified_by,
+  sf.storage_provider,
+  sf.storage_container,
+  sf.storage_key,
+  sf.storage_url,
   d.is_active,
   d.created_at,
   d.created_by,
   d.updated_at,
   d.updated_by
 from dbo.InstallationDocument d
+left join dbo.StoredFile sf
+  on sf.stored_file_id = d.stored_file_id
+ and sf.is_deleted = 0
 where d.document_id = @newId;
 `;
 
@@ -488,22 +503,27 @@ select top 1
   d.document_number,
   d.document_date,
   d.revision,
-  d.file_name,
-  d.mime_type,
-  d.file_size_bytes,
-  d.uploaded_at,
-  d.uploaded_by,
-  d.file_last_modified_at,
-  d.file_last_modified_by,
-  d.storage_provider,
-  d.storage_key,
-  d.storage_url,
+  sf.file_name,
+  sf.mime_type,
+  sf.file_extension,
+  sf.file_size_bytes,
+  sf.uploaded_at,
+  sf.uploaded_by,
+  sf.file_last_modified_at,
+  sf.file_last_modified_by,
+  sf.storage_provider,
+  sf.storage_container,
+  sf.storage_key,
+  sf.storage_url,
   d.is_active,
   d.created_at,
   d.created_by,
   d.updated_at,
   d.updated_by
 from dbo.InstallationDocument d
+left join dbo.StoredFile sf
+  on sf.stored_file_id = d.stored_file_id
+ and sf.is_deleted = 0
 where d.document_id = @newId;
 `;
 
@@ -529,29 +549,63 @@ if exists (
   from dbo.InstallationDocument d
   where d.atrium_installation_code = @code
     and d.document_id = @documentId
-    and d.storage_key is not null
+    and d.stored_file_id is not null
 )
 begin
   throw 50000, 'document already has file', 1;
 end;
 
+set xact_abort on;
+
+declare @storedFileId uniqueidentifier = newid();
+
+begin tran;
+
+insert into dbo.StoredFile (
+  stored_file_id,
+  storage_provider,
+  storage_container,
+  storage_key,
+  storage_url,
+  file_name,
+  mime_type,
+  file_extension,
+  file_size_bytes,
+  checksum_sha256,
+  uploaded_by,
+  created_by
+)
+values (
+  @storedFileId,
+  @storageProvider,
+  @storageContainer,
+  @storageKey,
+  @storageUrl,
+  @fileName,
+  @mimeType,
+  @fileExtension,
+  @fileSizeBytes,
+  @checksumSha256,
+  @updatedBy,
+  @updatedBy
+);
+
 update dbo.InstallationDocument
 set
-  file_name = @fileName,
-  mime_type = @mimeType,
-  file_size_bytes = @fileSizeBytes,
-  storage_provider = @storageProvider,
-  storage_key = @storageKey,
-  storage_url = @storageUrl,
-  checksum_sha256 = @checksumSha256,
-  uploaded_at = sysutcdatetime(),
-  uploaded_by = @updatedBy,
-  file_last_modified_at = sysutcdatetime(),
-  file_last_modified_by = @updatedBy,
+  stored_file_id = @storedFileId,
   updated_at = sysutcdatetime(),
   updated_by = @updatedBy
 where atrium_installation_code = @code
-  and document_id = @documentId;
+  and document_id = @documentId
+  and stored_file_id is null;
+
+if @@rowcount = 0
+begin
+  rollback tran;
+  throw 50000, 'document file could not be linked', 1;
+end;
+
+commit tran;
 
 select top 1
   d.document_id,
@@ -565,23 +619,28 @@ select top 1
   d.document_number,
   d.document_date,
   d.revision,
-  d.file_name,
-  d.mime_type,
-  d.file_size_bytes,
-  d.uploaded_at,
-  d.uploaded_by,
-  d.file_last_modified_at,
-  d.file_last_modified_by,
-  d.storage_provider,
-  d.storage_key,
-  d.storage_url,
-  d.checksum_sha256,
+  sf.file_name,
+  sf.mime_type,
+  sf.file_extension,
+  sf.file_size_bytes,
+  sf.uploaded_at,
+  sf.uploaded_by,
+  sf.file_last_modified_at,
+  sf.file_last_modified_by,
+  sf.storage_provider,
+  sf.storage_container,
+  sf.storage_key,
+  sf.storage_url,
+  sf.checksum_sha256,
   d.is_active,
   d.created_at,
   d.created_by,
   d.updated_at,
   d.updated_by
 from dbo.InstallationDocument d
+left join dbo.StoredFile sf
+  on sf.stored_file_id = d.stored_file_id
+ and sf.is_deleted = 0
 where d.atrium_installation_code = @code
   and d.document_id = @documentId;
 `;

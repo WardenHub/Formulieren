@@ -51,12 +51,12 @@ begin
       sd.undone_by,
       d.document_id,
       d.title,
-      d.file_name,
+      sf.file_name,
       d.document_type_key,
       dt.naam as document_type_name,
       d.created_at,
       d.is_active,
-      cast(case when d.storage_key is not null then 1 else 0 end as bit) as has_file
+      cast(case when sf.storage_key is not null then 1 else 0 end as bit) as has_file
     from dbo.InstallationLogbookSyncDocument sd
     join dbo.InstallationLogbookSync s
       on s.installation_logbook_sync_id = sd.installation_logbook_sync_id
@@ -64,6 +64,9 @@ begin
       on l.installation_logbook_id = s.installation_logbook_id
     left join dbo.InstallationDocument d
       on d.document_id = sd.installation_document_id
+    left join dbo.StoredFile sf
+      on sf.stored_file_id = d.stored_file_id
+     and sf.is_deleted = 0
     left join dbo.DocumentType dt
       on dt.document_type_key = coalesce(sd.document_type_key, d.document_type_key)
     where l.atrium_installation_code = @codeInner
@@ -80,19 +83,19 @@ begin
     ld.remote_document_id,
     cast(N'IMPORT' as nvarchar(20)) as action,
     cast(N'IMPORTED' as nvarchar(20)) as outcome,
-    coalesce(ld.remote_name, d.file_name, d.title, N'Document') as remote_name,
+    coalesce(ld.remote_name, sf.file_name, d.title, N'Document') as remote_name,
     ld.handled_remote_time_last_modified as remote_time_last_modified,
     cast(null as nvarchar(1000)) as error_message,
     cast(null as datetime2(3)) as undone_at,
     cast(null as nvarchar(200)) as undone_by,
     d.document_id,
     d.title,
-    d.file_name,
+    sf.file_name,
     d.document_type_key,
     dt.naam as document_type_name,
     d.created_at,
     d.is_active,
-    cast(case when d.storage_key is not null then 1 else 0 end as bit) as has_file
+    cast(case when sf.storage_key is not null then 1 else 0 end as bit) as has_file
   from dbo.InstallationLogbookSync s
   join dbo.InstallationLogbook l
     on l.installation_logbook_id = s.installation_logbook_id
@@ -101,6 +104,9 @@ begin
    and d.source_system = N'DigitaalLogboek'
    and d.created_at >= s.started_at
    and d.created_at <= coalesce(s.completed_at, sysutcdatetime())
+  left join dbo.StoredFile sf
+    on sf.stored_file_id = d.stored_file_id
+   and sf.is_deleted = 0
   join dbo.InstallationLogbookDocument ld
     on ld.installation_logbook_id = l.installation_logbook_id
    and ld.installation_document_id = d.document_id
@@ -293,20 +299,28 @@ begin try
   where installation_logbook_id = @installationLogbookId
     and remote_document_id = @remoteDocumentId;
 
+  declare @storedFileId uniqueidentifier = newid();
+
+  insert into dbo.StoredFile (
+    stored_file_id, storage_provider, storage_key, storage_url,
+    file_name, mime_type, file_extension, file_size_bytes, checksum_sha256,
+    uploaded_by, created_by
+  ) values (
+    @storedFileId, @storageProvider, @storageKey, @storageUrl,
+    @fileName, @mimeType, @remoteFileExtension, @fileSizeBytes, @checksumSha256,
+    @updatedBy, @updatedBy
+  );
+
   insert into dbo.InstallationDocument (
     document_id, installation_id, atrium_installation_code, document_type_key,
     parent_document_id, relation_type, title, note, document_date,
-    file_name, mime_type, file_size_bytes, uploaded_at, uploaded_by,
-    file_last_modified_at, file_last_modified_by, storage_provider, storage_key,
-    storage_url, checksum_sha256, source_system, source_reference,
+    stored_file_id, source_system, source_reference,
     is_active, created_at, created_by, updated_at, updated_by
   ) values (
     @documentId, @installationId, @code, @documentTypeKey,
     @parentDocumentId, case when @parentDocumentId is null then null else N'VERVANGING' end,
     @remoteName, N'Geïmporteerd uit Digitaal Logboek', cast(@remoteCreated as date),
-    @fileName, @mimeType, @fileSizeBytes, sysutcdatetime(), @updatedBy,
-    sysutcdatetime(), @updatedBy, @storageProvider, @storageKey,
-    @storageUrl, @checksumSha256, N'DigitaalLogboek', @sourceReference,
+    @storedFileId, N'DigitaalLogboek', @sourceReference,
     1, sysutcdatetime(), @updatedBy, sysutcdatetime(), @updatedBy
   );
 
@@ -408,17 +422,41 @@ select
   sd.remote_time_last_modified,
   sd.installation_document_id,
   sd.document_type_key,
-  d.storage_provider,
-  d.storage_key,
-  d.storage_url,
-  d.checksum_sha256,
+  sf.storage_provider,
+  sf.storage_key,
+  sf.storage_url,
+  sf.checksum_sha256,
   d.is_active,
   (
     select count_big(1)
     from dbo.InstallationDocument child
     where child.parent_document_id = d.document_id
       and child.is_active = 1
-  ) as active_related_document_count
+  ) as active_related_document_count,
+  (
+    select count_big(1)
+    from (
+      select p.drawing_pin_id as reference_id
+      from dbo.DrawingPin p
+      where p.installation_document_id = d.document_id
+      union all
+      select c.installation_certificate_id
+      from dbo.InstallationCertificate c
+      where c.installation_document_id = d.document_id
+      union all
+      select r.inspection_case_report_id
+      from dbo.InspectionCaseReport r
+      where r.installation_document_id = d.document_id
+      union all
+      select r.inspection_case_document_requirement_id
+      from dbo.InspectionCaseDocumentRequirement r
+      where r.installation_document_id = d.document_id
+      union all
+      select p.installation_document_id
+      from dbo.InspectionCaseDocumentPackageItem p
+      where p.installation_document_id = d.document_id
+    ) audit_reference
+  ) as audit_reference_count
 from dbo.InstallationLogbookSyncDocument sd
 join dbo.InstallationLogbookSync s
   on s.installation_logbook_sync_id = sd.installation_logbook_sync_id
@@ -426,6 +464,9 @@ join dbo.InstallationLogbook l
   on l.installation_logbook_id = s.installation_logbook_id
 join dbo.InstallationDocument d
   on d.document_id = sd.installation_document_id
+left join dbo.StoredFile sf
+  on sf.stored_file_id = d.stored_file_id
+ and sf.is_deleted = 0
 where l.atrium_installation_code = @code
   and s.installation_logbook_sync_id = @syncId
   and sd.outcome = N'IMPORTED'
@@ -474,13 +515,30 @@ begin try
   )
     throw 50000, 'logbook document has active related documents', 1;
 
+  if exists (select 1 from dbo.DrawingPin where installation_document_id = @documentId)
+    or exists (select 1 from dbo.InstallationCertificate where installation_document_id = @documentId)
+    or exists (select 1 from dbo.InspectionCaseReport where installation_document_id = @documentId)
+    or exists (select 1 from dbo.InspectionCaseDocumentRequirement where installation_document_id = @documentId)
+    or exists (select 1 from dbo.InspectionCaseDocumentPackageItem where installation_document_id = @documentId)
+    throw 50000, 'logbook document has audit references', 1;
+
+  update sf
+  set
+    is_deleted = 1,
+    deleted_at = sysutcdatetime(),
+    deleted_by = @updatedBy,
+    updated_at = sysutcdatetime(),
+    updated_by = @updatedBy
+  from dbo.StoredFile sf
+  join dbo.InstallationDocument d
+    on d.stored_file_id = sf.stored_file_id
+  where d.document_id = @documentId
+    and d.atrium_installation_code = @code
+    and sf.is_deleted = 0;
+
   update dbo.InstallationDocument
   set
     is_active = 0,
-    storage_provider = null,
-    storage_key = null,
-    storage_url = null,
-    checksum_sha256 = null,
     updated_at = sysutcdatetime(),
     updated_by = @updatedBy
   where document_id = @documentId
@@ -505,13 +563,27 @@ set nocount on;
 set xact_abort on;
 begin transaction;
 begin try
+  update sf
+  set
+    is_deleted = 0,
+    deleted_at = null,
+    deleted_by = null,
+    storage_provider = coalesce(@storageProvider, storage_provider),
+    storage_key = coalesce(@storageKey, storage_key),
+    storage_url = coalesce(@storageUrl, storage_url),
+    checksum_sha256 = coalesce(@checksumSha256, checksum_sha256),
+    updated_at = sysutcdatetime(),
+    updated_by = @updatedBy
+  from dbo.StoredFile sf
+  join dbo.InstallationDocument d
+    on d.stored_file_id = sf.stored_file_id
+  where d.document_id = @documentId
+    and d.atrium_installation_code = @code
+    and sf.is_deleted = 1;
+
   update dbo.InstallationDocument
   set
     is_active = 1,
-    storage_provider = @storageProvider,
-    storage_key = @storageKey,
-    storage_url = @storageUrl,
-    checksum_sha256 = @checksumSha256,
     updated_at = sysutcdatetime(),
     updated_by = @updatedBy
   where document_id = @documentId
@@ -538,12 +610,15 @@ select top 1
   ld.document_type_key,
   d.document_id,
   d.is_active,
-  d.storage_key
+  sf.storage_key
 from dbo.InstallationLogbookDocument ld
 join dbo.InstallationLogbook l
   on l.installation_logbook_id = ld.installation_logbook_id
 join dbo.InstallationDocument d
   on d.document_id = ld.installation_document_id
+left join dbo.StoredFile sf
+  on sf.stored_file_id = d.stored_file_id
+ and sf.is_deleted = 0
 where l.atrium_installation_code = @code
   and d.document_id = @documentId
   and d.source_system = N'DigitaalLogboek'
@@ -555,22 +630,24 @@ set nocount on;
 set xact_abort on;
 begin transaction;
 begin try
+  declare @storedFileId uniqueidentifier = newid();
+
+  insert into dbo.StoredFile (
+    stored_file_id, storage_provider, storage_key, storage_url,
+    file_name, mime_type, file_extension, file_size_bytes, checksum_sha256,
+    uploaded_by, created_by
+  ) values (
+    @storedFileId, @storageProvider, @storageKey, @storageUrl,
+    @fileName, @mimeType, @remoteFileExtension, @fileSizeBytes, @checksumSha256,
+    @updatedBy, @updatedBy
+  );
+
   update dbo.InstallationDocument
   set
     title = @remoteName,
     note = N'Opnieuw geïmporteerd uit Digitaal Logboek',
     document_date = cast(@remoteCreated as date),
-    file_name = @fileName,
-    mime_type = @mimeType,
-    file_size_bytes = @fileSizeBytes,
-    uploaded_at = sysutcdatetime(),
-    uploaded_by = @updatedBy,
-    file_last_modified_at = sysutcdatetime(),
-    file_last_modified_by = @updatedBy,
-    storage_provider = @storageProvider,
-    storage_key = @storageKey,
-    storage_url = @storageUrl,
-    checksum_sha256 = @checksumSha256,
+    stored_file_id = @storedFileId,
     source_reference = @sourceReference,
     is_active = 1,
     updated_at = sysutcdatetime(),
@@ -578,8 +655,7 @@ begin try
   where document_id = @documentId
     and atrium_installation_code = @code
     and source_system = N'DigitaalLogboek'
-    and is_active = 0
-    and storage_key is null;
+    and is_active = 0;
 
   if @@rowcount <> 1
     throw 50000, 'logbook document not ready for reimport', 1;

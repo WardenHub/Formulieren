@@ -200,18 +200,21 @@ doc_rows as (
         d.document_number as doc_nummer,
         d.document_date as doc_datum,
         d.revision as doc_revisie,
-        d.file_name as doc_bestandsnaam,
-        d.mime_type as doc_mime,
-        d.file_size_bytes as doc_grootte_bytes,
-        d.storage_provider as doc_storage_provider,
-        d.storage_key as doc_storage_key,
-        d.storage_url as doc_storage_url,
+        sf.file_name as doc_bestandsnaam,
+        sf.mime_type as doc_mime,
+        sf.file_size_bytes as doc_grootte_bytes,
+        sf.storage_provider as doc_storage_provider,
+        sf.storage_key as doc_storage_key,
+        sf.storage_url as doc_storage_url,
         d.source_system as doc_bron,
         d.source_reference as doc_bron_id,
         d.is_active as doc_actief,
         d.created_at as doc_aangemaakt_op
       from dbo.InstallationDocument d
       join inst i on i.installation_id = d.installation_id
+      left join dbo.StoredFile sf
+        on sf.stored_file_id = d.stored_file_id
+       and sf.is_deleted = 0
       where d.is_active = 1
       order by d.created_at desc
       for json path
@@ -255,11 +258,14 @@ doc_active_docs as (
     d.document_number as doc_nummer,
     convert(nvarchar(10), d.document_date, 23) as doc_datum,
     d.revision as doc_revisie,
-    d.file_name as doc_bestandsnaam,
-    d.storage_url as doc_storage_url
+    sf.file_name as doc_bestandsnaam,
+    sf.storage_url as doc_storage_url
   from dbo.InstallationDocument d
   join inst i on i.installation_id = d.installation_id
   join doc_applicable_types t on t.document_type_key = d.document_type_key
+  left join dbo.StoredFile sf
+    on sf.stored_file_id = d.stored_file_id
+   and sf.is_deleted = 0
   where d.is_active = 1
 ),
 

@@ -21,8 +21,14 @@ import {
   updateFormFollowUpCertificateImpactSql,
   insertManualFormFollowUpSql,
 } from "../db/queries/formFollowUps.sql.js";
+import {
+  getFollowUpFinalizeGateSql,
+  getFollowUpReviewItemsSql,
+  createFollowUpReviewBatchSql,
+} from "../db/queries/followUpReviews.sql.js";
 import { getUserProfileSql } from "../db/queries/profile.sql.js";
 import { isHistoricalInstallationStatus } from "./installationsService.js";
+import { syncDefinitionFollowUps } from "./formDefinitionFollowUpRuleService.js";
 import {
   getUserActorCandidates,
   getUserAuditActor,
@@ -54,6 +60,17 @@ function normalizeOptionalString(value: any): string | null {
   if (value == null) return null;
   const s = String(value).trim();
   return s ? s : null;
+}
+
+function parseJsonArray(value: any) {
+  if (Array.isArray(value)) return value;
+  if (typeof value !== "string" || !value.trim()) return [];
+  try {
+    const parsed = JSON.parse(value);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
 }
 
 function normalizeBoolean(value: any, fallback = false): boolean {
@@ -121,6 +138,7 @@ function actionSet() {
     set_ingediend: false,
     set_concept: false,
     set_afgehandeld: false,
+    review_followups: false,
     pdf_export: false,
   };
 }
@@ -148,8 +166,9 @@ function buildAllowedActions(item: any, followUpSummary: any, roles: string[]) {
     allowed.set_ingediend = true;
     allowed.set_concept = true;
     allowed.set_afgehandeld = canMarkDone;
+    allowed.review_followups = !canMarkDone;
     if (!canMarkDone) {
-      hints.set_afgehandeld = "Nog niet mogelijk; er staan nog open opvolgacties.";
+      hints.set_afgehandeld = "Leg eerst de installatiebrede opvolgingsreview vast.";
     }
   }
 
@@ -192,6 +211,22 @@ async function getFollowUpChainSummary(formInstanceId: number) {
     informative_count: Number(row?.informative_count ?? 0),
     relevant_count: Number(row?.relevant_count ?? 0),
     can_mark_form_done: Number(row?.open_count ?? 0) === 0,
+  };
+}
+
+async function getFinalizeGate(formInstanceId: number) {
+  const rows = await sqlQuery(getFollowUpFinalizeGateSql, { formInstanceId });
+  const row: any = rows?.[0] ?? {};
+
+  return {
+    latest_review_batch_id: normalizeOptionalString(row?.latest_review_batch_id),
+    required_review_count: Number(row?.required_review_count ?? 0),
+    reviewed_count: Number(row?.reviewed_count ?? 0),
+    missing_review_count: Number(row?.missing_review_count ?? 0),
+    missing_assignment_count: Number(row?.missing_assignment_count ?? 0),
+    missing_due_date_count: Number(row?.missing_due_date_count ?? 0),
+    missing_attachment_count: Number(row?.missing_attachment_count ?? 0),
+    can_finalize: Boolean(row?.can_finalize),
   };
 }
 
@@ -468,11 +503,16 @@ export async function getMonitorDetail(formInstanceIdRaw: any, context: DetailCo
     if (!item) return { error: "not found" };
   }
 
-  const [parent, children, followUpSummary] = await Promise.all([
+  const [parent, children, followUpSummaryRaw, finalizeGate] = await Promise.all([
     getParentRow(formInstanceId),
     getChildrenRows(formInstanceId),
     getFollowUpChainSummary(formInstanceId),
+    getFinalizeGate(formInstanceId),
   ]);
+  const followUpSummary = {
+    ...followUpSummaryRaw,
+    can_mark_form_done: finalizeGate.can_finalize,
+  };
   const complimentPoints = await sqlQuery(getFormInstanceComplimentPointsSql, { formInstanceId });
 
   const { allowed, hints } = buildAllowedActions(item, followUpSummary, context.roles || []);
@@ -482,6 +522,7 @@ export async function getMonitorDetail(formInstanceIdRaw: any, context: DetailCo
     parent,
     children,
     follow_up_summary: followUpSummary,
+    finalize_gate: finalizeGate,
     compliment_points: Array.isArray(complimentPoints) ? complimentPoints : [],
     allowed_actions: allowed,
     action_hints: hints,
@@ -507,15 +548,95 @@ export async function getMonitorFollowUps(formInstanceIdRaw: any, _context: User
   const detail = await getMonitorDetailRow(formInstanceId);
   if (!detail) return { error: "not found" };
 
-  const [rows, summary] = await Promise.all([
+  const [rows, summaryRaw, finalizeGate] = await Promise.all([
     sqlQuery(getFormFollowUpsMonitorByChainSql, { formInstanceId }),
     getFollowUpChainSummary(formInstanceId),
+    getFinalizeGate(formInstanceId),
   ]);
 
   return {
-    items: Array.isArray(rows) ? rows : [],
-    summary,
+    items: Array.isArray(rows)
+      ? rows.map((row: any) => ({
+          ...row,
+          drawing_pins: parseJsonArray(row.drawing_pins_json),
+          drawing_pins_json: undefined,
+        }))
+      : [],
+    summary: { ...summaryRaw, can_mark_form_done: finalizeGate.can_finalize },
+    finalize_gate: finalizeGate,
   };
+}
+
+export async function getMonitorFollowUpReview(formInstanceIdRaw: any, context: UserContext) {
+  const formInstanceId = parsePositiveInt(formInstanceIdRaw);
+  if (formInstanceId == null) return { error: "not found" };
+
+  const detail = await getMonitorDetailRow(formInstanceId);
+  if (!detail) return { error: "not found" };
+  if (isHistoricalInstallationStatus(detail.installation_status)) {
+    throw new Error("historical installation read-only");
+  }
+
+  const [items, gate] = await Promise.all([
+    sqlQuery(getFollowUpReviewItemsSql, { formInstanceId }),
+    getFinalizeGate(formInstanceId),
+  ]);
+
+  return {
+    items: Array.isArray(items)
+      ? items.map((row: any) => ({
+          ...row,
+          drawing_pins: parseJsonArray(row.drawing_pins_json),
+          drawing_pins_json: undefined,
+        }))
+      : [],
+    gate,
+    permissions: { can_review: isManager(context.roles || []) },
+  };
+}
+
+export async function createMonitorFollowUpReview(
+  formInstanceIdRaw: any,
+  payload: any,
+  context: UserContext
+) {
+  const formInstanceId = parsePositiveInt(formInstanceIdRaw);
+  if (formInstanceId == null) return { error: "not found" };
+  if (!isManager(context.roles || [])) throw new Error("forbidden");
+
+  const detail = await getMonitorDetailRow(formInstanceId);
+  if (!detail) return { error: "not found" };
+  if (isHistoricalInstallationStatus(detail.installation_status)) {
+    throw new Error("historical installation read-only");
+  }
+  if (String(detail.status || "").trim() !== "IN_BEHANDELING") {
+    throw new Error("invalid status transition");
+  }
+
+  const rawItems = Array.isArray(payload?.items) ? payload.items : [];
+  const items = rawItems.map((item: any) => ({
+    follow_up_action_id: normalizeOptionalString(item?.follow_up_action_id),
+    review_decision: normalizeOptionalString(item?.review_decision)?.toUpperCase(),
+    customer_discussed: normalizeBoolean(item?.customer_discussed, false),
+    customer_visible: normalizeBoolean(item?.customer_visible, false),
+    certificate_impact: normalizeCertificateImpactOverride(item?.certificate_impact),
+    review_note: normalizeOptionalString(item?.review_note),
+  }));
+
+  if (items.some((item: any) => !item.follow_up_action_id || !item.review_decision || !item.certificate_impact)) {
+    throw new Error("follow-up review classification invalid");
+  }
+
+  const actor = getUserAuditActor(context.user);
+  const rows = await sqlQuery(createFollowUpReviewBatchSql, {
+    formInstanceId,
+    itemsJson: JSON.stringify(items),
+    actor,
+  });
+  const batch = rows?.[0] ?? null;
+  const gate = await getFinalizeGate(formInstanceId);
+
+  return { ok: true, batch, gate };
 }
 
 export async function createMonitorManualFollowUp(
@@ -605,7 +726,12 @@ export async function runMonitorFormStatusAction(formInstanceIdRaw: any, action:
     throw new Error("historical installation read-only");
   }
 
-  const followUpSummary = await getFollowUpChainSummary(formInstanceId);
+  const followUpSummaryRaw = await getFollowUpChainSummary(formInstanceId);
+  const finalizeGate = await getFinalizeGate(formInstanceId);
+  const followUpSummary = {
+    ...followUpSummaryRaw,
+    can_mark_form_done: finalizeGate.can_finalize,
+  };
 
   assertFormStatusActionAllowed(item, action, context.roles || [], followUpSummary);
 
@@ -616,6 +742,26 @@ export async function runMonitorFormStatusAction(formInstanceIdRaw: any, action:
     nextStatus,
     updatedBy: actor,
   });
+
+  if (nextStatus === "AFGEHANDELD") {
+    let answers: Record<string, any> = {};
+    try {
+      const parsed = item.answers_json == null || item.answers_json === ""
+        ? {}
+        : typeof item.answers_json === "object"
+          ? item.answers_json
+          : JSON.parse(String(item.answers_json));
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) answers = parsed;
+    } catch {
+      throw new Error("answers_json is invalid during finalize");
+    }
+    await syncDefinitionFollowUps({
+      formInstanceId,
+      answers,
+      user: context.user,
+      triggers: ["ON_FINALIZE"],
+    });
+  }
 
   return await getMonitorDetail(formInstanceId, {
     user: context.user,
