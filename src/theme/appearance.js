@@ -20,6 +20,17 @@ function resolveEffectiveAppearance(preference) {
   return "dark";
 }
 
+export function getResolvedAppearance() {
+  if (typeof document === "undefined") return "dark";
+  return document.documentElement.dataset.appearance === "light" ? "light" : "dark";
+}
+
+export function subscribeAppearance(listener) {
+  if (typeof window === "undefined") return () => {};
+  window.addEventListener("ember:appearance-change", listener);
+  return () => window.removeEventListener("ember:appearance-change", listener);
+}
+
 export function applyAppearancePreference(preference) {
   const pref = normalizeAppearance(preference);
   const effective = resolveEffectiveAppearance(pref);
@@ -32,6 +43,10 @@ export function applyAppearancePreference(preference) {
   } catch {
     // stil
   }
+
+  window.dispatchEvent(new CustomEvent("ember:appearance-change", {
+    detail: { preference: pref, effective },
+  }));
 
   return { preference: pref, effective };
 }

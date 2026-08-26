@@ -1,8 +1,11 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { useSearchParams } from "react-router-dom";
 import { GlobalWorkerOptions, getDocument as loadPdfDocument } from "pdfjs-dist";
 import pdfWorkerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 import { MapPin, MessageSquareText, MoreVertical, TriangleAlert } from "lucide-react";
+
+import EmberRadialActionMenu from "@/components/radial/EmberRadialActionMenu.jsx";
+import { getResolvedAppearance, subscribeAppearance } from "@/theme/appearance.js";
 
 import {
   createDrawingPin,
@@ -18,15 +21,43 @@ import {
 
 GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
 
+const DRAWING_QUICK_ACTIONS = [
+  {
+    id: "pin",
+    label: "Pin",
+    icon: MapPin,
+    tone: "primary",
+  },
+  {
+    id: "note",
+    label: "Opmerking",
+    icon: MessageSquareText,
+    tone: "note",
+  },
+  {
+    id: "defect",
+    label: "Tekortkoming",
+    icon: TriangleAlert,
+    tone: "danger",
+  },
+];
+
 function PdfPinViewer({ pdfDocument, pageNumber, pins, selectedPinId, placing, onPlace, onSelect, onQuickAction, readOnly }) {
   const shellRef = useRef(null);
+  const layerRef = useRef(null);
   const canvasRef = useRef(null);
   const [pageSize, setPageSize] = useState({ width: 0, height: 0 });
   const [shellWidth, setShellWidth] = useState(900);
   const [rendering, setRendering] = useState(false);
   const [quickMenu, setQuickMenu] = useState(null);
-  const menuRef = useRef(null);
+  const [boundaryElement, setBoundaryElement] = useState(null);
+  const menuTriggerRef = useRef(null);
   const longPressRef = useRef(null);
+  const resolvedTheme = useSyncExternalStore(
+    subscribeAppearance,
+    getResolvedAppearance,
+    () => "dark",
+  );
 
   useEffect(() => {
     if (!shellRef.current) return undefined;
@@ -77,30 +108,51 @@ function PdfPinViewer({ pdfDocument, pageNumber, pins, selectedPinId, placing, o
 
   const pagePins = pins.filter((pin) => Number(pin.page_number) === Number(pageNumber));
 
+  useEffect(() => () => {
+    if (longPressRef.current) window.clearTimeout(longPressRef.current);
+  }, []);
+
+  const showQuickMenu = useCallback((position, triggerElement) => {
+    menuTriggerRef.current = triggerElement || layerRef.current;
+    setQuickMenu(position);
+  }, []);
+
+  const closeQuickMenu = useCallback(({ restoreFocus = true } = {}) => {
+    const triggerElement = menuTriggerRef.current;
+    setQuickMenu(null);
+    if (restoreFocus && triggerElement?.focus) {
+      window.requestAnimationFrame(() => triggerElement.focus({ preventScroll: true }));
+    }
+  }, []);
+
+  const connectLayerElement = useCallback((element) => {
+    layerRef.current = element;
+    setBoundaryElement(element);
+  }, []);
+
   useEffect(() => {
     if (!quickMenu) return undefined;
     const close = (event) => {
       if (event.type === "keydown" && event.key !== "Escape") return;
-      if (event.type === "pointerdown" && menuRef.current?.contains(event.target)) return;
-      setQuickMenu(null);
+      if (event.type === "pointerdown" && event.target?.closest?.(".ember-radial-action-menu")) return;
+      closeQuickMenu();
     };
     window.addEventListener("keydown", close);
     window.addEventListener("pointerdown", close);
-    window.requestAnimationFrame(() => menuRef.current?.querySelector("button")?.focus());
     return () => {
       window.removeEventListener("keydown", close);
       window.removeEventListener("pointerdown", close);
     };
-  }, [quickMenu]);
+  }, [closeQuickMenu, quickMenu]);
 
   function positionFromEvent(event) {
     const layer = event.currentTarget;
     const rect = layer.getBoundingClientRect();
-    const offsetX = Math.min(rect.width - 72, Math.max(72, event.clientX - rect.left));
-    const offsetY = Math.min(rect.height - 72, Math.max(72, event.clientY - rect.top));
+    const requestedX = Math.min(rect.width, Math.max(0, event.clientX - rect.left));
+    const requestedY = Math.min(rect.height, Math.max(0, event.clientY - rect.top));
     return {
-      left: offsetX,
-      top: offsetY,
+      left: requestedX,
+      top: requestedY,
       x_normalized: Math.min(1, Math.max(0, (event.clientX - rect.left) / rect.width)),
       y_normalized: Math.min(1, Math.max(0, (event.clientY - rect.top) / rect.height)),
       page_number: pageNumber,
@@ -110,7 +162,7 @@ function PdfPinViewer({ pdfDocument, pageNumber, pins, selectedPinId, placing, o
   function openQuickMenu(event) {
     if (readOnly || placing || !pageSize.width || !pageSize.height) return;
     event.preventDefault();
-    setQuickMenu(positionFromEvent(event));
+    showQuickMenu(positionFromEvent(event), event.currentTarget);
   }
 
   function runQuickAction(kind) {
@@ -120,7 +172,7 @@ function PdfPinViewer({ pdfDocument, pageNumber, pins, selectedPinId, placing, o
       y_normalized: quickMenu.y_normalized,
       page_number: quickMenu.page_number,
     });
-    setQuickMenu(null);
+    closeQuickMenu();
   }
 
   function handlePlacement(event) {
@@ -136,6 +188,7 @@ function PdfPinViewer({ pdfDocument, pageNumber, pins, selectedPinId, placing, o
       <div className="drawing-pdf-page" style={{ width: pageSize.width || "auto", height: pageSize.height || "auto" }}>
         <canvas ref={canvasRef} aria-label={`PDF pagina ${pageNumber}`} />
         <div
+          ref={connectLayerElement}
           className="drawing-pin-layer"
           role={placing ? "button" : undefined}
           tabIndex={placing ? 0 : -1}
@@ -145,7 +198,11 @@ function PdfPinViewer({ pdfDocument, pageNumber, pins, selectedPinId, placing, o
           onPointerDown={(event) => {
             if (event.pointerType === "mouse" || readOnly || placing) return;
             const position = positionFromEvent(event);
-            longPressRef.current = window.setTimeout(() => setQuickMenu(position), 550);
+            const triggerElement = event.currentTarget;
+            longPressRef.current = window.setTimeout(() => {
+              showQuickMenu(position, triggerElement);
+              longPressRef.current = null;
+            }, 550);
           }}
           onPointerUp={() => { if (longPressRef.current) window.clearTimeout(longPressRef.current); }}
           onPointerCancel={() => { if (longPressRef.current) window.clearTimeout(longPressRef.current); }}
@@ -176,17 +233,26 @@ function PdfPinViewer({ pdfDocument, pageNumber, pins, selectedPinId, placing, o
               onClick={(event) => {
                 event.stopPropagation();
                 const rect = event.currentTarget.parentElement.getBoundingClientRect();
-                setQuickMenu({ left: rect.width - 54, top: 54, x_normalized: 0.88, y_normalized: 0.12, page_number: pageNumber });
+                showQuickMenu({
+                  left: rect.width - 54,
+                  top: 54,
+                  x_normalized: 0.88,
+                  y_normalized: 0.12,
+                  page_number: pageNumber,
+                }, event.currentTarget);
               }}
             ><MoreVertical size={19} /></button>
           ) : null}
-          {quickMenu ? (
-            <div ref={menuRef} className="drawing-radial-menu" style={{ left: quickMenu.left, top: quickMenu.top }} role="menu" aria-label="Tekeningactie">
-              <button type="button" role="menuitem" className="drawing-radial-menu__item drawing-radial-menu__item--pin" onClick={(event) => { event.stopPropagation(); runQuickAction("pin"); }}><MapPin size={18} /><span>Pin</span></button>
-              <button type="button" role="menuitem" className="drawing-radial-menu__item drawing-radial-menu__item--note" onClick={(event) => { event.stopPropagation(); runQuickAction("note"); }}><MessageSquareText size={18} /><span>Opmerking</span></button>
-              <button type="button" role="menuitem" className="drawing-radial-menu__item drawing-radial-menu__item--defect" onClick={(event) => { event.stopPropagation(); runQuickAction("defect"); }}><TriangleAlert size={18} /><span>Tekortkoming</span></button>
-            </div>
-          ) : null}
+          <EmberRadialActionMenu
+            open={Boolean(quickMenu)}
+            anchorPosition={quickMenu}
+            actions={DRAWING_QUICK_ACTIONS}
+            onSelect={(action) => runQuickAction(action.id)}
+            onClose={closeQuickMenu}
+            ariaLabel="Tekeningactie"
+            resolvedTheme={resolvedTheme}
+            boundaryElement={boundaryElement}
+          />
         </div>
       </div>
       {rendering ? <div className="drawing-pdf-loading">PDF-pagina laden...</div> : null}

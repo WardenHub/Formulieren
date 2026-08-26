@@ -1,0 +1,8 @@
+.radial-harness { min-height: 100%; padding: 20px; background: var(--bg); color: var(--text); }
+.radial-harness__toolbar { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; margin-bottom: 14px; }
+.radial-harness__toolbar button, .radial-harness__toolbar select { padding: 7px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--text); }
+.radial-harness__toolbar #state { margin-left: auto; color: var(--muted); font-size: .8rem; }
+.radial-harness__boundary { position: relative; width: min(900px, calc(100vw - 40px)); height: min(600px, calc(100vh - 100px)); min-height: 360px; overflow: hidden; border: 1px solid var(--border-strong); border-radius: 14px; background: var(--surface-2); box-shadow: var(--shadow-panel); }
+.radial-harness__sheet { position: absolute; inset: 24px; display: grid; place-content: center; gap: 6px; text-align: center; color: var(--muted); border: 1px solid var(--border-soft); background: repeating-linear-gradient(0deg, transparent 0 31px, var(--border-soft) 32px), repeating-linear-gradient(90deg, transparent 0 31px, var(--border-soft) 32px); }
+.radial-harness__sheet strong { color: var(--text-soft); font-size: 1.15rem; }
+.radial-harness__requested-point { position: absolute; z-index: 3; width: 10px; height: 10px; transform: translate(-50%, -50%); border: 2px solid var(--brand-red); border-radius: 50%; background: var(--surface); }
