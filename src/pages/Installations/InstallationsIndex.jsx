@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
+import { CheckCircle2 } from "lucide-react";
 
 import {
   getInstallationTypes,
@@ -13,6 +14,7 @@ import {
   getInstallationStatusClassName,
   getInstallationStatusLabel,
 } from "@/lib/installationStatus.js";
+import { getInstallationTypeAppearance } from "@/lib/installationTypeAppearance.js";
 import InstallationsMap from "./InstallationsMap.jsx";
 
 const DEFAULT_FILTERS = {
@@ -21,12 +23,8 @@ const DEFAULT_FILTERS = {
   coordinateMode: "ALL",
   maintenanceStatus: "",
   inspectionServiceStatus: "",
-  monitoringServiceStatus: "",
-  certificateStatus: "",
   openFormsOnly: false,
   missingDocumentsOnly: false,
-  certificationRequiredOnly: false,
-  activeInspectionOnly: false,
 };
 
 function serviceTone(status) {
@@ -75,6 +73,17 @@ function CheckFilter({ label, checked, onChange }) {
   );
 }
 
+function filterInstallationMarkers(markers, selectedTypeKeys) {
+  if (!selectedTypeKeys.length) return markers;
+  const allowed = new Set(selectedTypeKeys.map((key) => String(key).toUpperCase()));
+  return markers.map((marker) => {
+    const installations = (marker.installations || []).filter((item) => allowed.has(String(item.installation_type_key || "").toUpperCase()));
+    if (!installations.length) return null;
+    const typeKeys = [...new Set(installations.map((item) => String(item.installation_type_key || "").toUpperCase()).filter(Boolean))];
+    return { ...marker, installations, installation_count: installations.length, installation_type_key: typeKeys.length === 1 ? typeKeys[0] : null, installation_type_name: typeKeys.length === 1 ? installations[0].installation_type_name : "Gemengd" };
+  }).filter(Boolean);
+}
+
 function InstallationRow({ item }) {
   return (
     <Link
@@ -98,9 +107,11 @@ function InstallationRow({ item }) {
               label={item.installation_type_name}
             />
           ) : null}
-          <span className={`ember-label ember-label--${item.attention_status === "CRITICAL" ? "danger" : item.attention_status === "ATTENTION" ? "warning" : "success"}`}>
-            {item.attention_reason || "Geen operationele signalen"}
-          </span>
+          {item.attention_status === "CRITICAL" || item.attention_status === "ATTENTION" ? (
+            <span className={`ember-label ember-label--${item.attention_status === "CRITICAL" ? "danger" : "warning"}`}>{item.attention_reason}</span>
+          ) : (
+            <span className="ember-label ember-label--success" title="Geen operationele signalen" aria-label="Geen operationele signalen"><CheckCircle2 size={14} aria-hidden="true" /></span>
+          )}
         </div>
 
         <div className="installations-row__name">
@@ -163,6 +174,7 @@ export default function InstallationsIndex() {
   const [filters, setFilters] = useState(DEFAULT_FILTERS);
   const [data, setData] = useState({ items: [], markers: [], without_coordinates: [], summary: {} });
   const [installationTypes, setInstallationTypes] = useState([]);
+  const [selectedInstallationTypes, setSelectedInstallationTypes] = useState([]);
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState(null);
   const [viewport, setViewport] = useState(null);
@@ -193,12 +205,13 @@ export default function InstallationsIndex() {
           ...filters,
           q: q.trim(),
           onlyCurrent,
-          take: 500,
+          installationType: selectedInstallationTypes.length === 1 ? selectedInstallationTypes[0] : "",
+          take: selectedInstallationTypes.length > 1 ? 25000 : 500,
         });
         if (!cancelled) {
           setData({
-            items: response?.items || [],
-            markers: response?.markers || [],
+            items: selectedInstallationTypes.length ? (response?.items || []).filter((item) => selectedInstallationTypes.includes(String(item.installation_type_key || "").toUpperCase())) : (response?.items || []),
+            markers: filterInstallationMarkers(response?.markers || [], selectedInstallationTypes),
             without_coordinates: response?.without_coordinates || [],
             summary: response?.summary || {},
           });
@@ -215,7 +228,7 @@ export default function InstallationsIndex() {
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [filters, onlyCurrent, q, mode]);
+  }, [filters, onlyCurrent, q, mode, selectedInstallationTypes]);
 
   useEffect(() => {
     if (mode !== "map" || !viewport) return undefined;
@@ -232,22 +245,37 @@ export default function InstallationsIndex() {
       setLoading(true);
       setErr(null);
       try {
-        const response = await getInstallationsMapViewport({
-          ...viewport,
-          q: cleanQuery,
-          onlyCurrent,
-          installationType: filters.installationType,
-          followUpMode: filters.followUpMode,
-          take: cleanQuery ? 100 : 750,
-        }, { signal: controller.signal });
+        const hasOperationalFilters = Boolean(
+          filters.maintenanceStatus ||
+          filters.inspectionServiceStatus ||
+          filters.openFormsOnly ||
+          filters.missingDocumentsOnly ||
+          selectedInstallationTypes.length > 1
+        );
+        const response = hasOperationalFilters
+          ? await getInstallationsMap({
+            ...filters,
+            q: cleanQuery,
+            onlyCurrent,
+            take: cleanQuery ? 500 : 25000,
+          }, { signal: controller.signal })
+          : await getInstallationsMapViewport({
+            ...viewport,
+            q: cleanQuery,
+            onlyCurrent,
+            installationType: selectedInstallationTypes.length === 1 ? selectedInstallationTypes[0] : "",
+            followUpMode: filters.followUpMode,
+            take: cleanQuery ? 100 : 750,
+          }, { signal: controller.signal });
+        const markers = filterInstallationMarkers(response?.markers || [], selectedInstallationTypes);
         setData((current) => ({
           ...current,
-          items: cleanQuery ? (response?.markers || []).flatMap((marker) => marker.installations || []) : [],
-          markers: response?.markers || [],
+          items: cleanQuery ? markers.flatMap((marker) => marker.installations || []) : [],
+          markers,
           without_coordinates: [],
           summary: {
-            result_count: (response?.markers || []).reduce((sum, marker) => sum + Number(marker.installation_count || 0), 0),
-            marker_count: (response?.markers || []).length,
+            result_count: markers.reduce((sum, marker) => sum + Number(marker.installation_count || 0), 0),
+            marker_count: markers.length,
           },
         }));
       } catch (error) {
@@ -261,14 +289,13 @@ export default function InstallationsIndex() {
       window.clearTimeout(timer);
       controller.abort();
     };
-  }, [filters.followUpMode, filters.installationType, mode, onlyCurrent, q, viewport]);
+  }, [filters, mode, onlyCurrent, q, selectedInstallationTypes, viewport]);
 
   const visibleList = useMemo(() => data.items.slice(0, 500), [data.items]);
   const summary = data.summary || {};
 
   function setFilter(key, value) {
     setFilters((current) => ({ ...current, [key]: value }));
-    if (mode === "map" && !["followUpMode", "installationType"].includes(key)) setMode("list");
   }
 
   return (
@@ -325,14 +352,20 @@ export default function InstallationsIndex() {
             <option value="NONE">Zonder open opvolging</option>
           </FilterSelect>
 
-          <FilterSelect label="Installatiesoort" value={filters.installationType} onChange={(value) => setFilter("installationType", value)}>
-            <option value="">Alle soorten</option>
-            {installationTypes.map((type) => (
-              <option key={type.installation_type_key} value={type.installation_type_key}>
-                {type.display_name || type.installation_type_key}
-              </option>
-            ))}
-          </FilterSelect>
+          <div className="installations-type-filters" aria-label="Installatiesoort">
+            <span className="installations-filter-field__label">Installatiesoort</span>
+            <div className="installations-type-filter-buttons">
+              <button type="button" className={`installations-type-filter-button installations-type-filter-button--all${selectedInstallationTypes.length === 0 ? " is-active" : ""}`} aria-pressed={selectedInstallationTypes.length === 0} onClick={() => setSelectedInstallationTypes((current) => (current.length === 0 ? installationTypes.map((type) => String(type.installation_type_key || "").toUpperCase()) : []))}>Alle</button>
+              {installationTypes.map((type) => {
+                const key = String(type.installation_type_key || "").toUpperCase();
+                const active = selectedInstallationTypes.length === 0 || selectedInstallationTypes.includes(key);
+                return <button key={key} type="button" className={`installations-type-filter-button${active ? " is-active" : ""}`} style={{ "--type-color": getInstallationTypeAppearance(key).color }} aria-pressed={active} onClick={() => setSelectedInstallationTypes((current) => {
+                  const base = current.length === 0 ? installationTypes.map((item) => String(item.installation_type_key || "").toUpperCase()) : current;
+                  return base.includes(key) ? base.filter((item) => item !== key) : [...base, key];
+                })}>{type.display_name || key}</button>;
+              })}
+            </div>
+          </div>
 
           <FilterSelect label="Locatiegegevens" value={filters.coordinateMode} onChange={(value) => setFilter("coordinateMode", value)}>
             <option value="ALL">Met en zonder coördinaten</option>
@@ -343,41 +376,24 @@ export default function InstallationsIndex() {
           <details className="installations-advanced-filters">
             <summary>Meer filters</summary>
             <div className="installations-advanced-filters__content">
-              <FilterSelect label="Onderhoudsdienst" value={filters.maintenanceStatus} onChange={(value) => setFilter("maintenanceStatus", value)}>
+              <FilterSelect label="Heeft onderhoudscontract" value={filters.maintenanceStatus} onChange={(value) => setFilter("maintenanceStatus", value)}>
                 <option value="">Alle statussen</option>
                 <option value="ACTIVE">Actief</option>
                 <option value="INACTIVE">Niet actief</option>
                 <option value="UNKNOWN">Onbekend</option>
               </FilterSelect>
-              <FilterSelect label="Inspectiedienst" value={filters.inspectionServiceStatus} onChange={(value) => setFilter("inspectionServiceStatus", value)}>
+              <FilterSelect label="Inspectiecertificaat vereist" value={filters.inspectionServiceStatus} onChange={(value) => setFilter("inspectionServiceStatus", value)}>
                 <option value="">Alle statussen</option>
                 <option value="ACTIVE">Actief</option>
                 <option value="INACTIVE">Niet actief</option>
                 <option value="UNKNOWN">Onbekend</option>
               </FilterSelect>
-              <FilterSelect label="Meldkamerdienst" value={filters.monitoringServiceStatus} onChange={(value) => setFilter("monitoringServiceStatus", value)}>
-                <option value="">Alle statussen</option>
-                <option value="ACTIVE">Actief</option>
-                <option value="INACTIVE">Niet actief</option>
-                <option value="UNKNOWN">Onbekend</option>
-              </FilterSelect>
-              <FilterSelect label="Certificaatstatus" value={filters.certificateStatus} onChange={(value) => setFilter("certificateStatus", value)}>
-                <option value="">Alle statussen</option>
-                <option value="VALID">Geldig</option>
-                <option value="EXPIRING">Verloopt binnenkort</option>
-                <option value="EXPIRED">Verlopen</option>
-                <option value="MISSING">Ontbreekt</option>
-                <option value="REVOKED">Ingetrokken</option>
-                <option value="UNKNOWN">Onbekend</option>
-              </FilterSelect>
-              <CheckFilter label="Alleen open formulieren" checked={filters.openFormsOnly} onChange={(value) => setFilter("openFormsOnly", value)} />
-              <CheckFilter label="Alleen missende documenten" checked={filters.missingDocumentsOnly} onChange={(value) => setFilter("missingDocumentsOnly", value)} />
-              <CheckFilter label="Alleen certificaatplichtig" checked={filters.certificationRequiredOnly} onChange={(value) => setFilter("certificationRequiredOnly", value)} />
-              <CheckFilter label="Alleen actieve inspectiecases" checked={filters.activeInspectionOnly} onChange={(value) => setFilter("activeInspectionOnly", value)} />
+              <CheckFilter label="Met openstaande formulieren" checked={filters.openFormsOnly} onChange={(value) => setFilter("openFormsOnly", value)} />
+              <CheckFilter label="Verplichte documenten ontbreken" checked={filters.missingDocumentsOnly} onChange={(value) => setFilter("missingDocumentsOnly", value)} />
             </div>
           </details>
 
-          <button type="button" className="btn btn-secondary" onClick={() => setFilters(DEFAULT_FILTERS)}>
+          <button type="button" className="btn btn-secondary" onClick={() => { setFilters(DEFAULT_FILTERS); setSelectedInstallationTypes([]); }}>
             Filters wissen
           </button>
         </aside>
@@ -392,11 +408,9 @@ export default function InstallationsIndex() {
           </div>
 
           {err ? <p className="doc-error">{err}</p> : null}
-          <ApiStartupLoader state={startupLoader} />
+          {mode === "list" && startupLoader.showStartupCard ? <ApiStartupLoader state={startupLoader} /> : null}
 
-          {!loading && !err && (
-            mode === "list" ? data.items.length === 0 : data.markers.length === 0
-          ) ? (
+          {!loading && !err && mode === "list" && data.items.length === 0 ? (
             <div className="ui-empty">Geen installaties binnen deze selectie.</div>
           ) : null}
 

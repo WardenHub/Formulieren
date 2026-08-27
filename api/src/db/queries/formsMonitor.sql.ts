@@ -19,6 +19,7 @@ export const getFormsMonitorListSql = `
     nullif(ltrim(rtrim(convert(nvarchar(100), @formCode))), N'') as form_code_n,
     nullif(ltrim(rtrim(convert(nvarchar(100), @assignedUserObjectId))), N'') as assigned_user_object_id_n,
     nullif(ltrim(rtrim(convert(nvarchar(250), @assignedSearch))), N'') as assigned_search_n,
+    nullif(ltrim(rtrim(convert(nvarchar(100), @workflowRoleCode))), N'') as workflow_role_code_n,
 
     case when isnull(@mine, 0) = 1 then 1 else 0 end as mine_n,
     case when isnull(@includeWithdrawn, 0) = 1 then 1 else 0 end as include_withdrawn_n,
@@ -105,6 +106,17 @@ base as (
     and (
       p.unassigned_only_n = 0
       or fi.assigned_user_object_id is null
+    )
+    and (
+      p.workflow_role_code_n is null
+      or exists (
+        select 1
+        from dbo.FollowUpAction role_action
+        join dbo.FollowUpActionFormSource role_source
+          on role_source.follow_up_action_id = role_action.follow_up_action_id
+        where role_source.form_instance_id = fi.form_instance_id
+          and role_action.assigned_role_code = p.workflow_role_code_n
+      )
     )
     and (
       p.q_n is null

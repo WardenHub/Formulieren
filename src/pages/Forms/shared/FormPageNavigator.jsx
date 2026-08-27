@@ -43,9 +43,27 @@ function getPageStatus({ pageIndex, validationSummary, hasValidatedOnce }) {
 function formatValidationTitle(item) {
   const pageTitle = String(item?.pageTitle || "").trim();
   const questionTitle = String(item?.questionTitle || "").trim();
+  const questionNumber = String(item?.questionNumber || "").trim();
+  const questionSubject = String(item?.questionSubject || "").trim();
   const message = String(item?.message || "").trim();
 
-  return [pageTitle, questionTitle, message].filter(Boolean).join(" ; ");
+  const questionIdentity = [questionNumber, questionSubject]
+    .filter(Boolean)
+    .join(" · ");
+
+  return [pageTitle, questionIdentity || questionTitle, message]
+    .filter(Boolean)
+    .join(" ; ");
+}
+
+function getValidationItemLabel(item) {
+  const questionTitle = String(item?.questionTitle || "").trim();
+  const questionNumber = String(item?.questionNumber || "").trim();
+  const questionSubject = String(item?.questionSubject || "").trim();
+
+  return [questionNumber, questionSubject]
+    .filter(Boolean)
+    .join(" · ") || questionTitle;
 }
 
 export default function FormPageNavigator({
@@ -305,7 +323,7 @@ export default function FormPageNavigator({
                   <span className="ember-page-nav-validation-row-title">
                     {item.pageTitle}
                     {" ; "}
-                    {item.questionTitle}
+                    {getValidationItemLabel(item)}
                   </span>
                   <span className="ember-page-nav-validation-row-message">
                     {item.message}

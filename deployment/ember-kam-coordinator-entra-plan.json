@@ -1,0 +1,49 @@
+{
+  "tenant_id": "42b413cc-67db-4507-a4a6-ce30ce798022",
+  "application": {
+    "object_id": "437f9937-20a9-4f57-b3aa-aeedaac70b51",
+    "app_id": "9e4d2ed4-7cef-4cd6-99cc-98d48b9d3f46",
+    "display_name": "ember-api"
+  },
+  "resource_service_principal": {
+    "object_id": "faaa3eb4-f408-48eb-a13b-753ff235be71",
+    "display_name": "ember-api"
+  },
+  "group": {
+    "display_name": "EMBER-KAM-COORDINATOR",
+    "description": "Leden mogen verplichte KAM-beoordelingen in Ember afhandelen.",
+    "mail_enabled": false,
+    "security_enabled": true,
+    "mail_nickname": "EMBERKAMCOORDINATOR"
+  },
+  "app_role": {
+    "id": "9a79f42a-87eb-4764-9ef0-fe437f48285f",
+    "display_name": "Ember.KAM-coördinator",
+    "value": "Ember.KAMCoordinator",
+    "description": "Deze rol geeft toegang tot de beperkte KAM-wachtrij en het afhandelen van verplichte KAM-beoordelingen.",
+    "allowed_member_types": ["User"],
+    "is_enabled": true
+  },
+  "members": [
+    {
+      "object_id": "5955f9ca-235a-4686-9e34-551c186997ec",
+      "user_principal_name": "daphne.vloo@wardenburg.nl",
+      "display_name": "Daphne Vloo"
+    },
+    {
+      "object_id": "d748bb7d-342c-4316-9650-f67d19a3abaa",
+      "user_principal_name": "anita.bos@wardenburg.nl",
+      "display_name": "Anita Bos | Wardenburg"
+    },
+    {
+      "object_id": "14ee9631-210a-48e4-82ca-c35a425ffb06",
+      "user_principal_name": "jesse.veentjer@wardenburg.nl",
+      "display_name": "Jesse Veentjer | Wardenburg"
+    }
+  ],
+  "verification": {
+    "expected_group_member_count": 3,
+    "expected_group_app_role_assignment_count": 1,
+    "expected_app_role_value": "Ember.KAMCoordinator"
+  }
+}

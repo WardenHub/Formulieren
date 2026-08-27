@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { Navigation } from "lucide-react";
 
 import { getInstallationOperationalSummary } from "@/api/emberApi.js";
 import InstallationsMap from "./InstallationsMap.jsx";
@@ -177,11 +178,22 @@ export default function InstallationOverviewTab({ code, onOpenTab }) {
             <h2>Locatie</h2>
             <p>{item.formatted_address || "Geen geformatteerd adres beschikbaar"}</p>
           </div>
-          <span className={`ember-label ember-label--${item.has_valid_coordinates ? "success" : "warning"}`}>
-            {item.has_valid_coordinates ? "Coördinaten beschikbaar" : "Coördinaten ontbreken"}
-          </span>
+          {item.has_valid_coordinates ? (
+            <a
+              className="btn btn-secondary installation-map-route-link"
+              href={`https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(`${item.latitude},${item.longitude}`)}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              aria-label="Open route naar deze installatie in Google Maps"
+              title="Open route naar deze installatie in Google Maps"
+            >
+              <Navigation size={16} aria-hidden="true" />
+            </a>
+          ) : (
+            <span className="ember-label ember-label--warning">Coördinaten ontbreken</span>
+          )}
         </div>
-        <InstallationsMap markers={marker} compact fitRequestKey={code} />
+        <InstallationsMap markers={marker} compact fitRequestKey={code} showUserLocation={false} />
       </section>
 
       {contractRows.length ? (

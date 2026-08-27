@@ -234,9 +234,9 @@ export function getInstallationDrawings(code) {
   return apiGet(`/installations/${encodeURIComponent(code)}/drawings`);
 }
 
-export function getDrawingPins(code, documentId) {
+export function getDrawingPins(code, documentId, includeHistory = true) {
   return apiGet(
-    `/installations/${encodeURIComponent(code)}/drawings/${encodeURIComponent(documentId)}/pins`
+    `/installations/${encodeURIComponent(code)}/drawings/${encodeURIComponent(documentId)}/pins?includeHistory=${includeHistory ? "1" : "0"}`
   );
 }
 
@@ -245,6 +245,10 @@ export function createDrawingPin(code, documentId, payload = {}) {
     `/installations/${encodeURIComponent(code)}/drawings/${encodeURIComponent(documentId)}/pins`,
     payload
   );
+}
+
+export function historicalizeComponentPins(code, documentId) {
+  return apiPost(`/installations/${encodeURIComponent(code)}/drawings/${encodeURIComponent(documentId)}/pins/historicalize-components`, {});
 }
 
 export function updateDrawingPin(code, drawingPinId, payload = {}) {

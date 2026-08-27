@@ -197,6 +197,14 @@ export async function getInstallationMapViewport(filters: InstallationMapViewpor
   const q = String(filters.q || "").trim();
   if (q && q.length < 2) return { markers: [], meta: { minimum_search_length: 2 } };
 
+  // Search results need the concrete installation list for each marker; the
+  // full map query already groups by exact coordinates and avoids the
+  // representative-only viewport projection.
+  if (q) {
+    const result = await getInstallationMap({ ...filters, take: Math.min(750, Math.max(25, Number(filters.take || 750))) });
+    return { markers: result.markers, meta: { query_mode: "search", truncated: result.items.length >= Number(filters.take || 750) } };
+  }
+
   const zoom = Math.round(boundedNumber(filters.zoom, 7, 5, 19));
   const cellSize = q || zoom >= 15 ? 0.000001
     : zoom >= 13 ? 0.002
@@ -230,14 +238,7 @@ export async function getInstallationMapViewport(filters: InstallationMapViewpor
         installation_count: installationCount,
         open_follow_up_count: Number(row.open_follow_up_count || 0),
         overdue_follow_up_count: Number(row.overdue_follow_up_count || 0),
-        installations: installationCount === 1 && row.representative_installation_code
-          ? [{
-              atrium_installation_code: row.representative_installation_code,
-              installation_name: row.representative_installation_name,
-              installation_type_key: row.installation_type_key,
-              installation_type_name: row.installation_type_name,
-            }]
-          : [],
+        installations: parseJsonArray(row.installations_json),
         representative_installation_code: undefined,
         representative_installation_name: undefined,
       };

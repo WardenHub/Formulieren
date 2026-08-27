@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useState } from "react";
-import { useNavigate, useOutletContext } from "react-router-dom";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useNavigate } from "react-router-dom";
+import { CircleHelpIcon } from "@/components/ui/circle-help";
 import {
   getAvailableForms,
   getMyForms,
@@ -310,7 +311,6 @@ function StartFormDialog({ form, onClose, onStarted }) {
 
 export default function FormsHubPage() {
   const navigate = useNavigate();
-  const { roles = [] } = useOutletContext() || {};
   const [tab, setTab] = useState("available");
   const [forms, setForms] = useState([]);
   const [instances, setInstances] = useState([]);
@@ -319,15 +319,26 @@ export default function FormsHubPage() {
   const [selectedForm, setSelectedForm] = useState(null);
   const [instanceFilters, setInstanceFilters] = useState(EMPTY_INSTANCE_FILTERS);
   const [instanceLoading, setInstanceLoading] = useState(false);
-  const [availableCategory, setAvailableCategory] = useState("all");
-  const canOpenMonitor = roles.some((role) => ["admin", "documentbeheerder", "gebruiker"].includes(role));
-  const canManageForms = roles.includes("admin");
+  const [generalFormQuery, setGeneralFormQuery] = useState("");
+  const [helpOpen, setHelpOpen] = useState(false);
+  const helpIconRef = useRef(null);
+  const helpWrapRef = useRef(null);
+  const generalForms = useMemo(
+    () => forms.filter((form) => !isInstallationForm(form)),
+    [forms]
+  );
+  const visibleGeneralForms = useMemo(() => {
+    const query = generalFormQuery.trim().toLowerCase();
+    if (!query) return generalForms;
 
-  const visibleForms = useMemo(() => forms.filter((form) => {
-    if (availableCategory === "installation") return isInstallationForm(form);
-    if (availableCategory === "general") return !isInstallationForm(form);
-    return true;
-  }), [forms, availableCategory]);
+    return generalForms.filter((form) => [
+      form.name,
+      form.code,
+      form.description,
+      form.owner_department,
+      form.official_document_number,
+    ].some((value) => String(value || "").toLowerCase().includes(query)));
+  }, [generalForms, generalFormQuery]);
 
   async function load() {
     setLoading(true);
@@ -349,6 +360,25 @@ export default function FormsHubPage() {
   useEffect(() => {
     void load();
   }, []);
+
+  useEffect(() => {
+    if (!helpOpen) return undefined;
+
+    function closeHelp(event) {
+      if (helpWrapRef.current && !helpWrapRef.current.contains(event.target)) setHelpOpen(false);
+    }
+
+    function closeOnEscape(event) {
+      if (event.key === "Escape") setHelpOpen(false);
+    }
+
+    document.addEventListener("mousedown", closeHelp);
+    document.addEventListener("keydown", closeOnEscape);
+    return () => {
+      document.removeEventListener("mousedown", closeHelp);
+      document.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [helpOpen]);
 
   async function applyInstanceFilters(nextFilters = instanceFilters) {
     setInstanceLoading(true);
@@ -398,8 +428,32 @@ export default function FormsHubPage() {
       <div className="inst-sticky">
         <div className="inst-sticky-row">
           <div className="inst-title">
-            <h1>Formulieren</h1>
-            <div className="ember-page-subtitle">Start gericht een formulier of ga verder met je eigen werk.</div>
+            <div className="ui-row">
+              <h1>Formulieren</h1>
+              <div ref={helpWrapRef} className="logbook-help-wrap">
+                <button
+                  type="button"
+                  className="icon-btn"
+                  title="Uitleg over formulieren"
+                  aria-label="Uitleg over formulieren"
+                  aria-expanded={helpOpen}
+                  aria-controls="forms-hub-help-panel"
+                  onClick={() => setHelpOpen((value) => !value)}
+                  onMouseEnter={() => helpIconRef.current?.startAnimation?.()}
+                  onMouseLeave={() => helpIconRef.current?.stopAnimation?.()}
+                >
+                  <CircleHelpIcon ref={helpIconRef} size={18} className="nav-anim-icon" />
+                </button>
+                {helpOpen ? (
+                  <div id="forms-hub-help-panel" className="panel logbook-help-panel" role="dialog" aria-label="Uitleg over formulieren">
+                    <div className="muted logbook-help-text">
+                      Hier start je algemene formulieren, zoals veiligheids- en VCA-formulieren. Installatiegebonden formulieren start je vanuit de betreffende installatie, zodat de installatiegegevens altijd eerst gecontroleerd kunnen worden.
+                    </div>
+                  </div>
+                ) : null}
+              </div>
+            </div>
+            <div className="ember-page-subtitle">Start een algemeen formulier of ga verder met je eigen werk.</div>
           </div>
         </div>
       </div>
@@ -408,8 +462,6 @@ export default function FormsHubPage() {
         <div className="forms-hub-tabs" role="tablist" aria-label="Formulieren">
           <button type="button" className={`btn ${tab === "available" ? "btn-primary" : "btn-secondary"}`} onClick={() => setTab("available")}>Beschikbare formulieren</button>
           <button type="button" className={`btn ${tab === "mine" ? "btn-primary" : "btn-secondary"}`} onClick={() => setTab("mine")}>Mijn formulieren</button>
-          {canOpenMonitor ? <button type="button" className="btn btn-secondary" onClick={() => navigate("/monitor/formulieren")}>Formulierenmonitor</button> : null}
-          {canManageForms ? <button type="button" className="btn btn-secondary" onClick={() => navigate("/admin")}>Formulierbeheer</button> : null}
         </div>
 
         {loading ? <div className="card">Formulieren laden...</div> : null}
@@ -417,17 +469,17 @@ export default function FormsHubPage() {
 
         {!loading && !error && tab === "available" ? (
           <div className="ui-stack">
-            <div className="forms-hub-tabs" role="group" aria-label="Categorie formulieren">
-              {[
-                ["all", "Alle formulieren"],
-                ["general", "Algemene formulieren"],
-                ["installation", "Installatiegebonden formulieren"],
-              ].map(([value, label]) => (
-                <button key={value} type="button" className={`btn ${availableCategory === value ? "btn-primary" : "btn-secondary"}`} onClick={() => setAvailableCategory(value)}>{label}</button>
-              ))}
-            </div>
+            <label className="ui-stack-sm" htmlFor="general-form-search">
+              <strong>Zoek een formulier</strong>
+              <input
+                id="general-form-search"
+                value={generalFormQuery}
+                onChange={(event) => setGeneralFormQuery(event.target.value)}
+                placeholder="Naam, code, omschrijving of afdeling"
+              />
+            </label>
             <div className="forms-hub-grid">
-            {visibleForms.map((form) => (
+            {visibleGeneralForms.map((form) => (
               <article className="card forms-hub-card" key={form.form_id || form.code}>
                 <div className="ui-row-between">
                   <div>
@@ -454,7 +506,8 @@ export default function FormsHubPage() {
                 <button type="button" className="btn btn-primary" onClick={() => setSelectedForm(form)}>Starten</button>
               </article>
             ))}
-            {visibleForms.length === 0 ? <div className="card">Er zijn geen actieve formulieren in deze categorie.</div> : null}
+            {generalForms.length === 0 ? <div className="card">Er zijn momenteel geen actieve algemene formulieren.</div> : null}
+            {generalForms.length > 0 && visibleGeneralForms.length === 0 ? <div className="card">Geen algemene formulieren gevonden voor deze zoekopdracht.</div> : null}
             </div>
           </div>
         ) : null}

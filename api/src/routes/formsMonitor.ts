@@ -23,22 +23,22 @@ import { requireRole } from "../middleware/roleMiddleware.js";
 
 const router = Router();
 
-router.get("/", requireRole("admin", "gebruiker", "documentbeheerder"), getFormsMonitorList);
+router.get("/", requireRole("admin", "gebruiker", "documentbeheerder", "kam_coordinator"), getFormsMonitorList);
 router.post("/:formInstanceId/pdf-jobs", requireRole("admin", "gebruiker", "documentbeheerder"), postFormsMonitorPdfJob);
 router.get("/pdf-jobs/:jobId", requireRole("admin", "gebruiker", "documentbeheerder"), getFormsMonitorPdfJob);
 router.get("/pdf-jobs/:jobId/download", requireRole("admin", "gebruiker", "documentbeheerder"), downloadFormsMonitorPdfJob);
 router.get("/:formInstanceId/pdf", requireRole("admin", "gebruiker", "documentbeheerder"), downloadFormsMonitorPdf);
-router.get("/:formInstanceId/follow-ups", requireRole("admin", "gebruiker", "documentbeheerder"), getFormsMonitorFollowUps);
-router.get("/:formInstanceId/follow-up-review", requireRole("admin", "gebruiker", "documentbeheerder"), getFormsMonitorFollowUpReview);
+router.get("/:formInstanceId/follow-ups", requireRole("admin", "gebruiker", "documentbeheerder", "kam_coordinator"), getFormsMonitorFollowUps);
+router.get("/:formInstanceId/follow-up-review", requireRole("admin", "gebruiker", "documentbeheerder", "kam_coordinator"), getFormsMonitorFollowUpReview);
 router.post("/:formInstanceId/follow-up-review", requireRole("admin", "documentbeheerder"), postFormsMonitorFollowUpReview);
-router.get("/:formInstanceId", requireRole("admin", "gebruiker", "documentbeheerder"), getFormsMonitorDetail);
+router.get("/:formInstanceId", requireRole("admin", "gebruiker", "documentbeheerder", "kam_coordinator"), getFormsMonitorDetail);
 
 
 router.post("/:formInstanceId/status-action", requireRole("admin", "documentbeheerder"), postFormsMonitorStatusAction);
 router.put("/:formInstanceId/assignment", requireRole("admin", "documentbeheerder"), putFormsMonitorAssignment);
 router.put("/:formInstanceId/compliment-point", requireRole("admin", "documentbeheerder"), putFormsMonitorComplimentPoint);
 router.post("/:formInstanceId/follow-ups", requireRole("admin", "documentbeheerder"), postFormsMonitorManualFollowUp);
-router.post("/follow-ups/:followUpActionId/status-action", requireRole("admin", "documentbeheerder"), postFormsMonitorFollowUpStatusAction);
+router.post("/follow-ups/:followUpActionId/status-action", requireRole("admin", "documentbeheerder", "kam_coordinator"), postFormsMonitorFollowUpStatusAction);
 router.put("/follow-ups/:followUpActionId/note", requireRole("admin", "documentbeheerder"), putFormsMonitorFollowUpNote);
 router.put("/follow-ups/:followUpActionId/certificate-impact", requireRole("admin", "documentbeheerder"), putFormsMonitorFollowUpCertificateImpact);
 

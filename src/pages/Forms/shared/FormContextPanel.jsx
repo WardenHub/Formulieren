@@ -13,6 +13,7 @@ import { DeleteIcon } from "@/components/ui/delete";
 import { AttachFileIcon } from "@/components/ui/attach-file";
 import { CameraIcon } from "@/components/ui/camera";
 import { ClapIcon } from "@/components/ui/clap";
+import "./FormContextPanel.css";
 
 import {
   getDocuments,
@@ -492,14 +493,26 @@ function DocumentCard({
         background: "rgba(255,255,255,0.03)",
       }}
     >
-      <button
-        type="button"
-        onClick={() => {
-          if (collapsible) setOpen((prev) => !prev);
-        }}
-        disabled={!collapsible}
+      <div
+        role={collapsible ? "button" : undefined}
+        tabIndex={collapsible ? 0 : undefined}
+        aria-expanded={collapsible ? open : undefined}
+        onClick={
+          collapsible
+            ? () => setOpen((prev) => !prev)
+            : undefined
+        }
+        onKeyDown={
+          collapsible
+            ? (event) => {
+                if (event.key === "Enter" || event.key === " ") {
+                  event.preventDefault();
+                  setOpen((prev) => !prev);
+                }
+              }
+            : undefined
+        }
         style={{
-          appearance: "none",
           border: "none",
           background: "transparent",
           color: "inherit",
@@ -591,7 +604,7 @@ function DocumentCard({
             ))}
           </div>
         ) : null}
-      </button>
+      </div>
 
       {!collapsible || open ? body : null}
     </div>
@@ -599,6 +612,8 @@ function DocumentCard({
 }
 
 function SelectedUploadCard({ item, onRemove, onFileNameChange, selectedLabels = [], labelLookup }) {
+  const editableFileName = splitFileName(item.fileName || item.file.name);
+
   return (
     <div
       className="card"
@@ -673,12 +688,23 @@ function SelectedUploadCard({ item, onRemove, onFileNameChange, selectedLabels =
           <div className="muted" style={{ fontSize: 12 }}>
             Bestandsnaam
           </div>
-          <input
-            className="input"
-            value={item.fileName || item.file.name}
-            onChange={(e) => onFileNameChange?.(e.target.value)}
-            placeholder="Bestandsnaam"
-          />
+          <div className="ember-file-name-editor">
+            <input
+              className="input ember-file-name-editor__input"
+              value={editableFileName.baseName}
+              onChange={(e) => onFileNameChange?.(e.target.value)}
+              placeholder="Bestandsnaam zonder extensie"
+              aria-label="Bestandsnaam zonder extensie"
+            />
+            {editableFileName.extension ? (
+              <span className="ember-file-name-editor__suffix">.{editableFileName.extension}</span>
+            ) : null}
+          </div>
+          {editableFileName.extension ? (
+            <div className="muted" style={{ fontSize: 11 }}>
+              Bestandstype blijft .{editableFileName.extension}
+            </div>
+          ) : null}
         </div>
       </div>
     </div>
@@ -744,14 +770,13 @@ export default function FormContextPanel({
   const filteredLabelOptions = useMemo(() => {
     const search = String(labelInput || "").trim().toLowerCase();
     return LABEL_OPTIONS.filter((item) => {
-      if (selectedLabels.includes(item.key)) return false;
       if (!search) return true;
       return (
         item.label.toLowerCase().includes(search) ||
         item.key.toLowerCase().includes(search)
       );
     }).slice(0, 8);
-  }, [labelInput, selectedLabels]);
+  }, [labelInput]);
 
   useEffect(() => {
     setHasCameraSupport(
@@ -960,7 +985,6 @@ export default function FormContextPanel({
   function selectSuggestedLabel(labelKey) {
     if (!labelKey) return;
     setSelectedLabels((prev) => (prev.includes(labelKey) ? prev : [...prev, labelKey]));
-    setLabelInput("");
     setUploadError(null);
   }
 
@@ -1831,12 +1855,19 @@ export default function FormContextPanel({
                       ) : null}
 
                       <div style={{ display: "grid", gap: 6 }}>
-                        <div className="muted" style={{ fontSize: 12 }}>
-                          Labels ; minimaal 1 verplicht
+                        <div className="ember-form-label-picker__heading">
+                          <span className="muted" style={{ fontSize: 12 }}>
+                            Labels ; minimaal 1 verplicht
+                          </span>
+                          <span className="ember-form-label-picker__selection-count" aria-live="polite">
+                            {selectedLabels.length > 0
+                              ? `${selectedLabels.length} geselecteerd`
+                              : "Nog niets geselecteerd"}
+                          </span>
                         </div>
 
-                        <div style={{ display: "grid", gap: 8 }}>
-                          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                        <div className="ember-form-label-picker">
+                          <div>
                             <input
                               className="input"
                               value={labelInput}
@@ -1848,53 +1879,25 @@ export default function FormContextPanel({
                                 }
                               }}
                               placeholder="Zoek standaardlabel"
-                              style={{ flex: "1 1 260px" }}
                             />
                           </div>
 
                           {filteredLabelOptions.length > 0 ? (
-                            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                            <div className="ember-form-label-picker__options">
                               {filteredLabelOptions.map((item) => {
+                                const active = selectedLabels.includes(item.key);
                                 const baseStyle = LABEL_STYLES[item.key] || LABEL_STYLES.OVERIG;
                                 return (
                                   <button
                                     key={item.key}
                                     type="button"
-                                    className="btn btn-secondary"
-                                    onClick={() => selectSuggestedLabel(item.key)}
-                                    style={{
-                                      ...baseStyle,
-                                      display: "inline-flex",
-                                      alignItems: "center",
-                                      gap: 8,
-                                      fontWeight: 700,
-                                    }}
-                                    title={`${item.label} kiezen`}
+                                    className={`ember-form-label-picker__option${active ? " is-active" : ""}`}
+                                    onClick={() => toggleSelectedLabel(item.key)}
+                                    aria-pressed={active}
+                                    title={active ? `${item.label} verwijderen` : `${item.label} kiezen`}
+                                    style={baseStyle}
                                   >
                                     {item.label}
-                                  </button>
-                                );
-                              })}
-                            </div>
-                          ) : null}
-
-                          {selectedLabels.length > 0 ? (
-                            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                              {selectedLabels.map((labelKey) => {
-                                const baseStyle = LABEL_STYLES[labelKey] || LABEL_STYLES.OVERIG;
-                                return (
-                                  <button
-                                    key={labelKey}
-                                    type="button"
-                                    className="btn btn-secondary"
-                                    onClick={() => toggleSelectedLabel(labelKey)}
-                                    style={{
-                                      ...baseStyle,
-                                      fontWeight: 700,
-                                    }}
-                                    title="Klik om label te verwijderen"
-                                  >
-                                    {labelLookup.get(labelKey) || labelKey}
                                   </button>
                                 );
                               })}

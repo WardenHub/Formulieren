@@ -6,6 +6,7 @@ const ROLE_GROUPS: Record<string, string> = {
   gebruiker: "64e2c12f-73d5-4b2a-9d56-fc465e3cc9bf",
   documentbeheerder: "7cadb29c-c15c-4e1e-acff-71214865e00a",
   uitlegbeheerder: "c4b6dc5c-e4e9-4dd0-a283-08747e1ea505",
+  kam_coordinator: "b8a5b9cc-84f9-40e6-837c-91e69be6f6f8",
 };
 
 const APP_ROLE_MAP: Record<string, string> = {
@@ -13,6 +14,7 @@ const APP_ROLE_MAP: Record<string, string> = {
   "Ember.Gebruiker": "gebruiker",
   "Ember.Documentbeheerder": "documentbeheerder",
   "Ember.Uitlegbeheerder": "uitlegbeheerder",
+  "Ember.KAMCoordinator": "kam_coordinator",
 };
 
 function isDevAuthEnabled() {

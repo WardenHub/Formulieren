@@ -1326,15 +1326,41 @@ export async function getInstallationDrawings(req: any, res: Response) {
   }
 }
 
+/**
+ * Compatibility endpoint for older local bundles that requested the drawing
+ * resource without the explicit `/pins` suffix.  A pins query is unambiguous;
+ * without it the endpoint remains the PDF download route.
+ */
+export async function getDrawingResource(req: any, res: Response) {
+  if (Object.prototype.hasOwnProperty.call(req.query || {}, "includeHistory")) {
+    return getDrawingPins(req, res);
+  }
+  return downloadDocumentFile(req, res);
+}
+
 export async function getDrawingPins(req: any, res: Response) {
   try {
     const data = await drawingPinService.getDrawingPins(
       String(req.params.code || ""),
-      String(req.params.documentId || "")
+      String(req.params.documentId || ""),
+      String(req.query.includeHistory || "1") !== "0"
     );
     return res.json(data);
   } catch (err: any) {
     return drawingErrorResponse(res, err, "getDrawingPins failed");
+  }
+}
+
+export async function postHistoricalizeComponentPins(req: any, res: Response) {
+  try {
+    const data = await drawingPinService.historicalizeComponentPins(
+      String(req.params.code || ""),
+      String(req.params.documentId || ""),
+      req.user
+    );
+    return res.json(data);
+  } catch (err: any) {
+    return drawingErrorResponse(res, err, "historicalizeComponentPins failed");
   }
 }
 

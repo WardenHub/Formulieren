@@ -31,7 +31,9 @@ import {
   createDocumentReplacement,
   createDocumentAttachment,
   getInstallationDrawings,
+  getDrawingResource,
   getDrawingPins,
+  postHistoricalizeComponentPins,
   postDrawingPin,
   putDrawingPin,
   deleteDrawingPin,
@@ -228,7 +230,14 @@ router.post(
 );
 
 router.get("/:code/drawings", requireRole(...documentRoles), getInstallationDrawings);
+// Backward-compatible drawing download for older local preview bundles.
+router.get(
+  "/:code/drawings/:documentId",
+  requireRole(...documentRoles),
+  getDrawingResource
+);
 router.get("/:code/drawings/:documentId/pins", requireRole(...documentRoles), getDrawingPins);
+router.post("/:code/drawings/:documentId/pins/historicalize-components", requireRole(...documentRoles), postHistoricalizeComponentPins);
 router.post(
   "/:code/drawings/:documentId/pins",
   requireRole(...documentRoles),

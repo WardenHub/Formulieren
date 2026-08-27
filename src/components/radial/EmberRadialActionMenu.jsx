@@ -19,8 +19,10 @@ function useBoundarySize(boundaryElement, open) {
     if (!open || !boundaryElement) return undefined;
 
     const measure = () => {
-      const rect = boundaryElement.getBoundingClientRect();
-      setSize({ width: rect.width, height: rect.height });
+      setSize({
+        width: boundaryElement.clientWidth,
+        height: boundaryElement.clientHeight,
+      });
     };
 
     measure();

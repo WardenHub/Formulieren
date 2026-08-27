@@ -267,6 +267,13 @@ export default function Layout() {
   }, [avatarRefreshKey]);
 
   useEffect(() => {
+    window.__emberProfileAvatarObjectUrl = avatarObjectUrl || null;
+    window.dispatchEvent(new CustomEvent("ember:profile-avatar-ready", {
+      detail: { objectUrl: avatarObjectUrl || null },
+    }));
+  }, [avatarObjectUrl]);
+
+  useEffect(() => {
     return () => {
       setAvatarObjectUrl((prev) => {
         if (prev) URL.revokeObjectURL(prev);
@@ -417,6 +424,12 @@ export default function Layout() {
           <AnimatedNavButton to="/formulieren" Icon={FileCheckIcon}>
             Formulieren
           </AnimatedNavButton>
+
+          {roles.some((role) => ["admin", "documentbeheerder", "gebruiker", "kam_coordinator"].includes(role)) && (
+            <AnimatedNavButton to="/monitor/formulieren" Icon={MonitorCheckIcon}>
+              Monitor
+            </AnimatedNavButton>
+          )}
 
           <AnimatedNavButton to="/inspecties" Icon={ClipboardCheck}>
             Inspecties

@@ -23,6 +23,51 @@ export function isBlankValue(value) {
   );
 }
 
+function getValidationErrorText(error) {
+  let resolvedText = null;
+
+  if (typeof error?.getText === "function") {
+    try {
+      resolvedText = error.getText();
+    } catch {
+      resolvedText = null;
+    }
+  }
+
+  const values = [
+    error?.text,
+    error?.locText?.renderedHtml,
+    error?.locText?.text,
+    resolvedText,
+    error?.message,
+    error,
+  ];
+
+  for (const value of values) {
+    if (typeof value === "string" || typeof value === "number") {
+      const text = String(value).trim();
+      if (text) return text;
+    }
+
+    if (value && typeof value === "object") {
+      const localized = [
+        value.renderedHtml,
+        value.text,
+        value.default,
+        value["nl-NL"],
+        value.nl,
+      ]
+        .filter((candidate) => typeof candidate === "string" || typeof candidate === "number")
+        .map((candidate) => String(candidate).trim())
+        .find(Boolean);
+
+      if (localized) return localized;
+    }
+  }
+
+  return "Deze vraag bevat een ongeldige of ontbrekende waarde.";
+}
+
 export function getMatrixColumnTitle(column) {
   return String(column?.title || column?.name || "Veld").trim();
 }
@@ -48,6 +93,32 @@ export function getMatrixCellQuestion(row, columnName) {
   return hit?.question || null;
 }
 
+function getMatrixRowValue(rowData, columns, preferredNames) {
+  const matchingColumn = columns.find((column) =>
+    preferredNames.includes(String(column?.name || "").trim().toLowerCase())
+  );
+
+  const matchingName = String(matchingColumn?.name || "").trim();
+  const candidates = [matchingName, ...preferredNames].filter(Boolean);
+
+  for (const name of candidates) {
+    const value = rowData?.[name];
+    if (!isBlankValue(value)) return String(value).trim();
+  }
+
+  return null;
+}
+
+function getMatrixRowIdentity(rowData, columns, rowIndex) {
+  const questionNumber = getMatrixRowValue(rowData, columns, ["item_code", "nr", "code"]);
+  const questionSubject = getMatrixRowValue(rowData, columns, ["onderwerp", "subject", "omschrijving", "title"]);
+
+  return {
+    questionNumber: questionNumber || String(rowIndex + 1),
+    questionSubject,
+  };
+}
+
 export function buildMatrixRowValidationItems(question, pageIndex, pageTitle) {
   const items = [];
   if (!question) return items;
@@ -64,6 +135,7 @@ export function buildMatrixRowValidationItems(question, pageIndex, pageTitle) {
   rows.forEach((rowDataRaw, rowIndex) => {
     const rowData = rowDataRaw && typeof rowDataRaw === "object" ? rowDataRaw : {};
     const visibleRow = visibleRows[rowIndex] || null;
+    const { questionNumber, questionSubject } = getMatrixRowIdentity(rowData, columns, rowIndex);
 
     columns.forEach((column) => {
       const columnName = String(column?.name || "").trim();
@@ -82,6 +154,8 @@ export function buildMatrixRowValidationItems(question, pageIndex, pageTitle) {
           pageTitle,
           questionName,
           questionTitle,
+          questionNumber,
+          questionSubject,
           rowIndex: rowIndex + 1,
           columnName,
           message:
@@ -105,6 +179,8 @@ export function buildMatrixRowValidationItems(question, pageIndex, pageTitle) {
         pageTitle,
         questionName,
         questionTitle,
+        questionNumber,
+        questionSubject,
         rowIndex: rowIndex + 1,
         columnName: "opmerking",
         message: "Geef een opmerking op omdat hier 'Nee' is gekozen.",
@@ -267,8 +343,7 @@ export function collectValidationSummary(model) {
       const errors = Array.isArray(question?.errors) ? question.errors : [];
 
       errors.forEach((err, errIndex) => {
-        const message = String(err?.text || err || "").trim();
-        if (!message) return;
+        const message = getValidationErrorText(err);
 
         items.push({
           id: `question-error::${pageIndex}::${questionName}::${errIndex}`,

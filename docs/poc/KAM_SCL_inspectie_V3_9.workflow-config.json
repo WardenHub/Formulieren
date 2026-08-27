@@ -1,0 +1,28 @@
+{
+  "form_metadata": {
+    "code": "KAM_SCL_INSPECTIE",
+    "name": "KAM / SCL-inspectie",
+    "description": "Algemeen veiligheidsformulier voor werkzaamheden op locatie.",
+    "document_profile_key": "safety_form",
+    "workflow_profile_key": "standard",
+    "owner_department": "KAM",
+    "status": "A",
+    "context_rules": []
+  },
+  "follow_up_rules": [
+    {
+      "trigger_type": "ON_SUBMIT",
+      "action_title_template": "KAM-beoordeling vereist; {{projectnaam}} {{projectnummer}}",
+      "action_description_template": "Beoordeel de ingediende KAM / SCL-inspectie, inclusief signaleringen voor KAM: {{signalering_kam}}",
+      "category": "KAM-beoordeling",
+      "priority": "HIGH",
+      "responsibility_type": "WARDENBURG",
+      "assigned_role_code": "KAM_COORDINATOR",
+      "due_after_days": 5,
+      "certificate_impact": "no",
+      "visibility": "INTERNAL_ONLY",
+      "sort_order": 10,
+      "is_active": true
+    }
+  ]
+}

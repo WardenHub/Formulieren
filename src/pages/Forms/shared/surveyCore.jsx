@@ -176,15 +176,37 @@ export function normalizeText(value) {
   return s.length ? s : null;
 }
 
-export function getQuestionTitle(question) {
-  const t =
-    question?.fullTitle ||
-    question?.title ||
-    question?.locTitle?.renderedHtml ||
-    question?.name ||
-    "";
+function getLocalizableText(value) {
+  if (value == null) return null;
 
-  return normalizeText(t) || "Onbenoemde vraag";
+  if (typeof value === "string" || typeof value === "number") {
+    return normalizeText(value);
+  }
+
+  if (typeof value !== "object") return null;
+
+  return normalizeText(
+    value.renderedHtml ||
+      value.text ||
+      value.default ||
+      value["nl-NL"] ||
+      value.nl ||
+      ""
+  );
+}
+
+export function getQuestionTitle(question) {
+  const t = [
+    question?.fullTitle,
+    question?.title,
+    question?.locTitle?.renderedHtml,
+    question?.locTitle?.text,
+    question?.name,
+  ]
+    .map(getLocalizableText)
+    .find(Boolean);
+
+  return t || "Onbenoemde vraag";
 }
 
 export function getPageTitle(page, fallbackIndex = 0) {

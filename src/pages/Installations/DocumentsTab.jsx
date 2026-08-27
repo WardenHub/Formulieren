@@ -9,6 +9,7 @@ import {
   downloadInstallationDocumentFile,
   createInstallationDocumentReplacement,
   createInstallationDocumentAttachment,
+  historicalizeComponentPins,
 } from "../../api/emberApi.js";
 
 import { ArchiveIcon } from "@/components/ui/archive";
@@ -1508,6 +1509,10 @@ const DocumentsTab = forwardRef(function DocumentsTab(
       if (!replacementId) throw new Error("vervangingsdocument niet aangemaakt");
 
       await uploadInstallationDocumentFile(code, replacementId, file);
+
+      if (window.confirm("Bestaande componentpins op de vorige tekening historisch maken? Kies Annuleren om ze eerst handmatig te beoordelen.")) {
+        await historicalizeComponentPins(code, persistedId);
+      }
 
       await refreshDocsAndRehydrate();
       await onSaved?.();

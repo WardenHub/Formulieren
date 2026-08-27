@@ -16,6 +16,7 @@ import {
   getFormFollowUpSummaryByChainSql,
   getFormFollowUpsMonitorByChainSql,
   getFormFollowUpByIdSql,
+  getFormInstanceWorkflowRoleAccessSql,
   updateFormFollowUpStatusSql,
   updateFormFollowUpNoteSql,
   updateFormFollowUpCertificateImpactSql,
@@ -117,6 +118,27 @@ async function getUserProfileSnapshot(userObjectIdRaw: any) {
 
 function isManager(roles: string[]) {
   return roles.includes("admin") || roles.includes("documentbeheerder");
+}
+
+function isKamCoordinator(roles: string[]) {
+  return roles.includes("kam_coordinator");
+}
+
+function isKamOnly(roles: string[]) {
+  return isKamCoordinator(roles) && !isManager(roles);
+}
+
+async function assertWorkflowRoleCanAccessFormInstance(
+  formInstanceId: number,
+  roles: string[]
+) {
+  if (!isKamOnly(roles)) return;
+
+  const rows = await sqlQuery(getFormInstanceWorkflowRoleAccessSql, {
+    formInstanceId,
+    workflowRoleCode: "KAM_COORDINATOR",
+  });
+  if (!rows?.[0]?.has_access) throw new Error("forbidden");
 }
 
 function isGebruiker(roles: string[]) {
@@ -300,10 +322,16 @@ function mapFormActionToStatus(action: string) {
 }
 
 function assertFollowUpActionAllowed(followUpRow: any, action: string, roles: string[]) {
-  if (!isManager(roles)) throw new Error("forbidden");
   if (!followUpRow) throw new Error("not found");
   if (String(followUpRow.kind || "").trim().toLowerCase() !== "workflow") {
     throw new Error("report-only follow-ups cannot use workflow status actions");
+  }
+
+  const assignedRoleCode = normalizeOptionalString(followUpRow.assigned_role_code);
+  if (assignedRoleCode === "KAM_COORDINATOR") {
+    if (!isKamCoordinator(roles)) throw new Error("forbidden");
+  } else if (!isManager(roles)) {
+    throw new Error("forbidden");
   }
 
   const valid = [
@@ -389,6 +417,7 @@ export async function getMonitorList(input: {
   const assignedSearch = normalizeOptionalString(input?.query?.assignedSearch);
   const unassignedOnly = normalizeBoolean(input?.query?.unassignedOnly, false);
   const viewerUserObjectId = getUserObjectId(input.user);
+  const workflowRoleCode = isKamOnly(input.roles || []) ? "KAM_COORDINATOR" : null;
 
   const rows = await sqlQuery(getFormsMonitorListSql, {
     q,
@@ -404,6 +433,7 @@ export async function getMonitorList(input: {
     assignedUserObjectId,
     assignedSearch,
     unassignedOnly,
+    workflowRoleCode,
   });
 
   const items = (rows || []).map((r: any) => ({
@@ -489,6 +519,7 @@ export async function getMonitorDetail(formInstanceIdRaw: any, context: DetailCo
 
   let item = await getMonitorDetailRow(formInstanceId);
   if (!item) return { error: "not found" };
+  await assertWorkflowRoleCanAccessFormInstance(formInstanceId, context.roles || []);
 
   const changed = await maybeAutoClaim(
     formInstanceId,
@@ -569,6 +600,7 @@ export async function getMonitorFollowUps(formInstanceIdRaw: any, _context: User
 
   const detail = await getMonitorDetailRow(formInstanceId);
   if (!detail) return { error: "not found" };
+  await assertWorkflowRoleCanAccessFormInstance(formInstanceId, _context.roles || []);
 
   const [rows, summaryRaw, finalizeGate] = await Promise.all([
     sqlQuery(getFormFollowUpsMonitorByChainSql, { formInstanceId }),
@@ -595,6 +627,7 @@ export async function getMonitorFollowUpReview(formInstanceIdRaw: any, context: 
 
   const detail = await getMonitorDetailRow(formInstanceId);
   if (!detail) return { error: "not found" };
+  await assertWorkflowRoleCanAccessFormInstance(formInstanceId, context.roles || []);
   if (isHistoricalInstallationStatus(detail.installation_status)) {
     throw new Error("historical installation read-only");
   }

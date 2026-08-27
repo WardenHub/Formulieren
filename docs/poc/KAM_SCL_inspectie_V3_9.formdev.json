@@ -1,0 +1,351 @@
+{
+  "title": "KAM / SCL-inspectie",
+  "description": "Werkzaamheden op locatie. Dit formulier is algemeen; er is geen installatiecontext vereist.",
+  "locale": "nl",
+  "showProgressBar": "top",
+  "progressBarType": "pages",
+  "showTOC": true,
+  "tocLocation": "right",
+  "pagePrevText": "Vorige",
+  "pageNextText": "Volgende",
+  "completeText": "Indienen voor KAM-beoordeling",
+  "checkErrorsMode": "onComplete",
+  "pages": [
+    {
+      "name": "gegevens",
+      "title": "Gegevens",
+      "elements": [
+        { "type": "text", "name": "projectnaam", "title": "Projectnaam", "isRequired": true, "width": "50%" },
+        { "type": "text", "name": "datum_inspectie", "title": "Datum inspectie", "inputType": "date", "isRequired": true, "width": "25%" },
+        { "type": "text", "name": "projectnummer", "title": "Projectnummer", "width": "25%" },
+        { "type": "text", "name": "naam_inspecteur", "title": "Naam inspecteur", "isRequired": true, "width": "50%" },
+        { "type": "text", "name": "datum_ontvangst_kam", "title": "Datum ontvangst kwaliteits- en VGM-functionaris", "inputType": "date", "width": "50%" },
+        { "type": "comment", "name": "omschrijving_werkzaamheden", "title": "Omschrijving werkzaamheden", "isRequired": true, "rows": 3 },
+        { "type": "comment", "name": "aanwezige_medewerkers", "title": "Aanwezige medewerkers", "rows": 3 },
+        {
+          "type": "radiogroup",
+          "name": "lmra_toegepast",
+          "title": "LMRA toegepast",
+          "isRequired": true,
+          "choices": [
+            { "value": "Ja", "text": "Ja" },
+            { "value": "Nee", "text": "Nee" }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "situatieschets",
+      "title": "Situatieschets",
+      "description": "Vink aan wat van toepassing is. De bijbehorende controlecategorie wordt alleen getoond wanneer de situatie speelt.",
+      "elements": [
+        { "type": "boolean", "name": "situatie_verplaatsen", "title": "Materiaal of materieel verplaatsen, laden of lossen" },
+        { "type": "boolean", "name": "situatie_alleen_gebouw", "title": "Alleen werken, en/of werken in een gebouw of winkel" },
+        { "type": "boolean", "name": "situatie_gereedschap", "title": "Elektrisch of overig handgereedschap gebruiken" },
+        { "type": "boolean", "name": "situatie_kabelwerk", "title": "Kabelwerk monteren/demonteren of werken met ionisatie brandmelders" },
+        { "type": "boolean", "name": "situatie_nauwe_ruimte", "title": "Werken in een nauwe ruimte, zoals kruipruimte of zolder" },
+        { "type": "boolean", "name": "situatie_hoogte", "title": "Werken op hoogte, zoals trap, rolsteiger of hoogwerker" },
+        { "type": "boolean", "name": "toon_alle_categorieen", "title": "Toon alle categorieën; situatieschets negeren" }
+      ]
+    },
+    {
+      "name": "vca_controle",
+      "title": "VCA-controlepunten",
+      "description": "Kies per regel Ja, Nee of N.V.T. Bij Nee is een toelichting verplicht; er ontstaat ook een opvolgactie per afwijking.",
+      "elements": [
+        {
+          "type": "panel",
+          "name": "voorbereiding_algemeen",
+          "title": "Voorbereiding en algemeen",
+          "elements": [
+            {
+              "type": "matrixdynamic",
+              "name": "voorbereiding_items",
+              "titleLocation": "hidden",
+              "allowAddRows": false,
+              "allowRemoveRows": false,
+              "defaultValue": [
+                { "item_code": "VA-01", "onderwerp": "BHV-voorzieningen en noodnummers bekend op locatie", "voldoet": "", "opmerking": "" },
+                { "item_code": "VA-02", "onderwerp": "Medewerkers dragen voorgeschreven werkschoenen en werkkleding", "voldoet": "", "opmerking": "" },
+                { "item_code": "VA-03", "onderwerp": "Werkschoenen en werkkleding verkeren in goede staat", "voldoet": "", "opmerking": "" },
+                { "item_code": "VA-04", "onderwerp": "PBM; gehoorbescherming aanwezig en gebruikt waar relevant", "voldoet": "", "opmerking": "" },
+                { "item_code": "VA-05", "onderwerp": "Benodigde werkvergunningen aanwezig en geldig", "voldoet": "", "opmerking": "" },
+                { "item_code": "VA-06", "onderwerp": "Risico's kenbaar gemaakt aan betrokken medewerkers", "voldoet": "", "opmerking": "" },
+                { "item_code": "VA-07", "onderwerp": "Gereedschap en materieel zijn goedgekeurd", "voldoet": "", "opmerking": "" },
+                { "item_code": "VA-08", "onderwerp": "Werkplek en materiaal zijn netjes en overzichtelijk", "voldoet": "", "opmerking": "" },
+                { "item_code": "VA-09", "onderwerp": "Bebakening of afzetmateriaal gebruikt waar nodig", "voldoet": "", "opmerking": "" },
+                { "item_code": "VA-10", "onderwerp": "Monteur was op tijd aanwezig bij de klant", "voldoet": "", "opmerking": "" }
+              ],
+              "columns": [
+                { "name": "item_code", "title": "Nr.", "cellType": "text", "readOnly": true, "width": "8%" },
+                { "name": "onderwerp", "title": "Controlepunt", "cellType": "text", "readOnly": true, "width": "50%" },
+                { "name": "voldoet", "title": "Beoordeling", "cellType": "radiogroup", "isRequired": true, "choices": ["Ja", "Nee", "NVT"], "colCount": 3, "width": "20%" },
+                { "name": "opmerking", "title": "Toelichting bij Nee", "cellType": "comment", "width": "22%" }
+              ],
+              "validators": [
+                { "type": "expression", "text": "Bij Nee is een toelichting verplicht.", "expression": "{voorbereiding_items}.all(iif(item.voldoet = 'Nee', notempty(item.opmerking), true))" }
+              ],
+              "ember": { "followUp": { "kind": "workflow", "mode": "on-condition", "condition": { "field": "voldoet", "equals": "Nee" }, "itemCodeField": "item_code", "workflowtitleField": "onderwerp", "descriptionField": "opmerking", "category": "KAM-SCL afwijking", "certificateImpact": { "mode": "none" } } }
+            }
+          ]
+        },
+        {
+          "type": "panel",
+          "name": "vervoer",
+          "title": "Vervoer van en naar locaties",
+          "elements": [
+            {
+              "type": "matrixdynamic",
+              "name": "vervoer_items",
+              "titleLocation": "hidden",
+              "allowAddRows": false,
+              "allowRemoveRows": false,
+              "defaultValue": [
+                { "item_code": "VE-01", "onderwerp": "Voertuig en dakdrager niet overbeladen", "voldoet": "", "opmerking": "" },
+                { "item_code": "VE-02", "onderwerp": "Lading en materieel deugdelijk vastgezet", "voldoet": "", "opmerking": "" },
+                { "item_code": "VE-03", "onderwerp": "Zichthesje aanwezig in bus", "voldoet": "", "opmerking": "" },
+                { "item_code": "VE-04", "onderwerp": "EHBO-trommel aanwezig in bus", "voldoet": "", "opmerking": "" },
+                { "item_code": "VE-05", "onderwerp": "Brandblusser aanwezig in bus", "voldoet": "", "opmerking": "" }
+              ],
+              "columns": [
+                { "name": "item_code", "title": "Nr.", "cellType": "text", "readOnly": true, "width": "8%" },
+                { "name": "onderwerp", "title": "Controlepunt", "cellType": "text", "readOnly": true, "width": "50%" },
+                { "name": "voldoet", "title": "Beoordeling", "cellType": "radiogroup", "isRequired": true, "choices": ["Ja", "Nee", "NVT"], "colCount": 3, "width": "20%" },
+                { "name": "opmerking", "title": "Toelichting bij Nee", "cellType": "comment", "width": "22%" }
+              ],
+              "validators": [ { "type": "expression", "text": "Bij Nee is een toelichting verplicht.", "expression": "{vervoer_items}.all(iif(item.voldoet = 'Nee', notempty(item.opmerking), true))" } ],
+              "ember": { "followUp": { "kind": "workflow", "mode": "on-condition", "condition": { "field": "voldoet", "equals": "Nee" }, "itemCodeField": "item_code", "workflowtitleField": "onderwerp", "descriptionField": "opmerking", "category": "KAM-SCL afwijking", "certificateImpact": { "mode": "none" } } }
+            }
+          ]
+        },
+        {
+          "type": "panel",
+          "name": "verplaatsen",
+          "title": "Verplaatsen, laden en lossen",
+          "visibleIf": "{situatie_verplaatsen} = true or {toon_alle_categorieen} = true",
+          "elements": [
+            {
+              "type": "matrixdynamic",
+              "name": "verplaatsen_items",
+              "titleLocation": "hidden",
+              "allowAddRows": false,
+              "allowRemoveRows": false,
+              "defaultValue": [
+                { "item_code": "VL-01", "onderwerp": "Goede ondergrond", "voldoet": "", "opmerking": "" },
+                { "item_code": "VL-02", "onderwerp": "Niet onnodig materialen en materieel verplaatsen", "voldoet": "", "opmerking": "" },
+                { "item_code": "VL-03", "onderwerp": "Juist tillen", "voldoet": "", "opmerking": "" },
+                { "item_code": "VL-04", "onderwerp": "Gebruik hulpmiddelen bij verplaatsen, laden en lossen", "voldoet": "", "opmerking": "" },
+                { "item_code": "VL-05", "onderwerp": "Draag samen zware lasten", "voldoet": "", "opmerking": "" },
+                { "item_code": "VL-06", "onderwerp": "Gebruik vooraf afgesproken aanvoerroute", "voldoet": "", "opmerking": "" },
+                { "item_code": "VL-07", "onderwerp": "Blokkeer geen vluchtroutes", "voldoet": "", "opmerking": "" }
+              ],
+              "columns": [
+                { "name": "item_code", "title": "Nr.", "cellType": "text", "readOnly": true, "width": "8%" },
+                { "name": "onderwerp", "title": "Controlepunt", "cellType": "text", "readOnly": true, "width": "50%" },
+                { "name": "voldoet", "title": "Beoordeling", "cellType": "radiogroup", "isRequired": true, "choices": ["Ja", "Nee", "NVT"], "colCount": 3, "width": "20%" },
+                { "name": "opmerking", "title": "Toelichting bij Nee", "cellType": "comment", "width": "22%" }
+              ],
+              "validators": [ { "type": "expression", "text": "Bij Nee is een toelichting verplicht.", "expression": "{verplaatsen_items}.all(iif(item.voldoet = 'Nee', notempty(item.opmerking), true))" } ],
+              "ember": { "followUp": { "kind": "workflow", "mode": "on-condition", "condition": { "field": "voldoet", "equals": "Nee" }, "itemCodeField": "item_code", "workflowtitleField": "onderwerp", "descriptionField": "opmerking", "category": "KAM-SCL afwijking", "certificateImpact": { "mode": "none" } } }
+            }
+          ]
+        },
+        {
+          "type": "panel",
+          "name": "alleen_gebouw",
+          "title": "Alleen werken of werken in gebouw of winkel",
+          "visibleIf": "{situatie_alleen_gebouw} = true or {toon_alle_categorieen} = true",
+          "elements": [
+            {
+              "type": "matrixdynamic",
+              "name": "alleen_gebouw_items",
+              "titleLocation": "hidden",
+              "allowAddRows": false,
+              "allowRemoveRows": false,
+              "defaultValue": [
+                { "item_code": "AG-01", "onderwerp": "Collega op de hoogte stellen", "voldoet": "", "opmerking": "" },
+                { "item_code": "AG-02", "onderwerp": "Afspraken maken over controle", "voldoet": "", "opmerking": "" },
+                { "item_code": "AG-03", "onderwerp": "Communicatiemiddelen gebruiken", "voldoet": "", "opmerking": "" },
+                { "item_code": "AG-04", "onderwerp": "Controleer vooraf de werkplek op drugsspuiten en injectienaalden", "voldoet": "", "opmerking": "" },
+                { "item_code": "AG-05", "onderwerp": "Waarschuw gebouwenbeheerder bij aantreffen", "voldoet": "", "opmerking": "" },
+                { "item_code": "AG-06", "onderwerp": "Verwijder drugsspuiten en injectienaalden niet zelf", "voldoet": "", "opmerking": "" }
+              ],
+              "columns": [
+                { "name": "item_code", "title": "Nr.", "cellType": "text", "readOnly": true, "width": "8%" },
+                { "name": "onderwerp", "title": "Controlepunt", "cellType": "text", "readOnly": true, "width": "50%" },
+                { "name": "voldoet", "title": "Beoordeling", "cellType": "radiogroup", "isRequired": true, "choices": ["Ja", "Nee", "NVT"], "colCount": 3, "width": "20%" },
+                { "name": "opmerking", "title": "Toelichting bij Nee", "cellType": "comment", "width": "22%" }
+              ],
+              "validators": [ { "type": "expression", "text": "Bij Nee is een toelichting verplicht.", "expression": "{alleen_gebouw_items}.all(iif(item.voldoet = 'Nee', notempty(item.opmerking), true))" } ],
+              "ember": { "followUp": { "kind": "workflow", "mode": "on-condition", "condition": { "field": "voldoet", "equals": "Nee" }, "itemCodeField": "item_code", "workflowtitleField": "onderwerp", "descriptionField": "opmerking", "category": "KAM-SCL afwijking", "certificateImpact": { "mode": "none" } } }
+            }
+          ]
+        },
+        {
+          "type": "panel",
+          "name": "gereedschap",
+          "title": "Elektrisch en overig handgereedschap",
+          "visibleIf": "{situatie_gereedschap} = true or {toon_alle_categorieen} = true",
+          "elements": [
+            {
+              "type": "matrixdynamic",
+              "name": "gereedschap_items",
+              "titleLocation": "hidden",
+              "allowAddRows": false,
+              "allowRemoveRows": false,
+              "defaultValue": [
+                { "item_code": "GE-01", "onderwerp": "Juist en veilig gebruik inclusief bescherming op gereedschap", "voldoet": "", "opmerking": "" },
+                { "item_code": "GE-02", "onderwerp": "Veilige spanning; minder dan 50V wisselspanning of accu", "voldoet": "", "opmerking": "" },
+                { "item_code": "GE-03", "onderwerp": "PBM gebruikt; werkkleding, handschoenen en veiligheidsbril", "voldoet": "", "opmerking": "" },
+                { "item_code": "GE-04", "onderwerp": "Kwartstof; PBM P3", "voldoet": "", "opmerking": "" },
+                { "item_code": "GE-05", "onderwerp": "Glaswol; PBM P3 en werkhandschoenen", "voldoet": "", "opmerking": "" },
+                { "item_code": "GE-06", "onderwerp": "Asbest of keramische vezels; werkzaamheden direct onderbreken", "voldoet": "", "opmerking": "" }
+              ],
+              "columns": [
+                { "name": "item_code", "title": "Nr.", "cellType": "text", "readOnly": true, "width": "8%" },
+                { "name": "onderwerp", "title": "Controlepunt", "cellType": "text", "readOnly": true, "width": "50%" },
+                { "name": "voldoet", "title": "Beoordeling", "cellType": "radiogroup", "isRequired": true, "choices": ["Ja", "Nee", "NVT"], "colCount": 3, "width": "20%" },
+                { "name": "opmerking", "title": "Toelichting bij Nee", "cellType": "comment", "width": "22%" }
+              ],
+              "validators": [ { "type": "expression", "text": "Bij Nee is een toelichting verplicht.", "expression": "{gereedschap_items}.all(iif(item.voldoet = 'Nee', notempty(item.opmerking), true))" } ],
+              "ember": { "followUp": { "kind": "workflow", "mode": "on-condition", "condition": { "field": "voldoet", "equals": "Nee" }, "itemCodeField": "item_code", "workflowtitleField": "onderwerp", "descriptionField": "opmerking", "category": "KAM-SCL afwijking", "certificateImpact": { "mode": "none" } } }
+            }
+          ]
+        },
+        {
+          "type": "panel",
+          "name": "kabelwerk",
+          "title": "Kabelwerk en ionisatie brandmelders",
+          "visibleIf": "{situatie_kabelwerk} = true or {toon_alle_categorieen} = true",
+          "elements": [
+            {
+              "type": "matrixdynamic",
+              "name": "kabelwerk_items",
+              "titleLocation": "hidden",
+              "allowAddRows": false,
+              "allowRemoveRows": false,
+              "defaultValue": [
+                { "item_code": "KA-01", "onderwerp": "Niet werken aan onder spanning staand kabelwerk", "voldoet": "", "opmerking": "" },
+                { "item_code": "KA-02", "onderwerp": "PBM; werkhandschoenen", "voldoet": "", "opmerking": "" },
+                { "item_code": "KA-03", "onderwerp": "Voorkom gedwongen werkhoudingen", "voldoet": "", "opmerking": "" },
+                { "item_code": "KA-04", "onderwerp": "Opslag en transport ionisatie brandmelders volgens leverancier", "voldoet": "", "opmerking": "" },
+                { "item_code": "KA-05", "onderwerp": "Gebruik montagevoorschriften", "voldoet": "", "opmerking": "" },
+                { "item_code": "KA-06", "onderwerp": "Open of beschadig de melder niet", "voldoet": "", "opmerking": "" }
+              ],
+              "columns": [
+                { "name": "item_code", "title": "Nr.", "cellType": "text", "readOnly": true, "width": "8%" },
+                { "name": "onderwerp", "title": "Controlepunt", "cellType": "text", "readOnly": true, "width": "50%" },
+                { "name": "voldoet", "title": "Beoordeling", "cellType": "radiogroup", "isRequired": true, "choices": ["Ja", "Nee", "NVT"], "colCount": 3, "width": "20%" },
+                { "name": "opmerking", "title": "Toelichting bij Nee", "cellType": "comment", "width": "22%" }
+              ],
+              "validators": [ { "type": "expression", "text": "Bij Nee is een toelichting verplicht.", "expression": "{kabelwerk_items}.all(iif(item.voldoet = 'Nee', notempty(item.opmerking), true))" } ],
+              "ember": { "followUp": { "kind": "workflow", "mode": "on-condition", "condition": { "field": "voldoet", "equals": "Nee" }, "itemCodeField": "item_code", "workflowtitleField": "onderwerp", "descriptionField": "opmerking", "category": "KAM-SCL afwijking", "certificateImpact": { "mode": "none" } } }
+            }
+          ]
+        },
+        {
+          "type": "panel",
+          "name": "nauwe_ruimte",
+          "title": "Werken in nauwe ruimte",
+          "visibleIf": "{situatie_nauwe_ruimte} = true or {toon_alle_categorieen} = true",
+          "elements": [
+            {
+              "type": "matrixdynamic",
+              "name": "nauwe_ruimte_items",
+              "titleLocation": "hidden",
+              "allowAddRows": false,
+              "allowRemoveRows": false,
+              "defaultValue": [
+                { "item_code": "NR-01", "onderwerp": "Veilige spanning; accu of veiligheidstransformator", "voldoet": "", "opmerking": "" },
+                { "item_code": "NR-02", "onderwerp": "Kabels beschermen en/of ophangen", "voldoet": "", "opmerking": "" },
+                { "item_code": "NR-03", "onderwerp": "Beperk verblijfsduur", "voldoet": "", "opmerking": "" },
+                { "item_code": "NR-04", "onderwerp": "Voldoende ruimte en licht", "voldoet": "", "opmerking": "" },
+                { "item_code": "NR-05", "onderwerp": "Werk achter fysieke afscherming waar nodig", "voldoet": "", "opmerking": "" },
+                { "item_code": "NR-06", "onderwerp": "PBM; helm of beschermpet", "voldoet": "", "opmerking": "" }
+              ],
+              "columns": [
+                { "name": "item_code", "title": "Nr.", "cellType": "text", "readOnly": true, "width": "8%" },
+                { "name": "onderwerp", "title": "Controlepunt", "cellType": "text", "readOnly": true, "width": "50%" },
+                { "name": "voldoet", "title": "Beoordeling", "cellType": "radiogroup", "isRequired": true, "choices": ["Ja", "Nee", "NVT"], "colCount": 3, "width": "20%" },
+                { "name": "opmerking", "title": "Toelichting bij Nee", "cellType": "comment", "width": "22%" }
+              ],
+              "validators": [ { "type": "expression", "text": "Bij Nee is een toelichting verplicht.", "expression": "{nauwe_ruimte_items}.all(iif(item.voldoet = 'Nee', notempty(item.opmerking), true))" } ],
+              "ember": { "followUp": { "kind": "workflow", "mode": "on-condition", "condition": { "field": "voldoet", "equals": "Nee" }, "itemCodeField": "item_code", "workflowtitleField": "onderwerp", "descriptionField": "opmerking", "category": "KAM-SCL afwijking", "certificateImpact": { "mode": "none" } } }
+            }
+          ]
+        },
+        {
+          "type": "panel",
+          "name": "hoogte",
+          "title": "Werken op hoogte",
+          "visibleIf": "{situatie_hoogte} = true or {toon_alle_categorieen} = true",
+          "elements": [
+            {
+              "type": "matrixdynamic",
+              "name": "hoogte_items",
+              "titleLocation": "hidden",
+              "allowAddRows": false,
+              "allowRemoveRows": false,
+              "defaultValue": [
+                { "item_code": "HO-01", "onderwerp": "Gebruik juist hulpmiddel voor hoogte en situatie", "voldoet": "", "opmerking": "" },
+                { "item_code": "HO-02", "onderwerp": "Let op geldige keuring", "voldoet": "", "opmerking": "" },
+                { "item_code": "HO-03", "onderwerp": "Let op zichtbare gebreken", "voldoet": "", "opmerking": "" },
+                { "item_code": "HO-04", "onderwerp": "Vlakke dragende ondergrond", "voldoet": "", "opmerking": "" },
+                { "item_code": "HO-05", "onderwerp": "Voorkom uitglijden", "voldoet": "", "opmerking": "" },
+                { "item_code": "HO-06", "onderwerp": "Stempels gebruikt bij rolsteiger of hoogwerker", "voldoet": "", "opmerking": "" },
+                { "item_code": "HO-07", "onderwerp": "Vloeren en platform gesloten", "voldoet": "", "opmerking": "" },
+                { "item_code": "HO-08", "onderwerp": "Voorkom gedwongen werkhoudingen en langdurig werken", "voldoet": "", "opmerking": "" },
+                { "item_code": "HO-09", "onderwerp": "Werkvloer juist positioneren", "voldoet": "", "opmerking": "" },
+                { "item_code": "HO-10", "onderwerp": "PBM; aanlijnen met positioneringslijn", "voldoet": "", "opmerking": "" }
+              ],
+              "columns": [
+                { "name": "item_code", "title": "Nr.", "cellType": "text", "readOnly": true, "width": "8%" },
+                { "name": "onderwerp", "title": "Controlepunt", "cellType": "text", "readOnly": true, "width": "50%" },
+                { "name": "voldoet", "title": "Beoordeling", "cellType": "radiogroup", "isRequired": true, "choices": ["Ja", "Nee", "NVT"], "colCount": 3, "width": "20%" },
+                { "name": "opmerking", "title": "Toelichting bij Nee", "cellType": "comment", "width": "22%" }
+              ],
+              "validators": [ { "type": "expression", "text": "Bij Nee is een toelichting verplicht.", "expression": "{hoogte_items}.all(iif(item.voldoet = 'Nee', notempty(item.opmerking), true))" } ],
+              "ember": { "followUp": { "kind": "workflow", "mode": "on-condition", "condition": { "field": "voldoet", "equals": "Nee" }, "itemCodeField": "item_code", "workflowtitleField": "onderwerp", "descriptionField": "opmerking", "category": "KAM-SCL afwijking", "certificateImpact": { "mode": "none" } } }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "dialoog",
+      "title": "SCL-gesprek",
+      "description": "Kies minimaal twee vragen en leg de antwoorden vast als ontwikkelpunt, niet als afwijking.",
+      "elements": [
+        {
+          "type": "matrixdynamic",
+          "name": "scl_gesprekspunten",
+          "title": "Gesprekspunten",
+          "allowAddRows": true,
+          "allowRemoveRows": true,
+          "addRowText": "Vraag toevoegen",
+          "rowCount": 2,
+          "columns": [
+            { "name": "vraag", "title": "Vraag", "cellType": "dropdown", "isRequired": true, "choices": ["Wat is daarvoor de reden?", "Wat zou je anders doen met meer tijd?", "Wat heb je nodig om dit werk veiliger te doen?", "Wat had in de voorbereiding anders gekund?", "Wat versta jij onder veilig vakmanschap?", "Wat zou helpen om sneller iets onveiligs te melden?", "Hoe verloopt de samenwerking met andere partijen?"], "width": "40%" },
+            { "name": "ontwikkelpunt", "title": "Antwoord en ontwikkelpunt", "cellType": "comment", "isRequired": true, "width": "60%" }
+          ]
+        },
+        { "type": "text", "name": "datum_dialoog", "title": "Datum gesprek", "inputType": "date" }
+      ]
+    },
+    {
+      "name": "opvolging",
+      "title": "Opvolging en ondertekening",
+      "elements": [
+        { "type": "text", "name": "gedeeld_met_monteurs_op", "title": "Formulier gedeeld met monteur(s) op", "inputType": "date" },
+        { "type": "radiogroup", "name": "input_toolbox", "title": "Input voor eerstvolgende toolbox", "choices": ["Ja", "Nee"] },
+        { "type": "comment", "name": "suggestie_toolbox", "title": "Suggestie toolbox-onderwerp", "visibleIf": "{input_toolbox} = 'Ja'", "rows": 2 },
+        { "type": "comment", "name": "signalering_kam", "title": "Signalering voor de KAM-coördinator", "description": "De KAM-coördinator beoordeelt of opname in het KAM-actieplan nodig is.", "rows": 4 },
+        { "type": "comment", "name": "positieve_bevindingen", "title": "Algehele indruk en positieve bevindingen", "rows": 4 },
+        { "type": "text", "name": "ondertekening_inspecteur", "title": "Naam inspecteur ter verantwoording", "isRequired": true, "width": "50%" },
+        { "type": "text", "name": "datum_ondertekening_inspecteur", "title": "Datum", "inputType": "date", "isRequired": true, "width": "50%" },
+        { "type": "html", "name": "ondertekening_info", "html": "<p>De Ember-runner legt de indiener en het indienmoment afzonderlijk vast. Een zelfstandige canvas-handtekening uit de bron-HTML is daarom niet overgenomen; die hoort bij de platformbrede ondertekeningsstap, niet in een los formuliercomponent.</p>" },
+        { "type": "html", "name": "kam_beoordeling_info", "html": "<p><strong>Na indiening</strong> wordt automatisch een verplichte KAM-beoordeling aangemaakt. De KAM-coördinator legt de beslissing vast in de Monitor; dit formulier wordt pas definitief afgerond nadat die beoordeling is voltooid.</p>" }
+      ]
+    }
+  ]
+}

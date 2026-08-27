@@ -515,6 +515,12 @@ groups as (
     max(object_name) as object_name,
     max(formatted_address) as formatted_address,
     max(relation_name) as relation_name,
+    string_agg(convert(nvarchar(max), concat(
+      N'{"atrium_installation_code":"', string_escape(coalesce(atrium_installation_code, N''), 'json'),
+      N'","installation_name":"', string_escape(coalesce(installation_name, N''), 'json'),
+      N'","installation_type_key":"', string_escape(coalesce(installation_type_key, N''), 'json'),
+      N'","installation_type_name":"', string_escape(coalesce(installation_type_name, N''), 'json'), N'"}'
+    )), N',') as installations_json,
     sum(open_follow_up_count) as open_follow_up_count,
     sum(overdue_follow_up_count) as overdue_follow_up_count
   from gridded
@@ -530,6 +536,7 @@ select top (@take)
   case when g.installation_count = 1 then g.object_name else concat(g.installation_count, N' installaties') end as object_name,
   case when g.installation_count = 1 then g.formatted_address else null end as formatted_address,
   case when g.installation_count = 1 then g.relation_name else null end as relation,
+  concat(N'[', g.installations_json, N']') as installations_json,
   case when g.overdue_follow_up_count > 0 then N'CRITICAL' when g.open_follow_up_count > 0 then N'ATTENTION' else N'OK' end as attention_status,
   case when g.overdue_follow_up_count > 0 then N'Verlopen opvolging' when g.open_follow_up_count > 0 then N'Open opvolging' else N'Geen operationele signalen' end as attention_reason,
   convert(bigint, g.open_follow_up_count) as open_follow_up_count,

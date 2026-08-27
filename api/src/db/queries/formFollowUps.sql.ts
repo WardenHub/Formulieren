@@ -355,6 +355,7 @@ order by sd.is_terminal asc, sd.sort_order asc,
 export const getFormFollowUpByIdSql = `
 select top 1
   a.follow_up_action_id, fs.form_instance_id, a.kind, a.status,
+  a.assigned_role_code,
   a.internal_note as note, a.workflow_title, a.certificate_impact,
   a.certificate_impact_override,
   isnull(a.certificate_impact_override, a.certificate_impact) as effective_certificate_impact,
@@ -365,6 +366,17 @@ join dbo.FollowUpActionFormSource fs on fs.follow_up_action_id = a.follow_up_act
 join dbo.FormInstance fi on fi.form_instance_id = fs.form_instance_id
 left join dbo.AtriumInstallationBase ab on ab.installatie_code = fi.atrium_installation_code
 where a.follow_up_action_id = @followUpActionId
+`;
+
+export const getFormInstanceWorkflowRoleAccessSql = `
+select cast(case when exists (
+  select 1
+  from dbo.FollowUpAction a
+  join dbo.FollowUpActionFormSource fs
+    on fs.follow_up_action_id = a.follow_up_action_id
+  where fs.form_instance_id = @formInstanceId
+    and a.assigned_role_code = @workflowRoleCode
+) then 1 else 0 end as bit) as has_access;
 `;
 
 export const updateFormFollowUpStatusSql = `

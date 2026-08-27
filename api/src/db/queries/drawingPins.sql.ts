@@ -88,6 +88,8 @@ select
   p.y_normalized,
   p.label,
   p.description,
+  p.pin_kind,
+  p.pin_status,
   p.created_at,
   p.created_by,
   p.updated_at,
@@ -114,6 +116,7 @@ join dbo.InstallationDocument d
 where d.atrium_installation_code = @code
   and p.installation_document_id = @documentId
   and p.is_deleted = 0
+  and (@includeHistory = 1 or p.pin_status = N'ACTIVE')
 order by p.page_number, p.label, p.created_at;
 `;
 
@@ -138,6 +141,20 @@ join dbo.FollowUpStatusDefinition sd
   on sd.status_code = a.status
 where c.atrium_installation_code = @code
 order by sd.is_terminal, sd.sort_order, coalesce(a.updated_at, a.created_at) desc;
+`;
+
+export const historicalizeComponentPinsSql = `
+set nocount on;
+update p
+set pin_status = N'HISTORICAL', updated_at = sysutcdatetime(), updated_by = @actor
+from dbo.DrawingPin p
+join dbo.InstallationDocument d on d.document_id = p.installation_document_id
+where d.atrium_installation_code = @code
+  and d.document_id = @documentId
+  and p.pin_kind = N'COMPONENT_PLACED'
+  and p.pin_status = N'ACTIVE'
+  and p.is_deleted = 0;
+select @@rowcount as historicalized_count;
 `;
 
 export const createDrawingPinSql = `
@@ -174,6 +191,8 @@ insert into dbo.DrawingPin (
   y_normalized,
   label,
   description,
+  pin_kind,
+  pin_status,
   created_by
 )
 select
@@ -185,6 +204,8 @@ select
   @yNormalized,
   @label,
   @description,
+  @pinKind,
+  N'ACTIVE',
   @actor
 from dbo.InstallationDocument d
 where d.document_id = @documentId;
@@ -206,7 +227,9 @@ select
       @xNormalized as x_normalized,
       @yNormalized as y_normalized,
       @label as label,
-      @description as description
+      @description as description,
+      @pinKind as pin_kind,
+      N'ACTIVE' as pin_status
     for json path, without_array_wrapper
   ),
   @actor;
@@ -222,6 +245,8 @@ select
   p.y_normalized,
   p.label,
   p.description,
+  p.pin_kind,
+  p.pin_status,
   p.created_at,
   p.created_by,
   p.updated_at,
@@ -245,7 +270,9 @@ select @beforeJson = (
     p.x_normalized,
     p.y_normalized,
     p.label,
-    p.description
+    p.description,
+    p.pin_kind,
+    p.pin_status
   from dbo.DrawingPin p
   join dbo.InstallationDocument d
     on d.document_id = p.installation_document_id
@@ -267,6 +294,8 @@ set
   y_normalized = @yNormalized,
   label = @label,
   description = @description,
+  pin_kind = @pinKind,
+  pin_status = @pinStatus,
   updated_at = sysutcdatetime(),
   updated_by = @actor
 from dbo.DrawingPin p
@@ -306,7 +335,9 @@ select
       @xNormalized as x_normalized,
       @yNormalized as y_normalized,
       @label as label,
-      @description as description
+      @description as description,
+      @pinKind as pin_kind,
+      @pinStatus as pin_status
     for json path, without_array_wrapper
   ),
   @actor;
@@ -322,6 +353,8 @@ select
   p.y_normalized,
   p.label,
   p.description,
+  p.pin_kind,
+  p.pin_status,
   p.created_at,
   p.created_by,
   p.updated_at,

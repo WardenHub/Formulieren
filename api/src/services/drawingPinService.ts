@@ -6,6 +6,7 @@ import {
   getDrawingPinsSql,
   getInstallationDrawingsSql,
   getInstallationFollowUpChoicesSql,
+  historicalizeComponentPinsSql,
   linkDrawingPinActionSql,
   unlinkDrawingPinActionSql,
   updateDrawingPinSql,
@@ -20,6 +21,8 @@ import {
 
 const PRIORITIES = new Set(["LOW", "NORMAL", "HIGH", "CRITICAL"]);
 const RESPONSIBILITY_TYPES = new Set(["WARDENBURG", "CUSTOMER", "THIRD_PARTY", "UNSPECIFIED"]);
+const PIN_KINDS = new Set(["DEFICIENCY", "NOTE", "COMPONENT_PLACED"]);
+const PIN_STATUSES = new Set(["ACTIVE", "HISTORICAL"]);
 
 function requiredText(value: unknown, field: string, maxLength: number) {
   const clean = String(value ?? "").trim();
@@ -81,12 +84,27 @@ function parseJsonArray(value: unknown) {
   }
 }
 
+function normalizeRowVersion(value: unknown) {
+  if (value == null) return null;
+  if (Buffer.isBuffer(value)) return `0x${value.toString("hex")}`;
+  if (typeof value === "object" && Array.isArray((value as any).data)) {
+    return `0x${Buffer.from((value as any).data).toString("hex")}`;
+  }
+  const clean = String(value).trim();
+  if (/^0x[0-9a-f]{16}$/i.test(clean)) return clean;
+  if (String(value).length === 8) {
+    return `0x${Array.from(String(value), (character) => (character.charCodeAt(0) & 0xff).toString(16).padStart(2, "0")).join("")}`;
+  }
+  return clean || null;
+}
+
 function normalizePin(row: any) {
   return {
     ...row,
     page_number: Number(row.page_number),
     x_normalized: Number(row.x_normalized),
     y_normalized: Number(row.y_normalized),
+    row_version: normalizeRowVersion(row.row_version),
     follow_up_actions: parseJsonArray(row.follow_up_actions_json),
     follow_up_actions_json: undefined,
   };
@@ -108,19 +126,31 @@ export async function getInstallationDrawings(code: string) {
   };
 }
 
-export async function getDrawingPins(code: string, documentId: string) {
+export async function getDrawingPins(code: string, documentId: string, includeHistory = false) {
   const installationCode = cleanCode(code);
   const cleanDocumentId = uuid(documentId, "document id");
   const rows = await sqlQuery(getDrawingPinsSql, {
     code: installationCode,
     documentId: cleanDocumentId,
+    includeHistory: includeHistory ? 1 : 0,
   });
   return { pins: (rows || []).map(normalizePin) };
+}
+
+export async function historicalizeComponentPins(code: string, documentId: string, user: any) {
+  const rows = await sqlQuery(historicalizeComponentPinsSql, {
+    code: cleanCode(code),
+    documentId: uuid(documentId, "document id"),
+    actor: getUserAuditActor(user),
+  });
+  return { ok: true, historicalized_count: Number(rows?.[0]?.historicalized_count || 0) };
 }
 
 export async function createDrawingPin(code: string, documentId: string, payload: any, user: any) {
   const installationCode = cleanCode(code);
   await assertInstallationWritable(installationCode);
+  const pinKind = String(payload?.pin_kind || "NOTE").trim().toUpperCase();
+  if (!PIN_KINDS.has(pinKind)) throw new Error("pin kind invalid");
   const rows = await sqlQuery(createDrawingPinSql, {
     code: installationCode,
     documentId: uuid(documentId, "document id"),
@@ -129,6 +159,7 @@ export async function createDrawingPin(code: string, documentId: string, payload
     yNormalized: normalizedCoordinate(payload?.y_normalized, "y coordinate"),
     label: requiredText(payload?.label, "label", 200),
     description: optionalText(payload?.description, 2000),
+    pinKind,
     actor: getUserAuditActor(user),
   });
   return { ok: true, pin: rows?.[0] ? normalizePin(rows[0]) : null };
@@ -137,6 +168,10 @@ export async function createDrawingPin(code: string, documentId: string, payload
 export async function updateDrawingPin(code: string, drawingPinId: string, payload: any, user: any) {
   const installationCode = cleanCode(code);
   await assertInstallationWritable(installationCode);
+  const pinKind = String(payload?.pin_kind || "NOTE").trim().toUpperCase();
+  const pinStatus = String(payload?.pin_status || "ACTIVE").trim().toUpperCase();
+  if (!PIN_KINDS.has(pinKind)) throw new Error("pin kind invalid");
+  if (!PIN_STATUSES.has(pinStatus)) throw new Error("pin status invalid");
   const rows = await sqlQuery(updateDrawingPinSql, {
     code: installationCode,
     drawingPinId: uuid(drawingPinId, "drawing pin id"),
@@ -145,6 +180,8 @@ export async function updateDrawingPin(code: string, drawingPinId: string, paylo
     yNormalized: normalizedCoordinate(payload?.y_normalized, "y coordinate"),
     label: requiredText(payload?.label, "label", 200),
     description: optionalText(payload?.description, 2000),
+    pinKind,
+    pinStatus,
     rowVersion: rowVersion(payload?.row_version),
     actor: getUserAuditActor(user),
   });

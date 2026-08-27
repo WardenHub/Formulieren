@@ -478,7 +478,7 @@ export default function InstallationDetails() {
     setActiveTab(nextTabKey);
   }
 
-  const showCollapseAllToggle = activeTab !== "forms" && activeTab !== "notes";
+  const showCollapseAllToggle = activeTab !== "forms" && activeTab !== "notes" && activeTab !== "overview";
   const anyOpenInActiveTab = Boolean(anyOpenByTab[activeTab]);
   const collapseBtnTitle = anyOpenInActiveTab ? "Alles inklappen" : "Alles uitklappen";
   const CollapseIcon = anyOpenInActiveTab ? ChevronsDownUpIcon : ChevronsUpDownIcon;

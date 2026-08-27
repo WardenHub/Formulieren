@@ -203,7 +203,7 @@ export default function Home() {
               to="/formulieren"
               Icon={FileCheckIcon}
               title="Formulieren"
-              text="Start algemene of installatiegebonden formulieren en bekijk je eigen formulieren."
+              text="Start algemene formulieren en bekijk je eigen formulieren."
             />
 
             <AnimatedHomeCard
