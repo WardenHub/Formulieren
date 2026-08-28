@@ -5,6 +5,7 @@ import {
   deleteDrawingPinSql,
   getDrawingPinsSql,
   getInstallationDrawingsSql,
+  getInstallationDrawingPinOverviewSql,
   getInstallationFollowUpChoicesSql,
   historicalizeComponentPinsSql,
   linkDrawingPinActionSql,
@@ -116,13 +117,22 @@ function cleanCode(code: unknown) {
 
 export async function getInstallationDrawings(code: string) {
   const installationCode = cleanCode(code);
-  const [drawings, actions] = await Promise.all([
+  const [drawings, actions, pins] = await Promise.all([
     sqlQuery(getInstallationDrawingsSql, { code: installationCode }),
     sqlQuery(getInstallationFollowUpChoicesSql, { code: installationCode }),
+    sqlQuery(getInstallationDrawingPinOverviewSql, { code: installationCode }),
   ]);
   return {
     drawings: (drawings || []).map((row: any) => ({ ...row, pin_count: Number(row.pin_count || 0) })),
     follow_up_actions: actions || [],
+    pins: (pins || []).map((row: any) => ({
+      ...row,
+      page_number: Number(row.page_number || 1),
+      x_normalized: Number(row.x_normalized),
+      y_normalized: Number(row.y_normalized),
+      row_version: normalizeRowVersion(row.row_version),
+      follow_up_count: Number(row.follow_up_count || 0),
+    })),
   };
 }
 
@@ -138,9 +148,22 @@ export async function getDrawingPins(code: string, documentId: string, includeHi
 }
 
 export async function historicalizeComponentPins(code: string, documentId: string, user: any) {
+  const installationCode = cleanCode(code);
+  await assertInstallationWritable(installationCode);
   const rows = await sqlQuery(historicalizeComponentPinsSql, {
-    code: cleanCode(code),
+    code: installationCode,
     documentId: uuid(documentId, "document id"),
+    actor: getUserAuditActor(user),
+  });
+  return { ok: true, historicalized_count: Number(rows?.[0]?.historicalized_count || 0) };
+}
+
+export async function historicalizeAllComponentPins(code: string, user: any) {
+  const installationCode = cleanCode(code);
+  await assertInstallationWritable(installationCode);
+  const rows = await sqlQuery(historicalizeComponentPinsSql, {
+    code: installationCode,
+    documentId: "00000000-0000-0000-0000-000000000000",
     actor: getUserAuditActor(user),
   });
   return { ok: true, historicalized_count: Number(rows?.[0]?.historicalized_count || 0) };

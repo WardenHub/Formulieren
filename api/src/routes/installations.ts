@@ -34,6 +34,7 @@ import {
   getDrawingResource,
   getDrawingPins,
   postHistoricalizeComponentPins,
+  postHistoricalizeAllComponentPins,
   postDrawingPin,
   putDrawingPin,
   deleteDrawingPin,
@@ -238,6 +239,7 @@ router.get(
 );
 router.get("/:code/drawings/:documentId/pins", requireRole(...documentRoles), getDrawingPins);
 router.post("/:code/drawings/:documentId/pins/historicalize-components", requireRole(...documentRoles), postHistoricalizeComponentPins);
+router.post("/:code/drawing-pins/historicalize-components", requireRole(...documentRoles), postHistoricalizeAllComponentPins);
 router.post(
   "/:code/drawings/:documentId/pins",
   requireRole(...documentRoles),

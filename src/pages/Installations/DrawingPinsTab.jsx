@@ -9,6 +9,8 @@ import { BadgeAlertIcon } from "@/components/ui/badge-alert.jsx";
 import { MapPinPlusInsideIcon } from "@/components/ui/map-pin-plus-inside.jsx";
 import { MessageSquareMoreIcon } from "@/components/ui/message-square-more.jsx";
 import { CircleHelpIcon } from "@/components/ui/circle-help.jsx";
+import { LoaderPinwheelIcon } from "@/components/ui/loader-pinwheel";
+import DateInput from "@/components/DateInput.jsx";
 import { getResolvedAppearance, subscribeAppearance } from "@/theme/appearance.js";
 
 import {
@@ -52,7 +54,84 @@ const PIN_TYPE_META = {
   COMPONENT_PLACED: { label: "Component geplaatst", Icon: MapPinPlusInsideIcon, tone: "primary" },
 };
 
-function PdfPinViewer({ pdfDocument, pageNumber, pageCount, pins, selectedPinId, selectedPin, draft, editorOpen, editorContent, placing, onPreviousPage, onNextPage, onPlace, onSelect, onPinDragStart, onMove, onMoveEnd, onDraftMove, onQuickAction, readOnly }) {
+const FOLLOW_UP_PRIORITIES = [
+  { value: "LOW", label: "Laag" },
+  { value: "NORMAL", label: "Normaal" },
+  { value: "HIGH", label: "Hoog" },
+  { value: "CRITICAL", label: "Kritisch" },
+];
+
+const FOLLOW_UP_RESPONSIBILITIES = [
+  { value: "WARDENBURG", label: "Ons bedrijf" },
+  { value: "CUSTOMER", label: "Relatie / externe partij" },
+  { value: "UNSPECIFIED", label: "Nog te bepalen" },
+];
+
+function DrawingLoadingCard({ label = "De PDF en markeringen worden voorbereid." }) {
+  return (
+    <div className="card ember-loading-card drawing-loading-card" role="status" aria-live="polite">
+      <div className="ember-loading-card-inner">
+        <div className="ember-loading-icon">
+          <LoaderPinwheelIcon size={30} active aria-label="tekening wordt geladen" />
+        </div>
+        <div className="ember-loading-title">Tekening wordt geladen</div>
+        <div className="muted ember-small-text">{label}</div>
+      </div>
+    </div>
+  );
+}
+
+function DrawingChoicePicker({ value, options, onChange, ariaLabel }) {
+  const [open, setOpen] = useState(false);
+  const rootRef = useRef(null);
+  const selected = options.find((option) => option.value === value) || options[0];
+
+  useEffect(() => {
+    if (!open) return undefined;
+    function closeOnOutsidePointer(event) {
+      if (!rootRef.current?.contains(event.target)) setOpen(false);
+    }
+    document.addEventListener("pointerdown", closeOnOutsidePointer);
+    return () => document.removeEventListener("pointerdown", closeOnOutsidePointer);
+  }, [open]);
+
+  return (
+    <div className="drawing-choice-picker" ref={rootRef}>
+      <button
+        type="button"
+        className="drawing-choice-picker__trigger"
+        aria-label={ariaLabel}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        onClick={() => setOpen((current) => !current)}
+      >
+        <span>{selected?.label || "Kies"}</span>
+        <ChevronRight className={open ? "is-open" : ""} size={17} aria-hidden="true" />
+      </button>
+      {open ? (
+        <div className="drawing-choice-picker__menu" role="listbox" aria-label={ariaLabel}>
+          {options.map((option) => (
+            <button
+              key={option.value}
+              type="button"
+              role="option"
+              aria-selected={option.value === value}
+              className={option.value === value ? "is-selected" : ""}
+              onClick={() => {
+                onChange(option.value);
+                setOpen(false);
+              }}
+            >
+              {option.label}
+            </button>
+          ))}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function PdfPinViewer({ pdfDocument, pageNumber, pageCount, pins, selectedPinId, selectedPin, componentReview, draft, editorOpen, editorContent, placing, onPreviousPage, onNextPage, onPlace, onSelect, onPinDragStart, onMove, onMoveEnd, onDraftMove, onQuickAction, readOnly }) {
   const shellRef = useRef(null);
   const viewportRef = useRef(null);
   const layerRef = useRef(null);
@@ -60,13 +139,14 @@ function PdfPinViewer({ pdfDocument, pageNumber, pageCount, pins, selectedPinId,
   const [pageSize, setPageSize] = useState({ width: 0, height: 0 });
   const [shellSize, setShellSize] = useState({ width: 900, height: 600 });
   const [rendering, setRendering] = useState(false);
-  const [zoom, setZoom] = useState(1);
+  const [zoom, setZoom] = useState(() => componentReview ? 1.45 : 1);
   const [quickMenu, setQuickMenu] = useState(null);
   const [boundaryElement, setBoundaryElement] = useState(null);
   const menuTriggerRef = useRef(null);
   const longPressRef = useRef(null);
   const dragRef = useRef(null);
   const panRef = useRef(null);
+  const lastFocusedPinRef = useRef("");
   const editorDragRef = useRef(null);
   const [editorDragPosition, setEditorDragPosition] = useState(null);
   const resolvedTheme = useSyncExternalStore(
@@ -136,6 +216,29 @@ function PdfPinViewer({ pdfDocument, pageNumber, pageCount, pins, selectedPinId,
       renderTask?.cancel?.();
     };
   }, [pageNumber, pdfDocument, shellSize.width]);
+
+  useEffect(() => {
+    if (!selectedPinId || !selectedPin || rendering || !pageSize.width || !pageSize.height) return undefined;
+    if (Number(selectedPin.page_number) !== Number(pageNumber)) return undefined;
+    const focusKey = `${selectedPinId}:${pageNumber}`;
+    if (lastFocusedPinRef.current === focusKey) return undefined;
+    lastFocusedPinRef.current = focusKey;
+
+    const frameId = window.requestAnimationFrame(() => {
+      const viewport = viewportRef.current;
+      if (!viewport) return;
+      const pinX = Number(selectedPin.x_normalized) * pageSize.width * zoom;
+      const pinY = Number(selectedPin.y_normalized) * pageSize.height * zoom;
+      const maxLeft = Math.max(0, viewport.scrollWidth - viewport.clientWidth);
+      const maxTop = Math.max(0, viewport.scrollHeight - viewport.clientHeight);
+      viewport.scrollTo({
+        left: Math.min(maxLeft, Math.max(0, pinX - viewport.clientWidth / 2)),
+        top: Math.min(maxTop, Math.max(0, pinY - viewport.clientHeight / 2)),
+        behavior: "smooth",
+      });
+    });
+    return () => window.cancelAnimationFrame(frameId);
+  }, [componentReview, pageNumber, pageSize.height, pageSize.width, rendering, selectedPin, selectedPinId, zoom]);
 
   const pagePins = pins.filter((pin) => Number(pin.page_number) === Number(pageNumber));
 
@@ -354,6 +457,17 @@ function PdfPinViewer({ pdfDocument, pageNumber, pageCount, pins, selectedPinId,
               {(() => { const Icon = PIN_TYPE_META[pin.pin_kind]?.Icon || MessageSquareMoreIcon; return <Icon className="drawing-pin__icon" size={19} aria-hidden="true" />; })()}
             </button>
           ))}
+          {selectedPinId && selectedPin && Number(selectedPin.page_number) === Number(pageNumber) ? (
+            <div
+              key={`${selectedPinId}-${pageNumber}`}
+              className="drawing-pin-focus-indicator"
+              style={{ left: `${Number(selectedPin.x_normalized) * 100}%`, top: `${Number(selectedPin.y_normalized) * 100}%` }}
+              role="status"
+              aria-live="polite"
+            >
+              <span>Deze pin</span>
+            </div>
+          ) : null}
           {editorOpen && selectedPin && Number(selectedPin.page_number) === Number(pageNumber) ? (
             <div className="drawing-pin-tooltip" style={{ left: `${Number(selectedPin.x_normalized) * 100}%`, top: `${Number(selectedPin.y_normalized) * 100}%` }} role="status">
               <strong>{PIN_TYPE_META[selectedPin.pin_kind]?.label || "Markering"}</strong>
@@ -585,57 +699,66 @@ function PinActions({ code, pin, actions, busy, onChanged }) {
 
   return (
     <div className="drawing-pin-actions">
-      <strong className="drawing-pin-actions__title"><BriefcaseBusiness size={16} aria-hidden="true" /> Gekoppelde opvolgingen</strong>
-      {(pin.follow_up_actions || []).length ? (
-        <div className="drawing-pin-actions__list">
-          {pin.follow_up_actions.map((action) => (
-            <div key={action.follow_up_action_id} className="drawing-pin-action-row">
-              <div>
-                <strong>{action.workflow_title}</strong>
-                <span>{action.status}; {action.priority}</span>
-              </div>
-              <button
-                type="button"
-                className="icon-btn"
-                disabled={busy}
-                title="Koppeling verwijderen"
-                onClick={async () => {
-                  await unlinkDrawingPinAction(code, pin.drawing_pin_id, action.follow_up_action_id);
-                  await onChanged?.();
-                }}
-              >
-                ×
-              </button>
+      <strong className="drawing-pin-actions__title"><BriefcaseBusiness size={16} aria-hidden="true" /> {showNew ? "Nieuwe opvolging maken" : "Gekoppelde opvolgingen"}</strong>
+
+      {!showNew ? (
+        <>
+          {(pin.follow_up_actions || []).length ? (
+            <div className="drawing-pin-actions__list">
+              {pin.follow_up_actions.map((action) => (
+                <div key={action.follow_up_action_id} className="drawing-pin-action-row">
+                  <div>
+                    <strong>{action.workflow_title}</strong>
+                    <span>{action.status}; {action.priority}</span>
+                  </div>
+                  <button
+                    type="button"
+                    className="icon-btn"
+                    disabled={busy}
+                    title="Koppeling verwijderen"
+                    onClick={async () => {
+                      await unlinkDrawingPinAction(code, pin.drawing_pin_id, action.follow_up_action_id);
+                      await onChanged?.();
+                    }}
+                  >
+                    ×
+                  </button>
+                </div>
+              ))}
             </div>
-          ))}
-        </div>
-      ) : <span className="muted">Nog geen opvolging gekoppeld.</span>}
+          ) : <span className="muted">Nog geen opvolging gekoppeld.</span>}
 
-      <div className="drawing-pin-actions__link">
-        <select value={selectedActionId} onChange={(event) => setSelectedActionId(event.target.value)}>
-          <option value="">Bestaande opvolging kiezen</option>
-          {available.map((action) => (
-            <option key={action.follow_up_action_id} value={action.follow_up_action_id}>
-              {action.workflow_title}; {action.status}
-            </option>
-          ))}
-        </select>
-        <button type="button" className="btn btn-secondary" disabled={busy || !selectedActionId} onClick={linkSelected}>Koppelen</button>
-      </div>
+          <div className="drawing-pin-actions__link">
+            <select value={selectedActionId} onChange={(event) => setSelectedActionId(event.target.value)}>
+              <option value="">Bestaande opvolging kiezen</option>
+              {available.map((action) => (
+                <option key={action.follow_up_action_id} value={action.follow_up_action_id}>
+                  {action.workflow_title}; {action.status}
+                </option>
+              ))}
+            </select>
+            <button type="button" className="btn btn-secondary" disabled={busy || !selectedActionId} onClick={linkSelected}>Koppelen</button>
+          </div>
 
-      {!showNew ? <button type="button" className="btn btn-secondary" onClick={() => setShowNew(true)}>Nieuwe opvolging maken</button> : null}
+          <button type="button" className="btn btn-secondary" onClick={() => setShowNew(true)}>Nieuwe opvolging maken</button>
+        </>
+      ) : null}
 
       {showNew ? (
         <div className="drawing-manual-action-form">
           <label className="admin-field"><span>Titel</span><input maxLength={300} value={draft.title} onChange={(event) => setDraft((current) => ({ ...current, title: event.target.value }))} /></label>
           <label className="admin-field"><span>Omschrijving</span><textarea rows={3} value={draft.description} onChange={(event) => setDraft((current) => ({ ...current, description: event.target.value }))} /></label>
           <div className="drawing-manual-action-form__grid">
-            <label className="admin-field"><span>Prioriteit</span><select value={draft.priority} onChange={(event) => setDraft((current) => ({ ...current, priority: event.target.value }))}><option value="LOW">Laag</option><option value="NORMAL">Normaal</option><option value="HIGH">Hoog</option><option value="CRITICAL">Kritisch</option></select></label>
-            <label className="admin-field"><span>Verantwoordelijkheid</span><select value={draft.responsibility_type} onChange={(event) => setDraft((current) => ({ ...current, responsibility_type: event.target.value }))}><option value="WARDENBURG">Wardenburg</option><option value="CUSTOMER">Klant</option><option value="THIRD_PARTY">Derde</option><option value="UNSPECIFIED">Nog te bepalen</option></select></label>
-            <label className="admin-field"><span>Vervaldatum</span><span className="drawing-date-field"><input type="date" value={draft.due_date} onChange={(event) => setDraft((current) => ({ ...current, due_date: event.target.value }))} />{draft.due_date ? <button type="button" className="icon-btn drawing-date-clear" title="Vervaldatum wissen" aria-label="Vervaldatum wissen" onClick={() => setDraft((current) => ({ ...current, due_date: "" }))}><X size={16} /></button> : null}</span></label>
+            <label className="admin-field"><span>Prioriteit</span><DrawingChoicePicker ariaLabel="Prioriteit kiezen" value={draft.priority} options={FOLLOW_UP_PRIORITIES} onChange={(priority) => setDraft((current) => ({ ...current, priority }))} /></label>
+            <label className="admin-field"><span>Verantwoordelijkheid</span><DrawingChoicePicker ariaLabel="Verantwoordelijkheid kiezen" value={draft.responsibility_type === "THIRD_PARTY" ? "CUSTOMER" : draft.responsibility_type} options={FOLLOW_UP_RESPONSIBILITIES} onChange={(responsibility_type) => setDraft((current) => ({ ...current, responsibility_type }))} /></label>
+            <label className="admin-field"><span>Vervaldatum</span><DateInput value={draft.due_date || null} onChange={(due_date) => setDraft((current) => ({ ...current, due_date: due_date || "" }))} allowEmpty /></label>
           </div>
-          <label className="installations-filter-check"><input type="checkbox" checked={draft.customer_visible} onChange={(event) => setDraft((current) => ({ ...current, customer_visible: event.target.checked }))} /><span>Klantzichtbare tekst voorbereiden</span></label>
-          {draft.customer_visible ? <label className="admin-field"><span>Klantzichtbare tekst</span><textarea rows={2} value={draft.customer_note} onChange={(event) => setDraft((current) => ({ ...current, customer_note: event.target.value }))} /></label> : null}
+          <label className={`ember-toggle drawing-relation-description-toggle ${draft.customer_visible ? "is-on" : "is-off"}`}>
+            <input type="checkbox" checked={draft.customer_visible} onChange={(event) => setDraft((current) => ({ ...current, customer_visible: event.target.checked }))} />
+            <span className="ember-toggle__track"><span className="ember-toggle__thumb" /></span>
+            <span className="ember-toggle__label">Andere omschrijving voor relatie</span>
+          </label>
+          {draft.customer_visible ? <label className="admin-field"><span>Omschrijving voor relatie</span><textarea rows={2} value={draft.customer_note} onChange={(event) => setDraft((current) => ({ ...current, customer_note: event.target.value }))} /></label> : null}
           <button type="button" className="btn btn-primary" disabled={busy || !draft.title.trim()} onClick={createAction}>Opvolging maken en koppelen</button>
           <button type="button" className="btn btn-danger drawing-manual-action-cancel" onClick={() => setShowNew(false)}><X size={17} aria-hidden="true" /> Annuleren</button>
         </div>
@@ -644,17 +767,18 @@ function PinActions({ code, pin, actions, busy, onChanged }) {
   );
 }
 
-export default function DrawingPinsTab({ code, readOnly = false }) {
+export default function DrawingPinsTab({ code, readOnly = false, navigationTarget = null, onOpenFollowUp }) {
   const [searchParams, setSearchParams] = useSearchParams();
   const [directory, setDirectory] = useState({ drawings: [], follow_up_actions: [] });
-  const [selectedDocumentId, setSelectedDocumentId] = useState(() => String(searchParams.get("drawing") || ""));
+  const [selectedDocumentId, setSelectedDocumentId] = useState(() => String(navigationTarget?.documentId || searchParams.get("drawing") || ""));
   const [pins, setPins] = useState([]);
   const [pdfDocument, setPdfDocument] = useState(null);
-  const [pageNumber, setPageNumber] = useState(() => Math.max(1, Number(searchParams.get("page") || 1)));
-  const [selectedPinId, setSelectedPinId] = useState(() => String(searchParams.get("pin") || ""));
+  const [pageNumber, setPageNumber] = useState(() => Math.max(1, Number(navigationTarget?.pageNumber || searchParams.get("page") || 1)));
+  const [selectedPinId, setSelectedPinId] = useState(() => String(navigationTarget?.pinId || searchParams.get("pin") || ""));
   const [draft, setDraft] = useState(null);
   const [placing, setPlacing] = useState(false);
-  const [loading, setLoading] = useState(true);
+  const [directoryLoading, setDirectoryLoading] = useState(true);
+  const [pdfLoading, setPdfLoading] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [showHistory, setShowHistory] = useState(false);
@@ -666,6 +790,52 @@ export default function DrawingPinsTab({ code, readOnly = false }) {
 
   const selectedDrawing = directory.drawings.find((item) => String(item.document_id) === selectedDocumentId) || null;
   const selectedPin = pins.find((item) => String(item.drawing_pin_id) === selectedPinId) || null;
+  const componentReview = Boolean(navigationTarget?.componentReview) || searchParams.get("componentReview") === "1";
+  const componentReviewPins = (directory.pins || []).filter((pin) => pin.pin_kind === "COMPONENT_PLACED" && String(pin.pin_status || "").toUpperCase() === "ACTIVE");
+  const componentReviewIndex = Math.max(0, componentReviewPins.findIndex((pin) => String(pin.drawing_pin_id) === selectedPinId));
+
+  function openComponentReviewPin(offset) {
+    if (!componentReviewPins.length) return;
+    const nextIndex = (componentReviewIndex + offset + componentReviewPins.length) % componentReviewPins.length;
+    const target = componentReviewPins[nextIndex];
+    setSelectedDocumentId(String(target.installation_document_id));
+    setPageNumber(Number(target.page_number || 1));
+    setSelectedPinId(String(target.drawing_pin_id));
+    setDraft(null);
+    setEditorOpen(false);
+    updateLocation(target.installation_document_id, target.page_number, target.drawing_pin_id);
+  }
+
+  async function completeCurrentReviewPin() {
+    if (!selectedPin || selectedPin.pin_kind !== "COMPONENT_PLACED" || readOnly) return;
+    const nextTarget = componentReviewPins.length > 1 ? componentReviewPins[(componentReviewIndex + 1) % componentReviewPins.length] : null;
+    setBusy(true);
+    setError("");
+    try {
+      await updateDrawingPin(code, selectedPin.drawing_pin_id, { ...selectedPin, pin_status: "HISTORICAL" });
+      const response = await loadDirectory({ documentId: nextTarget?.installation_document_id || selectedDocumentId });
+      if (nextTarget) {
+        setSelectedDocumentId(String(nextTarget.installation_document_id));
+        setPageNumber(Number(nextTarget.page_number || 1));
+        setSelectedPinId(String(nextTarget.drawing_pin_id));
+        setDraft(null);
+        setEditorOpen(false);
+        updateLocation(nextTarget.installation_document_id, nextTarget.page_number, nextTarget.drawing_pin_id);
+      } else {
+        setSelectedPinId("");
+        setDraft(null);
+        setEditorOpen(false);
+        updateLocation(selectedDocumentId, pageNumber, "");
+      }
+      await loadPins(nextTarget?.installation_document_id || selectedDocumentId);
+      setDirectory(response || { drawings: [], follow_up_actions: [], pins: [] });
+    } catch (requestError) {
+      setError(requestError?.message || "Componentmarkering verwerken is mislukt.");
+      await Promise.all([loadPins(), loadDirectory({ documentId: selectedDocumentId })]).catch(() => undefined);
+    } finally {
+      setBusy(false);
+    }
+  }
 
   function updateLocation(documentId, page, pinId = "") {
     const next = new URLSearchParams(searchParams);
@@ -694,23 +864,22 @@ export default function DrawingPinsTab({ code, readOnly = false }) {
 
   useEffect(() => {
     let cancelled = false;
-    setLoading(true);
+    setDirectoryLoading(true);
     setError("");
     getInstallationDrawings(code)
       .then((response) => {
         if (cancelled) return;
         setDirectory(response || { drawings: [], follow_up_actions: [] });
-        const preferred = selectedDocumentId || response?.drawings?.[0]?.document_id || "";
-        setSelectedDocumentId(String(preferred));
+        setSelectedDocumentId((current) => String(current || response?.drawings?.[0]?.document_id || ""));
       })
       .catch((requestError) => {
         if (!cancelled) setError(requestError?.message || String(requestError));
       })
       .finally(() => {
-        if (!cancelled) setLoading(false);
+        if (!cancelled) setDirectoryLoading(false);
       });
     return () => { cancelled = true; };
-  }, [code, selectedDocumentId]);
+  }, [code]);
 
   useEffect(() => {
     if (!selectedDocumentId) {
@@ -720,7 +889,8 @@ export default function DrawingPinsTab({ code, readOnly = false }) {
     }
     let cancelled = false;
     let activePdf = null;
-    setLoading(true);
+    setPdfLoading(true);
+    setPdfDocument(null);
     setError("");
     downloadInstallationDocumentFile(code, selectedDocumentId)
       .then(async (download) => {
@@ -739,7 +909,7 @@ export default function DrawingPinsTab({ code, readOnly = false }) {
         if (!cancelled) setError(requestError?.message || String(requestError));
       })
       .finally(() => {
-        if (!cancelled) setLoading(false);
+        if (!cancelled) setPdfLoading(false);
       });
     return () => {
       cancelled = true;
@@ -871,7 +1041,7 @@ export default function DrawingPinsTab({ code, readOnly = false }) {
     }
   }
 
-  if (loading && !directory.drawings.length) return <div className="ui-empty">Tekeningen laden...</div>;
+  if (directoryLoading && !directory.drawings.length) return <DrawingLoadingCard />;
 
   return (
     <div className="drawing-pins-tab">
@@ -954,6 +1124,8 @@ export default function DrawingPinsTab({ code, readOnly = false }) {
         <div className="ui-empty">Geen actieve PDF-tekeningen in het installatiedossier.</div>
       ) : null}
 
+      {selectedDocumentId && pdfLoading && !pdfDocument ? <DrawingLoadingCard label="De gekozen PDF wordt gedownload en opgebouwd." /> : null}
+
       {selectedDocumentId && pdfDocument ? (
         <div className={`drawing-pins-workspace${sidePanelOpen ? "" : " is-side-panel-collapsed"}`}>
           <div className="drawing-pins-canvas-column">
@@ -970,6 +1142,7 @@ export default function DrawingPinsTab({ code, readOnly = false }) {
               pins={pins}
               selectedPinId={selectedPinId}
               selectedPin={selectedPin}
+              componentReview={componentReview}
               draft={draft}
               editorOpen={editorOpen}
               editorContent={editorFloating ? pinEditor : null}
@@ -1007,7 +1180,10 @@ export default function DrawingPinsTab({ code, readOnly = false }) {
                 setDraft((current) => (current?.drawing_pin_id === pin.drawing_pin_id ? { ...current, ...position } : { ...pin, ...position }));
               }}
               onPinDragStart={() => {
-                setEditorOpen(false);
+                if (editorFloating) {
+                  setEditorFloating(false);
+                  setSidePanelOpen(true);
+                }
               }}
               onMoveEnd={saveMovedPin}
               onDraftMove={(position) => setDraft((current) => current ? { ...current, ...position } : current)}
@@ -1028,6 +1204,20 @@ export default function DrawingPinsTab({ code, readOnly = false }) {
           </div>
 
           <aside className="drawing-pins-side-panel" aria-hidden={!sidePanelOpen}>
+            {componentReview ? (
+              <div className="drawing-component-review">
+                <div>
+                  <strong>Tekencontrole componenten</strong>
+                  <span className="muted">{componentReviewPins.length ? `${componentReviewIndex + 1} van ${componentReviewPins.length} actief` : "Alle componentmarkeringen zijn verwerkt"}</span>
+                </div>
+                {componentReviewPins.length ? <div className="drawing-component-review__controls">
+                  <button type="button" className="icon-btn" onClick={() => openComponentReviewPin(-1)} aria-label="Vorige component"><ChevronLeft size={18} /></button>
+                  <button type="button" className="icon-btn" onClick={() => openComponentReviewPin(1)} aria-label="Volgende component"><ChevronRight size={18} /></button>
+                  <button type="button" className="btn btn-primary btn-compact" disabled={busy || !selectedPin} onClick={completeCurrentReviewPin}><MapPinPlusInside size={16} /> Verwerkt; volgende</button>
+                </div> : null}
+                <button type="button" className="btn btn-secondary btn-compact" onClick={() => onOpenFollowUp?.()}>Terug naar werkvoorraad</button>
+              </div>
+            ) : null}
             {placing ? <div className="ember-alert ember-alert--info">Klik op de tekening om de locatie vast te leggen.</div> : null}
             {editorOpen && !editorFloating ? pinEditor : null}
           {editorOpen && selectedPin ? (
@@ -1041,25 +1231,37 @@ export default function DrawingPinsTab({ code, readOnly = false }) {
             ) : null}
             <div className="drawing-pin-list">
                 <strong>Pins op deze tekening</strong>
-                {pins.length ? pins.map((pin) => (
-                  <button
-                    key={pin.drawing_pin_id}
-                    type="button"
-                    className="drawing-pin-list__item"
-                    onClick={() => {
-                      setPageNumber(Number(pin.page_number));
-                      setSelectedPinId(String(pin.drawing_pin_id));
-                      setDraft({ ...pin });
-                      setEditorFloating(false);
-                      setSidePanelOpen(true);
-                      setEditorOpen(true);
-                      updateLocation(selectedDocumentId, pin.page_number, pin.drawing_pin_id);
-                    }}
-                  >
-                    <strong>{pin.label}</strong>
-                    <span>Pagina {pin.page_number}; {(pin.follow_up_actions || []).length} opvolging(en)</span>
-                  </button>
-                )) : <span className="muted">Nog geen pins.</span>}
+                {pins.length ? pins.map((pin) => {
+                  const meta = PIN_TYPE_META[pin.pin_kind] || PIN_TYPE_META.NOTE;
+                  const Icon = meta.Icon;
+                  const isHistorical = String(pin.pin_status || "").toUpperCase() === "HISTORICAL";
+                  return (
+                    <button
+                      key={pin.drawing_pin_id}
+                      type="button"
+                      className={`follow-up-pin-card follow-up-pin-card--${meta.tone} drawing-pin-list__item${isHistorical ? " is-historical" : ""}${String(pin.drawing_pin_id) === selectedPinId ? " is-selected" : ""}`}
+                      onClick={() => {
+                        setPageNumber(Number(pin.page_number));
+                        setSelectedPinId(String(pin.drawing_pin_id));
+                        setDraft({ ...pin });
+                        setEditorFloating(false);
+                        setSidePanelOpen(true);
+                        setEditorOpen(true);
+                        updateLocation(selectedDocumentId, pin.page_number, pin.drawing_pin_id);
+                      }}
+                    >
+                      <span className="follow-up-pin-card__icon"><Icon size={21} className="nav-anim-icon" /></span>
+                      <span className="follow-up-pin-card__body">
+                        <span className="follow-up-pin-card__head">
+                          <strong>{pin.label || meta.label}</strong>
+                          <span className={`monitor-tag monitor-tag--${isHistorical ? "muted" : "active"}`}>{isHistorical ? "Historisch" : "Actief"}</span>
+                        </span>
+                        {pin.description ? <span className="follow-up-pin-card__description">{pin.description}</span> : null}
+                        <span className="follow-up-card__meta"><span>{meta.label}</span><span>Pagina {pin.page_number}</span><span>{(pin.follow_up_actions || []).length} opvolging{(pin.follow_up_actions || []).length === 1 ? "" : "en"}</span></span>
+                      </span>
+                    </button>
+                  );
+                }) : <span className="muted">Nog geen pins.</span>}
             </div>
           </aside>
         </div>

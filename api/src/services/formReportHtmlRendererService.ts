@@ -874,17 +874,27 @@ function renderCoverPage(model: any) {
             ? `<div class="cover-note is-warning">Definitief oordeel nog niet mogelijk; er staan nog certificaatblokkerende actiepunten open.</div>`
             : ""
         }
-        <div class="cover-facts-list">
-          ${metaRows
-            .map(
-              (row) => `
-                <div class="cover-fact-row">
-                  <div class="cover-fact-label">${escapeHtml(row.label)}</div>
-                  <div class="cover-fact-value">${escapeHtml(displayText(row.value))}</div>
-                </div>
-              `
-            )
-            .join("")}
+        <div class="cover-footer-grid">
+          <div class="cover-certification-mark">
+            ${
+              model?.assets?.certificationMark?.dataUrl
+                ? `<img src="${model.assets.certificationMark.dataUrl}" alt="${escapeHtml(firstText(model.assets.certificationMark.displayName, "Certificeringsbeeldmerk"))}" />`
+                : ""
+            }
+          </div>
+          <div class="cover-facts-list">
+            ${metaRows
+              .map(
+                (row) => `
+                  <div class="cover-fact-row">
+                    <div class="cover-fact-label">${escapeHtml(row.label)}</div>
+                    <div class="cover-fact-value">${escapeHtml(displayText(row.value))}</div>
+                  </div>
+                `
+              )
+              .join("")}
+          </div>
+          <div class="cover-footer-balance" aria-hidden="true"></div>
         </div>
       </div>
     </main>
@@ -2741,6 +2751,28 @@ function renderHtmlDocument(model: any) {
             padding-top: 6mm;
           }
 
+          .cover-footer-grid {
+            display: grid;
+            grid-template-columns: 28mm minmax(0, 84mm) 28mm;
+            gap: 5mm;
+            align-items: end;
+            justify-content: center;
+          }
+
+          .cover-certification-mark,
+          .cover-footer-balance {
+            width: 28mm;
+            min-height: 1px;
+          }
+
+          .cover-certification-mark img {
+            display: block;
+            width: auto;
+            max-width: 26mm;
+            max-height: 31mm;
+            object-fit: contain;
+          }
+
           .cover-icon-grid {
             display: grid;
             grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -2786,8 +2818,8 @@ function renderHtmlDocument(model: any) {
           .cover-facts-list {
             display: grid;
             gap: 1.8mm;
-            max-width: 84mm;
-            margin: 0 auto;
+            width: 84mm;
+            margin: 0;
           }
 
           .cover-fact-row {
@@ -3552,6 +3584,28 @@ function renderBodyHtmlDocument(model: any) {
             padding-top: 6mm;
           }
 
+          .cover-footer-grid {
+            display: grid;
+            grid-template-columns: 28mm minmax(0, 84mm) 28mm;
+            gap: 5mm;
+            align-items: end;
+            justify-content: center;
+          }
+
+          .cover-certification-mark,
+          .cover-footer-balance {
+            width: 28mm;
+            min-height: 1px;
+          }
+
+          .cover-certification-mark img {
+            display: block;
+            width: auto;
+            max-width: 26mm;
+            max-height: 31mm;
+            object-fit: contain;
+          }
+
           .cover-icon-grid {
             display: grid;
             grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -3597,8 +3651,8 @@ function renderBodyHtmlDocument(model: any) {
           .cover-facts-list {
             display: grid;
             gap: 1.8mm;
-            max-width: 84mm;
-            margin: 0 auto;
+            width: 84mm;
+            margin: 0;
           }
 
           .cover-fact-row {

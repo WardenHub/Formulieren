@@ -53,7 +53,9 @@ export default function Tabs({ tabs, activeKey, onChange }) {
                   aria-label={
                     t.countDelta
                       ? `${countValue} bijlagen gewijzigd`
-                      : `${t.count} bijlagen`
+                      : t.countAriaLabel
+                        ? `${t.count} ${t.countAriaLabel}`
+                        : `${t.count} bijlagen`
                   }
                 >
                   {countValue}

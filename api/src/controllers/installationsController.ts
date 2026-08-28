@@ -1364,6 +1364,18 @@ export async function postHistoricalizeComponentPins(req: any, res: Response) {
   }
 }
 
+export async function postHistoricalizeAllComponentPins(req: any, res: Response) {
+  try {
+    const data = await drawingPinService.historicalizeAllComponentPins(
+      String(req.params.code || ""),
+      req.user
+    );
+    return res.json(data);
+  } catch (err: any) {
+    return drawingErrorResponse(res, err, "historicalizeAllComponentPins failed");
+  }
+}
+
 export async function postDrawingPin(req: any, res: Response) {
   try {
     const data = await drawingPinService.createDrawingPin(

@@ -1,6 +1,6 @@
 // src/pages/Installations/InstallationDetails.jsx
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useNavigate, useOutletContext, useSearchParams } from "react-router-dom";
 
 import AtriumTab from "./AtriumTab.jsx";
@@ -125,7 +125,6 @@ function InstallationWarningPopup({ note, onOpen, onDismiss }) {
   useEffect(() => {
     if (!note) return undefined;
 
-    setProgressPercent(100);
     const startedAt = Date.now();
 
     const intervalId = window.setInterval(() => {
@@ -357,6 +356,7 @@ export default function InstallationDetails() {
   const softwareRef = useRef(null);
   const typePickerRef = useRef(null);
   const saveOkTimerRef = useRef(null);
+  const skipNextTabUrlSyncRef = useRef(false);
 
   const [activeTab, setActiveTab] = useState(() => {
     const requestedTab = String(searchParams.get("tab") || "").trim().toLowerCase();
@@ -425,6 +425,7 @@ export default function InstallationDetails() {
   const [notesWorkflowOpenCount, setNotesWorkflowOpenCount] = useState(0);
   const [warningNotes, setWarningNotes] = useState([]);
   const [warningPopupVisible, setWarningPopupVisible] = useState(false);
+  const [drawingNavigationTarget, setDrawingNavigationTarget] = useState(null);
   const warningPopupShownRef = useRef("");
 
   const [anyOpenByTab, setAnyOpenByTab] = useState({
@@ -446,7 +447,7 @@ export default function InstallationDetails() {
     });
   }
 
-  function getActiveExpandRef() {
+  const getActiveExpandRef = useCallback(() => {
     if (activeTab === "atrium") return atriumRef.current;
     if (activeTab === "components") return componentsRef.current;
     if (activeTab === "custom") return customSaveRef.current;
@@ -455,9 +456,9 @@ export default function InstallationDetails() {
     if (activeTab === "documents") return docsSaveRef.current;
     if (activeTab === "software") return softwareRef.current;
     return null;
-  }
+  }, [activeTab]);
 
-  function hasUnsavedChanges() {
+  const hasUnsavedChanges = useCallback(() => {
     if (isHistorical) return false;
     if (activeTab === "custom") return typeIsSet && customDirty && !customSaving;
     if (activeTab === "documents") return docsDirty && !docsSaving;
@@ -465,7 +466,7 @@ export default function InstallationDetails() {
     if (activeTab === "energy") return energyDirty && !energySaving;
     if (activeTab === "performance") return perfDirty && !perfSaving;
     return false;
-  }
+  }, [activeTab, customDirty, customSaving, docsDirty, docsSaving, energyDirty, energySaving, isHistorical, perfDirty, perfSaving, softwareDirty, softwareSaving, typeIsSet]);
 
   function confirmLeaveTab(nextTabKey) {
     if (nextTabKey === activeTab) return true;
@@ -475,6 +476,7 @@ export default function InstallationDetails() {
 
   function handleTabChange(nextTabKey) {
     if (!confirmLeaveTab(nextTabKey)) return;
+    if (nextTabKey === "drawings") setDrawingNavigationTarget(null);
     setActiveTab(nextTabKey);
   }
 
@@ -722,14 +724,11 @@ export default function InstallationDetails() {
   }, []);
 
   useEffect(() => {
+    const formsBusyIcon = formsBusyIconRef.current;
+    const pageBusyIcon = pageBusyIconRef.current;
     return () => {
-    };
-  }, []);
-
-  useEffect(() => {
-    return () => {
-      formsBusyIconRef.current?.stopAnimation?.();
-      pageBusyIconRef.current?.stopAnimation?.();
+      formsBusyIcon?.stopAnimation?.();
+      pageBusyIcon?.stopAnimation?.();
     };
   }, []);
 
@@ -758,7 +757,7 @@ export default function InstallationDetails() {
 
     window.addEventListener("beforeunload", onBeforeUnload);
     return () => window.removeEventListener("beforeunload", onBeforeUnload);
-  }, [activeTab, typeIsSet, customDirty, customSaving, docsDirty, docsSaving, softwareDirty, softwareSaving, energyDirty, energySaving, perfDirty, perfSaving]);
+  }, [hasUnsavedChanges]);
 
   useEffect(() => {
     if (activeTab === "forms") {
@@ -767,14 +766,31 @@ export default function InstallationDetails() {
   }, [activeTab]);
 
   useEffect(() => {
+    if (skipNextTabUrlSyncRef.current) {
+      skipNextTabUrlSyncRef.current = false;
+      return;
+    }
     const currentParam = String(searchParams.get("tab") || "").trim().toLowerCase();
-    if (currentParam === activeTab) return;
-
     const nextParams = new URLSearchParams(searchParams);
     if (activeTab) nextParams.set("tab", activeTab);
     else nextParams.delete("tab");
 
-    setSearchParams(nextParams, { replace: true });
+    if (activeTab !== "drawings") {
+      nextParams.delete("drawing");
+      nextParams.delete("page");
+      nextParams.delete("pin");
+      nextParams.delete("componentReview");
+    }
+    if (activeTab !== "notes") nextParams.delete("note");
+    nextParams.delete("subtab");
+    if (activeTab !== "followups") {
+      nextParams.delete("newFollowUpPin");
+      nextParams.delete("followupView");
+    }
+
+    if (currentParam !== activeTab || nextParams.toString() !== searchParams.toString()) {
+      setSearchParams(nextParams, { replace: true });
+    }
   }, [activeTab, searchParams, setSearchParams]);
 
   useEffect(() => {
@@ -834,6 +850,7 @@ export default function InstallationDetails() {
     perfSaving,
     showCollapseAllToggle,
     anyOpenInActiveTab,
+    getActiveExpandRef,
     isHistorical,
   ]);
 
@@ -867,7 +884,7 @@ export default function InstallationDetails() {
   const isAdmin = roles.includes("admin")
     || Boolean(installation?.is_admin || installation?.isAdmin || installation?.user_is_admin);
 
-  const tabs = useMemo(() => {
+  const tabs = (() => {
     const customLabel = typeIsSet ? "Eigenschappen" : "Eigenschappen (kies type)";
 
     return [
@@ -889,31 +906,47 @@ export default function InstallationDetails() {
         content: (
           <NotesTab
             code={code}
-            installation={installation}
             readOnly={isHistorical}
             readOnlyReason={historicalReason}
             isActive={activeTab === "notes"}
             activationToken={activeTab === "notes" ? formsActivationToken : 0}
-            onWorkflowCountChange={setNotesWorkflowOpenCount}
             onWarningNotesChange={setWarningNotes}
           />
         ),
       },
       {
         key: "followups",
-        label: (
-          <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
-            <span>Opvolgingen</span>
-            {notesWorkflowOpenCount > 0 ? <span className="monitor-tag monitor-tag--warning">{notesWorkflowOpenCount}</span> : null}
-          </span>
-        ),
+        label: "Opvolgingen",
+        count: notesWorkflowOpenCount,
+        countAriaLabel: "openstaande opvolgingen",
         Icon: ClipboardList,
         content: (
           <FollowUpsTab
             code={code}
             readOnly={isHistorical}
             initialDrawingPinId={searchParams.get("newFollowUpPin") || ""}
+            initialView={searchParams.get("followupView") || "actions"}
             onCountChange={setNotesWorkflowOpenCount}
+            onOpenDrawing={(pin, options = {}) => {
+              setDrawingNavigationTarget({
+                documentId: String(pin.installation_document_id),
+                pageNumber: Number(pin.page_number || 1),
+                pinId: String(pin.drawing_pin_id),
+                componentReview: Boolean(options.componentReview),
+              });
+              skipNextTabUrlSyncRef.current = true;
+              setActiveTab("drawings");
+              const nextParams = new URLSearchParams(searchParams);
+              nextParams.set("tab", "drawings");
+              nextParams.set("drawing", String(pin.installation_document_id));
+              nextParams.set("page", String(pin.page_number || 1));
+              nextParams.set("pin", String(pin.drawing_pin_id));
+              if (options.componentReview) nextParams.set("componentReview", "1");
+              else nextParams.delete("componentReview");
+              nextParams.delete("newFollowUpPin");
+              nextParams.delete("followupView");
+              setSearchParams(nextParams, { replace: false });
+            }}
           />
         ),
       },
@@ -1013,7 +1046,20 @@ export default function InstallationDetails() {
           <DrawingPinsTab
             code={code}
             readOnly={isHistorical}
-            onOpenFollowUp={() => setActiveTab("followups")}
+            navigationTarget={drawingNavigationTarget}
+            onOpenFollowUp={() => {
+              setDrawingNavigationTarget(null);
+              skipNextTabUrlSyncRef.current = true;
+              setActiveTab("followups");
+              const nextParams = new URLSearchParams(searchParams);
+              nextParams.set("tab", "followups");
+              nextParams.set("followupView", "drawings");
+              nextParams.delete("drawing");
+              nextParams.delete("page");
+              nextParams.delete("pin");
+              nextParams.delete("componentReview");
+              setSearchParams(nextParams, { replace: false });
+            }}
           />
         ),
       } : null,
@@ -1224,33 +1270,9 @@ export default function InstallationDetails() {
         ),
       },
     ].filter(Boolean);
-  }, [
-    catalog,
-    installation,
-    docs,
-    hasDrawings,
-    code,
-    customValues,
-    typeIsSet,
-    installationTypes,
-    typeSaving,
-    energySupplies,
-    energyBrandTypes,
-    softwareData,
-    isAdmin,
-    activeTab,
-    formsActivationToken,
-    notesWorkflowOpenCount,
-    searchParams,
-    selectedFormCode,
-    preflight,
-    preflightLoading,
-    preflightError,
-  ]);
+  })();
 
-  const activeContent = useMemo(() => {
-    return tabs.find((t) => t.key === activeTab)?.content ?? null;
-  }, [tabs, activeTab]);
+  const activeContent = tabs.find((t) => t.key === activeTab)?.content ?? null;
 
   const showHeaderSave =
     (activeTab === "custom" && typeIsSet) ||
@@ -1280,6 +1302,7 @@ export default function InstallationDetails() {
 
       {warningPopupVisible && warningNotes[0] ? (
         <InstallationWarningPopup
+          key={String(warningNotes[0]?.installation_note_id || "warning")}
           note={warningNotes[0]}
           onDismiss={() => {
             setWarningPopupVisible(false);
@@ -1287,11 +1310,12 @@ export default function InstallationDetails() {
           onOpen={() => {
             setWarningPopupVisible(false);
 
+            skipNextTabUrlSyncRef.current = true;
             setActiveTab("notes");
 
             const nextParams = new URLSearchParams(searchParams);
             nextParams.set("tab", "notes");
-            nextParams.set("subtab", "notes");
+            nextParams.delete("subtab");
             nextParams.set("note", String(warningNotes[0]?.installation_note_id || ""));
             setSearchParams(nextParams, { replace: false });
           }}

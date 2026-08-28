@@ -143,18 +143,124 @@ where c.atrium_installation_code = @code
 order by sd.is_terminal, sd.sort_order, coalesce(a.updated_at, a.created_at) desc;
 `;
 
+export const getInstallationDrawingPinOverviewSql = `
+select
+  p.drawing_pin_id,
+  p.installation_document_id,
+  p.stored_file_id,
+  p.page_number,
+  p.x_normalized,
+  p.y_normalized,
+  p.label,
+  p.description,
+  p.pin_kind,
+  p.pin_status,
+  p.created_at,
+  p.updated_at,
+  convert(varchar(18), p.row_version, 1) as row_version,
+  d.title as drawing_title,
+  d.document_number,
+  d.revision as drawing_revision,
+  sf.file_name as drawing_file_name,
+  case when exists (
+    select 1
+    from dbo.InstallationDocument replacement
+    where replacement.parent_document_id = d.document_id
+      and replacement.relation_type = N'VERVANGING'
+      and replacement.is_active = 1
+  ) then cast(0 as bit) else cast(1 as bit) end as is_current_drawing_version,
+  (
+    select count(*)
+    from dbo.FollowUpActionDrawingPinMap map
+    where map.drawing_pin_id = p.drawing_pin_id
+  ) as follow_up_count
+from dbo.DrawingPin p
+join dbo.InstallationDocument d
+  on d.document_id = p.installation_document_id
+join dbo.StoredFile sf
+  on sf.stored_file_id = p.stored_file_id
+ and sf.is_deleted = 0
+where d.atrium_installation_code = @code
+  and p.is_deleted = 0
+order by
+  case when p.pin_status = N'ACTIVE' then 0 else 1 end,
+  case when p.pin_kind = N'COMPONENT_PLACED' then 0 when p.pin_kind = N'DEFICIENCY' then 1 else 2 end,
+  coalesce(p.updated_at, p.created_at) desc,
+  p.drawing_pin_id;
+`;
+
 export const historicalizeComponentPinsSql = `
 set nocount on;
-update p
-set pin_status = N'HISTORICAL', updated_at = sysutcdatetime(), updated_by = @actor
+set xact_abort on;
+
+declare @targets table (
+  drawing_pin_id uniqueidentifier primary key,
+  before_json nvarchar(max) not null
+);
+
+insert into @targets (drawing_pin_id, before_json)
+select
+  p.drawing_pin_id,
+  (
+    select
+      p.installation_document_id,
+      p.stored_file_id,
+      p.page_number,
+      p.x_normalized,
+      p.y_normalized,
+      p.label,
+      p.description,
+      p.pin_kind,
+      p.pin_status
+    for json path, without_array_wrapper
+  )
 from dbo.DrawingPin p
 join dbo.InstallationDocument d on d.document_id = p.installation_document_id
 where d.atrium_installation_code = @code
-  and d.document_id = @documentId
+  and (@documentId = '00000000-0000-0000-0000-000000000000' or d.document_id = @documentId)
   and p.pin_kind = N'COMPONENT_PLACED'
   and p.pin_status = N'ACTIVE'
   and p.is_deleted = 0;
-select @@rowcount as historicalized_count;
+
+begin transaction;
+
+update p
+set
+  pin_status = N'HISTORICAL',
+  updated_at = sysutcdatetime(),
+  updated_by = @actor
+from dbo.DrawingPin p
+join @targets target on target.drawing_pin_id = p.drawing_pin_id;
+
+insert into dbo.DrawingPinEvent (
+  drawing_pin_id,
+  event_type,
+  before_json,
+  after_json,
+  event_by
+)
+select
+  target.drawing_pin_id,
+  N'UPDATED',
+  target.before_json,
+  (
+    select
+      p.page_number,
+      p.x_normalized,
+      p.y_normalized,
+      p.label,
+      p.description,
+      p.pin_kind,
+      p.pin_status
+    for json path, without_array_wrapper
+  ),
+  @actor
+from @targets target
+join dbo.DrawingPin p on p.drawing_pin_id = target.drawing_pin_id;
+
+commit transaction;
+
+select count(*) as historicalized_count from @targets;
 `;
 
 export const createDrawingPinSql = `

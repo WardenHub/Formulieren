@@ -69,6 +69,7 @@ function normalizeDraftFromForm(selectedForm) {
     name: selectedForm.name ?? "",
     description: selectedForm.description ?? "",
     document_profile_key: selectedForm.document_profile_key ?? "",
+    certification_mark_key: selectedForm.certification_mark_key ?? "",
     workflow_profile_key: selectedForm.workflow_profile_key ?? "",
     official_document_number: selectedForm.official_document_number ?? "",
     owner_department: selectedForm.owner_department ?? "",
@@ -410,6 +411,34 @@ const AdminFormsConfigTab = forwardRef(function AdminFormsConfigTab(
 
                   <div className="cf-control">
                     <input className="input" value={draft.code} readOnly />
+                  </div>
+                </div>
+
+                <div className="cf-row">
+                  <div className="cf-label">
+                    <div className="cf-label-text">Certificeringsbeeldmerk</div>
+                    <div className="cf-label-sub">
+                      Eén expliciete keuze per formulierversie. Nieuwe schema's en disciplines worden via de catalogus toegevoegd.
+                    </div>
+                  </div>
+
+                  <div className="cf-control">
+                    <select
+                      className="input"
+                      value={draft.certification_mark_key ?? ""}
+                      onChange={(e) => setField("certification_mark_key", e.target.value)}
+                    >
+                      <option value="">Geen beeldmerk op het voorblad</option>
+                      {(selectedForm.certification_marks || []).map((mark) => (
+                        <option
+                          key={mark.certification_mark_key}
+                          value={mark.certification_mark_key}
+                        >
+                          {mark.display_name} ({mark.authority_code} · {mark.scheme_code})
+                          {mark.is_active ? "" : " · niet actief"}
+                        </option>
+                      ))}
+                    </select>
                   </div>
                 </div>
 

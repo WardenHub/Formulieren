@@ -1,11 +1,10 @@
-import { useId, useRef, useState } from "react";
+import { useId, useState } from "react";
 import { CalendarDays } from "lucide-react";
 import { formatDateInput, parseDateInput } from "../lib/dateInput.js";
 
 export default function DateInput({ value, onChange, allowEmpty = true, disabled = false, id, name, "aria-label": ariaLabel }) {
   const generatedId = useId();
   const inputId = id || `date-${generatedId}`;
-  const nativeRef = useRef(null);
   const lastCommitted = String(value || "").slice(0, 10);
   const [draft, setDraft] = useState(() => ({ source: lastCommitted, text: formatDateInput(value) }));
   const [validation, setValidation] = useState(() => ({ source: lastCommitted, error: "" }));
@@ -36,13 +35,6 @@ export default function DateInput({ value, onChange, allowEmpty = true, disabled
     return true;
   }
 
-  function openPicker() {
-    if (disabled) return;
-    const node = nativeRef.current;
-    if (typeof node?.showPicker === "function") node.showPicker();
-    else node?.click();
-  }
-
   return (
     <div className={`ember-date-input${error ? " ember-date-input--invalid" : ""}`}>
       <div className="ember-date-input__row">
@@ -64,15 +56,15 @@ export default function DateInput({ value, onChange, allowEmpty = true, disabled
             if (event.key === "Enter") { event.preventDefault(); commit(); }
           }}
         />
-        <button type="button" className="icon-btn ember-date-input__button" disabled={disabled} onClick={openPicker} aria-label="Datum kiezen">
+        <button type="button" className="icon-btn ember-date-input__button" disabled={disabled} tabIndex={-1} aria-hidden="true">
           <CalendarDays size={17} />
         </button>
         <input
-          ref={nativeRef}
           className="ember-date-input__native"
           type="date"
-          tabIndex={-1}
-          aria-hidden="true"
+          disabled={disabled}
+          aria-label={ariaLabel ? `${ariaLabel}; datumkiezer` : "Datum kiezen"}
+          title="Datum kiezen"
           value={lastCommitted}
           onChange={(event) => {
             const iso = event.target.value || null;

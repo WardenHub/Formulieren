@@ -238,6 +238,7 @@ export async function getAdminForms() {
         name: r.name,
         description: r.description ?? null,
         document_profile_key: normalizeNullableString(r.document_profile_key),
+        certification_mark_key: normalizeNullableString(r.certification_mark_key),
         workflow_profile_key: normalizeNullableString(r.workflow_profile_key),
         official_document_number: normalizeNullableString(r.official_document_number),
         status: r.status ?? null,
@@ -267,6 +268,7 @@ export async function getAdminFormDetail(formId: string) {
   const contextRuleRows: any[] = Array.isArray(recordsets?.[4]) ? recordsets[4] : [];
   const followUpRuleRows: any[] = Array.isArray(recordsets?.[5]) ? recordsets[5] : [];
   const workflowRoleRows: any[] = Array.isArray(recordsets?.[6]) ? recordsets[6] : [];
+  const certificationMarkRows: any[] = Array.isArray(recordsets?.[7]) ? recordsets[7] : [];
 
   const versions = versionRows.map((r: any, index: number) => ({
     form_version_id: r.form_version_id,
@@ -274,6 +276,7 @@ export async function getAdminFormDetail(formId: string) {
     version_label: r.version_label,
     published_at: r.published_at ?? null,
     published_by: r.published_by ?? null,
+    certification_mark_key: normalizeNullableString(r.certification_mark_key),
     is_latest: index === 0,
     survey_json: parseJsonObject(r.survey_json, {}),
   }));
@@ -284,6 +287,7 @@ export async function getAdminFormDetail(formId: string) {
     name: formRow.name,
     description: formRow.description ?? null,
     document_profile_key: normalizeNullableString(formRow.document_profile_key),
+    certification_mark_key: normalizeNullableString(formRow.certification_mark_key),
     workflow_profile_key: normalizeNullableString(formRow.workflow_profile_key),
     official_document_number: normalizeNullableString(formRow.official_document_number),
     owner_department: normalizeNullableString(formRow.owner_department),
@@ -339,6 +343,17 @@ export async function getAdminFormDetail(formId: string) {
       role_code: r.role_code,
       display_name: r.display_name,
       description: r.description ?? null,
+      is_active: r.is_active === false ? false : true,
+    })),
+    certification_marks: certificationMarkRows.map((r: any) => ({
+      certification_mark_key: r.certification_mark_key,
+      authority_code: r.authority_code,
+      scheme_code: r.scheme_code,
+      process_code: r.process_code,
+      display_name: r.display_name,
+      asset_file_name: r.asset_file_name,
+      source_url: normalizeNullableString(r.source_url),
+      sort_order: Number(r.sort_order ?? 0),
       is_active: r.is_active === false ? false : true,
     })),
   };
@@ -408,6 +423,7 @@ export async function saveAdminFormConfig(formId: string, payload: any, user: an
   const description =
     payload?.description == null ? null : String(payload.description).trim() || null;
   const documentProfileKey = normalizeNullableString(payload?.document_profile_key);
+  const certificationMarkKey = normalizeNullableString(payload?.certification_mark_key);
   const workflowProfileKey = normalizeNullableString(payload?.workflow_profile_key);
   const officialDocumentNumber = normalizeNullableString(payload?.official_document_number);
   const ownerDepartment = normalizeNullableString(payload?.owner_department);
@@ -442,6 +458,7 @@ export async function saveAdminFormConfig(formId: string, payload: any, user: an
     name,
     description,
     documentProfileKey,
+    certificationMarkKey,
     workflowProfileKey,
     officialDocumentNumber,
     ownerDepartment,

@@ -27,6 +27,7 @@ select
   fd.name,
   fd.description,
   fd.document_profile_key,
+  fd.certification_mark_key,
   fd.workflow_profile_key,
   fd.official_document_number,
   fd.owner_department,
@@ -54,6 +55,7 @@ select top 1
   fd.name,
   fd.description,
   fd.document_profile_key,
+  fd.certification_mark_key,
   fd.workflow_profile_key,
   fd.official_document_number,
   fd.owner_department,
@@ -78,6 +80,7 @@ select
   fv.form_id,
   fv.version,
   fv.version_label,
+  fv.certification_mark_key,
   fv.published_at,
   fv.published_by,
   fv.survey_json
@@ -145,6 +148,25 @@ select
 from dbo.WorkflowRoleDefinition
 where is_active = 1
 order by display_name, role_code;
+
+select
+  certification_mark_key,
+  authority_code,
+  scheme_code,
+  process_code,
+  display_name,
+  asset_file_name,
+  source_url,
+  sort_order,
+  is_active
+from dbo.CertificationMarkDefinition
+where is_active = 1
+   or certification_mark_key = (
+     select certification_mark_key
+     from dbo.FormDefinition
+     where form_id = @formId
+   )
+order by authority_code, scheme_code, sort_order, display_name;
 `;
 
 export const createAdminFormSql = `
@@ -264,6 +286,24 @@ end;
 if @status not in ('A', 'M', 'I')
 begin
   throw 50000, 'invalid form status', 1;
+end;
+
+if @certificationMarkKey is not null and not exists (
+  select 1
+  from dbo.CertificationMarkDefinition cmd
+  where cmd.certification_mark_key = @certificationMarkKey
+    and (
+      cmd.is_active = 1
+      or exists (
+        select 1
+        from dbo.FormDefinition fd
+        where fd.form_id = @formId
+          and fd.certification_mark_key = cmd.certification_mark_key
+      )
+    )
+)
+begin
+  throw 50000, 'unknown or inactive certification mark', 1;
 end;
 
 if @perfSeverity not in (N'blocking', N'warning')
@@ -417,6 +457,7 @@ set
   name = @name,
   description = @description,
   document_profile_key = @documentProfileKey,
+  certification_mark_key = @certificationMarkKey,
   workflow_profile_key = @workflowProfileKey,
   official_document_number = @officialDocumentNumber,
   owner_department = @ownerDepartment,
@@ -583,6 +624,7 @@ insert into dbo.FormDefinitionVersion (
   version,
   version_label,
   survey_json,
+  certification_mark_key,
   published_at,
   published_by,
   effective_from,
@@ -596,6 +638,7 @@ values (
   @nextVersion,
   @versionLabel,
   @surveyJson,
+  (select certification_mark_key from dbo.FormDefinition where form_id = @formId),
   sysutcdatetime(),
   @publishedBy,
   sysutcdatetime(),

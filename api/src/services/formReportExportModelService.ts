@@ -139,7 +139,12 @@ function readImageDataUrl(filePath: string) {
   if (!fs.existsSync(filePath)) return null;
 
   const ext = path.extname(filePath).toLowerCase();
-  const mime = ext === ".jpg" || ext === ".jpeg" ? "image/jpeg" : "image/png";
+  const mime =
+    ext === ".jpg" || ext === ".jpeg"
+      ? "image/jpeg"
+      : ext === ".svg"
+        ? "image/svg+xml"
+        : "image/png";
   return `data:${mime};base64,${fs.readFileSync(filePath).toString("base64")}`;
 }
 
@@ -188,13 +193,42 @@ function readHefasLogoDataUrl() {
 }
 
 function readPdfAsset(fileName: string) {
+  const relativeName = String(fileName || "").trim().replace(/\\/g, "/");
+  if (
+    !relativeName ||
+    path.isAbsolute(relativeName) ||
+    relativeName.split("/").some((part) => !part || part === "." || part === "..") ||
+    !/[.](svg|png|jpe?g)$/i.test(relativeName)
+  ) {
+    return null;
+  }
+
   const candidates = [
-    path.join(process.cwd(), "src", "assets", "pdf", fileName),
-    path.join(process.cwd(), "..", "src", "assets", "pdf", fileName),
+    path.join(process.cwd(), "src", "assets", "pdf", relativeName),
+    path.join(process.cwd(), "..", "src", "assets", "pdf", relativeName),
   ];
 
   const filePath = candidates.find((p) => fs.existsSync(p));
   return filePath ? readImageDataUrl(filePath) : null;
+}
+
+function certificationMarkAsset(item: any) {
+  const key = normalizeText(item?.certification_mark_key);
+  const assetFileName = normalizeText(item?.certification_mark_asset_file_name);
+  if (!key || !assetFileName) return null;
+
+  const dataUrl = readPdfAsset(assetFileName);
+  if (!dataUrl) return null;
+
+  return {
+    key,
+    authorityCode: normalizeText(item?.certification_mark_authority_code),
+    schemeCode: normalizeText(item?.certification_mark_scheme_code),
+    processCode: normalizeText(item?.certification_mark_process_code),
+    displayName: normalizeText(item?.certification_mark_display_name),
+    sourceUrl: normalizeText(item?.certification_mark_source_url),
+    dataUrl,
+  };
 }
 
 function logoDataUrlForCompanyUnit(companyUnit: any) {
@@ -437,6 +471,7 @@ export async function buildFormReportExportModel(formInstanceIdRaw: any, user: a
       assets: {
         logoDataUrl: logoDataUrlForCompanyUnit(item.bedrijf_unit),
         disciplineIcons: disciplineAssetsData(),
+        certificationMark: certificationMarkAsset(item),
       },
       form: {
         id: formInstanceId,
@@ -448,6 +483,7 @@ export async function buildFormReportExportModel(formInstanceIdRaw: any, user: a
         note: item.instance_note,
         atrium_installation_code: item.atrium_installation_code,
         document_profile_key: item.document_profile_key,
+        certification_mark_key: item.certification_mark_key,
         workflow_profile_key: item.workflow_profile_key,
         official_document_number: item.official_document_number,
       },

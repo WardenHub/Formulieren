@@ -1,5 +1,6 @@
 // api/src/server.ts
 import "./env.js";
+import "./telemetry.js";
 import app from "./app.js";
 import { warmUpHtmlFormReportRenderer } from "./services/formReportHtmlRendererService.js";
 import { markRuntimeRendererWarmUp, markRuntimeServerListening } from "./services/runtimeStatusService.js";

@@ -251,6 +251,10 @@ export function historicalizeComponentPins(code, documentId) {
   return apiPost(`/installations/${encodeURIComponent(code)}/drawings/${encodeURIComponent(documentId)}/pins/historicalize-components`, {});
 }
 
+export function historicalizeAllComponentPins(code) {
+  return apiPost(`/installations/${encodeURIComponent(code)}/drawing-pins/historicalize-components`, {});
+}
+
 export function updateDrawingPin(code, drawingPinId, payload = {}) {
   return apiPut(
     `/installations/${encodeURIComponent(code)}/drawing-pins/${encodeURIComponent(drawingPinId)}`,

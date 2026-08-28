@@ -13,6 +13,7 @@ import { ArrowBigRightIcon } from "@/components/ui/arrow-big-right";
 import { FileCheckIcon } from "@/components/ui/file-check";
 import { IdCardIcon } from "@/components/ui/id-card";
 import { BookTextIcon } from "@/components/ui/book-text";
+import ApiStartupLoader, { useApiStartupLoader } from "@/components/ApiStartupLoader.jsx";
 
 function formatDate(value) {
   if (!value) return "";
@@ -116,6 +117,7 @@ function RecentKindTag({ kind }) {
 
 export default function Home() {
   const [roles, setRoles] = useState([]);
+  const [homeLoading, setHomeLoading] = useState(true);
   const [news, setNews] = useState([]);
   const [newsState, setNewsState] = useState("idle");
   const [recentItems, setRecentItems] = useState([]);
@@ -129,6 +131,8 @@ export default function Home() {
         if (!cancelled) setRoles(data.roles ?? []);
       } catch {
         if (!cancelled) setRoles([]);
+      } finally {
+        if (!cancelled) setHomeLoading(false);
       }
     }
 
@@ -137,6 +141,11 @@ export default function Home() {
       cancelled = true;
     };
   }, []);
+
+  const startupLoader = useApiStartupLoader(homeLoading, {
+    slowHintDelayMs: 1200,
+    loadingCopy: "Ember maakt de eerste verbinding van vandaag.",
+  });
 
   useEffect(() => {
     let cancelled = false;
@@ -190,6 +199,13 @@ export default function Home() {
             <h1 className="home-title">Ember</h1>
             <p className="home-subtitle muted">Kies wat je wilt doen:</p>
           </div>
+
+          {startupLoader.showStartupCard ? (
+            <ApiStartupLoader
+              state={startupLoader}
+              startupTitle="Ember maakt de API wakker"
+            />
+          ) : null}
 
           <div className="home-grid">
             <AnimatedHomeCard

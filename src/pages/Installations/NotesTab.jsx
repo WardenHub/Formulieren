@@ -1,12 +1,11 @@
-import { useEffect, useMemo, useRef, useState } from "react";
-import { Link, useSearchParams } from "react-router-dom";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import UserAvatar from "../../components/UserAvatar.jsx";
 import {
   archiveInstallationNote,
   createInstallationNote,
   deleteInstallationNote,
   getInstallationNotes,
-  getInstallationWorkflowItems,
   getMe,
   getUserDirectory,
   toggleInstallationNoteReaction,
@@ -24,8 +23,6 @@ import {
   formatDateTime,
   getCardToneClass,
   getToneClass,
-  getStatusTone,
-  statusLabel,
 } from "../Monitor/formsMonitorShared.jsx";
 import {
   MessageCircleMore,
@@ -37,7 +34,6 @@ import {
   Check,
   X,
 } from "lucide-react";
-import { ArrowBigRightIcon } from "../../components/ui/arrow-big-right.jsx";
 import { MessageSquarePlusIcon } from "../../components/ui/message-square-plus.jsx";
 import {
   NoteEditorToolbar,
@@ -222,31 +218,23 @@ function MentionPicker({ directoryItems, selectedMentions, onAddMention, disable
 
 export default function NotesTab({
   code,
-  installation,
   readOnly = false,
   readOnlyReason = "",
   isActive = false,
-  onWorkflowCountChange,
   onWarningNotesChange,
   activationToken = 0,
 }) {
   const [searchParams, setSearchParams] = useSearchParams();
-  const requestedSubtab = String(searchParams.get("subtab") || "").trim().toLowerCase();
   const requestedNoteId = String(searchParams.get("note") || "").trim();
 
-  const [subtab, setSubtab] = useState(requestedSubtab === "workflow" ? "workflow" : "notes");
   const [notesData, setNotesData] = useState({ notes: [], activeNotes: [], archivedNotes: [], counts: {} });
-  const [workflowData, setWorkflowData] = useState({ activeItems: [], historicalItems: [], counts: {} });
   const [directoryItems, setDirectoryItems] = useState([]);
   const [actorLookup, setActorLookup] = useState(new Map());
   const [me, setMe] = useState(null);
   const [loading, setLoading] = useState(false);
-  const [workflowLoading, setWorkflowLoading] = useState(false);
   const [error, setError] = useState("");
-  const [workflowError, setWorkflowError] = useState("");
   const [saving, setSaving] = useState(false);
   const [showArchived, setShowArchived] = useState(false);
-  const [showWorkflowHistory, setShowWorkflowHistory] = useState(false);
   const [draft, setDraft] = useState({
     note_kind: "NOTE",
     body_markdown: "",
@@ -314,26 +302,15 @@ export default function NotesTab({
       .slice(0, 8);
   }, [currentMentionTarget, directoryItems, mentionDraft]);
 
-  function syncSearchParams(nextSubtab, nextNoteId = "") {
-    const next = new URLSearchParams(searchParams);
-    if (nextSubtab === "workflow") next.set("subtab", "workflow");
-    else next.set("subtab", "notes");
-
-    if (nextNoteId) next.set("note", nextNoteId);
-    else next.delete("note");
-
-    setSearchParams(next, { replace: true });
-  }
-
-  async function loadDirectoryAndMe() {
+  const loadDirectoryAndMe = useCallback(async () => {
     const [meData, directoryData] = await Promise.all([getMe(), getUserDirectory()]);
     setMe(meData || null);
     const items = Array.isArray(directoryData?.items) ? directoryData.items : [];
     setDirectoryItems(items);
     setActorLookup(buildDirectoryActorLookup(items));
-  }
+  }, []);
 
-  async function loadNotes(options = {}) {
+  const loadNotes = useCallback(async (options = {}) => {
     setLoading(true);
     setError("");
     try {
@@ -348,37 +325,20 @@ export default function NotesTab({
     } finally {
       setLoading(false);
     }
-  }
-
-  async function loadWorkflow() {
-    setWorkflowLoading(true);
-    setWorkflowError("");
-    try {
-      const data = await getInstallationWorkflowItems(code);
-      setWorkflowData(data || { activeItems: [], historicalItems: [], counts: {} });
-      onWorkflowCountChange?.(Number(data?.counts?.open || 0));
-    } catch (err) {
-      setWorkflowError(err?.message || String(err));
-    } finally {
-      setWorkflowLoading(false);
-    }
-  }
+  }, [code, onWarningNotesChange, showArchived]);
 
   useEffect(() => {
-    setSubtab(requestedSubtab === "workflow" ? "workflow" : "notes");
-  }, [requestedSubtab]);
+    if (!isActive || !searchParams.has("subtab")) return;
+    const next = new URLSearchParams(searchParams);
+    next.delete("subtab");
+    setSearchParams(next, { replace: true });
+  }, [isActive, searchParams, setSearchParams]);
 
   useEffect(() => {
     if (!isActive) return;
     void loadDirectoryAndMe();
     void loadNotes({ markRead: true });
-    void loadWorkflow();
-  }, [code, isActive, activationToken]);
-
-  useEffect(() => {
-    if (!requestedNoteId) return;
-    setSubtab("notes");
-  }, [requestedNoteId]);
+  }, [activationToken, isActive, loadDirectoryAndMe, loadNotes]);
 
   useEffect(() => {
     const timeout = window.setTimeout(() => {
@@ -390,12 +350,6 @@ export default function NotesTab({
     }, 120);
     return () => window.clearTimeout(timeout);
   }, [requestedNoteId, notesData.notes]);
-
-  useEffect(() => {
-    if (subtab !== "notes" && linkDraft.open) {
-      closeLinkEditor();
-    }
-  }, [subtab, linkDraft.open]);
 
   useEffect(() => {
     function handlePointerDown(event) {
@@ -420,39 +374,6 @@ export default function NotesTab({
       closeMentionPicker();
     }
   }, [editingNoteId, mentionDraft.open, mentionDraft.target]);
-
-  useEffect(() => {
-    if (!isActive || subtab !== "notes") return undefined;
-
-    function handleSaveShortcut(event) {
-      if (!event.altKey || String(event.key || "").toLowerCase() !== "s") return;
-      event.preventDefault();
-
-      if (readOnly || saving) return;
-
-      if (editingNoteId) {
-        if (!String(editingDraft.body_markdown || "").trim()) return;
-        void handleSaveEdit(editingNoteId);
-        return;
-      }
-
-      if (!String(draft.body_markdown || "").trim()) return;
-      void handleCreateNote();
-    }
-
-    window.addEventListener("keydown", handleSaveShortcut);
-    return () => window.removeEventListener("keydown", handleSaveShortcut);
-  }, [
-    draft.body_markdown,
-    draft.note_kind,
-    editingDraft.body_markdown,
-    editingDraft.note_kind,
-    editingNoteId,
-    isActive,
-    readOnly,
-    saving,
-    subtab,
-  ]);
 
   function closeLinkEditor() {
     setLinkDraft({
@@ -636,7 +557,7 @@ export default function NotesTab({
     focusEditor(target, result.caretStart, result.caretEnd);
   }
 
-  async function handleCreateNote() {
+  const handleCreateNote = useCallback(async () => {
     setSaving(true);
     try {
       await createInstallationNote(code, draft);
@@ -649,9 +570,9 @@ export default function NotesTab({
     } finally {
       setSaving(false);
     }
-  }
+  }, [code, draft, loadNotes, showArchived]);
 
-  async function handleSaveEdit(noteId) {
+  const handleSaveEdit = useCallback(async (noteId) => {
     setSaving(true);
     try {
       await updateInstallationNote(code, noteId, editingDraft);
@@ -660,7 +581,30 @@ export default function NotesTab({
     } finally {
       setSaving(false);
     }
-  }
+  }, [code, editingDraft, loadNotes, showArchived]);
+
+  useEffect(() => {
+    if (!isActive) return undefined;
+
+    function handleSaveShortcut(event) {
+      if (!event.altKey || String(event.key || "").toLowerCase() !== "s") return;
+      event.preventDefault();
+
+      if (readOnly || saving) return;
+
+      if (editingNoteId) {
+        if (!String(editingDraft.body_markdown || "").trim()) return;
+        void handleSaveEdit(editingNoteId);
+        return;
+      }
+
+      if (!String(draft.body_markdown || "").trim()) return;
+      void handleCreateNote();
+    }
+
+    window.addEventListener("keydown", handleSaveShortcut);
+    return () => window.removeEventListener("keydown", handleSaveShortcut);
+  }, [draft.body_markdown, editingDraft.body_markdown, editingNoteId, handleCreateNote, handleSaveEdit, isActive, readOnly, saving]);
 
   function canEditNote(note) {
     return (
@@ -681,36 +625,7 @@ export default function NotesTab({
 
   return (
     <div style={{ display: "grid", gap: 16 }}>
-      <div className="tabs-row" style={{ justifyContent: "flex-start" }}>
-        <button
-          type="button"
-          className={subtab === "notes" ? "tab-btn active" : "tab-btn"}
-          onClick={() => {
-            setSubtab("notes");
-            syncSearchParams("notes");
-          }}
-        >
-          Notities
-        </button>
-        <button
-          type="button"
-          className={subtab === "workflow" ? "tab-btn active" : "tab-btn"}
-          onClick={() => {
-            setSubtab("workflow");
-            syncSearchParams("workflow");
-          }}
-        >
-          <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
-            <span>Workflowitems</span>
-            <span className={Number(workflowData?.counts?.open || 0) > 0 ? "monitor-tag monitor-tag--warning" : "monitor-tag monitor-tag--muted"}>
-              {Number(workflowData?.counts?.open || 0)}
-            </span>
-          </span>
-        </button>
-      </div>
-
-      {subtab === "notes" ? (
-        <div style={{ display: "grid", gap: 16 }}>
+      <div style={{ display: "grid", gap: 16 }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
             <div style={{ fontWeight: 900, fontSize: 20 }}>Actieve notities</div>
             <button
@@ -1162,123 +1077,7 @@ export default function NotesTab({
               </button>
             </div>
           </div>
-        </div>
-      ) : (
-        <div style={{ display: "grid", gap: 16 }}>
-          {workflowError ? <div className="ember-alert ember-alert--danger">{workflowError}</div> : null}
-          {workflowLoading ? <div className="muted">Workflowitems laden...</div> : null}
-
-          <div className="card" style={{ padding: 18, display: "grid", gap: 12 }}>
-            <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
-              <div>
-                <div style={{ fontWeight: 900, fontSize: 20 }}>Openstaande workflowitems</div>
-                <div className="muted">Actieve actiepunten vanuit formulieren op deze installatie.</div>
-              </div>
-              <span className={Number(workflowData?.counts?.open || 0) > 0 ? "monitor-tag monitor-tag--warning" : "monitor-tag monitor-tag--muted"}>
-                {Number(workflowData?.counts?.open || 0)} open
-              </span>
-            </div>
-
-            {!workflowLoading && !(workflowData?.activeItems || []).length ? (
-              <div className="muted">Er zijn geen actieve workflowitems op deze installatie.</div>
-            ) : null}
-
-            {(workflowData?.activeItems || []).map((item) => (
-              <div
-                key={item.follow_up_action_id}
-                className={`${getCardToneClass(item.status)} installation-workflow-card`}
-              >
-                <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
-                  <div style={{ fontWeight: 800 }}>
-                    {item.source_item_code ? `${item.source_item_code} ; ` : ""}
-                    {item.workflow_title || "Workflowitem"}
-                  </div>
-                  <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", justifyContent: "flex-end" }}>
-                    <span className={getToneClass(getStatusTone(item.status))}>{statusLabel(item.status)}</span>
-                    {item.form_instance_id ? <ArrowBigRightIcon size={18} className="nav-anim-icon" /> : null}
-                  </div>
-                </div>
-                {item.workflow_description ? <div>{item.workflow_description}</div> : null}
-                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                  {item.category ? <span className="monitor-tag monitor-tag--muted">{item.category}</span> : null}
-                  {item.form_title ? <span className="monitor-tag monitor-tag--active">{item.form_title}</span> : null}
-                  {item.instance_number != null ? (
-                    <span className="monitor-tag monitor-tag--neutral">Formulier #{item.instance_number}</span>
-                  ) : null}
-                </div>
-                <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
-                  <div className="muted" style={{ fontSize: 13 }}>
-                    Laatste wijziging; {formatDateTime(item.updated_at || item.created_at)}
-                  </div>
-                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                    {item.form_instance_id ? (
-                      <Link className="btn btn-secondary" to={`/monitor/formulieren/${encodeURIComponent(item.form_instance_id)}`}>
-                        Open formulierafhandeling
-                      </Link>
-                    ) : null}
-                    {(item.drawing_pins || []).map((pin) => (
-                      <Link
-                        key={pin.drawing_pin_id}
-                        className="btn btn-secondary"
-                        to={`/installaties/${encodeURIComponent(code)}?tab=drawings&drawing=${encodeURIComponent(pin.installation_document_id)}&page=${encodeURIComponent(pin.page_number)}&pin=${encodeURIComponent(pin.drawing_pin_id)}`}
-                      >
-                        Toon op tekening; {pin.pin_label}
-                      </Link>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-
-          <div className="card" style={{ padding: 18, display: "grid", gap: 12 }}>
-            <button
-              type="button"
-              className={showWorkflowHistory ? "tab-btn active" : "tab-btn"}
-              style={{ justifySelf: "start" }}
-              onClick={() => setShowWorkflowHistory((prev) => !prev)}
-            >
-              Historie {Number(workflowData?.counts?.historical || 0)}
-            </button>
-
-            {showWorkflowHistory ? (
-              <div style={{ display: "grid", gap: 10 }}>
-                {(workflowData?.historicalItems || []).length ? (
-                  workflowData.historicalItems.map((item) => (
-                    <div key={item.follow_up_action_id} className={getCardToneClass(item.status)} style={{ padding: 14, display: "grid", gap: 8 }}>
-                      <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
-                        <div style={{ fontWeight: 700 }}>
-                          {item.source_item_code ? `${item.source_item_code} ; ` : ""}
-                          {item.workflow_title || "Workflowitem"}
-                        </div>
-                        <span className={getToneClass(getStatusTone(item.status))}>{statusLabel(item.status)}</span>
-                      </div>
-                      <div className="muted" style={{ fontSize: 13 }}>
-                        Laatste wijziging; {formatDateTime(item.updated_at || item.created_at)}
-                      </div>
-                      {(item.drawing_pins || []).length ? (
-                        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                          {(item.drawing_pins || []).map((pin) => (
-                            <Link
-                              key={pin.drawing_pin_id}
-                              className="btn btn-secondary"
-                              to={`/installaties/${encodeURIComponent(code)}?tab=drawings&drawing=${encodeURIComponent(pin.installation_document_id)}&page=${encodeURIComponent(pin.page_number)}&pin=${encodeURIComponent(pin.drawing_pin_id)}`}
-                            >
-                              Toon op tekening; {pin.pin_label}
-                            </Link>
-                          ))}
-                        </div>
-                      ) : null}
-                    </div>
-                  ))
-                ) : (
-                  <div className="muted">Er zijn nog geen historische workflowitems.</div>
-                )}
-              </div>
-            ) : null}
-          </div>
-        </div>
-      )}
+      </div>
     </div>
   );
 }
