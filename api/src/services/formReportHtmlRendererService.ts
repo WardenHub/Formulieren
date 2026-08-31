@@ -457,9 +457,13 @@ function reportConfig(model: any) {
 
 function activeDisciplines(model: any) {
   const configured = reportConfig(model)?.activeDisciplines;
-  return Array.isArray(configured) && configured.length
-    ? configured.map((value: any) => String(value || "").trim()).filter(Boolean)
-    : ["brandbeveiliging", "service_onderhoud"];
+  if (Array.isArray(configured)) {
+    return configured.map((value: any) => String(value || "").trim()).filter(Boolean);
+  }
+
+  return normalizeText(model?.form?.atrium_installation_code)
+    ? ["brandbeveiliging", "service_onderhoud"]
+    : [];
 }
 
 function isCertifiedMaintenanceReport(model: any) {
@@ -540,6 +544,7 @@ function coverDisciplineOrder() {
 function renderCoverIcons(model: any) {
   const icons = model?.assets?.disciplineIcons || {};
   const active = new Set(activeDisciplines(model));
+  if (!active.size) return "";
 
   return `
     <div class="cover-icon-grid">
@@ -841,12 +846,21 @@ function renderCoverPage(model: any) {
   const isFinal = normalizeToken(model?.form?.status) === "AFGEHANDELD";
   const blockingItems = blockingJudgementItems(model);
 
-  const metaRows = [
-    { label: "Installatiecode", value: model?.form?.atrium_installation_code },
-    { label: "Onderhoudsdatum", value: firstText(answerDateText(model?.answers, "datum_onderhoud", "Datum_onderhoud_af_date"), "-") },
-    { label: "Status", value: normalizedStatusLabel(model?.form?.status) },
-    { label: "Documentnummer", value: firstText(model?.form?.official_document_number, model?.form?.id, "-") },
-  ];
+  const hasInstallationContext = Boolean(normalizeText(model?.form?.atrium_installation_code));
+  const metaRows = hasInstallationContext
+    ? [
+        { label: "Installatiecode", value: model?.form?.atrium_installation_code },
+        { label: "Onderhoudsdatum", value: firstText(answerDateText(model?.answers, "datum_onderhoud", "Datum_onderhoud_af_date"), "-") },
+        { label: "Status", value: normalizedStatusLabel(model?.form?.status) },
+        { label: "Documentnummer", value: firstText(model?.form?.official_document_number, model?.form?.id, "-") },
+      ]
+    : [
+        { label: "Projectnummer", value: firstText(answerText(model?.answers, "projectnummer"), "-") },
+        { label: "Project", value: firstText(answerText(model?.answers, "projectnaam"), "-") },
+        { label: "Inspectiedatum", value: firstText(answerDateText(model?.answers, "datum_inspectie"), "-") },
+        { label: "Status", value: normalizedStatusLabel(model?.form?.status) },
+        { label: "Documentnummer", value: firstText(model?.form?.official_document_number, model?.form?.id, "-") },
+      ];
 
   return `
     <main class="cover-page">
@@ -2186,9 +2200,15 @@ function renderSurveyPages(model: any) {
         isSystemAvailabilityPage ? renderSystemAvailabilityResult(elements, answers) : ""
       }`;
       if (!normalizeText(stripHtml(content))) return "";
+      const reportLayout = normalizeColumnToken(page?.ember?.report?.layout);
+      const hasBooleanOnlyFields =
+        regularElements.length > 0 &&
+        regularElements.every((element: any) => normalizeText(element?.type).toLowerCase() === "boolean");
+      const reportLayoutClass =
+        reportLayout === "SINGLECOLUMNFIELDS" || hasBooleanOnlyFields ? "single-column-fields" : "";
 
       return `
-        <section class="page-break-before report-page ${isLandscapeSurveyPage(page) ? "landscape-page" : ""}">
+        <section class="page-break-before report-page ${reportLayoutClass} ${isLandscapeSurveyPage(page) ? "landscape-page" : ""}">
           <div class="page-title">${escapeHtml(firstText(page?.title, page?.name, `Pagina ${index + 1}`))}</div>
           ${content}
         </section>
@@ -2303,7 +2323,7 @@ function renderActionPointSummaryPage(model: any) {
                   <td><strong>${escapeHtml(firstText(item?.workflow_title, item?.workflow_description, item?.note, "Actiepunt"))}</strong>${normalizeText(item?.workflow_description) && normalizeText(item?.workflow_title) ? `<div class="table-detail">${renderValueCell(item.workflow_description)}</div>` : ""}</td>
                   <td class="align-center">${renderFollowUpStatusChip(item?.status)}</td>
                   <td class="align-center">${renderCertificateImpactChip(item?.effective_certificate_impact || item?.certificate_impact)}</td>
-                  <td>${renderValueCell(firstText(item?.resolution_note, item?.resolution_outcome))}</td>
+                  <td>${renderValueCell(firstText(item?.resolution_note, item?.resolution_outcome, item?.note))}</td>
                 </tr>
               `
             )
@@ -2554,7 +2574,16 @@ function signatureBlocks(model: any) {
   }
 
   const configured = model?.surveyJson?.ember?.report?.signaturePage?.blocks;
-  return Array.isArray(configured) && configured.length ? configured : defaultCertifiedSignatureBlocks().slice(0, 1);
+  return Array.isArray(configured) && configured.length
+    ? configured
+    : [
+        {
+          key: "verklaring",
+          title: "Verklaring",
+          text: "De opsteller verklaart dat de resultaten en bevindingen in dit formulier zijn vastgelegd.",
+          footerText: "",
+        },
+      ];
 }
 
 function signatureClosingText(model: any) {
@@ -2578,10 +2607,18 @@ function renderSignaturePage(model: any) {
   const closing = signatureClosingText(model);
   const signerName = firstText(
     answerText(model?.answers, "onderhouder_naam", "Naamonderhouder", "Naam onderhouder_2"),
+    answerText(model?.answers, "ondertekening_inspecteur", "naam_inspecteur"),
     model?.signer?.profileName,
     model?.viewer?.profile_name
   );
-  const onderhoudDatum = answerDateText(model?.answers, "datum_onderhoud", "Datum_onderhoud_af_date", "datum onderhoud_2");
+  const onderhoudDatum = answerDateText(
+    model?.answers,
+    "datum_onderhoud",
+    "Datum_onderhoud_af_date",
+    "datum onderhoud_2",
+    "datum_ondertekening_inspecteur",
+    "datum_inspectie"
+  );
 
   return `
     <section class="page-break-before report-page">
@@ -2689,7 +2726,7 @@ function renderHtmlDocument(model: any) {
           }
 
           .page-break-before { page-break-before: always; break-before: page; }
-          .report-page { min-height: 1px; padding-top: 5mm; }
+          .report-page { min-height: 1px; padding: 5mm 1mm 0 0; }
 
           .cover-page {
             min-height: 248mm;
@@ -2869,6 +2906,10 @@ function renderHtmlDocument(model: any) {
           }
 
           .single-field-grid {
+            grid-template-columns: minmax(0, 1fr);
+          }
+
+          .report-page.single-column-fields .field-grid {
             grid-template-columns: minmax(0, 1fr);
           }
 
@@ -3070,6 +3111,8 @@ function renderHtmlDocument(model: any) {
 
           .report-table {
             width: 100%;
+            max-width: 100%;
+            box-sizing: border-box;
             border-collapse: collapse;
             table-layout: fixed;
             border: 1px solid var(--line);
@@ -3522,7 +3565,7 @@ function renderBodyHtmlDocument(model: any) {
           }
 
           .page-break-before { page-break-before: always; break-before: page; }
-          .report-page { min-height: 1px; padding-top: 5mm; }
+          .report-page { min-height: 1px; padding: 5mm 1mm 0 0; }
 
           .cover-page {
             min-height: 248mm;
@@ -3702,6 +3745,10 @@ function renderBodyHtmlDocument(model: any) {
           }
 
           .single-field-grid {
+            grid-template-columns: minmax(0, 1fr);
+          }
+
+          .report-page.single-column-fields .field-grid {
             grid-template-columns: minmax(0, 1fr);
           }
 
@@ -3903,6 +3950,8 @@ function renderBodyHtmlDocument(model: any) {
 
           .report-table {
             width: 100%;
+            max-width: 100%;
+            box-sizing: border-box;
             border-collapse: collapse;
             table-layout: fixed;
             border: 1px solid var(--line);

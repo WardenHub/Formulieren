@@ -520,12 +520,19 @@ export async function buildFormReportExportModel(formInstanceIdRaw: any, user: a
 }
 
 export function buildFormReportFileName(model: any) {
-  const onderhoudDatum = valueText(model?.answers?.datum_onderhoud) || "zonder-datum";
+  const reportDate =
+    valueText(model?.answers?.datum_onderhoud) ||
+    valueText(model?.answers?.datum_inspectie) ||
+    valueText(model?.answers?.datum_ondertekening_inspecteur) ||
+    "zonder-datum";
+  const contextCode =
+    valueText(model?.form?.atrium_installation_code) ||
+    valueText(model?.answers?.projectnummer);
 
   return `${[
     safeFilePart(model?.form?.name || model?.form?.code || "formulier"),
-    safeFilePart(model?.form?.atrium_installation_code),
-    safeFilePart(onderhoudDatum),
+    safeFilePart(contextCode),
+    safeFilePart(reportDate),
   ]
     .filter(Boolean)
     .join("_")}.pdf`;

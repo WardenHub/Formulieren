@@ -1,0 +1,28 @@
+{
+  "operation": "add-app-role-and-assign-existing-group",
+  "tenant_id": "42b413cc-67db-4507-a4a6-ce30ce798022",
+  "application": {
+    "object_id": "437f9937-20a9-4f57-b3aa-aeedaac70b51",
+    "app_id": "9e4d2ed4-7cef-4cd6-99cc-98d48b9d3f46",
+    "display_name": "ember-api",
+    "resource_service_principal_id": "faaa3eb4-f408-48eb-a13b-753ff235be71"
+  },
+  "app_role": {
+    "id": "d7a7b5c8-2c65-4e08-8d3b-1c5a8e9f4b20",
+    "displayName": "Ember.Certificering Coordinator",
+    "value": "Ember.CertificeringCoordinator",
+    "description": "Deze rol geeft toegang tot het beheren en plannen van certificerings- en inspectiewerkzaamheden.",
+    "allowedMemberTypes": ["User"],
+    "isEnabled": true
+  },
+  "group_assignment": {
+    "group_id": "bdc3e9b2-669d-4d12-b28a-e546b7f0a6e1",
+    "group_display_name": "EMBER-CERTIFICERING-COORDINATOR",
+    "app_role_id": "d7a7b5c8-2c65-4e08-8d3b-1c5a8e9f4b20",
+    "resource_id": "faaa3eb4-f408-48eb-a13b-753ff235be71"
+  },
+  "verification": {
+    "expected_app_role_value": "Ember.CertificeringCoordinator",
+    "expected_group_assignment_count": 1
+  }
+}

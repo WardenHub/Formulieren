@@ -425,7 +425,7 @@ export default function Layout() {
             Formulieren
           </AnimatedNavButton>
 
-          {roles.some((role) => ["admin", "documentbeheerder", "gebruiker", "kam_coordinator"].includes(role)) && (
+          {roles.some((role) => ["admin", "documentbeheerder", "gebruiker", "kam_coordinator", "certificering_coordinator"].includes(role)) && (
             <AnimatedNavButton to="/monitor/formulieren" Icon={MonitorCheckIcon}>
               Monitor
             </AnimatedNavButton>

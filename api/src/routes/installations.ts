@@ -120,6 +120,8 @@ const assistantAudioUpload = multer({
 });
 
 const documentRoles = ["admin", "gebruiker", "documentbeheerder"] as const;
+const certificationReadRoles = ["admin", "gebruiker", "documentbeheerder", "certificering_coordinator"] as const;
+const certificationWriteRoles = ["admin", "certificering_coordinator"] as const;
 
 router.get("/search", requireRole("admin", "gebruiker"), searchInstallations);
 router.get("/map", requireRole("admin", "gebruiker"), getInstallationMap);
@@ -273,27 +275,27 @@ router.post(
 
 router.get(
   "/:code/certification",
-  requireRole(...documentRoles),
+  requireRole(...certificationReadRoles),
   getInstallationCertification
 );
 router.put(
   "/:code/certification/requirements/:scope",
-  requireRole(...documentRoles),
+  requireRole(...certificationWriteRoles),
   putInstallationCertificationRequirement
 );
 router.post(
   "/:code/certificates",
-  requireRole(...documentRoles),
+  requireRole(...certificationWriteRoles),
   postInstallationCertificate
 );
 router.put(
   "/:code/certificates/:certificateId",
-  requireRole(...documentRoles),
+  requireRole(...certificationWriteRoles),
   putInstallationCertificate
 );
 router.post(
   "/:code/certificates/:certificateId/send-history",
-  requireRole(...documentRoles),
+  requireRole(...certificationWriteRoles),
   postCertificateSendHistory
 );
 

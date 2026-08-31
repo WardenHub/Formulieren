@@ -16,8 +16,7 @@ import FollowUpsTab from "./FollowUpsTab.jsx";
 import LogbookTab from "./LogbookTab.jsx";
 import InstallationOverviewTab from "./InstallationOverviewTab.jsx";
 import DrawingPinsTab from "./DrawingPinsTab.jsx";
-import CertificatesTab from "./CertificatesTab.jsx";
-import InspectionCasesTab from "./InspectionCasesTab.jsx";
+import CertificationTab from "./CertificationTab.jsx";
 
 import SaveButton from "../../components/SaveButton.jsx";
 import Tabs from "../../components/Tabs.jsx";
@@ -37,7 +36,7 @@ import { CogIcon } from "@/components/ui/cog";
 import { MonitorCheckIcon } from "@/components/ui/monitor-check";
 import { BookTextIcon } from "@/components/ui/book-text";
 import { RefreshCWIcon } from "@/components/ui/refresh-cw";
-import { BadgeCheck, ClipboardCheck, ClipboardList, MapPin, MapPinned, MessageSquareText } from "lucide-react";
+import { BadgeCheck, ClipboardList, MapPin, MapPinned, MessageSquareText } from "lucide-react";
 import { pushRecentHomeItem } from "../../lib/recentHomeItems.js";
 import {
   getInstallationStatusClassName,
@@ -360,8 +359,14 @@ export default function InstallationDetails() {
 
   const [activeTab, setActiveTab] = useState(() => {
     const requestedTab = String(searchParams.get("tab") || "").trim().toLowerCase();
+    if (requestedTab === "certificates" || requestedTab === "inspections") return "certification";
     return requestedTab || "overview";
   });
+  const [legacyCertificationSubtab] = useState(() =>
+    String(searchParams.get("tab") || "").trim().toLowerCase() === "inspections"
+      ? "inspections"
+      : "certificates"
+  );
 
   const [installation, setInstallation] = useState(null);
   const [catalog, setCatalogState] = useState(null);
@@ -782,7 +787,7 @@ export default function InstallationDetails() {
       nextParams.delete("componentReview");
     }
     if (activeTab !== "notes") nextParams.delete("note");
-    nextParams.delete("subtab");
+    if (activeTab !== "certification") nextParams.delete("subtab");
     if (activeTab !== "followups") {
       nextParams.delete("newFollowUpPin");
       nextParams.delete("followupView");
@@ -883,6 +888,7 @@ export default function InstallationDetails() {
   
   const isAdmin = roles.includes("admin")
     || Boolean(installation?.is_admin || installation?.isAdmin || installation?.user_is_admin);
+  const canManageCertification = roles.includes("admin") || roles.includes("certificering_coordinator");
 
   const tabs = (() => {
     const customLabel = typeIsSet ? "Eigenschappen" : "Eigenschappen (kies type)";
@@ -1064,21 +1070,16 @@ export default function InstallationDetails() {
         ),
       } : null,
       {
-        key: "certificates",
-        label: "Certificaten",
+        key: "certification",
+        label: "Certificering",
         Icon: BadgeCheck,
         content: (
-          <CertificatesTab
+          <CertificationTab
             code={code}
-            readOnly={isHistorical}
+            readOnly={isHistorical || !canManageCertification}
+            initialSubtab={legacyCertificationSubtab}
           />
         ),
-      },
-      {
-        key: "inspections",
-        label: "Inspecties",
-        Icon: ClipboardCheck,
-        content: <InspectionCasesTab code={code} />,
       },
       {
         key: "software",

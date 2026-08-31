@@ -1,0 +1,31 @@
+{
+  "operation": "create-group-and-add-members",
+  "tenant_id": "42b413cc-67db-4507-a4a6-ce30ce798022",
+  "group": {
+    "displayName": "EMBER-CERTIFICERING-COORDINATOR",
+    "description": "Leden beheren en plannen certificerings- en inspectiewerkzaamheden in Ember.",
+    "mailEnabled": false,
+    "mailNickname": "EMBERCERTIFICERINGCOORDINATOR",
+    "securityEnabled": true,
+    "groupTypes": []
+  },
+  "members": [
+    {
+      "userPrincipalName": "jesse.veentjer@wardenburg.nl",
+      "objectId": "14ee9631-210a-48e4-82ca-c35a425ffb06"
+    },
+    {
+      "userPrincipalName": "peter.dehek@wardenburg.nl",
+      "objectId": "50552737-ea2a-4684-9f0a-dca82c5d3f31"
+    }
+  ],
+  "app_role": {
+    "status": "not_available_live",
+    "resource_service_principal_id": "faaa3eb4-f408-48eb-a13b-753ff235be71",
+    "expected_value_after_app_update": "Ember.CertificeringCoordinator"
+  },
+  "verification": {
+    "expected_group_member_count": 2,
+    "expected_app_role_assignment_count": 0
+  }
+}

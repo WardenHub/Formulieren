@@ -39,7 +39,7 @@ expect("A-C signalering", queries, ["requirement_status=N'REQUIRED'", "inspectio
 expect("D-F Atriumstatus", service, ['status === "A"', 'status === "I"', 'status === "U"', 'return "PLANNED_UNCONFIRMED"', 'return "PLANNED_CONFIRMED"', 'return "EXECUTED"']);
 expect("G checklistgate", queries, ["blocking inspection documents incomplete", "blocking checklist items incomplete"]);
 expect("H inspectieactie", schema, ["FollowUpActionInspectionCaseSource", "source_type IN (N'FORM', N'MANUAL', N'INSPECTION_CASE', N'IMPORT')"]);
-expect("I generieke zichtbaarheid", installationDetail, ['key: "inspections"']);
+expect("I generieke zichtbaarheid", installationDetail, ['key: "certification"', "<CertificationTab"]);
 expect("I generieke followups", followUpQueries, ["FollowUpAction", "p.stored_file_id"]);
 expect("J-K FAIL", queries, ["N'REPAIR_REQUIRED'", "N'REPAIR_ACTION_CREATED'", "N'INSPECTION_REPAIR_OWNER'"]);
 expect("L herinspectie", queries, ["N'REINSPECTION'", "parent_inspection_case_id", "N'REINSPECTION_CREATED'"]);

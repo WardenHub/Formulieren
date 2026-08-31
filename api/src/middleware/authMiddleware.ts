@@ -15,6 +15,7 @@ const APP_ROLE_MAP: Record<string, string> = {
   "Ember.Documentbeheerder": "documentbeheerder",
   "Ember.Uitlegbeheerder": "uitlegbeheerder",
   "Ember.KAMCoordinator": "kam_coordinator",
+  "Ember.CertificeringCoordinator": "certificering_coordinator",
 };
 
 function isDevAuthEnabled() {
@@ -377,7 +378,10 @@ async function applyRoleResolutionForUser(req: any, userObjectId: string, appRol
 
   // voorkeursroute; gebruik app roles direct als ze aanwezig zijn
   if (mappedAppRoles.length > 0) {
-    req.roles = mappedAppRoles;
+    req.roles = uniqueStrings([
+      ...mappedAppRoles,
+      ...(mappedAppRoles.includes("certificering_coordinator") ? ["gebruiker"] : []),
+    ]);
     return;
   }
 

@@ -4,7 +4,7 @@
 
 De definitie bevat algemene gegevens, situatieschets, conditioneel zichtbare VCA-categorieën, per regel Ja/Nee/N.V.T. met verplichte toelichting bij Nee, een SCL-gesprek en opvolging. Elke Nee-regel maakt al een bestaande generieke workflowactie aan.
 
-`KAM_SCL_inspectie_V3_9.workflow-config.json` beschrijft de definitieregel die bij elke indiening een verplichte KAM-beoordeling opent. Voer deze configuratie pas live in via Formulierbeheer nadat de KAM-rol leden heeft en de autorisatiecontrole voor roltoegewezen acties is afgerond.
+`KAM_SCL_inspectie_V3_9.workflow-config.json` beschrijft de projectgebonden startcontext en de definitieregel die bij elke indiening een verplichte KAM-beoordeling opent. Project is de verplichte hoofdcontext; Ember valideert het gekozen project live via de Atrium Reader en leidt de verplichte relatie af. De bestaande rol `KAM_COORDINATOR` ontvangt de beoordeling.
 
 ## Lokale proef
 

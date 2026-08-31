@@ -10,6 +10,12 @@
   "pageNextText": "Volgende",
   "completeText": "Indienen voor KAM-beoordeling",
   "checkErrorsMode": "onComplete",
+  "ember": {
+    "report": {
+      "coverMainTitle": "KAM / SCL-inspectie",
+      "activeDisciplines": []
+    }
+  },
   "pages": [
     {
       "name": "gegevens",
@@ -38,6 +44,11 @@
       "name": "situatieschets",
       "title": "Situatieschets",
       "description": "Vink aan wat van toepassing is. De bijbehorende controlecategorie wordt alleen getoond wanneer de situatie speelt.",
+      "ember": {
+        "report": {
+          "layout": "single-column-fields"
+        }
+      },
       "elements": [
         { "type": "boolean", "name": "situatie_verplaatsen", "title": "Materiaal of materieel verplaatsen, laden of lossen" },
         { "type": "boolean", "name": "situatie_alleen_gebouw", "title": "Alleen werken, en/of werken in een gebouw of winkel" },
@@ -80,10 +91,7 @@
                 { "name": "item_code", "title": "Nr.", "cellType": "text", "readOnly": true, "width": "8%" },
                 { "name": "onderwerp", "title": "Controlepunt", "cellType": "text", "readOnly": true, "width": "50%" },
                 { "name": "voldoet", "title": "Beoordeling", "cellType": "radiogroup", "isRequired": true, "choices": ["Ja", "Nee", "NVT"], "colCount": 3, "width": "20%" },
-                { "name": "opmerking", "title": "Toelichting bij Nee", "cellType": "comment", "width": "22%" }
-              ],
-              "validators": [
-                { "type": "expression", "text": "Bij Nee is een toelichting verplicht.", "expression": "{voorbereiding_items}.all(iif(item.voldoet = 'Nee', notempty(item.opmerking), true))" }
+                { "name": "opmerking", "title": "Toelichting bij Nee", "cellType": "comment", "requiredIf": "{row.voldoet} = 'Nee'", "width": "22%" }
               ],
               "ember": { "followUp": { "kind": "workflow", "mode": "on-condition", "condition": { "field": "voldoet", "equals": "Nee" }, "itemCodeField": "item_code", "workflowtitleField": "onderwerp", "descriptionField": "opmerking", "category": "KAM-SCL afwijking", "certificateImpact": { "mode": "none" } } }
             }
@@ -111,9 +119,8 @@
                 { "name": "item_code", "title": "Nr.", "cellType": "text", "readOnly": true, "width": "8%" },
                 { "name": "onderwerp", "title": "Controlepunt", "cellType": "text", "readOnly": true, "width": "50%" },
                 { "name": "voldoet", "title": "Beoordeling", "cellType": "radiogroup", "isRequired": true, "choices": ["Ja", "Nee", "NVT"], "colCount": 3, "width": "20%" },
-                { "name": "opmerking", "title": "Toelichting bij Nee", "cellType": "comment", "width": "22%" }
+                { "name": "opmerking", "title": "Toelichting bij Nee", "cellType": "comment", "requiredIf": "{row.voldoet} = 'Nee'", "width": "22%" }
               ],
-              "validators": [ { "type": "expression", "text": "Bij Nee is een toelichting verplicht.", "expression": "{vervoer_items}.all(iif(item.voldoet = 'Nee', notempty(item.opmerking), true))" } ],
               "ember": { "followUp": { "kind": "workflow", "mode": "on-condition", "condition": { "field": "voldoet", "equals": "Nee" }, "itemCodeField": "item_code", "workflowtitleField": "onderwerp", "descriptionField": "opmerking", "category": "KAM-SCL afwijking", "certificateImpact": { "mode": "none" } } }
             }
           ]
@@ -143,9 +150,8 @@
                 { "name": "item_code", "title": "Nr.", "cellType": "text", "readOnly": true, "width": "8%" },
                 { "name": "onderwerp", "title": "Controlepunt", "cellType": "text", "readOnly": true, "width": "50%" },
                 { "name": "voldoet", "title": "Beoordeling", "cellType": "radiogroup", "isRequired": true, "choices": ["Ja", "Nee", "NVT"], "colCount": 3, "width": "20%" },
-                { "name": "opmerking", "title": "Toelichting bij Nee", "cellType": "comment", "width": "22%" }
+                { "name": "opmerking", "title": "Toelichting bij Nee", "cellType": "comment", "requiredIf": "{row.voldoet} = 'Nee'", "width": "22%" }
               ],
-              "validators": [ { "type": "expression", "text": "Bij Nee is een toelichting verplicht.", "expression": "{verplaatsen_items}.all(iif(item.voldoet = 'Nee', notempty(item.opmerking), true))" } ],
               "ember": { "followUp": { "kind": "workflow", "mode": "on-condition", "condition": { "field": "voldoet", "equals": "Nee" }, "itemCodeField": "item_code", "workflowtitleField": "onderwerp", "descriptionField": "opmerking", "category": "KAM-SCL afwijking", "certificateImpact": { "mode": "none" } } }
             }
           ]
@@ -174,9 +180,8 @@
                 { "name": "item_code", "title": "Nr.", "cellType": "text", "readOnly": true, "width": "8%" },
                 { "name": "onderwerp", "title": "Controlepunt", "cellType": "text", "readOnly": true, "width": "50%" },
                 { "name": "voldoet", "title": "Beoordeling", "cellType": "radiogroup", "isRequired": true, "choices": ["Ja", "Nee", "NVT"], "colCount": 3, "width": "20%" },
-                { "name": "opmerking", "title": "Toelichting bij Nee", "cellType": "comment", "width": "22%" }
+                { "name": "opmerking", "title": "Toelichting bij Nee", "cellType": "comment", "requiredIf": "{row.voldoet} = 'Nee'", "width": "22%" }
               ],
-              "validators": [ { "type": "expression", "text": "Bij Nee is een toelichting verplicht.", "expression": "{alleen_gebouw_items}.all(iif(item.voldoet = 'Nee', notempty(item.opmerking), true))" } ],
               "ember": { "followUp": { "kind": "workflow", "mode": "on-condition", "condition": { "field": "voldoet", "equals": "Nee" }, "itemCodeField": "item_code", "workflowtitleField": "onderwerp", "descriptionField": "opmerking", "category": "KAM-SCL afwijking", "certificateImpact": { "mode": "none" } } }
             }
           ]
@@ -205,9 +210,8 @@
                 { "name": "item_code", "title": "Nr.", "cellType": "text", "readOnly": true, "width": "8%" },
                 { "name": "onderwerp", "title": "Controlepunt", "cellType": "text", "readOnly": true, "width": "50%" },
                 { "name": "voldoet", "title": "Beoordeling", "cellType": "radiogroup", "isRequired": true, "choices": ["Ja", "Nee", "NVT"], "colCount": 3, "width": "20%" },
-                { "name": "opmerking", "title": "Toelichting bij Nee", "cellType": "comment", "width": "22%" }
+                { "name": "opmerking", "title": "Toelichting bij Nee", "cellType": "comment", "requiredIf": "{row.voldoet} = 'Nee'", "width": "22%" }
               ],
-              "validators": [ { "type": "expression", "text": "Bij Nee is een toelichting verplicht.", "expression": "{gereedschap_items}.all(iif(item.voldoet = 'Nee', notempty(item.opmerking), true))" } ],
               "ember": { "followUp": { "kind": "workflow", "mode": "on-condition", "condition": { "field": "voldoet", "equals": "Nee" }, "itemCodeField": "item_code", "workflowtitleField": "onderwerp", "descriptionField": "opmerking", "category": "KAM-SCL afwijking", "certificateImpact": { "mode": "none" } } }
             }
           ]
@@ -236,9 +240,8 @@
                 { "name": "item_code", "title": "Nr.", "cellType": "text", "readOnly": true, "width": "8%" },
                 { "name": "onderwerp", "title": "Controlepunt", "cellType": "text", "readOnly": true, "width": "50%" },
                 { "name": "voldoet", "title": "Beoordeling", "cellType": "radiogroup", "isRequired": true, "choices": ["Ja", "Nee", "NVT"], "colCount": 3, "width": "20%" },
-                { "name": "opmerking", "title": "Toelichting bij Nee", "cellType": "comment", "width": "22%" }
+                { "name": "opmerking", "title": "Toelichting bij Nee", "cellType": "comment", "requiredIf": "{row.voldoet} = 'Nee'", "width": "22%" }
               ],
-              "validators": [ { "type": "expression", "text": "Bij Nee is een toelichting verplicht.", "expression": "{kabelwerk_items}.all(iif(item.voldoet = 'Nee', notempty(item.opmerking), true))" } ],
               "ember": { "followUp": { "kind": "workflow", "mode": "on-condition", "condition": { "field": "voldoet", "equals": "Nee" }, "itemCodeField": "item_code", "workflowtitleField": "onderwerp", "descriptionField": "opmerking", "category": "KAM-SCL afwijking", "certificateImpact": { "mode": "none" } } }
             }
           ]
@@ -267,9 +270,8 @@
                 { "name": "item_code", "title": "Nr.", "cellType": "text", "readOnly": true, "width": "8%" },
                 { "name": "onderwerp", "title": "Controlepunt", "cellType": "text", "readOnly": true, "width": "50%" },
                 { "name": "voldoet", "title": "Beoordeling", "cellType": "radiogroup", "isRequired": true, "choices": ["Ja", "Nee", "NVT"], "colCount": 3, "width": "20%" },
-                { "name": "opmerking", "title": "Toelichting bij Nee", "cellType": "comment", "width": "22%" }
+                { "name": "opmerking", "title": "Toelichting bij Nee", "cellType": "comment", "requiredIf": "{row.voldoet} = 'Nee'", "width": "22%" }
               ],
-              "validators": [ { "type": "expression", "text": "Bij Nee is een toelichting verplicht.", "expression": "{nauwe_ruimte_items}.all(iif(item.voldoet = 'Nee', notempty(item.opmerking), true))" } ],
               "ember": { "followUp": { "kind": "workflow", "mode": "on-condition", "condition": { "field": "voldoet", "equals": "Nee" }, "itemCodeField": "item_code", "workflowtitleField": "onderwerp", "descriptionField": "opmerking", "category": "KAM-SCL afwijking", "certificateImpact": { "mode": "none" } } }
             }
           ]
@@ -302,9 +304,8 @@
                 { "name": "item_code", "title": "Nr.", "cellType": "text", "readOnly": true, "width": "8%" },
                 { "name": "onderwerp", "title": "Controlepunt", "cellType": "text", "readOnly": true, "width": "50%" },
                 { "name": "voldoet", "title": "Beoordeling", "cellType": "radiogroup", "isRequired": true, "choices": ["Ja", "Nee", "NVT"], "colCount": 3, "width": "20%" },
-                { "name": "opmerking", "title": "Toelichting bij Nee", "cellType": "comment", "width": "22%" }
+                { "name": "opmerking", "title": "Toelichting bij Nee", "cellType": "comment", "requiredIf": "{row.voldoet} = 'Nee'", "width": "22%" }
               ],
-              "validators": [ { "type": "expression", "text": "Bij Nee is een toelichting verplicht.", "expression": "{hoogte_items}.all(iif(item.voldoet = 'Nee', notempty(item.opmerking), true))" } ],
               "ember": { "followUp": { "kind": "workflow", "mode": "on-condition", "condition": { "field": "voldoet", "equals": "Nee" }, "itemCodeField": "item_code", "workflowtitleField": "onderwerp", "descriptionField": "opmerking", "category": "KAM-SCL afwijking", "certificateImpact": { "mode": "none" } } }
             }
           ]

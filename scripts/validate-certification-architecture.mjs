@@ -90,9 +90,9 @@ assertIncludes(tab, [
 ], "frontend");
 
 assertIncludes(detail, [
-  'key: "certificates"',
-  'label: "Certificaten"',
-  "<CertificatesTab",
+  'key: "certification"',
+  'label: "Certificering"',
+  "<CertificationTab",
 ], "installation detail");
 
 assertIncludes(adminFormsQuery, [
