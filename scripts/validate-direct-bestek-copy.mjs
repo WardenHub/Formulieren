@@ -3,12 +3,16 @@ import fs from "node:fs";
 import path from "node:path";
 
 import { createExternalArtifactReader } from "./externalArtifacts.mjs";
+import { requireSqlTruth } from "./sqlTruth.mjs";
+
+// De databasewaarheid staat buiten deze checkout; ontbreekt hij, dan slaat deze
+// validator zichzelf netjes over in plaats van te klappen. Zie scripts/sqlTruth.mjs.
+const sqlTruth = requireSqlTruth("direct-bestek-copy:validate");
 
 const root = process.cwd();
-const emberRoot = path.resolve(root, "..", "..");
 const external = createExternalArtifactReader("Directe bestek-Copy-Job");
-const schema = fs.readFileSync(path.join(emberRoot, "SQL DB/tabel-definities.sql"), "utf8");
-const properties = fs.readFileSync(path.join(emberRoot, "SQL DB/Eigenschappen.sql"), "utf8");
+const schema = fs.readFileSync(sqlTruth.file("tabel-definities.sql"), "utf8");
+const properties = fs.readFileSync(sqlTruth.file("Eigenschappen.sql"), "utf8");
 const baseline = external.readJson("copyjob/Data-to-Ember-NL-Installationdata.remove-software-wachtwoord.json");
 const proposed = external.readJson("copyjob/Data-to-Ember-NL-two-activity.proposed.json");
 

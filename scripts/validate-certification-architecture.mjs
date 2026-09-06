@@ -1,8 +1,13 @@
 import fs from "node:fs";
 import path from "node:path";
+import { requireSqlTruth } from "./sqlTruth.mjs";
+
+// De databasewaarheid staat buiten deze checkout; ontbreekt hij, dan slaat deze
+// validator zichzelf netjes over in plaats van te klappen. Zie scripts/sqlTruth.mjs.
+const sqlTruth = requireSqlTruth("certification:validate");
 
 const root = process.cwd();
-const schemaPath = path.resolve(root, "..", "..", "SQL DB", "tabel-definities.sql");
+const schemaPath = sqlTruth.file("tabel-definities.sql");
 
 function read(relativePath) {
   return fs.readFileSync(path.resolve(root, relativePath), "utf8");
@@ -28,9 +33,9 @@ const adminFormsTab = read("src/pages/Admin/AdminFormsConfigTab.jsx");
 const reportQuery = read("api/src/db/queries/formReportPdf.sql.ts");
 const reportModel = read("api/src/services/formReportExportModelService.ts");
 const reportRenderer = read("api/src/services/formReportHtmlRendererService.ts");
-const properties = fs.readFileSync(path.resolve(root, "..", "..", "SQL DB", "Eigenschappen.sql"), "utf8");
+const properties = fs.readFileSync(sqlTruth.file("Eigenschappen.sql"), "utf8");
 const markMigration = fs.readFileSync(
-  path.resolve(root, "..", "..", "SQL DB", "alter", "2026-08-28-certification-mark-catalog.sql"),
+  sqlTruth.file("alter", "2026-08-28-certification-mark-catalog.sql"),
   "utf8"
 );
 

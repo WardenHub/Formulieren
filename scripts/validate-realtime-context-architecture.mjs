@@ -2,9 +2,14 @@ import fs from "node:fs";
 import path from "node:path";
 
 import { createExternalArtifactReader } from "./externalArtifacts.mjs";
+import { requireSqlTruth } from "./sqlTruth.mjs";
+
+// De databasewaarheid staat buiten deze checkout; ontbreekt hij, dan slaat deze
+// validator zichzelf netjes over in plaats van te klappen. Zie scripts/sqlTruth.mjs.
+const sqlTruth = requireSqlTruth("realtime-context:validate");
 
 const root = process.cwd();
-const schemaRoot = path.resolve(root, "..", "..", "SQL DB");
+const schemaRoot = sqlTruth.root;
 const external = createExternalArtifactReader("Realtime formuliercontext");
 const service = fs.readFileSync(path.join(root, "api/src/services/formsHubService.ts"), "utf8");
 const queries = fs.readFileSync(path.join(root, "api/src/db/queries/formsHub.sql.ts"), "utf8");

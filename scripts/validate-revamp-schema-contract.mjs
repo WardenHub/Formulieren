@@ -1,8 +1,12 @@
 import fs from "node:fs";
 import path from "node:path";
+import { requireSqlTruth } from "./sqlTruth.mjs";
 
-const root = process.cwd();
-const sqlRoot = path.resolve(root, "..", "..", "SQL DB");
+// De databasewaarheid staat buiten deze checkout; ontbreekt hij, dan slaat deze
+// validator zichzelf netjes over in plaats van te klappen. Zie scripts/sqlTruth.mjs.
+const sqlTruth = requireSqlTruth("schema:validate");
+
+const sqlRoot = sqlTruth.root;
 const schemaPath = path.join(sqlRoot, "tabel-definities.sql");
 const propertiesPath = path.join(sqlRoot, "Eigenschappen.sql");
 const schema = fs.readFileSync(schemaPath, "utf8");

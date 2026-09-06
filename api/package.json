@@ -42,6 +42,7 @@
     "@types/multer": "^1.4.13",
     "@types/node": "^25.0.10",
     "cross-env": "^10.1.0",
+    "survey-core": "^2.5.41",
     "tsx": "^4.21.0",
     "typescript": "^5.9.3"
   }

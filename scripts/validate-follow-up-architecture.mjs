@@ -1,9 +1,14 @@
 import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";
+import { requireSqlTruth } from "./sqlTruth.mjs";
+
+// De databasewaarheid staat buiten deze checkout; ontbreekt hij, dan slaat deze
+// validator zichzelf netjes over in plaats van te klappen. Zie scripts/sqlTruth.mjs.
+const sqlTruth = requireSqlTruth("followups:validate");
 
 const repoRoot = process.cwd();
-const sqlRoot = path.resolve(repoRoot, "..", "..", "SQL DB");
+const sqlRoot = sqlTruth.root;
 const schemaPath = path.join(sqlRoot, "tabel-definities.sql");
 const seedsPath = path.join(sqlRoot, "Eigenschappen.sql");
 const runtimeRoots = [path.join(repoRoot, "api", "src"), path.join(repoRoot, "src")];

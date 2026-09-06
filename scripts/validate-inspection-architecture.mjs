@@ -2,10 +2,15 @@ import fs from "node:fs";
 import path from "node:path";
 
 import { createExternalArtifactReader } from "./externalArtifacts.mjs";
+import { requireSqlTruth } from "./sqlTruth.mjs";
+
+// De databasewaarheid staat buiten deze checkout; ontbreekt hij, dan slaat deze
+// validator zichzelf netjes over in plaats van te klappen. Zie scripts/sqlTruth.mjs.
+const sqlTruth = requireSqlTruth("inspections:validate");
 
 const root = process.cwd();
-const schemaPath = path.resolve(root, "..", "..", "SQL DB", "tabel-definities.sql");
-const propertiesPath = path.resolve(root, "..", "..", "SQL DB", "Eigenschappen.sql");
+const schemaPath = sqlTruth.file("tabel-definities.sql");
+const propertiesPath = sqlTruth.file("Eigenschappen.sql");
 const external = createExternalArtifactReader("Inspectiearchitectuur");
 const read = (relative) => fs.readFileSync(path.resolve(root, relative), "utf8");
 const readReader = (relative) => external.readText(`reader/source-proposed/${relative}`);

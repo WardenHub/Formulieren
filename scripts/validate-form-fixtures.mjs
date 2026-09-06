@@ -2,11 +2,16 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { requireSqlTruth } from "./sqlTruth.mjs";
+
+// De databasewaarheid staat buiten deze checkout; ontbreekt hij, dan slaat deze
+// validator zichzelf netjes over in plaats van te klappen. Zie scripts/sqlTruth.mjs.
+const sqlTruth = requireSqlTruth("fixtures:validate");
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const repositoryRoot = path.resolve(scriptDir, "..");
 const fixturesDirectory = path.join(repositoryRoot, "docs", "fixtures", "forms");
-const propertiesPath = path.resolve(repositoryRoot, "..", "..", "SQL DB", "Eigenschappen.sql");
+const propertiesPath = sqlTruth.file("Eigenschappen.sql");
 const propertiesSql = fs.readFileSync(propertiesPath, "utf8");
 const fixtureNames = fs.readdirSync(fixturesDirectory).filter((name) => name.endsWith(".json"));
 
