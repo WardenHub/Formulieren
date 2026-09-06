@@ -50,7 +50,7 @@ function newFollowUpRule(index) {
     action_description_template: "",
     category: "",
     priority: "NORMAL",
-    responsibility_type: "WARDENBURG",
+    responsibility_type: "INTERN",
     assigned_role_code: "",
     due_after_days: null,
     certificate_impact: "",
@@ -662,7 +662,7 @@ const AdminFormsConfigTab = forwardRef(function AdminFormsConfigTab(
 
                         <div className="cf-row">
                           <div className="cf-label"><div className="cf-label-text">Verantwoordelijkheid</div></div>
-                          <div className="cf-control"><select className="input" value={rule.responsibility_type} onChange={(e) => setFollowUpRuleField(index, "responsibility_type", e.target.value)}><option value="WARDENBURG">Wardenburg</option><option value="CUSTOMER">Klant</option><option value="THIRD_PARTY">Derde partij</option><option value="UNSPECIFIED">Nog te bepalen</option></select></div>
+                          <div className="cf-control"><select className="input" value={rule.responsibility_type} onChange={(e) => setFollowUpRuleField(index, "responsibility_type", e.target.value)}><option value="INTERN">Ons bedrijf</option><option value="KLANT">Klant</option><option value="DERDE">Derde partij</option><option value="ONBEPAALD">Nog te bepalen</option></select></div>
                         </div>
 
                         <div className="cf-row">

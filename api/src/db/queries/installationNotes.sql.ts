@@ -401,6 +401,9 @@ select
   a.status_set_at,
   a.status_set_by,
   coalesce(a.assigned_display_name_snapshot, a.assigned_email_snapshot, a.assigned_role_code) as assigned_to,
+  a.assignment_type,
+  a.assigned_user_object_id,
+  a.assigned_role_code,
   a.due_date,
   a.internal_note as note,
   a.resolution_note,
@@ -431,6 +434,9 @@ select
       p.stored_file_id,
       p.page_number,
       p.label as pin_label,
+      p.pin_kind,
+      p.pin_status,
+      p.description as pin_description,
       d.title as drawing_title,
       sf.file_name as drawing_file_name
     from dbo.FollowUpActionDrawingPinMap pin_map
@@ -478,9 +484,43 @@ select
     order by event.created_at desc, event.follow_up_action_event_id desc
     for json path
   ), N'[]') as events_json
+  ,coalesce((
+    select
+      atrium_context.context_type,
+      atrium_context.context_key,
+      atrium_context.context_display_snapshot,
+      atrium_context.verified_at
+    from dbo.FollowUpActionAtriumContext atrium_context
+    where atrium_context.follow_up_action_id = a.follow_up_action_id
+    order by atrium_context.context_type, atrium_context.context_key
+    for json path
+  ), N'[]') as atrium_contexts_json
+  ,ics.inspection_case_id
+  ,ics.source_kind as inspection_source_kind
+  ,ics.is_blocking as inspection_is_blocking
+  ,inspection_case.inspection_type
+  ,inspection_case.status as inspection_status
+  ,last_review.review_decision as last_review_decision
+  ,last_review.reviewed_at as last_reviewed_at
+  ,last_review.reviewed_by as last_reviewed_by
+  ,last_review.review_note as last_review_note
 from dbo.FollowUpAction a
 left join dbo.FollowUpActionFormSource fs
   on fs.follow_up_action_id = a.follow_up_action_id
+left join dbo.FollowUpActionInspectionCaseSource ics
+  on ics.follow_up_action_id = a.follow_up_action_id
+left join dbo.InspectionCase inspection_case
+  on inspection_case.inspection_case_id = ics.inspection_case_id
+outer apply (
+  select top (1)
+    review.review_decision,
+    review.reviewed_at,
+    review.reviewed_by,
+    review.review_note
+  from dbo.FollowUpActionReview review
+  where review.follow_up_action_id = a.follow_up_action_id
+  order by review.reviewed_at desc
+) last_review
 join dbo.FollowUpActionInstallationContext ic
   on ic.follow_up_action_id = a.follow_up_action_id
  and ic.is_primary = 1
@@ -493,6 +533,10 @@ left join dbo.FormDefinitionVersion fdv
 left join dbo.FormDefinition fd
   on fd.form_id = fdv.form_id
 where ic.atrium_installation_code = @code
+  -- Punten uit een nog niet ingediend formulier zijn werkvoorraad van de invuller
+  -- en horen niet in de installatiebrede lijst. Handmatige acties hebben geen
+  -- formulierbron en blijven dus altijd zichtbaar.
+  and (fs.form_instance_id is null or fi.status <> N'CONCEPT')
 order by
   sd.is_terminal asc,
   sd.sort_order asc,
@@ -526,6 +570,31 @@ join dbo.StoredFile stored_file
 where document.atrium_installation_code = @code
   and document.is_active = 1
 order by stored_file.file_name, document.title;
+
+/* Punten in een nog niet ingediend formulier staan bewust niet in de installatiebrede
+   lijst; zonder deze telling zou de tab niet kunnen zeggen dat ze bestaan. */
+select
+  fi.form_instance_id,
+  fi.instance_title,
+  fd.code as form_code,
+  fd.name as form_name,
+  count(*) as open_point_count
+from dbo.FollowUpAction a
+join dbo.FollowUpActionInstallationContext ic
+  on ic.follow_up_action_id = a.follow_up_action_id
+ and ic.is_primary = 1
+join dbo.FollowUpActionFormSource fs
+  on fs.follow_up_action_id = a.follow_up_action_id
+join dbo.FormInstance fi
+  on fi.form_instance_id = fs.form_instance_id
+left join dbo.FormDefinitionVersion fdv
+  on fdv.form_version_id = fi.form_version_id
+left join dbo.FormDefinition fd
+  on fd.form_id = fdv.form_id
+where ic.atrium_installation_code = @code
+  and fi.status = N'CONCEPT'
+group by fi.form_instance_id, fi.instance_title, fd.code, fd.name
+order by fi.form_instance_id;
 `;
 
 export const createManualInstallationFollowUpSql = `
@@ -625,5 +694,151 @@ values (
   (select @oldStatus as status for json path, without_array_wrapper),
   (select @nextStatus as status for json path, without_array_wrapper),
   @actorUserObjectId, @actorDisplayName, @actorEmail
+);
+`;
+
+/* Een bijlage van een actiepunt mag alleen worden opgehaald via de installatie waar het
+   punt aan hangt; de installatiecontext staat dus in de where-clausule en niet in de code. */
+export const getInstallationFollowUpAttachmentSql = `
+select top (1)
+  stored_file.stored_file_id,
+  stored_file.storage_key,
+  stored_file.file_name,
+  stored_file.mime_type,
+  stored_file.file_size_bytes,
+  attachment_map.attachment_role,
+  attachment_map.customer_visible
+from dbo.FollowUpActionAttachmentMap attachment_map
+join dbo.StoredFile stored_file
+  on stored_file.stored_file_id = attachment_map.stored_file_id
+ and stored_file.is_deleted = 0
+join dbo.FollowUpActionInstallationContext context
+  on context.follow_up_action_id = attachment_map.follow_up_action_id
+ and context.is_primary = 1
+where attachment_map.follow_up_action_id = @followUpActionId
+  and attachment_map.stored_file_id = @storedFileId
+  and context.atrium_installation_code = @code;
+`;
+
+/* Losse velden van een actiepunt bijwerken. Elke parameter die null is laat het veld
+   ongemoeid, zodat een scherm alleen hoeft te sturen wat het echt wijzigt. De status
+   loopt bewust langs updateInstallationFollowUpStatusSql; die kent de afhandelvelden. */
+export const updateInstallationFollowUpFieldsSql = `
+set nocount on;
+
+declare @currentTitle nvarchar(300);
+declare @currentDescription nvarchar(max);
+declare @currentCategory nvarchar(100);
+declare @currentPriority nvarchar(20);
+declare @currentResponsibility nvarchar(30);
+declare @currentDueDate date;
+declare @currentNote nvarchar(4000);
+declare @currentCustomerVisible bit;
+declare @currentAssignmentType nvarchar(20);
+declare @currentAssignedUser nvarchar(200);
+declare @currentAssignedRole nvarchar(100);
+
+select
+  @currentTitle = action.workflow_title,
+  @currentDescription = action.workflow_description,
+  @currentCategory = action.category,
+  @currentPriority = action.priority,
+  @currentResponsibility = action.responsibility_type,
+  @currentDueDate = action.due_date,
+  @currentNote = action.internal_note,
+  @currentCustomerVisible = action.customer_visible,
+  @currentAssignmentType = action.assignment_type,
+  @currentAssignedUser = action.assigned_user_object_id,
+  @currentAssignedRole = action.assigned_role_code
+from dbo.FollowUpAction action
+join dbo.FollowUpActionInstallationContext context
+  on context.follow_up_action_id = action.follow_up_action_id
+ and context.is_primary = 1
+where action.follow_up_action_id = @followUpActionId
+  and context.atrium_installation_code = @code;
+
+if @currentTitle is null throw 50000, 'follow-up action not found', 1;
+
+declare @nextTitle nvarchar(300) = coalesce(@title, @currentTitle);
+declare @nextDescription nvarchar(max) = case when @descriptionSet = 1 then @description else @currentDescription end;
+declare @nextCategory nvarchar(100) = case when @categorySet = 1 then @category else @currentCategory end;
+declare @nextPriority nvarchar(20) = coalesce(@priority, @currentPriority);
+declare @nextResponsibility nvarchar(30) = coalesce(@responsibilityType, @currentResponsibility);
+declare @nextDueDate date = case when @dueDateSet = 1 then @dueDate else @currentDueDate end;
+declare @nextNote nvarchar(4000) = case when @internalNoteSet = 1 then @internalNote else @currentNote end;
+declare @nextCustomerVisible bit = coalesce(@customerVisible, @currentCustomerVisible);
+
+declare @nextAssignmentType nvarchar(20) = @currentAssignmentType;
+declare @nextAssignedUser nvarchar(200) = @currentAssignedUser;
+declare @nextAssignedRole nvarchar(100) = @currentAssignedRole;
+declare @nextAssignedName nvarchar(250) = null;
+declare @nextAssignedEmail nvarchar(320) = null;
+
+if @assignmentSet = 1
+begin
+  set @nextAssignedUser = nullif(ltrim(rtrim(@assignedUserObjectId)), N'');
+  set @nextAssignedRole = nullif(ltrim(rtrim(@assignedRoleCode)), N'');
+  set @nextAssignmentType =
+    case
+      when @nextAssignedUser is not null then N'USER'
+      when @nextAssignedRole is not null then N'ROLE'
+      else N'NONE'
+    end;
+  set @nextAssignedName = case when @nextAssignedUser is not null then @assignedDisplayName end;
+  set @nextAssignedEmail = case when @nextAssignedUser is not null then @assignedEmail end;
+end
+
+update dbo.FollowUpAction
+set
+  workflow_title = @nextTitle,
+  workflow_description = @nextDescription,
+  category = @nextCategory,
+  priority = @nextPriority,
+  responsibility_type = @nextResponsibility,
+  due_date = @nextDueDate,
+  internal_note = @nextNote,
+  customer_visible = @nextCustomerVisible,
+  assignment_type = case when @assignmentSet = 1 then @nextAssignmentType else assignment_type end,
+  assigned_user_object_id = case when @assignmentSet = 1 then @nextAssignedUser else assigned_user_object_id end,
+  assigned_role_code = case when @assignmentSet = 1 then @nextAssignedRole else assigned_role_code end,
+  assigned_display_name_snapshot = case when @assignmentSet = 1 then @nextAssignedName else assigned_display_name_snapshot end,
+  assigned_email_snapshot = case when @assignmentSet = 1 then @nextAssignedEmail else assigned_email_snapshot end,
+  updated_at = sysutcdatetime(),
+  updated_by = @actor
+where follow_up_action_id = @followUpActionId;
+
+insert dbo.FollowUpActionEvent (
+  follow_up_action_id,
+  event_type,
+  old_values_json,
+  new_values_json,
+  actor_user_object_id,
+  actor_display_name_snapshot,
+  actor_email_snapshot
+)
+values (
+  @followUpActionId,
+  N'UPDATED',
+  (
+    select
+      @currentTitle as workflow_title,
+      @currentPriority as priority,
+      @currentResponsibility as responsibility_type,
+      @currentDueDate as due_date,
+      @currentAssignmentType as assignment_type
+    for json path, without_array_wrapper
+  ),
+  (
+    select
+      @nextTitle as workflow_title,
+      @nextPriority as priority,
+      @nextResponsibility as responsibility_type,
+      @nextDueDate as due_date,
+      case when @assignmentSet = 1 then @nextAssignmentType else @currentAssignmentType end as assignment_type
+    for json path, without_array_wrapper
+  ),
+  @actorUserObjectId,
+  @actorDisplayName,
+  @actorEmail
 );
 `;

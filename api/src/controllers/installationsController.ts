@@ -1,7 +1,10 @@
 // api/src/controllers/installationsController.ts
 import type { Request, Response } from "express";
 import * as service from "../services/installationsService.js";
+import { describeParentInstanceProblem } from "../db/queries/parentInstanceGuard.sql.js";
 import * as formsService from "../services/formsService.js";
+import * as followUpService from "../services/followUpService.js";
+import * as submitRejectionService from "../services/formSubmitRejectionService.js";
 import * as formsOfflineService from "../services/formsOfflineService.js";
 import * as documentFilesService from "../services/installationDocumentFilesService.js";
 import * as formDocumentFilesService from "../services/formInstanceDocumentFilesService.js";
@@ -574,6 +577,9 @@ export async function getInstallationMap(req: any, res: Response) {
       take: req.query?.take ? Number(req.query.take) : undefined,
       onlyCurrent: req.query?.onlyCurrent,
       installationType: req.query?.installationType,
+      installationTypes: req.query?.installationTypes,
+      businessUnits: req.query?.businessUnits,
+      fields: req.query?.fields,
       coordinateMode: req.query?.coordinateMode,
       followUpMode: req.query?.followUpMode,
       openFormsOnly: req.query?.openFormsOnly,
@@ -629,6 +635,43 @@ export async function putInstallationFollowUpStatus(req: any, res: Response) {
   }
 }
 
+export async function putInstallationFollowUp(req: any, res: Response) {
+  try {
+    const data = await service.updateInstallationFollowUp(
+      String(req.params.code || ""),
+      String(req.params.followUpActionId || ""),
+      req.body || {},
+      req.user
+    );
+    return res.json(data);
+  } catch (err: any) {
+    const message = String(err?.message || err || "");
+    if (isHistoricalReadOnlyMessage(message)) return res.status(409).json({ error: "historical installation read-only" });
+    if (message.toLowerCase().includes("not found")) return res.status(404).json({ error: message });
+    if (message.toLowerCase().includes("invalid")) return res.status(400).json({ error: message });
+    if (message.toLowerCase().includes("required")) return res.status(400).json({ error: message });
+    if (message.toLowerCase().includes("too long")) return res.status(400).json({ error: message });
+    console.error(err);
+    return res.status(500).json({ error: "follow-up could not be updated" });
+  }
+}
+
+export async function getInstallationFollowUpAttachmentDownloadUrl(req: any, res: Response) {
+  try {
+    const data = await service.getInstallationFollowUpAttachmentDownloadUrl(
+      String(req.params.code || ""),
+      String(req.params.followUpActionId || ""),
+      String(req.params.storedFileId || "")
+    );
+    return res.json(data);
+  } catch (err: any) {
+    const message = String(err?.message || err || "");
+    if (message.toLowerCase().includes("not found")) return res.status(404).json({ error: message });
+    console.error(err);
+    return res.status(500).json({ error: "follow-up attachment url failed" });
+  }
+}
+
 export async function getInstallationMapViewport(req: any, res: Response) {
   try {
     const data = await operationalService.getInstallationMapViewport({
@@ -641,6 +684,9 @@ export async function getInstallationMapViewport(req: any, res: Response) {
       zoom: req.query?.zoom,
       onlyCurrent: req.query?.onlyCurrent,
       installationType: req.query?.installationType,
+      installationTypes: req.query?.installationTypes,
+      businessUnits: req.query?.businessUnits,
+      fields: req.query?.fields,
       followUpMode: req.query?.followUpMode,
     });
     return res.json(data);
@@ -1003,12 +1049,28 @@ export async function getInstallationFormInstances(req: any, res: Response) {
   }
 }
 
+// De ouder-kindregel en de uitleg erbij staan in parentInstanceGuard.sql.ts; hier alleen
+// het antwoord. Deze aanroep moet vóór de generieke "not found" staan.
+function respondParentInstanceProblem(res: Response, msg: string) {
+  const problem = describeParentInstanceProblem(msg);
+  if (!problem) return false;
+
+  res.status(problem.status).json({ error: problem.error });
+  return true;
+}
+
 export async function startFormInstance(req: any, res: Response) {
   try {
     const code = String(req.params.code || "");
     const formCode = String(req.params.formCode || "");
 
-    const data = await formsService.startFormInstance(code, formCode, req.user);
+    // ?new=1 begint bewust een nieuw formulier in plaats van het bestaande concept te
+    // hervatten. Zonder die keuze deelden twee losse bezoeken stil één rij.
+    const startNew = ["1", "true", "ja"].includes(
+      String(req.query?.new ?? req.query?.start_new ?? "").trim().toLowerCase()
+    );
+
+    const data = await formsService.startFormInstance(code, formCode, req.user, { startNew });
     if (data?.error === "not found") return res.status(404).json({ error: "not found" });
 
     return res.json(data);
@@ -1017,6 +1079,12 @@ export async function startFormInstance(req: any, res: Response) {
     if (isHistoricalReadOnlyMessage(msg)) return res.status(409).json({ error: "historical installation read-only" });
     if (msg.includes("atrium installation not found")) return res.status(404).json({ error: "atrium installation not found" });
     if (msg.includes("form not found")) return res.status(404).json({ error: "form not found" });
+    // Er zijn wel versies, maar geen actieve. Dat is een beheerstoestand en geen storing.
+    if (msg.includes("no active version")) {
+      return res.status(409).json({
+        error: "Van dit formulier staat geen versie actief; een beheerder moet er eerst een publiceren.",
+      });
+    }
     console.error(err);
     return res.status(500).json({ error: "startFormInstance failed" });
   }
@@ -1057,14 +1125,14 @@ export async function startChildFormInstance(req: any, res: Response) {
     if (msg.includes("atrium installation not found")) {
       return res.status(404).json({ error: "atrium installation not found" });
     }
-    if (msg.includes("parent form instance not found")) {
-      return res.status(404).json({ error: "parent form instance not found" });
-    }
-    if (msg.includes("parent form instance invalid")) {
-      return res.status(400).json({ error: "parent form instance invalid" });
-    }
+    if (respondParentInstanceProblem(res, msg)) return;
     if (msg.includes("form not found")) {
       return res.status(404).json({ error: "form not found" });
+    }
+    if (msg.includes("no active version")) {
+      return res.status(409).json({
+        error: "Van dit formulier staat geen versie actief; een beheerder moet er eerst een publiceren.",
+      });
     }
 
     console.error(err);
@@ -1077,7 +1145,11 @@ export async function getFormInstance(req: any, res: Response) {
     const code = String(req.params.code || "");
     const instanceId = String(req.params.instanceId || "");
 
-    const data = await formsService.getFormInstance(code, instanceId);
+    // Openen door de gebruiker; hier mag een concept naar de actieve versie worden getild.
+    const data = await formsService.getFormInstance(code, instanceId, {
+      applyLatestVersion: true,
+      user: req.user,
+    });
     if (data?.error === "not found") return res.status(404).json({ error: "not found" });
 
     return res.json(data);
@@ -1125,14 +1197,9 @@ export async function putFormInstanceMetadata(req: any, res: any) {
       return res.status(409).json({ error: "historical installation read-only" });
     }
 
+    if (respondParentInstanceProblem(res, msg)) return;
     if (msg.includes("form instance not found")) {
       return res.status(404).json({ error: "form instance not found" });
-    }
-    if (msg.includes("parent form instance not found")) {
-      return res.status(400).json({ error: "parent form instance not found" });
-    }
-    if (msg.includes("parent form instance invalid")) {
-      return res.status(400).json({ error: "parent form instance invalid" });
     }
     if (msg.includes("draft_rev conflict")) {
       return res.status(409).json({ error: "draft_rev conflict" });
@@ -1195,6 +1262,55 @@ export async function submitFormInstance(req: any, res: any) {
     if (msg.includes("invalid status transition")) return res.status(409).json({ error: "invalid status transition" });
     console.error(err);
     return res.status(500).json({ error: "submitFormInstance failed" });
+  }
+}
+
+// Een punt dat de invuller zelf toevoegt tijdens het invullen. Alleen op een concept;
+// die grens staat in SQL zodat hij niet per route kan afwijken.
+export async function recordFormInstanceSubmitRejection(req: any, res: any) {
+  try {
+    const result = await submitRejectionService.recordFormSubmitRejection({
+      formInstanceId: String(req.params.instanceId || ""),
+      source: req.body?.source,
+      reasonCode: req.body?.reason_code,
+      reasonMessage: req.body?.reason_message,
+      blockingCount: req.body?.blocking_count,
+      pageName: req.body?.page_name,
+      details: req.body?.details,
+      user: req.user,
+    });
+
+    if (result?.ok === false) return res.status(400).json(result);
+    return res.json(result);
+  } catch (err: any) {
+    const message = String(err?.message || err || "").toLowerCase();
+    if (message.includes("not found")) return res.status(404).json({ error: "form instance not found" });
+    console.error(err);
+    return res.status(500).json({ error: "recordFormInstanceSubmitRejection failed" });
+  }
+}
+
+export async function addFormInstancePoint(req: any, res: any) {
+  try {
+    const result = await followUpService.addRunnerFollowUpPoint({
+      formInstanceId: String(req.params.instanceId || ""),
+      title: req.body?.title,
+      description: req.body?.description,
+      category: req.body?.category,
+      priority: req.body?.priority,
+      sourceQuestionName: req.body?.source_question_name,
+      user: req.user,
+    });
+
+    if (result?.ok === false) return res.status(400).json(result);
+    return res.json(result);
+  } catch (err: any) {
+    const msg = (err?.message || String(err)).toLowerCase();
+    if (msg.includes("alleen zolang het formulier concept")) {
+      return res.status(409).json({ error: "form instance is not a concept" });
+    }
+    console.error(err);
+    return res.status(500).json({ error: "addFormInstancePoint failed" });
   }
 }
 

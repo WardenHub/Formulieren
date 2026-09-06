@@ -662,31 +662,6 @@ function renderValueCell(value: any) {
   return text ? escapeHtml(text) : `<span class="muted">-</span>`;
 }
 
-function renderInfoSection(title: string, rows: Array<{ label: string; value: any }>) {
-  const safeRows = nonEmptyRows(rows);
-  if (!safeRows.length) return "";
-
-  return `
-    <section class="info-section">
-      <div class="section-heading">${escapeHtml(title)}</div>
-      <table class="report-table info-table">
-        <tbody>
-        ${safeRows
-          .map(
-            (row) => `
-              <tr>
-                <th>${escapeHtml(row.label)}</th>
-                <td>${renderValueCell(row.value)}</td>
-              </tr>
-            `
-          )
-          .join("")}
-        </tbody>
-      </table>
-    </section>
-  `;
-}
-
 function renderInfoPairsSection(title: string, rows: Array<{ label: string; value: any }>, sectionClassName = "") {
   const safeRows = nonEmptyRows(rows);
   if (!safeRows.length) return "";
@@ -714,31 +689,6 @@ function renderInfoPairsSection(title: string, rows: Array<{ label: string; valu
             .join("")}
         </tbody>
       </table>
-    </section>
-  `;
-}
-
-function renderSummaryBand(model: any) {
-  const summary = model?.followUps?.summary || {};
-  const items = [
-    { label: "Workflow open", value: Number(summary.open_count ?? 0) },
-    { label: "Workflow afgerond", value: Number(summary.terminal_count ?? 0) },
-    { label: "Rapportopmerkingen", value: Number(summary.informative_count ?? 0) },
-    { label: "Workflow totaal", value: Number(summary.relevant_count ?? 0) },
-  ];
-
-  return `
-    <section class="summary-band">
-      ${items
-        .map(
-          (item) => `
-            <div class="summary-item">
-              <div class="summary-label">${escapeHtml(item.label)}</div>
-              <div class="summary-value">${escapeHtml(String(item.value))}</div>
-            </div>
-          `
-        )
-        .join("")}
     </section>
   `;
 }
@@ -782,18 +732,6 @@ function isWorkflow(item: any) {
   return normalizeToken(item?.kind) === "WORKFLOW";
 }
 
-function isReportOnly(item: any) {
-  return normalizeToken(item?.kind) === "REPORT-ONLY";
-}
-
-function isOpenWorkflow(item: any) {
-  const status = normalizeToken(item?.status);
-  return (
-    isWorkflow(item) &&
-    (status === "OPEN" || status === "PLANNING_NODIG" || status === "WACHTENOPDERDEN")
-  );
-}
-
 function isResolvedWorkflow(item: any) {
   if (!isWorkflow(item)) return false;
   const status = normalizeToken(item?.status);
@@ -819,11 +757,6 @@ function blockingJudgementItems(model: any) {
     if (effectiveCertificateImpact(item) !== "YES") return false;
     return !isResolvedWorkflow(item);
   });
-}
-
-function reportOnlyItems(model: any) {
-  const items = Array.isArray(model?.followUps?.items) ? model.followUps.items : [];
-  return items.filter((item: any) => isReportOnly(item));
 }
 
 function workflowItems(model: any) {
@@ -912,150 +845,6 @@ function renderCoverPage(model: any) {
         </div>
       </div>
     </main>
-  `;
-}
-
-function renderOverviewPages(model: any) {
-  const answers = model?.answers || {};
-  const objectNaam = firstText(
-    answerText(answers, "bouwwerk_naam", "installatie_naam"),
-    model?.installation?.object_name,
-    model?.installation?.installation_name
-  );
-  const objectAdres = buildAddress(model);
-
-  const generalPage = `
-    <section class="page-break-before report-page">
-      <div class="page-title">Gegevens</div>
-      ${renderInfoSection("Algemeen", [
-        { label: "Documentnummer", value: firstText(answers?.documentnummer, model?.form?.official_document_number, model?.formInstanceId) },
-        { label: "Datum onderhoud", value: answerDateText(answers, "datum_onderhoud", "Datum_onderhoud_af_date", "datum onderhoud_2") },
-        { label: "Datum opmaak", value: firstText(answerDateText(answers, "datum_opmaak", "datum opmaak-v"), answerDateText(answers, "datum_onderhoud", "Datum_onderhoud_af_date", "datum onderhoud_2")) },
-        { label: "Status", value: normalizedStatusLabel(model?.form?.status) },
-        { label: "Formulier", value: firstText(model?.form?.name, model?.form?.code) },
-        { label: "Installatiecode", value: model?.form?.atrium_installation_code },
-      ])}
-      ${renderInfoSection("Onderhoud", [
-        { label: "Onderhoudsbedrijf BMI", value: answerText(answers, "onderhoudsbedrijf_naam", "Onderhoudsbedrijf BMI_", "NaamBrandmeldonderhoudsbedrijf") },
-        { label: "Erkenningsnummer", value: firstText(answerText(answers, "erkenningsnummer", "Erkenningsnummer__"), "11008") },
-        { label: "Naam onderhouder", value: firstText(answerText(answers, "onderhouder_naam", "Naamonderhouder", "Naam onderhouder_2"), model?.signer?.profileName, model?.viewer?.profile_name) },
-        { label: "Opgesteld door", value: firstText(model?.item?.submitted_by, model?.item?.created_by) },
-      ])}
-      ${renderInfoSection("Bouwwerk", [
-        { label: "Naam object", value: objectNaam },
-        { label: "Adres", value: objectAdres },
-        { label: "Gebruiker", value: joinNonEmpty([model?.installation?.gebruiker_code, model?.installation?.gebruiker_naam]) },
-        { label: "Beheerder", value: joinNonEmpty([model?.installation?.beheerder_code, model?.installation?.beheerder_naam]) },
-        { label: "Eigenaar", value: joinNonEmpty([model?.installation?.eigenaar_code, model?.installation?.eigenaar_naam]) },
-      ])}
-      ${normalizeText(model?.form?.note) ? `<div class="body-note">${escapeHtml(model.form.note)}</div>` : ""}
-    </section>
-  `;
-
-  const vervolgSections = [
-    renderInfoSection("Programma van Eisen", [
-      { label: "Documentnummer", value: answerText(answers, "documentnummer_pve", "Documentnummer_PvE") },
-      { label: "Datum", value: answerDateText(answers, "datum_pve", "Datum_PvE_af_date") },
-      { label: "Naam bedrijf", value: answerText(answers, "naam_bedrijf_pve", "Naam bedrijf_PvE") },
-    ]),
-    renderInfoSection("Ontwerp / projectie", [
-      { label: "Documentnummer", value: answerText(answers, "tekeningnummer", "documentnummer_ontwerp_projectie") },
-      { label: "Datum", value: answerDateText(answers, "datum_tekening", "Datum_Tekening_af_date") },
-      { label: "Naam bedrijf", value: answerText(answers, "naam_bedrijf_ontwerp_projectie", "Naam bedrijf_Ontwerp/Projectie") },
-      { label: "Projecteringsdeskundige", value: answerText(answers, "naam_projecteringsdeskundige", "Naam projecteringsdeskundige") },
-    ]),
-    renderInfoSection("Doormelding", [
-      {
-        label: "Brand",
-        value: joinNonEmpty(
-          [
-            answerText(answers, "ontvangststation_doormelding_brand", "OntvangststationDoormelding brand"),
-            answerText(answers, "telefoon_doormelding_brand", "TelefoonDoormelding brand"),
-            answerText(answers, "meldcode_doormelding_brand", "MeldcodeDoormelding brand"),
-          ],
-          " ; "
-        ),
-      },
-      {
-        label: "Storing",
-        value: joinNonEmpty(
-          [
-            answerText(answers, "ontvangststation_doormelding_storing", "OntvangststationDoormelding storing"),
-            answerText(answers, "telefoon_doormelding_storing", "TelefoonDoormelding storing"),
-            answerText(answers, "meldcode_doormelding_storing", "MeldcodeDoormelding storing"),
-          ],
-          " ; "
-        ),
-      },
-    ]),
-  ]
-    .filter(Boolean)
-    .join("");
-
-  const vervolgPage = vervolgSections
-    ? `
-      <section class="page-break-before report-page">
-        <div class="page-title">Gegevens (vervolg)</div>
-        ${vervolgSections}
-      </section>
-    `
-    : "";
-
-  return `${generalPage}${vervolgPage}`;
-}
-
-function renderAppendixOverviewPage(model: any) {
-  const groups = Array.isArray(model?.installationDocuments?.groups) ? model.installationDocuments.groups : [];
-  const rows = groups.flatMap((group: any) => {
-    const docs = Array.isArray(group?.items) ? group.items : [];
-    const documentNumbers = Array.from(new Set(docs.map((doc: any) => normalizeText(doc?.document_number)).filter(Boolean))).join(", ");
-    const documentDates = Array.from(new Set(docs.map((doc: any) => formatExportDate(doc?.document_date)).filter(Boolean))).join(", ");
-
-    return [
-      {
-        onderwerp: firstText(group?.name, "Bijlage"),
-        count: docs.length || 0,
-        documentNumbers,
-        documentDates,
-      },
-    ];
-  });
-
-  return `
-    <section class="page-break-before report-page">
-      <div class="page-title">Bijlageoverzicht</div>
-      <div class="page-intro">Overzicht van de installatiedocumenten die aan deze rapportage ten grondslag liggen.</div>
-      ${
-        rows.length
-          ? `
-            <table class="report-table appendix-table">
-              <thead>
-                <tr>
-                  <th>Onderwerp</th>
-                  <th>Aantal</th>
-                  <th>Documentnummer</th>
-                  <th>Datum</th>
-                </tr>
-              </thead>
-              <tbody>
-                ${rows
-                  .map(
-                    (row) => `
-                      <tr>
-                        <td>${escapeHtml(displayText(row.onderwerp))}</td>
-                        <td class="align-center">${escapeHtml(String(row.count))}</td>
-                        <td>${escapeHtml(displayText(row.documentNumbers))}</td>
-                        <td>${escapeHtml(displayText(row.documentDates))}</td>
-                      </tr>
-                    `
-                  )
-                  .join("")}
-              </tbody>
-            </table>
-          `
-          : `<div class="empty-box">Geen installatiedocumenten beschikbaar.</div>`
-      }
-    </section>
   `;
 }
 
@@ -2629,7 +2418,18 @@ function renderSignaturePage(model: any) {
             const blockKey = normalizeToken(block?.key || block?.title);
             const signatureState = canShowSignatureForBlock(model, blockKey === "AANVULLENDEWERKZAAMHEDEN" ? "aanvullende_werkzaamheden" : blockKey.toLowerCase());
             const signatureDataUrl = normalizeText(model?.signer?.signatureDataUrl);
-            const signatureNotice = firstText(signatureState.reason, "Nog niet ondertekend");
+            const signatureNotice = normalizeText(signatureState.reason);
+
+            /* Definitief is definitief. Staat het formulier vast en heeft de indiener geen
+               handtekening in zijn profiel, dan blijft het vak leeg; geen "nog niet
+               ondertekend" en geen regel erboven die dat herhaalt. Een leeg vak van 28 mm
+               is bovendien precies genoeg om het rapport uit te printen en er met de hand
+               een krabbel onder te zetten.
+
+               Is het formulier nog niet definitief, dan blijft de uitleg wel staan; dat is
+               een tussenstand en dan hoort de lezer te weten waarom er niets staat. */
+            const toonHandtekening = signatureState.allowed && Boolean(signatureDataUrl);
+            const toonUitleg = !signatureState.allowed && Boolean(signatureNotice);
             return `
               <article class="signature-block">
                 <div class="signature-block-header">
@@ -2652,16 +2452,22 @@ function renderSignaturePage(model: any) {
                       <div class="signature-field-label">Datum</div>
                       <div class="signature-field-value">${escapeHtml(displayText(onderhoudDatum))}</div>
                     </div>
-                    <div class="signature-field">
-                      <div class="signature-field-label">Handtekening</div>
-                      <div class="signature-field-value">${signatureState.allowed && signatureDataUrl ? "Vastgelegd" : "Niet ondertekend"}</div>
-                    </div>
+                    ${
+                      toonHandtekening
+                        ? `<div class="signature-field">
+                            <div class="signature-field-label">Handtekening</div>
+                            <div class="signature-field-value">Vastgelegd</div>
+                          </div>`
+                        : ""
+                    }
                   </div>
                   <div class="signature-box">
                     ${
-                      signatureState.allowed && signatureDataUrl
+                      toonHandtekening
                         ? `<img src="${signatureDataUrl}" alt="Handtekening" />`
-                        : `<div class="signature-empty">${escapeHtml(signatureNotice)}</div>`
+                        : toonUitleg
+                          ? `<div class="signature-empty">${escapeHtml(signatureNotice)}</div>`
+                          : ""
                     }
                   </div>
                 </div>

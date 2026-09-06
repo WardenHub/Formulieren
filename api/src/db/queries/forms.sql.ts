@@ -1,5 +1,10 @@
 // api/src/db/queries/forms.sql.ts
 
+import {
+  buildParentInstanceGuardForNewChildSql,
+  buildParentInstanceGuardSql,
+} from "./parentInstanceGuard.sql.js";
+
 export const importAnswerFileSql = `
 -- expects:
 --   @code nvarchar(...)
@@ -10,31 +15,21 @@ export const importAnswerFileSql = `
 --   @answersJson nvarchar(max)
 --   @calculatedJson nvarchar(max) (nullable)
 --   @updatedBy nvarchar(...)
+--   @allowVersionRebind bit
+
+set xact_abort on;
+begin transaction;
 
 if not exists (select 1 from dbo.AtriumInstallationBase where installatie_code = @code)
 begin
   throw 50000, 'atrium installation not found', 1;
 end;
 
--- ensure installation exists
+-- Een importbestand mag geen installatie aanmaken. Dat is stamdata; komt de installatie
+-- niet voor, dan klopt het bestand niet en hoort de import te stoppen.
 if not exists (select 1 from dbo.Installation where atrium_installation_code = @code)
 begin
-  insert into dbo.Installation (
-    installation_id,
-    atrium_installation_code,
-    installation_type_key,
-    created_at,
-    created_by,
-    is_active
-  )
-  values (
-    newid(),
-    @code,
-    null,
-    sysutcdatetime(),
-    @updatedBy,
-    1
-  );
+  throw 50000, 'installation not found', 1;
 end;
 
 declare @installationId uniqueidentifier;
@@ -118,6 +113,28 @@ begin
     throw 50000, 'form instance not editable', 1;
   end;
 
+  -- Antwoorden die op een andere formulierversie zijn gemaakt passen niet zomaar op deze
+  -- instantie; vraagnamen kunnen intussen zijn gewijzigd. Zonder deze controle schoven ze er
+  -- stil in en klopte de opgeslagen inhoud niet meer bij de definitie waar hij aan hangt.
+  declare @instanceVersionId uniqueidentifier;
+  select top 1 @instanceVersionId = form_version_id
+  from dbo.FormInstance
+  where form_instance_id = @instanceId;
+
+  if @instanceVersionId <> @formVersionId
+  begin
+    if isnull(@allowVersionRebind, 0) = 0
+    begin
+      throw 50000, 'form version mismatch', 1;
+    end;
+
+    update dbo.FormInstance
+    set form_version_id = @formVersionId,
+        updated_at = sysutcdatetime(),
+        updated_by = @updatedBy
+    where form_instance_id = @instanceId;
+  end;
+
   -- optional conflict check when draftRev provided
   if @draftRev is not null
   begin
@@ -163,17 +180,26 @@ begin
   );
 end;
 
+-- De versiebinding is hierboven al afgehandeld; hier stond hij nog een keer, en dan
+-- onvoorwaardelijk, waardoor een oud pakket een instantie terug kon trekken naar een
+-- oudere definitie zonder dat iemand het merkte.
 update dbo.FormInstance
 set
-  form_version_id = @formVersionId,
   updated_at = sysutcdatetime(),
   updated_by = @updatedBy,
   draft_rev = draft_rev + 1
 where form_instance_id = @instanceId
   and atrium_installation_code = @code;
 
+commit transaction;
+
 select
-  @instanceId as form_instance_id;
+  @instanceId as form_instance_id,
+  (
+    select version_label
+    from dbo.FormDefinitionVersion
+    where form_version_id = @formVersionId
+  ) as version_label;
 `;
 
 // =========================================================
@@ -398,6 +424,66 @@ order by
 // forms runtime - read instance (survey + answers)
 // =========================================================
 
+// Een concept dat nog aan een oudere formulierversie hangt wordt bij openen naar de
+// actieve versie getild. Zonder dit blijft een concept vastzitten op de vragenlijst en
+// de runtime-instellingen van het moment waarop het is gestart, terwijl er inmiddels
+// een nieuwe versie is gepubliceerd. Alleen CONCEPT; ingediende formulieren blijven
+// gebonden aan de versie waartegen ze zijn ingevuld, want dat is de reproduceerbaarheid.
+export const upgradeConceptInstanceToActiveVersionSql = `
+declare @oldVersionId uniqueidentifier;
+declare @formId uniqueidentifier;
+declare @status nvarchar(30);
+
+select
+  @oldVersionId = fi.form_version_id,
+  @status       = fi.status,
+  @formId       = fv.form_id
+from dbo.FormInstance fi
+join dbo.FormDefinitionVersion fv
+  on fv.form_version_id = fi.form_version_id
+where fi.form_instance_id = @instanceId;
+
+declare @activeVersionId uniqueidentifier = (
+  select top 1 fv.form_version_id
+  from dbo.FormDefinitionVersion fv
+  where fv.form_id = @formId
+    and fv.is_active = 1
+  order by fv.version desc
+);
+
+if @status = N'CONCEPT'
+   and @activeVersionId is not null
+   and @activeVersionId <> @oldVersionId
+begin
+  update dbo.FormInstance
+  set form_version_id = @activeVersionId,
+      updated_at      = sysutcdatetime(),
+      updated_by      = @actor
+  where form_instance_id = @instanceId
+    and status = N'CONCEPT';
+
+  -- De samenvatting van alle overgeslagen versies, zodat de invuller leest wat er sinds
+  -- zijn versie is veranderd en niet alleen dat er iets is veranderd.
+  select
+    (select version_label from dbo.FormDefinitionVersion where form_version_id = @oldVersionId)    as previous_version_label,
+    (select version_label from dbo.FormDefinitionVersion where form_version_id = @activeVersionId) as applied_version_label,
+    (
+      select string_agg(concat(N'Versie ', skipped.version_label, N'; ', skipped.change_summary), char(10))
+        within group (order by skipped.version)
+      from dbo.FormDefinitionVersion skipped
+      where skipped.form_id = @formId
+        and skipped.version > (select version from dbo.FormDefinitionVersion where form_version_id = @oldVersionId)
+        and skipped.version <= (select version from dbo.FormDefinitionVersion where form_version_id = @activeVersionId)
+        and nullif(ltrim(rtrim(skipped.change_summary)), N'') is not null
+    ) as change_summary;
+end
+else
+  select
+    cast(null as nvarchar(20)) as previous_version_label,
+    cast(null as nvarchar(20)) as applied_version_label,
+    cast(null as nvarchar(max)) as change_summary;
+`;
+
 export const getFormInstanceSql = `
 -- expects:
 --   @code nvarchar(...)
@@ -584,23 +670,7 @@ begin
   throw 50000, 'draft_rev conflict', 1;
 end;
 
-if @parentInstanceId is not null
-begin
-  if @parentInstanceId = @instanceId
-  begin
-    throw 50000, 'parent form instance invalid', 1;
-  end;
-
-  if not exists (
-    select 1
-    from dbo.FormInstance parent_fi
-    where parent_fi.form_instance_id = @parentInstanceId
-      and parent_fi.atrium_installation_code = @code
-  )
-  begin
-    throw 50000, 'parent form instance not found', 1;
-  end;
-end;
+${buildParentInstanceGuardSql("@instanceId", "@parentInstanceId")}
 
 update dbo.FormInstance
 set
@@ -678,26 +748,41 @@ begin
   throw 50000, 'form not found', 1;
 end;
 
--- pick latest version (highest version)
+-- De hoogste actieve versie. Zonder het is_active-filter bond deze route aan een versie
+-- die een beheerder net had uitgezet, terwijl de hub-route wel filterde; twee ingangen
+-- gaven dan verschillende versies voor hetzelfde formulier.
 declare @formVersionId uniqueidentifier;
 select top 1 @formVersionId = fv.form_version_id
 from dbo.FormDefinitionVersion fv
 where fv.form_id = @formId
+  and fv.is_active = 1
 order by fv.version desc;
 
 if @formVersionId is null
 begin
-  throw 50000, 'form has no versions', 1;
+  throw 50000, 'form has no active version', 1;
 end;
 
--- resume: if an existing CONCEPT instance exists for this installation + form_version -> return it
+-- Een bestaand concept voor deze installatie en versie wordt hervat. Dat was stil, waardoor
+-- twee losse bezoeken één rij deelden en het eerste bezoek niet meer te reconstrueren was.
+-- Het hervatten blijft, maar de aanroeper krijgt te zien dat het gebeurt en van wanneer het
+-- concept is; met @forceNew = 1 begint hij bewust een nieuw formulier.
 declare @existingInstanceId bigint;
-select top 1 @existingInstanceId = fi.form_instance_id
-from dbo.FormInstance fi
-where fi.installation_id = @installationId
-  and fi.form_version_id = @formVersionId
-  and fi.status = N'CONCEPT'
-order by fi.created_at desc;
+declare @existingCreatedAt datetime2(3);
+declare @existingCreatedBy nvarchar(200);
+
+if isnull(@forceNew, 0) = 0
+begin
+  select top 1
+    @existingInstanceId = fi.form_instance_id,
+    @existingCreatedAt = fi.created_at,
+    @existingCreatedBy = fi.created_by
+  from dbo.FormInstance fi
+  where fi.installation_id = @installationId
+    and fi.form_version_id = @formVersionId
+    and fi.status = N'CONCEPT'
+  order by fi.created_at desc;
+end;
 
 if @existingInstanceId is not null
 begin
@@ -728,7 +813,10 @@ begin
   select
     @existingInstanceId as form_instance_id,
     @formVersionId as form_version_id,
-    @formId as form_id;
+    @formId as form_id,
+    cast(1 as bit) as resumed,
+    @existingCreatedAt as resumed_created_at,
+    @existingCreatedBy as resumed_created_by;
   return;
 end;
 
@@ -803,7 +891,10 @@ values (
 select
   @instanceId as form_instance_id,
   @formVersionId as form_version_id,
-  @formId as form_id;
+  @formId as form_id,
+  cast(0 as bit) as resumed,
+  cast(null as datetime2(3)) as resumed_created_at,
+  cast(null as nvarchar(200)) as resumed_created_by;
 `;
 
 // =========================================================
@@ -851,20 +942,20 @@ select top 1 @installationId = i.installation_id
 from dbo.Installation i
 where i.atrium_installation_code = @code;
 
-if not exists (
-  select 1
-  from dbo.FormInstance parent_fi
-  where parent_fi.form_instance_id = @parentInstanceId
-    and parent_fi.atrium_installation_code = @code
-)
-begin
-  throw 50000, 'parent form instance not found', 1;
-end;
+${buildParentInstanceGuardForNewChildSql({
+  parentExpr: "@parentInstanceId",
+  contextTypeExpr: "N'INSTALLATION'",
+  sourceSystemExpr: "N'FABRIC_GOLD'",
+  sourceKeyExpr: "@code",
+})}
 
 declare @parentInstallationId uniqueidentifier;
 declare @parentFormId uniqueidentifier;
 declare @parentFormCode nvarchar(100);
 
+-- Op id, niet op de installatiekolom. De poort hierboven bepaalt welke ouder mag; wie
+-- hier op een andere sleutel filtert, kan een toegelaten ouder alsnog missen en dan een
+-- leeg kindformulier opleveren.
 select top 1
   @parentInstallationId = parent_fi.installation_id,
   @parentFormId = parent_fd.form_id,
@@ -874,8 +965,7 @@ join dbo.FormDefinitionVersion parent_fv
   on parent_fv.form_version_id = parent_fi.form_version_id
 join dbo.FormDefinition parent_fd
   on parent_fd.form_id = parent_fv.form_id
-where parent_fi.form_instance_id = @parentInstanceId
-  and parent_fi.atrium_installation_code = @code;
+where parent_fi.form_instance_id = @parentInstanceId;
 
 if @parentInstallationId <> @installationId
 begin
@@ -887,15 +977,17 @@ begin
   throw 50000, 'form not found', 1;
 end;
 
+-- Zelfde regel als hierboven; alleen een actieve versie.
 declare @formVersionId uniqueidentifier;
 select top 1 @formVersionId = fv.form_version_id
 from dbo.FormDefinitionVersion fv
 where fv.form_id = @parentFormId
+  and fv.is_active = 1
 order by fv.version desc;
 
 if @formVersionId is null
 begin
-  throw 50000, 'form has no versions', 1;
+  throw 50000, 'form has no active version', 1;
 end;
 
 declare @existingInstanceId bigint;
@@ -953,8 +1045,7 @@ select top 1
 from dbo.FormInstance parent_fi
 left join dbo.FormAnswer fa
   on fa.form_instance_id = parent_fi.form_instance_id
-where parent_fi.form_instance_id = @parentInstanceId
-  and parent_fi.atrium_installation_code = @code;
+where parent_fi.form_instance_id = @parentInstanceId;
 
 insert into dbo.FormInstance (
   form_version_id,

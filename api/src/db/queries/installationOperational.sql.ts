@@ -5,8 +5,8 @@ follow_up_summary as (
     c.atrium_installation_code,
     count_big(*) as open_follow_up_count,
     sum(case when a.due_date < cast(sysutcdatetime() as date) then 1 else 0 end) as overdue_follow_up_count,
-    sum(case when a.responsibility_type = N'CUSTOMER' then 1 else 0 end) as customer_action_required_count,
-    sum(case when a.responsibility_type = N'THIRD_PARTY' then 1 else 0 end) as third_party_action_required_count,
+    sum(case when a.responsibility_type = N'KLANT' then 1 else 0 end) as customer_action_required_count,
+    sum(case when a.responsibility_type = N'DERDE' then 1 else 0 end) as third_party_action_required_count,
     sum(case when coalesce(a.certificate_impact_override, a.certificate_impact) = N'yes' then 1 else 0 end)
       as certificate_blocking_follow_up_count
   from dbo.FollowUpActionInstallationContext c
@@ -406,6 +406,14 @@ where (@installationCode is null or o.atrium_installation_code = @installationCo
   )
   and (@installationType is null or o.installation_type_key = @installationType)
   and (
+    @installationTypesJson is null
+    or o.installation_type_key in (select value from openjson(@installationTypesJson))
+  )
+  and (
+    @businessUnitsJson is null
+    or o.BedrijfUnit in (select value from openjson(@businessUnitsJson))
+  )
+  and (
     @coordinateMode = N'ALL'
     or (@coordinateMode = N'WITH' and o.has_valid_coordinates = 1)
     or (@coordinateMode = N'WITHOUT' and o.has_valid_coordinates = 0)
@@ -470,6 +478,14 @@ points as (
     and (@onlyCurrent = 0 or upper(coalesce(a.installation_status, N'')) <> N'J')
     and (@installationType is null or i.installation_type_key = @installationType)
     and (
+      @installationTypesJson is null
+      or i.installation_type_key in (select value from openjson(@installationTypesJson))
+    )
+    and (
+      @businessUnitsJson is null
+      or a.BedrijfUnit in (select value from openjson(@businessUnitsJson))
+    )
+    and (
       @followUpMode = N'ALL'
       or (@followUpMode = N'OPEN' and coalesce(actions.open_follow_up_count, 0) > 0)
       or (@followUpMode = N'NONE' and coalesce(actions.open_follow_up_count, 0) = 0)
@@ -500,6 +516,20 @@ gridded as (
     floor(longitude / @cellSize) * @cellSize as grid_longitude
   from points
 ),
+/* Een rastercel op landniveau kan honderden installaties bevatten. Die gingen alle mee in
+   het antwoord, terwijl de kaart per marker alleen een aantal in een cirkel tekent en de
+   popup nooit meer dan een handvol regels kan laten zien. Zo werd de eerste kaartweergave
+   megabytes groot. We nummeren binnen de cel en nemen alleen de eerste @maxPerMarker mee;
+   het werkelijke aantal blijft installation_count, en de popup zegt hoeveel er nog zijn. */
+numbered as (
+  select
+    *,
+    row_number() over (
+      partition by grid_latitude, grid_longitude
+      order by atrium_installation_code
+    ) as cell_row_number
+  from gridded
+),
 groups as (
   select
     grid_latitude,
@@ -515,15 +545,18 @@ groups as (
     max(object_name) as object_name,
     max(formatted_address) as formatted_address,
     max(relation_name) as relation_name,
-    string_agg(convert(nvarchar(max), concat(
+    string_agg(case when cell_row_number <= @maxPerMarker then convert(nvarchar(max), concat(
       N'{"atrium_installation_code":"', string_escape(coalesce(atrium_installation_code, N''), 'json'),
       N'","installation_name":"', string_escape(coalesce(installation_name, N''), 'json'),
       N'","installation_type_key":"', string_escape(coalesce(installation_type_key, N''), 'json'),
       N'","installation_type_name":"', string_escape(coalesce(installation_type_name, N''), 'json'), N'"}'
-    )), N',') as installations_json,
+    )) end, N',') as installations_json,
+    /* Alle soorten in de cel, ook die buiten de eerste @maxPerMarker vallen; de kleur van
+       een gemengde marker mag niet afhangen van welke rijen we meesturen. */
+    count(distinct installation_type_key) as installation_type_count,
     sum(open_follow_up_count) as open_follow_up_count,
     sum(overdue_follow_up_count) as overdue_follow_up_count
-  from gridded
+  from numbered
   group by grid_latitude, grid_longitude
 )
 select top (@take)
@@ -531,8 +564,9 @@ select top (@take)
   g.latitude,
   g.longitude,
   convert(bigint, g.installation_count) as installation_count,
-  case when g.first_type_key = g.last_type_key then g.first_type_key else null end as installation_type_key,
-  case when g.first_type_key = g.last_type_key then g.installation_type_name else N'Gemengd' end as installation_type_name,
+  case when g.installation_type_count = 1 then g.first_type_key else null end as installation_type_key,
+  case when g.installation_type_count = 1 then g.installation_type_name else N'Gemengd' end as installation_type_name,
+  convert(int, g.installation_type_count) as installation_type_count,
   case when g.installation_count = 1 then g.object_name else concat(g.installation_count, N' installaties') end as object_name,
   case when g.installation_count = 1 then g.formatted_address else null end as formatted_address,
   case when g.installation_count = 1 then g.relation_name else null end as relation,

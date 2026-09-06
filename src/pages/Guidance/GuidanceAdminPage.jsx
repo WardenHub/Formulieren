@@ -741,7 +741,6 @@ function GuidancePreviewModal({ formCode, questionRow, guidanceItem, onClose }) 
         }
 
         const suppressDirtyRef = { current: false };
-        const canEditRef = { current: true };
         const model = new Model(prepared.preparedSurveyJson);
         model.showTOC = false;
         model.mode = "edit";

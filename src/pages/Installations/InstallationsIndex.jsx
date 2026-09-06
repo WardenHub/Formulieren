@@ -7,7 +7,8 @@ import {
   getInstallationsMap,
   getInstallationsMapViewport,
 } from "@/api/emberApi.js";
-import ApiStartupLoader, { useApiStartupLoader } from "@/components/ApiStartupLoader.jsx";
+import ApiStartupLoader from "@/components/ApiStartupLoader.jsx";
+import { useApiStartupLoader } from "@/components/apiStartupLoaderState.js";
 import InstallationTypeTag from "@/components/InstallationTypeTag.jsx";
 import { SearchIcon } from "@/components/ui/search";
 import {
@@ -15,11 +16,14 @@ import {
   getInstallationStatusLabel,
 } from "@/lib/installationStatus.js";
 import { getInstallationTypeAppearance } from "@/lib/installationTypeAppearance.js";
+import { BUSINESS_UNITS } from "@/lib/businessUnitAppearance.js";
 import InstallationsMap from "./InstallationsMap.jsx";
 
 const DEFAULT_FILTERS = {
   followUpMode: "ALL",
   installationType: "",
+  // coordinateMode bestaat nog aan de serverkant, maar het scherm bood alleen "alles" aan
+  // als zinnige stand; installaties zonder coordinaten staan al apart onder de kaart.
   coordinateMode: "ALL",
   maintenanceStatus: "",
   inspectionServiceStatus: "",
@@ -71,17 +75,6 @@ function CheckFilter({ label, checked, onChange }) {
       <span>{label}</span>
     </label>
   );
-}
-
-function filterInstallationMarkers(markers, selectedTypeKeys) {
-  if (!selectedTypeKeys.length) return markers;
-  const allowed = new Set(selectedTypeKeys.map((key) => String(key).toUpperCase()));
-  return markers.map((marker) => {
-    const installations = (marker.installations || []).filter((item) => allowed.has(String(item.installation_type_key || "").toUpperCase()));
-    if (!installations.length) return null;
-    const typeKeys = [...new Set(installations.map((item) => String(item.installation_type_key || "").toUpperCase()).filter(Boolean))];
-    return { ...marker, installations, installation_count: installations.length, installation_type_key: typeKeys.length === 1 ? typeKeys[0] : null, installation_type_name: typeKeys.length === 1 ? installations[0].installation_type_name : "Gemengd" };
-  }).filter(Boolean);
 }
 
 function InstallationRow({ item }) {
@@ -175,6 +168,9 @@ export default function InstallationsIndex() {
   const [data, setData] = useState({ items: [], markers: [], without_coordinates: [], summary: {} });
   const [installationTypes, setInstallationTypes] = useState([]);
   const [selectedInstallationTypes, setSelectedInstallationTypes] = useState([]);
+  // Leeg betekent alle bedrijfsonderdelen; zo hoeft niemand een keuze te maken die er
+  // vandaag nog niet toe doet.
+  const [selectedBusinessUnits, setSelectedBusinessUnits] = useState([]);
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState(null);
   const [viewport, setViewport] = useState(null);
@@ -201,17 +197,21 @@ export default function InstallationsIndex() {
       setErr(null);
       setLoading(true);
       try {
+        // De server filtert nu zelf op meerdere soorten. Eerder werden bij twee of meer
+        // soorten alle 25000 rijen opgehaald om er lokaal vijfhonderd van te tonen; dat was
+        // tientallen megabytes per keer.
         const response = await getInstallationsMap({
           ...filters,
           q: q.trim(),
           onlyCurrent,
-          installationType: selectedInstallationTypes.length === 1 ? selectedInstallationTypes[0] : "",
-          take: selectedInstallationTypes.length > 1 ? 25000 : 500,
+          installationTypes: selectedInstallationTypes,
+          businessUnits: selectedBusinessUnits,
+          take: 500,
         });
         if (!cancelled) {
           setData({
-            items: selectedInstallationTypes.length ? (response?.items || []).filter((item) => selectedInstallationTypes.includes(String(item.installation_type_key || "").toUpperCase())) : (response?.items || []),
-            markers: filterInstallationMarkers(response?.markers || [], selectedInstallationTypes),
+            items: response?.items || [],
+            markers: response?.markers || [],
             without_coordinates: response?.without_coordinates || [],
             summary: response?.summary || {},
           });
@@ -228,7 +228,7 @@ export default function InstallationsIndex() {
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [filters, onlyCurrent, q, mode, selectedInstallationTypes]);
+  }, [filters, onlyCurrent, q, mode, selectedInstallationTypes, selectedBusinessUnits]);
 
   useEffect(() => {
     if (mode !== "map" || !viewport) return undefined;
@@ -257,20 +257,25 @@ export default function InstallationsIndex() {
             ...filters,
             q: cleanQuery,
             onlyCurrent,
-            take: cleanQuery ? 500 : 25000,
+            installationTypes: selectedInstallationTypes,
+            businessUnits: selectedBusinessUnits,
+            take: cleanQuery ? 500 : 3000,
           }, { signal: controller.signal })
           : await getInstallationsMapViewport({
             ...viewport,
             q: cleanQuery,
             onlyCurrent,
-            installationType: selectedInstallationTypes.length === 1 ? selectedInstallationTypes[0] : "",
+            installationTypes: selectedInstallationTypes,
+            businessUnits: selectedBusinessUnits,
             followUpMode: filters.followUpMode,
             take: cleanQuery ? 100 : 750,
           }, { signal: controller.signal });
-        const markers = filterInstallationMarkers(response?.markers || [], selectedInstallationTypes);
+        const markers = response?.markers || [];
         setData((current) => ({
           ...current,
-          items: cleanQuery ? markers.flatMap((marker) => marker.installations || []) : [],
+          // De lijstrijen komen van de server; de geneste installaties in een marker dragen
+          // alleen wat de popup nodig heeft.
+          items: cleanQuery ? response?.items || [] : [],
           markers,
           without_coordinates: [],
           summary: {
@@ -289,7 +294,7 @@ export default function InstallationsIndex() {
       window.clearTimeout(timer);
       controller.abort();
     };
-  }, [filters, mode, onlyCurrent, q, selectedInstallationTypes, viewport]);
+  }, [filters, mode, onlyCurrent, q, selectedInstallationTypes, selectedBusinessUnits, viewport]);
 
   const visibleList = useMemo(() => data.items.slice(0, 500), [data.items]);
   const summary = data.summary || {};
@@ -367,12 +372,6 @@ export default function InstallationsIndex() {
             </div>
           </div>
 
-          <FilterSelect label="Locatiegegevens" value={filters.coordinateMode} onChange={(value) => setFilter("coordinateMode", value)}>
-            <option value="ALL">Met en zonder coördinaten</option>
-            <option value="WITH">Met geldige coördinaten</option>
-            <option value="WITHOUT">Zonder geldige coördinaten</option>
-          </FilterSelect>
-
           <details className="installations-advanced-filters">
             <summary>Meer filters</summary>
             <div className="installations-advanced-filters__content">
@@ -393,7 +392,54 @@ export default function InstallationsIndex() {
             </div>
           </details>
 
-          <button type="button" className="btn btn-secondary" onClick={() => { setFilters(DEFAULT_FILTERS); setSelectedInstallationTypes([]); }}>
+          <div className="installations-type-filters" aria-label="Bedrijven">
+            <span className="installations-filter-field__label">Bedrijven</span>
+            <div className="installations-type-filter-buttons">
+              <button
+                type="button"
+                className={`installations-type-filter-button installations-type-filter-button--all${selectedBusinessUnits.length === 0 ? " is-active" : ""}`}
+                aria-pressed={selectedBusinessUnits.length === 0}
+                onClick={() => setSelectedBusinessUnits([])}
+              >
+                Beide
+              </button>
+
+              {BUSINESS_UNITS.map((unit) => {
+                const active =
+                  selectedBusinessUnits.length === 0 || selectedBusinessUnits.includes(unit.key);
+
+                return (
+                  <button
+                    key={unit.key}
+                    type="button"
+                    className={`installations-type-filter-button installations-bu-filter-button${active ? " is-active" : ""}`}
+                    style={{ "--type-color": unit.color }}
+                    aria-pressed={active}
+                    title={unit.note || `Alleen installaties van ${unit.label}`}
+                    onClick={() =>
+                      setSelectedBusinessUnits((current) => {
+                        const basis = current.length === 0 ? BUSINESS_UNITS.map((item) => item.key) : current;
+                        const volgende = basis.includes(unit.key)
+                          ? basis.filter((item) => item !== unit.key)
+                          : [...basis, unit.key];
+
+                        // Alles aangevinkt is hetzelfde als geen keuze; dat houdt de
+                        // aanvraag klein en de knop "Beide" eerlijk.
+                        return volgende.length === BUSINESS_UNITS.length ? [] : volgende;
+                      })
+                    }
+                  >
+                    {unit.logo ? (
+                      <img src={unit.logo} alt="" className="installations-bu-filter-button__logo" />
+                    ) : null}
+                    <span>{unit.label}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          <button type="button" className="btn btn-secondary" onClick={() => { setFilters(DEFAULT_FILTERS); setSelectedInstallationTypes([]); setSelectedBusinessUnits([]); }}>
             Filters wissen
           </button>
         </aside>

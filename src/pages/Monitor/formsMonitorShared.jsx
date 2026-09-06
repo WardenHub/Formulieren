@@ -120,6 +120,49 @@ export function getCreatedByDisplay(source, actorLookup = null) {
   return resolveActorDisplayName(source.created_by, actorLookup, "-");
 }
 
+// De namen die de gebruikers van de monitor zelf hanteren. Het datamodel noemt dit context;
+// dat woord komt bewust nergens in beeld.
+export const CONTEXT_TYPE_LABELS = {
+  RELATION: "Klant",
+  PROJECT: "Project",
+  WORK_ORDER: "Werkbon",
+  INSTALLATION: "Installatie",
+  EMPLOYEE: "Medewerker",
+};
+
+// Eén regel die zegt waar een formulier bij hoort. Een formulier zonder installatie liet
+// hier eerder niets zien, terwijl er wel een project of een klant aan hing.
+export function describePrimaryContext(item) {
+  const contexts = Array.isArray(item?.contexts) ? item.contexts : [];
+
+  const primary =
+    contexts.find((context) => context?.is_primary) ||
+    contexts.find((context) => String(context?.context_type || "").toUpperCase() === "INSTALLATION") ||
+    contexts[0] ||
+    null;
+
+  // De detailpagina krijgt de volledige koppelingen mee; het overzicht krijgt alleen de
+  // hoofdkoppeling als losse velden, omdat een lijst van tweehonderd rijen niet elke keer
+  // alle koppelingen hoeft op te halen.
+  const type = String(
+    primary?.context_type ?? item?.primary_context_type ?? ""
+  ).trim().toUpperCase();
+  const code = String(primary?.display_code_snapshot ?? item?.primary_context_code ?? "").trim();
+  const name = String(primary?.display_label_snapshot ?? item?.primary_context_label ?? "").trim();
+  const total = contexts.length || Number(item?.context_count || 0);
+
+  if (!type && !code && !name) {
+    const fallback = compactInstallationLine(item);
+    return fallback ? { label: "Installatie", value: fallback, extra: 0 } : null;
+  }
+
+  return {
+    label: CONTEXT_TYPE_LABELS[type] || "Koppeling",
+    value: [code, name].filter(Boolean).join("; ") || "zonder naam",
+    extra: Math.max(0, total - 1),
+  };
+}
+
 export function compactInstallationLine(item) {
   const code = item?.installatie_code || item?.atrium_installation_code || "";
   const name = item?.installatie_naam || "";

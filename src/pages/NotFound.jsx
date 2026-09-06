@@ -1,5 +1,7 @@
 import { Link } from "react-router-dom";
 import errorGif from "../assets/error.gif";
+import errorWebm from "../assets/error.webm";
+import LoopingClip from "../components/LoopingClip.jsx";
 
 export default function NotFound() {
   return (
@@ -13,8 +15,9 @@ export default function NotFound() {
       }}
     >
       <div style={{ textAlign: "center", maxWidth: 420 }}>
-        <img
-          src={errorGif}
+        <LoopingClip
+          webmSrc={errorWebm}
+          gifSrc={errorGif}
           alt="404"
           style={{
             maxWidth: "100%",

@@ -59,7 +59,7 @@ const ArrowBigRightIcon = forwardRef(({ onMouseEnter, onMouseLeave, className, s
         viewBox="0 0 24 24"
         width={size}
         xmlns="http://www.w3.org/2000/svg">
-        <motion.path animate={controls} d="M6 9h6V5l7 7-7 7v-4H6V9z" variants={PATH_VARIANTS} />
+        <motion.path animate={controls} initial="normal" d="M6 9h6V5l7 7-7 7v-4H6V9z" variants={PATH_VARIANTS} />
       </svg>
     </div>
   );

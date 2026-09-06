@@ -9,7 +9,10 @@ import { PanelLeftCloseIcon } from "@/components/ui/panel-left-close";
 
 import { getPageTitle } from "./surveyCore.jsx";
 
-function getPageStatus({ pageIndex, validationSummary, hasValidatedOnce }) {
+// Een pagina telt als gecontroleerd wanneer de gebruiker hem heeft verlaten, of wanneer
+// het hele formulier is gecontroleerd. Zo groeit de balk mee tijdens het invullen in
+// plaats van pas iets te tonen na een druk op Controleer.
+function getPageStatus({ pageIndex, validationSummary, hasValidatedOnce, checkedPages }) {
   const hasBlockingItems = Array.isArray(validationSummary)
     ? validationSummary.some((item) => Number(item?.pageIndex) === Number(pageIndex))
     : false;
@@ -23,7 +26,11 @@ function getPageStatus({ pageIndex, validationSummary, hasValidatedOnce }) {
     };
   }
 
-  if (hasValidatedOnce) {
+  const isChecked =
+    hasValidatedOnce ||
+    (Array.isArray(checkedPages) && checkedPages.includes(Number(pageIndex)));
+
+  if (isChecked) {
     return {
       key: "ready",
       label: "Gereed",
@@ -71,6 +78,7 @@ export default function FormPageNavigator({
   currentPageIndex,
   validationSummary,
   hasValidatedOnce,
+  checkedPages = [],
   bookmarksOpen,
   validationOpen,
   onToggleBookmarks,
@@ -105,9 +113,10 @@ export default function FormPageNavigator({
         pageIndex: index,
         validationSummary,
         hasValidatedOnce,
+        checkedPages,
       }),
     }));
-  }, [pages, validationSummary, hasValidatedOnce]);
+  }, [pages, validationSummary, hasValidatedOnce, checkedPages]);
 
   useEffect(() => {
     const nextCount = validationItems.length;

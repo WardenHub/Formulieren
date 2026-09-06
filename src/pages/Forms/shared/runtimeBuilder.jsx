@@ -1,5 +1,9 @@
 // src/pages/Forms/shared/runtimeBuilder.jsx
 import { ItemValue, Model } from "survey-core";
+// De definities zetten "locale": "nl", maar zonder deze taalmodule valt survey-core terug
+// op Engels. Een verplichte vraag zonder eigen requiredErrorText liet daardoor "Response
+// required." zien aan een monteur. De designer laadde de module al; de runner niet.
+import "survey-core/i18n/dutch";
 import { getFormPrefill } from "@/api/emberApi.js";
 
 import {
@@ -91,17 +95,17 @@ export function createRuntimeSurveyModel(
 
   model.onValueChanged.add(() => {
     markDirty();
-    syncAllMatrixQuestionVisualErrors(model, false);
+    syncAllMatrixQuestionVisualErrors(model);
   });
 
   model.onMatrixRowAdded.add(() => {
     markDirty();
-    syncAllMatrixQuestionVisualErrors(model, false);
+    syncAllMatrixQuestionVisualErrors(model);
   });
 
   model.onMatrixRowRemoved.add(() => {
     markDirty();
-    syncAllMatrixQuestionVisualErrors(model, false);
+    syncAllMatrixQuestionVisualErrors(model);
   });
 
   return model;
@@ -113,7 +117,7 @@ export function setRuntimeSurveyData(model, answersObj, suppressDirtyRef) {
   suppressDirtyRef.current = true;
   try {
     model.data = normalizedAnswers;
-    syncAllMatrixQuestionVisualErrors(model, false);
+    syncAllMatrixQuestionVisualErrors(model);
   } finally {
     suppressDirtyRef.current = false;
   }
@@ -255,6 +259,7 @@ function rebuildBoundComplexQuestions(model, prefillPayload) {
         q.value = undefined;
         q.value = cloned;
       } catch {
+        // Laatste redmiddel; lukt ook dit niet, dan blijft de bestaande waarde staan.
       }
     }
   }
@@ -317,7 +322,7 @@ export function applyRuntimePrefillToModel({
   }
 
   applyRuntimeInstanceFields(model, instance);
-  syncAllMatrixQuestionVisualErrors(model, false);
+  syncAllMatrixQuestionVisualErrors(model);
 
   const afterData = model.data && typeof model.data === "object" ? deepClone(model.data) : {};
   const changed = !deepEqual(beforeData, afterData);

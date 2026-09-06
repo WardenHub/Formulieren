@@ -22,26 +22,145 @@ const followUpProjection = `
   a.resolution_outcome
 `;
 
+// Alleen voor de sync van uit antwoorden afgeleide punten. De filter op source_type is
+// geen detail: de sync laat alles vervallen of verwijdert alles wat niet meer uit de
+// antwoorden volgt, en een handmatig toegevoegd punt volgt daar per definitie niet uit.
+// Door het hier af te bakenen kan de sync zulke punten niet eens zien, in plaats van
+// dat een voorwaarde verderop ooit vergeten wordt.
 export const getFormFollowUpsByInstanceSql = `
 select
 ${followUpProjection}
 from dbo.FollowUpAction a
 join dbo.FollowUpActionFormSource fs on fs.follow_up_action_id = a.follow_up_action_id
 where fs.form_instance_id = @formInstanceId
+  and a.source_type = N'FORM'
 `;
 
-export const insertFormFollowUpSql = `
+// Een punt dat de invuller zelf toevoegt tijdens het invullen. Hangt aan dezelfde
+// formulierinstance als de afgeleide punten, zodat het meereist met het formulier en in
+// dezelfde sheet en werklijsten verschijnt. source_type MANUAL en source_kind 'manual'
+// houden het buiten de antwoordsync; zie getFormFollowUpsByInstanceSql.
+export const insertRunnerFollowUpPointSql = `
+-- Een punt bestaat uit een actie plus zijn satellieten; die horen bij elkaar. Zonder
+-- xact_abort breekt SQL Server alleen de mislukte insert af en loopt de rest gewoon door,
+-- waardoor een half punt achterblijft dat nergens meer bij hoort en niet op te ruimen is.
+set xact_abort on;
+begin transaction;
+
+if not exists (
+      select 1 from dbo.FormInstance
+      where form_instance_id = @formInstanceId
+        and status = N'CONCEPT'
+   )
+  throw 50000, 'een punt toevoegen kan alleen zolang het formulier concept is', 1;
+
 declare @followUpActionId uniqueidentifier = newid();
 
 insert into dbo.FollowUpAction
 (
   follow_up_action_id, source_type, kind, workflow_title, workflow_description,
-  category, certificate_impact, status, status_set_at, status_set_by, created_by
+  category, priority, status, status_set_at, status_set_by, created_by
+)
+values
+(
+  @followUpActionId, N'MANUAL', N'workflow', @workflowTitle, @workflowDescription,
+  @category, @priority, N'OPEN', sysutcdatetime(), @actor, @actor
+);
+
+insert into dbo.FollowUpActionFormSource
+(
+  follow_up_action_id, form_instance_id, source_kind, source_question_name,
+  source_fingerprint, created_by
+)
+values
+(
+  -- source_kind spiegelt FollowUpAction.kind en is door CK_FollowUpActionFormSource_kind
+  -- beperkt tot workflow of report-only; de herkomst zit al in source_type MANUAL en in
+  -- het fingerprintvoorvoegsel.
+  @followUpActionId, @formInstanceId, N'workflow', @sourceQuestionName,
+  concat(N'manual|', convert(nvarchar(36), @followUpActionId)), @actor
+);
+
+insert into dbo.FollowUpActionInstallationContext
+(
+  follow_up_action_id, installation_id, atrium_installation_code,
+  is_primary, verified_at, created_by
+)
+select
+  @followUpActionId,
+  i.installation_id,
+  i.atrium_installation_code,
+  1,
+  fic.last_verified_at,
+  @actor
+from dbo.FormInstanceContext fic
+join dbo.Installation i
+  on i.atrium_installation_code = fic.source_key
+where fic.form_instance_id = @formInstanceId
+  and fic.context_type = N'INSTALLATION';
+
+insert into dbo.FollowUpActionAtriumContext
+(
+  follow_up_action_id, context_type, context_key, context_display_snapshot,
+  source_snapshot_json, verified_at, created_by
+)
+select
+  @followUpActionId,
+  fic.context_type,
+  fic.source_key,
+  fic.display_label_snapshot,
+  (
+    select
+      fic.source_system,
+      fic.business_unit,
+      fic.display_code_snapshot,
+      json_query(fic.metadata_snapshot_json) as metadata
+    for json path, without_array_wrapper
+  ),
+  fic.last_verified_at,
+  @actor
+from dbo.FormInstanceContext fic
+where fic.form_instance_id = @formInstanceId
+  and fic.context_type <> N'INSTALLATION';
+
+insert into dbo.FollowUpActionEvent
+  (follow_up_action_id, event_type, new_values_json, actor_display_name_snapshot)
+values
+  (@followUpActionId, N'CREATED',
+   (select N'MANUAL' as source_type, @workflowTitle as workflow_title, N'OPEN' as status
+    for json path, without_array_wrapper),
+   @actor);
+
+commit transaction;
+
+select @followUpActionId as follow_up_action_id;
+`;
+
+export const insertFormFollowUpSql = `
+declare @followUpActionId uniqueidentifier = newid();
+
+-- Prioriteit, verantwoordelijkheid en deadline komen uit de formulierdefinitie en niet van
+-- de invuller. Is er niets opgegeven, dan valt de tabeldefault in; die geeft NORMAL, INTERN
+-- en geen deadline, precies zoals het tot nu toe altijd was.
+--
+-- De deadline wordt alleen hier gezet, bij het ontstaan van het punt.
+-- updateFormFollowUpContentSql laat due_date bewust ongemoeid; anders schuift de deadline
+-- bij elke keer opslaan een dag op en betekent hij niets meer.
+insert into dbo.FollowUpAction
+(
+  follow_up_action_id, source_type, kind, workflow_title, workflow_description,
+  category, certificate_impact, priority, responsibility_type, due_date,
+  status, status_set_at, status_set_by, created_by
 )
 values
 (
   @followUpActionId, N'FORM', @kind, @workflowTitle, @workflowDescription,
-  @category, @certificateImpact, @initialStatus, sysutcdatetime(), @actor, @actor
+  @category, @certificateImpact,
+  coalesce(@priority, N'NORMAL'),
+  coalesce(@responsibilityType, N'INTERN'),
+  case when @dueInDays is null then null
+       else convert(date, dateadd(day, @dueInDays, sysutcdatetime())) end,
+  @initialStatus, sysutcdatetime(), @actor, @actor
 );
 
 insert into dbo.FollowUpActionFormSource
@@ -166,6 +285,10 @@ declare @oldValues nvarchar(max) = (
   for json path, without_array_wrapper
 );
 
+-- due_date, priority en responsibility_type staan hier bewust niet in. Die zijn bij het
+-- ontstaan van het punt gezet en mogen daarna van iemand met de hand zijn aangepast; de
+-- sync uit het formulier hoort dat niet terug te draaien, en een deadline die bij elke
+-- opslag opschuift is geen deadline.
 update dbo.FollowUpAction
 set kind = @kind, workflow_title = @workflowTitle,
     workflow_description = @workflowDescription, category = @category,
@@ -206,6 +329,92 @@ if @@rowcount > 0
     (@followUpActionId, N'STATUS_CHANGED',
      (select @oldStatus as status for json path, without_array_wrapper),
      (select N'VERVALLEN' as status for json path, without_array_wrapper), @actor);
+`;
+
+// Bij intrekken van een formulier vervallen alle punten die er nog open van stonden.
+// Zonder dit blijven ze in de installatiebrede werklijst staan terwijl het formulier
+// waar ze uit komen is teruggetrokken.
+export const markInstanceFollowUpsVervallenSql = `
+declare @affected table (follow_up_action_id uniqueidentifier, old_status nvarchar(30));
+
+update a
+set status = N'VERVALLEN', status_set_at = sysutcdatetime(), status_set_by = @actor,
+    updated_at = sysutcdatetime(), updated_by = @actor
+output inserted.follow_up_action_id, deleted.status into @affected
+from dbo.FollowUpAction a
+join dbo.FollowUpActionFormSource fs
+  on fs.follow_up_action_id = a.follow_up_action_id
+where fs.form_instance_id = @formInstanceId
+  and a.status in (N'OPEN', N'PLANNING_NODIG', N'WACHTENOPDERDEN', N'GEPLAND', N'INFORMATIEF');
+
+insert into dbo.FollowUpActionEvent
+  (follow_up_action_id, event_type, old_values_json, new_values_json, actor_display_name_snapshot)
+select
+  af.follow_up_action_id,
+  N'STATUS_CHANGED',
+  (select af.old_status as status for json path, without_array_wrapper),
+  (select N'VERVALLEN' as status for json path, without_array_wrapper),
+  @actor
+from @affected af;
+
+select count(*) as vervallen from @affected;
+`;
+
+// Een bevinding die terugkomt moet weer opengaan. Alleen VERVALLEN wordt hersteld;
+// AFGEHANDELD en AFGEWEZEN zijn menselijke besluiten en blijven staan.
+export const reactivateFormFollowUpSql = `
+declare @oldStatus nvarchar(30) = (select status from dbo.FollowUpAction where follow_up_action_id = @followUpActionId);
+
+update dbo.FollowUpAction
+set status = @initialStatus, status_set_at = sysutcdatetime(), status_set_by = @actor,
+    updated_at = sysutcdatetime(), updated_by = @actor
+where follow_up_action_id = @followUpActionId
+  and status = N'VERVALLEN';
+
+if @@rowcount > 0
+  insert into dbo.FollowUpActionEvent
+    (follow_up_action_id, event_type, old_values_json, new_values_json, actor_display_name_snapshot)
+  values
+    (@followUpActionId, N'STATUS_CHANGED',
+     (select @oldStatus as status for json path, without_array_wrapper),
+     (select @initialStatus as status for json path, without_array_wrapper), @actor);
+`;
+
+// Opruimen van een punt dat verdwijnt terwijl het formulier nog CONCEPT is.
+// Verwijderen mag alleen wanneer niemand er iets aan heeft toegevoegd; anders zou
+// een per ongeluk gewijzigd antwoord een geplaatste pin of foto meenemen.
+// In dat geval valt de sync terug op VERVALLEN.
+export const deleteConceptFormFollowUpSql = `
+declare @canDelete bit = 0;
+
+select @canDelete = case
+  when a.source_type = N'FORM'
+   and a.status = @initialStatus
+   and a.assignment_type = N'NONE'
+   and a.internal_note is null
+   and a.customer_note is null
+   and a.resolution_note is null
+   and a.due_date is null
+   and a.certificate_impact_override is null
+   and not exists (select 1 from dbo.FollowUpActionAttachmentMap m where m.follow_up_action_id = a.follow_up_action_id)
+   and not exists (select 1 from dbo.FollowUpActionDrawingPinMap m where m.follow_up_action_id = a.follow_up_action_id)
+   and not exists (select 1 from dbo.FollowUpActionReview r where r.follow_up_action_id = a.follow_up_action_id)
+   and not exists (select 1 from dbo.FollowUpActionInspectionCaseSource s where s.follow_up_action_id = a.follow_up_action_id)
+   and not exists (select 1 from dbo.InspectionCaseDocumentRequirement d where d.follow_up_action_id = a.follow_up_action_id)
+  then 1 else 0 end
+from dbo.FollowUpAction a
+where a.follow_up_action_id = @followUpActionId;
+
+if @canDelete = 1
+begin
+  delete from dbo.FollowUpActionEvent where follow_up_action_id = @followUpActionId;
+  delete from dbo.FollowUpActionAtriumContext where follow_up_action_id = @followUpActionId;
+  delete from dbo.FollowUpActionInstallationContext where follow_up_action_id = @followUpActionId;
+  delete from dbo.FollowUpActionFormSource where follow_up_action_id = @followUpActionId;
+  delete from dbo.FollowUpAction where follow_up_action_id = @followUpActionId;
+end
+
+select @canDelete as deleted;
 `;
 
 export const getFormFollowUpSummaryByInstanceSql = `
@@ -309,6 +518,40 @@ const monitorProjection = `
     order by d.title, p.page_number, p.label
     for json path
   ), N'[]') as drawing_pins_json
+  -- De foto bij een punt hoort bij het punt, niet alleen in de bijlagenlijst; wie een punt
+  -- beoordeelt wil het bewijs ernaast zien staan.
+  ,coalesce((
+    select
+      attachment_map.stored_file_id,
+      attachment_map.attachment_role,
+      attachment_map.is_primary,
+      attachment_map.customer_visible,
+      stored_file.file_name,
+      stored_file.mime_type,
+      stored_file.file_size_bytes
+    from dbo.FollowUpActionAttachmentMap attachment_map
+    join dbo.StoredFile stored_file
+      on stored_file.stored_file_id = attachment_map.stored_file_id
+     and stored_file.is_deleted = 0
+    where attachment_map.follow_up_action_id = a.follow_up_action_id
+    order by attachment_map.is_primary desc, stored_file.file_name
+    for json path
+  ), N'[]') as attachments_json
+  -- Waar het punt bij hoort buiten een installatie; een project, een klant, een werkbon of
+  -- een medewerker. Deze satelliet werd wel gevuld maar alleen door de installatienotities
+  -- gelezen, waardoor een punt op een project- of relatieformulier nergens liet zien
+  -- waarover het ging.
+  ,coalesce((
+    select
+      atrium_context.context_type,
+      atrium_context.context_key,
+      atrium_context.context_display_snapshot,
+      atrium_context.verified_at
+    from dbo.FollowUpActionAtriumContext atrium_context
+    where atrium_context.follow_up_action_id = a.follow_up_action_id
+    order by atrium_context.context_type, atrium_context.context_key
+    for json path
+  ), N'[]') as atrium_contexts_json
 `;
 
 export const getFormFollowUpsMonitorByInstanceSql = `
@@ -454,4 +697,74 @@ select top 1 a.follow_up_action_id, fs.form_instance_id, a.kind,
 from dbo.FollowUpAction a
 join dbo.FollowUpActionFormSource fs on fs.follow_up_action_id = a.follow_up_action_id
 where a.follow_up_action_id = @followUpActionId
+`;
+
+/* Een bijlage bij een actiepunt ophalen vanuit de Monitor. De installatieroute kan dat al,
+   maar die eist een installatiecode; een formulier zonder installatie heeft die niet. Hier
+   is de formulierinstantie de sleutel, zodat beide soorten formulieren dezelfde foto tonen. */
+export const getMonitorFollowUpAttachmentSql = `
+select top (1)
+  stored_file.stored_file_id,
+  stored_file.storage_key,
+  stored_file.file_name,
+  stored_file.mime_type,
+  stored_file.file_size_bytes
+from dbo.FollowUpActionAttachmentMap attachment_map
+join dbo.StoredFile stored_file
+  on stored_file.stored_file_id = attachment_map.stored_file_id
+ and stored_file.is_deleted = 0
+join dbo.FollowUpActionFormSource form_source
+  on form_source.follow_up_action_id = attachment_map.follow_up_action_id
+where attachment_map.follow_up_action_id = @followUpActionId
+  and attachment_map.stored_file_id = @storedFileId;
+`;
+
+/* Prioriteit, verantwoordelijkheid en deadline van een actiepunt bijstellen vanuit de
+   Monitor. De installatieroute kan dit al, maar die eist een installatiecode; een formulier
+   zonder installatie heeft die niet. Hier is het punt zelf de sleutel.
+
+   De formuliersync raakt deze drie velden na het ontstaan nooit meer aan, dus een handmatige
+   bijstelling blijft staan. */
+export const updateFormFollowUpClassificationSql = `
+declare @oldValues nvarchar(max) = (
+  select priority, responsibility_type, due_date
+  from dbo.FollowUpAction
+  where follow_up_action_id = @followUpActionId
+  for json path, without_array_wrapper
+);
+
+if not exists (select 1 from dbo.FollowUpAction where follow_up_action_id = @followUpActionId)
+  throw 50000, 'follow-up action not found', 1;
+
+update dbo.FollowUpAction
+set priority = coalesce(@priority, priority),
+    responsibility_type = coalesce(@responsibilityType, responsibility_type),
+    due_date = case when @dueDateSet = 1 then @dueDate else due_date end,
+    updated_at = sysutcdatetime(),
+    updated_by = @actor
+where follow_up_action_id = @followUpActionId;
+
+insert into dbo.FollowUpActionEvent
+  (follow_up_action_id, event_type, old_values_json, new_values_json, actor_display_name_snapshot)
+select
+  @followUpActionId,
+  N'UPDATED',
+  @oldValues,
+  (
+    select a.priority, a.responsibility_type, a.due_date
+    from dbo.FollowUpAction a
+    where a.follow_up_action_id = @followUpActionId
+    for json path, without_array_wrapper
+  ),
+  @actor;
+
+select top 1
+  a.follow_up_action_id,
+  a.priority,
+  a.responsibility_type,
+  a.due_date,
+  a.updated_at,
+  a.updated_by
+from dbo.FollowUpAction a
+where a.follow_up_action_id = @followUpActionId;
 `;

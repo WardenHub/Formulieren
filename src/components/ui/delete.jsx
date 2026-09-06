@@ -60,12 +60,13 @@ const DeleteIcon = forwardRef(({ onMouseEnter, onMouseLeave, className, size = 2
         viewBox="0 0 24 24"
         width={size}
         xmlns="http://www.w3.org/2000/svg">
-        <motion.g animate={controls} transition={SPRING_TRANSITION} variants={LID_VARIANTS}>
+        <motion.g animate={controls} initial="normal" transition={SPRING_TRANSITION} variants={LID_VARIANTS}>
           <path d="M3 6h18" />
           <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" />
         </motion.g>
         <motion.path
           animate={controls}
+          initial="normal"
           d="M19 8v12c0 1-1 2-2 2H7c-1 0-2-1-2-2V8"
           transition={SPRING_TRANSITION}
           variants={{
@@ -74,6 +75,7 @@ const DeleteIcon = forwardRef(({ onMouseEnter, onMouseLeave, className, size = 2
           }} />
         <motion.line
           animate={controls}
+          initial="normal"
           transition={SPRING_TRANSITION}
           variants={{
             normal: { y1: 11, y2: 17 },
@@ -85,6 +87,7 @@ const DeleteIcon = forwardRef(({ onMouseEnter, onMouseLeave, className, size = 2
           y2="17" />
         <motion.line
           animate={controls}
+          initial="normal"
           transition={SPRING_TRANSITION}
           variants={{
             normal: { y1: 11, y2: 17 },

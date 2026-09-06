@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
-import { useSearchParams } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { GlobalWorkerOptions, getDocument as loadPdfDocument } from "pdfjs-dist";
 import pdfWorkerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 import { BadgeAlert, BriefcaseBusiness, ChevronLeft, ChevronRight, MapPinPlusInside, MessageSquareMore, MoreVertical, PanelRightClose, PanelRightOpen, Pin, PinOff, X } from "lucide-react";
@@ -62,9 +62,10 @@ const FOLLOW_UP_PRIORITIES = [
 ];
 
 const FOLLOW_UP_RESPONSIBILITIES = [
-  { value: "WARDENBURG", label: "Ons bedrijf" },
-  { value: "CUSTOMER", label: "Relatie / externe partij" },
-  { value: "UNSPECIFIED", label: "Nog te bepalen" },
+  { value: "INTERN", label: "Ons bedrijf" },
+  { value: "KLANT", label: "Klant" },
+  { value: "DERDE", label: "Derde partij" },
+  { value: "ONBEPAALD", label: "Nog te bepalen" },
 ];
 
 function DrawingLoadingCard({ label = "De PDF en markeringen worden voorbereid." }) {
@@ -674,7 +675,7 @@ function PinActions({ code, pin, actions, busy, onChanged }) {
     title: "",
     description: "",
     priority: "NORMAL",
-    responsibility_type: "WARDENBURG",
+    responsibility_type: "INTERN",
     due_date: "",
     customer_visible: false,
     customer_note: "",
@@ -693,7 +694,7 @@ function PinActions({ code, pin, actions, busy, onChanged }) {
     if (!draft.title.trim()) return;
     await createManualFollowUpForDrawingPin(code, pin.drawing_pin_id, draft);
     setShowNew(false);
-    setDraft({ title: "", description: "", priority: "NORMAL", responsibility_type: "WARDENBURG", due_date: "", customer_visible: false, customer_note: "" });
+    setDraft({ title: "", description: "", priority: "NORMAL", responsibility_type: "INTERN", due_date: "", customer_visible: false, customer_note: "" });
     await onChanged?.({ reloadDirectory: true });
   }
 
@@ -750,7 +751,7 @@ function PinActions({ code, pin, actions, busy, onChanged }) {
           <label className="admin-field"><span>Omschrijving</span><textarea rows={3} value={draft.description} onChange={(event) => setDraft((current) => ({ ...current, description: event.target.value }))} /></label>
           <div className="drawing-manual-action-form__grid">
             <label className="admin-field"><span>Prioriteit</span><DrawingChoicePicker ariaLabel="Prioriteit kiezen" value={draft.priority} options={FOLLOW_UP_PRIORITIES} onChange={(priority) => setDraft((current) => ({ ...current, priority }))} /></label>
-            <label className="admin-field"><span>Verantwoordelijkheid</span><DrawingChoicePicker ariaLabel="Verantwoordelijkheid kiezen" value={draft.responsibility_type === "THIRD_PARTY" ? "CUSTOMER" : draft.responsibility_type} options={FOLLOW_UP_RESPONSIBILITIES} onChange={(responsibility_type) => setDraft((current) => ({ ...current, responsibility_type }))} /></label>
+            <label className="admin-field"><span>Verantwoordelijkheid</span><DrawingChoicePicker ariaLabel="Verantwoordelijkheid kiezen" value={draft.responsibility_type} options={FOLLOW_UP_RESPONSIBILITIES} onChange={(responsibility_type) => setDraft((current) => ({ ...current, responsibility_type }))} /></label>
             <label className="admin-field"><span>Vervaldatum</span><DateInput value={draft.due_date || null} onChange={(due_date) => setDraft((current) => ({ ...current, due_date: due_date || "" }))} allowEmpty /></label>
           </div>
           <label className={`ember-toggle drawing-relation-description-toggle ${draft.customer_visible ? "is-on" : "is-off"}`}>
@@ -769,6 +770,14 @@ function PinActions({ code, pin, actions, busy, onChanged }) {
 
 export default function DrawingPinsTab({ code, readOnly = false, navigationTarget = null, onOpenFollowUp }) {
   const [searchParams, setSearchParams] = useSearchParams();
+  const navigate = useNavigate();
+
+  // Gezet wanneer de gebruiker vanuit een opvolgpunt hierheen is gestuurd om de locatie
+  // te bepalen. De pin die hij plaatst wordt dan meteen aan dat punt gekoppeld, en
+  // daarna keert hij terug naar waar hij vandaan kwam.
+  const linkActionId = String(navigationTarget?.linkActionId || searchParams.get("linkAction") || "").trim();
+  const returnTo = String(searchParams.get("returnTo") || "").trim();
+
   const [directory, setDirectory] = useState({ drawings: [], follow_up_actions: [] });
   const [selectedDocumentId, setSelectedDocumentId] = useState(() => String(navigationTarget?.documentId || searchParams.get("drawing") || ""));
   const [pins, setPins] = useState([]);
@@ -945,11 +954,25 @@ export default function DrawingPinsTab({ code, readOnly = false, navigationTarge
         setSelectedPinId(String(response?.pin?.drawing_pin_id || ""));
       } else {
         const response = await createDrawingPin(code, selectedDocumentId, draft);
+        const nieuwePinId = String(response?.pin?.drawing_pin_id || "");
+
         setDraft(response?.pin || null);
-        setSelectedPinId(String(response?.pin?.drawing_pin_id || ""));
+        setSelectedPinId(nieuwePinId);
+
+        // Wie hier vanuit een opvolgpunt naartoe is gestuurd, wil dat de zojuist
+        // geplaatste pin meteen aan dat punt hangt. Anders is het weer handmatig
+        // koppelen uit een lange lijst, en dat is precies de stap die eruit moest.
+        if (linkActionId && nieuwePinId) {
+          await linkDrawingPinAction(code, nieuwePinId, linkActionId);
+        }
       }
       setPlacing(false);
       await Promise.all([loadPins(), loadDirectory({ documentId: selectedDocumentId })]);
+
+      if (linkActionId && returnTo) {
+        navigate(returnTo);
+        return;
+      }
     } catch (requestError) {
       setError(requestError?.message || String(requestError));
     } finally {

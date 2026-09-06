@@ -12,8 +12,12 @@ import {
 import {
   getFormFollowUpsByInstanceSql,
   insertFormFollowUpSql,
+  insertRunnerFollowUpPointSql,
   updateFormFollowUpContentSql,
   markFormFollowUpVervallenSql,
+  markInstanceFollowUpsVervallenSql,
+  reactivateFormFollowUpSql,
+  deleteConceptFormFollowUpSql,
 } from "../db/queries/formFollowUps.sql.js";
 import { getUserAuditActor } from "../utils/userIdentity.js";
 
@@ -22,6 +26,7 @@ type SyncFollowUpsInput = {
     form_instance_id: number | string;
     installation_id?: string | null;
     atrium_installation_code?: string | null;
+    status?: string | null;
   };
   surveyJson: any;
   answers: Record<string, any>;
@@ -56,6 +61,68 @@ type ExistingFollowUpRow = {
     | "VERVALLEN"
     | "INFORMATIEF";
 };
+
+// Aangeroepen bij intrekken van een formulier. Punten die iemand al heeft afgehandeld
+// of afgewezen blijven staan; alleen wat nog open stond vervalt.
+export async function vervalFormInstanceFollowUps(formInstanceId: number | string, user: any) {
+  const id = parseFormInstanceId(formInstanceId);
+  if (id == null) return { ok: false, error: "ongeldige form_instance_id" };
+
+  const rows = await sqlQuery(markInstanceFollowUpsVervallenSql, {
+    formInstanceId: id,
+    actor: getUserAuditActor(user),
+  });
+
+  const first: any = Array.isArray(rows) ? rows[0] : null;
+
+  return {
+    ok: true,
+    form_instance_id: id,
+    counts: { vervallen: Number(first?.vervallen ?? 0) },
+  };
+}
+
+const TOEGESTANE_PRIORITEITEN = new Set(["LOW", "NORMAL", "HIGH", "CRITICAL"]);
+
+// Een punt dat de invuller zelf toevoegt tijdens het invullen. Titel is verplicht, want
+// dat is de "wat"-vraag; de rest is aanvulling die later aan het punt kan worden gehangen.
+export async function addRunnerFollowUpPoint(input: {
+  formInstanceId: number | string;
+  title: any;
+  description?: any;
+  category?: any;
+  priority?: any;
+  sourceQuestionName?: any;
+  user: any;
+}) {
+  const formInstanceId = parseFormInstanceId(input?.formInstanceId);
+  if (formInstanceId == null) return { ok: false, error: "ongeldige form_instance_id" };
+
+  const workflowTitle = String(input?.title ?? "").trim();
+  if (!workflowTitle) return { ok: false, error: "titel is verplicht" };
+
+  const priority = String(input?.priority ?? "NORMAL").trim().toUpperCase();
+  if (!TOEGESTANE_PRIORITEITEN.has(priority)) {
+    return { ok: false, error: "onbekende prioriteit" };
+  }
+
+  const rows = await sqlQuery(insertRunnerFollowUpPointSql, {
+    formInstanceId,
+    workflowTitle: workflowTitle.slice(0, 300),
+    workflowDescription: normalizeNullable(input?.description),
+    category: normalizeNullable(input?.category),
+    priority,
+    sourceQuestionName: normalizeNullable(input?.sourceQuestionName),
+    actor: getUserAuditActor(input?.user),
+  });
+
+  const first: any = Array.isArray(rows) ? rows[0] : null;
+
+  return {
+    ok: true,
+    follow_up_action_id: first?.follow_up_action_id ?? null,
+  };
+}
 
 export async function previewFormFollowUps(input: PreviewFollowUpsInput) {
   const extracted = dedupeCandidates(
@@ -94,11 +161,17 @@ export async function syncFormFollowUps(input: SyncFollowUpsInput) {
     existingByFingerprint.set(buildFollowUpSyncKey(row.kind, row.source_fingerprint), row);
   }
 
+  // Zolang het formulier concept is, is een punt werkvoorraad van de invuller zelf.
+  // Verdwijnt het dan weer, dan hoort er niets achter te blijven.
+  const isConcept = String(input?.formInstance?.status || "").trim().toUpperCase() === "CONCEPT";
+
   const extractedFingerprints = new Set<string>();
   let inserted = 0;
   let updated = 0;
   let unchanged = 0;
   let vervallen = 0;
+  let reactivated = 0;
+  let removed = 0;
 
   for (const candidate of extracted) {
     const candidateKey = buildFollowUpSyncKey(candidate.kind, candidate.fingerprint);
@@ -114,6 +187,13 @@ export async function syncFormFollowUps(input: SyncFollowUpsInput) {
       });
       inserted += 1;
       continue;
+    }
+
+    // Een bevinding die terugkomt moet weer open. Zonder dit blijft de rij vervallen,
+    // omdat de inhoud ongewijzigd is en de vergelijking hieronder niets ziet.
+    if (current.status === "VERVALLEN") {
+      await reactivateFollowUp(current.follow_up_action_id, getInitialStatus(candidate.kind), actor);
+      reactivated += 1;
     }
 
     if (!hasMeaningfulChanges(current, candidate)) {
@@ -137,6 +217,15 @@ export async function syncFormFollowUps(input: SyncFollowUpsInput) {
     if (row.status === "AFGEHANDELD") continue;
     if (row.status === "AFGEWEZEN") continue;
 
+    if (isConcept) {
+      const deleted = await deleteConceptFollowUp(row.follow_up_action_id, getInitialStatus(row.kind));
+
+      if (deleted) {
+        removed += 1;
+        continue;
+      }
+    }
+
     await markFollowUpVervallen(row.follow_up_action_id, actor);
     vervallen += 1;
   }
@@ -150,8 +239,14 @@ export async function syncFormFollowUps(input: SyncFollowUpsInput) {
       updated,
       unchanged,
       vervallen,
+      reactivated,
+      removed,
     },
   };
+}
+
+function getInitialStatus(kind: unknown) {
+  return String(kind || "").trim() === "report-only" ? "INFORMATIEF" : "OPEN";
 }
 
 async function getExistingFollowUps(formInstanceId: number): Promise<ExistingFollowUpRow[]> {
@@ -169,7 +264,7 @@ async function insertFollowUp(args: {
 }) {
   const { formInstanceId, actor, candidate } = args;
 
-  const initialStatus = candidate.kind === "report-only" ? "INFORMATIEF" : "OPEN";
+  const initialStatus = getInitialStatus(candidate.kind);
 
   await sqlQuery(insertFormFollowUpSql, {
     formInstanceId,
@@ -183,6 +278,9 @@ async function insertFollowUp(args: {
     workflowDescription: candidate.workflowDescription || null,
     category: candidate.category || null,
     certificateImpact: candidate.certificateImpact || null,
+    priority: candidate.priority,
+    responsibilityType: candidate.responsibilityType,
+    dueInDays: candidate.dueInDays,
     initialStatus,
     actor,
   });
@@ -215,6 +313,26 @@ async function markFollowUpVervallen(followUpActionId: string, actor: string) {
     followUpActionId,
     actor,
   });
+}
+
+async function reactivateFollowUp(followUpActionId: string, initialStatus: string, actor: string) {
+  await sqlQuery(reactivateFormFollowUpSql, {
+    followUpActionId,
+    initialStatus,
+    actor,
+  });
+}
+
+// Geeft terug of de rij werkelijk is verwijderd. De veiligheidscontrole staat in SQL,
+// zodat hij niet kan afwijken van wat er in dezelfde stap wordt weggegooid.
+async function deleteConceptFollowUp(followUpActionId: string, initialStatus: string) {
+  const rows = await sqlQuery(deleteConceptFormFollowUpSql, {
+    followUpActionId,
+    initialStatus,
+  });
+
+  const first = Array.isArray(rows) ? rows[0] : null;
+  return Boolean(first?.deleted);
 }
 
 function dedupeCandidates(items: FollowUpCandidate[]) {

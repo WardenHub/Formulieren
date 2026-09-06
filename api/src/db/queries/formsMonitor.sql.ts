@@ -21,10 +21,18 @@ export const getFormsMonitorListSql = `
     nullif(ltrim(rtrim(convert(nvarchar(250), @assignedSearch))), N'') as assigned_search_n,
     nullif(ltrim(rtrim(convert(nvarchar(100), @workflowRoleCode))), N'') as workflow_role_code_n,
 
+    nullif(ltrim(rtrim(convert(nvarchar(40), @actionStatusFilter))), N'') as action_status_filter_n,
+    case when isnull(@noRemainingOpenActionPoints, 0) = 1 then 1 else 0 end as no_remaining_open_n,
+
     case when isnull(@mine, 0) = 1 then 1 else 0 end as mine_n,
     case when isnull(@includeWithdrawn, 0) = 1 then 1 else 0 end as include_withdrawn_n,
     case when isnull(@onlyActionable, 0) = 1 then 1 else 0 end as only_actionable_n,
     case when isnull(@unassignedOnly, 0) = 1 then 1 else 0 end as unassigned_only_n
+),
+selected_statuses as (
+  select distinct nullif(ltrim(rtrim(convert(nvarchar(30), [value]))), N'') as status_value
+  from openjson(isnull(@selectedStatusesJson, N'[]'))
+  where nullif(ltrim(rtrim(convert(nvarchar(30), [value]))), N'') is not null
 ),
 actor_candidates as (
   select distinct nullif(ltrim(rtrim(convert(nvarchar(200), [value]))), N'') as actor_value
@@ -64,6 +72,13 @@ base as (
     ab.gebruiker_code,
     ab.gebruiker_naam,
 
+    -- Een formulier zonder installatie liet in het overzicht een streepje zien terwijl er
+    -- wel een project of klant aan hing. Alleen de hoofdkoppeling; de rest staat op detail.
+    primary_context.context_type as primary_context_type,
+    primary_context.display_code_snapshot as primary_context_code,
+    primary_context.display_label_snapshot as primary_context_label,
+    isnull(context_count.total, 0) as context_count,
+
     case when exists (
       select 1
       from dbo.FormInstance child_fi
@@ -83,10 +98,30 @@ base as (
     on fd.form_id = fv.form_id
   left join dbo.AtriumInstallationBase ab
     on ab.installatie_code = fi.atrium_installation_code
+  outer apply (
+    select top (1)
+      fic.context_type,
+      fic.display_code_snapshot,
+      fic.display_label_snapshot
+    from dbo.FormInstanceContext fic
+    where fic.form_instance_id = fi.form_instance_id
+    order by fic.is_primary desc, fic.context_type, fic.display_label_snapshot
+  ) primary_context
+  outer apply (
+    select count(*) as total
+    from dbo.FormInstanceContext fic
+    where fic.form_instance_id = fi.form_instance_id
+  ) context_count
   cross join params p
   where
     (p.include_withdrawn_n = 1 or fi.status <> N'INGETROKKEN')
     and (p.status_n is null or fi.status = p.status_n)
+    -- De statuschips filterden alleen binnen de opgehaalde pagina; dat is misleidend zodra
+    -- er meer dan een pagina is. Nu filtert de server, zodat teller en lijst kloppen.
+    and (
+      not exists (select 1 from selected_statuses)
+      or fi.status in (select status_value from selected_statuses)
+    )
     and (p.form_code_n is null or fd.code = p.form_code_n)
     and (
       p.mine_n = 0
@@ -134,6 +169,58 @@ base as (
       or isnull(ab.gebruiker_naam, N'') like N'%' + p.q_n + N'%'
       or isnull(fi.assigned_display_name_snapshot, N'') like N'%' + p.q_n + N'%'
       or isnull(fi.assigned_email_snapshot, N'') like N'%' + p.q_n + N'%'
+
+      -- Wat in de kolom Hoort bij staat moet ook vindbaar zijn; anders zoek je tevergeefs
+      -- op een projectnummer dat je voor je neus ziet staan.
+      or exists (
+        select 1
+        from dbo.FormInstanceContext q_context
+        where q_context.form_instance_id = fi.form_instance_id
+          and (
+            q_context.display_label_snapshot like N'%' + p.q_n + N'%'
+            or isnull(q_context.display_code_snapshot, N'') like N'%' + p.q_n + N'%'
+          )
+      )
+
+      -- Zoeken op wat er te doen is, en op het vraagnummer waar het punt vandaan komt.
+      or exists (
+        select 1
+        from dbo.FollowUpAction q_action
+        join dbo.FollowUpActionFormSource q_source
+          on q_source.follow_up_action_id = q_action.follow_up_action_id
+        where q_source.form_instance_id = fi.form_instance_id
+          and (
+            q_action.workflow_title like N'%' + p.q_n + N'%'
+            or isnull(q_action.category, N'') like N'%' + p.q_n + N'%'
+            or isnull(q_source.source_item_code, N'') like N'%' + p.q_n + N'%'
+            -- Waar het punt bij hoort als het niet aan een installatie hangt; een
+            -- projectnummer of een klantnummer is precies waar iemand op zoekt.
+            or exists (
+              select 1
+              from dbo.FollowUpActionAtriumContext q_atrium
+              where q_atrium.follow_up_action_id = q_action.follow_up_action_id
+                and (
+                  q_atrium.context_key like N'%' + p.q_n + N'%'
+                  or isnull(q_atrium.context_display_snapshot, N'') like N'%' + p.q_n + N'%'
+                )
+            )
+          )
+      )
+
+      -- En op de naam van een bijlage; die noemen mensen vaak als eerste.
+      or exists (
+        select 1
+        from dbo.FormInstanceDocument q_document
+        left join dbo.StoredFile q_file
+          on q_file.stored_file_id = q_document.stored_file_id
+         and q_file.is_deleted = 0
+        where q_document.form_instance_id = fi.form_instance_id
+          and q_document.is_active = 1
+          and (
+            isnull(q_document.title, N'') like N'%' + p.q_n + N'%'
+            or isnull(q_file.file_name, N'') like N'%' + p.q_n + N'%'
+          )
+      )
     )
     and (
       p.assigned_search_n is null
@@ -160,6 +247,11 @@ fu as (
     on fs.follow_up_action_id = f.follow_up_action_id
   join dbo.FollowUpStatusDefinition sd
     on sd.status_code = f.status
+  -- Zonder deze begrenzing telt de query alle opvolgacties van het hele platform mee,
+  -- ook die van formulieren die door het filter zijn afgevallen.
+  where exists (
+    select 1 from base scoped where scoped.form_instance_id = fs.form_instance_id
+  )
   group by fs.form_instance_id
 ),
 filtered as (
@@ -181,8 +273,42 @@ filtered as (
     on fu.form_instance_id = b.form_instance_id
   cross join params p
   where
-    p.only_actionable_n = 0
-    or isnull(fu.follow_up_actionable_count, 0) > 0
+    (
+      p.only_actionable_n = 0
+      or isnull(fu.follow_up_actionable_count, 0) > 0
+    )
+    -- Klaar om af te ronden; ingediend of in behandeling en niets meer openstaand.
+    and (
+      p.no_remaining_open_n = 0
+      or (
+        b.status in (N'INGEDIEND', N'IN_BEHANDELING')
+        and isnull(fu.follow_up_open_count, 0)
+          + isnull(fu.follow_up_planning_needed_count, 0)
+          + isnull(fu.follow_up_waiting_count, 0) = 0
+      )
+    )
+    -- Dezelfde regels als de chips in het scherm, maar dan op de hele set in plaats van
+    -- op de opgehaalde pagina.
+    and (
+      p.action_status_filter_n is null
+      or p.action_status_filter_n = N'ALL'
+      or (
+        p.action_status_filter_n = N'OPEN'
+        and isnull(fu.follow_up_open_count, 0)
+          + isnull(fu.follow_up_planning_needed_count, 0)
+          + isnull(fu.follow_up_waiting_count, 0) > 0
+      )
+      or (p.action_status_filter_n = N'PLANNING_NODIG' and isnull(fu.follow_up_planning_needed_count, 0) > 0)
+      or (p.action_status_filter_n = N'WACHTENOPDERDEN' and isnull(fu.follow_up_waiting_count, 0) > 0)
+      or (p.action_status_filter_n = N'GEPLAND' and isnull(fu.follow_up_planned_count, 0) > 0)
+      or (
+        p.action_status_filter_n = N'DONE'
+        and isnull(fu.follow_up_planned_count, 0)
+          + isnull(fu.follow_up_done_count, 0)
+          + isnull(fu.follow_up_rejected_count, 0)
+          + isnull(fu.follow_up_expired_count, 0) > 0
+      )
+    )
 ),
 numbered as (
   select
@@ -225,6 +351,10 @@ select
   n.obj_naam,
   n.gebruiker_code,
   n.gebruiker_naam,
+  n.primary_context_type,
+  n.primary_context_code,
+  n.primary_context_label,
+  n.context_count,
   n.has_children,
   n.latest_child_form_instance_id,
   n.follow_up_total_count,
@@ -629,4 +759,24 @@ select top 1
   updated_by
 from dbo.FormInstance
 where form_instance_id = @formInstanceId;
+`;
+
+/* Hoort dit formulier bij deze gebruiker? Dezelfde vergelijking als het mine-filter in de
+   lijst, zodat het detail niet ruimer is dan het overzicht. */
+export const getFormInstanceOwnershipSql = `
+select case when exists (
+  select 1
+  from dbo.FormInstance fi
+  cross apply (
+    select nullif(ltrim(rtrim(convert(nvarchar(200), [value]))), N'') as actor_value
+    from openjson(isnull(@actorCandidatesJson, N'[]'))
+  ) candidate
+  where fi.form_instance_id = @formInstanceId
+    and candidate.actor_value is not null
+    and (
+      fi.created_by = candidate.actor_value
+      or fi.submitted_by = candidate.actor_value
+      or fi.assigned_user_object_id = candidate.actor_value
+    )
+) then 1 else 0 end as is_owner;
 `;

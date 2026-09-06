@@ -1,3 +1,5 @@
+import { buildParentInstanceGuardSql } from "./parentInstanceGuard.sql.js";
+
 export const getFormsHubCatalogSql = `
 select
   fd.form_id,
@@ -648,29 +650,7 @@ if @status is null throw 50000, 'form instance not found', 1;
 if @status <> N'CONCEPT' throw 50000, 'form instance not editable', 1;
 if @currentRev <> @expectedDraftRev throw 50000, 'draft_rev conflict', 1;
 
-if @parentInstanceId is not null
-begin
-  if @parentInstanceId = @instanceId throw 50000, 'parent form instance invalid', 1;
-
-  if not exists (
-    select 1
-    from dbo.FormInstance parent_fi
-    where parent_fi.form_instance_id = @parentInstanceId
-      and parent_fi.atrium_installation_code is null
-      and exists (
-        select 1
-        from dbo.FormInstanceContext child_context
-        join dbo.FormInstanceContext parent_context
-          on parent_context.form_instance_id = parent_fi.form_instance_id
-         and parent_context.is_primary = 1
-         and parent_context.context_type = child_context.context_type
-         and parent_context.source_system = child_context.source_system
-         and parent_context.source_key = child_context.source_key
-        where child_context.form_instance_id = @instanceId
-          and child_context.is_primary = 1
-      )
-  ) throw 50000, 'parent form instance not found in same primary context', 1;
-end;
+${buildParentInstanceGuardSql("@instanceId", "@parentInstanceId")}
 
 update dbo.FormInstance
 set

@@ -83,6 +83,8 @@ select
   fv.certification_mark_key,
   fv.published_at,
   fv.published_by,
+  fv.change_summary,
+  fv.is_active,
   fv.survey_json
 from dbo.FormDefinitionVersion fv
 where fv.form_id = @formId
@@ -406,7 +408,7 @@ select
   nullif(ltrim(rtrim(convert(nvarchar(2000), json_value(j.value, '$.action_description_template')))), N''),
   nullif(ltrim(rtrim(convert(nvarchar(100), json_value(j.value, '$.category')))), N''),
   upper(isnull(nullif(ltrim(rtrim(convert(nvarchar(20), json_value(j.value, '$.priority')))), N''), N'NORMAL')),
-  upper(isnull(nullif(ltrim(rtrim(convert(nvarchar(30), json_value(j.value, '$.responsibility_type')))), N''), N'WARDENBURG')),
+  upper(isnull(nullif(ltrim(rtrim(convert(nvarchar(30), json_value(j.value, '$.responsibility_type')))), N''), N'INTERN')),
   nullif(ltrim(rtrim(convert(nvarchar(100), json_value(j.value, '$.assigned_role_code')))), N''),
   try_convert(int, json_value(j.value, '$.due_after_days')),
   lower(nullif(ltrim(rtrim(convert(nvarchar(20), json_value(j.value, '$.certificate_impact')))), N'')),
@@ -420,7 +422,7 @@ if exists (
   where trigger_type not in (N'ON_SUBMIT', N'ON_FINALIZE', N'CONDITIONAL')
      or nullif(action_title_template, N'') is null
      or priority not in (N'LOW', N'NORMAL', N'HIGH', N'CRITICAL')
-     or responsibility_type not in (N'WARDENBURG', N'CUSTOMER', N'THIRD_PARTY', N'UNSPECIFIED')
+     or responsibility_type not in (N'INTERN', N'KLANT', N'DERDE', N'ONBEPAALD')
      or due_after_days < 0
      or (certificate_impact is not null and certificate_impact not in (N'yes', N'no'))
      or visibility not in (N'INTERNAL_ONLY', N'CUSTOMER_VISIBLE')
@@ -628,6 +630,7 @@ insert into dbo.FormDefinitionVersion (
   published_at,
   published_by,
   effective_from,
+  change_summary,
   issued_by,
   replaces_form_version_id,
   is_active
@@ -642,6 +645,7 @@ values (
   sysutcdatetime(),
   @publishedBy,
   sysutcdatetime(),
+  @changeSummary,
   @publishedBy,
   @replacesFormVersionId,
   1
@@ -653,4 +657,68 @@ select
   @formVersionId as form_version_id,
   @nextVersion as version,
   @versionLabel as version_label;
+`;
+
+/* De actieve definitie van een formulier, om een nieuwe versie ertegen af te zetten. */
+export const getActiveFormVersionSurveySql = `
+select top (1)
+  form_version_id,
+  version,
+  version_label,
+  survey_json
+from dbo.FormDefinitionVersion
+where form_id = @formId
+  and is_active = 1
+order by version desc;
+`;
+
+/* Waar hangt bestaande data aan een vraagnaam? Een vraagnaam is de sleutel waar antwoorden,
+   opvolgacties en uitleg aan vastzitten. Verdwijnt hij uit een nieuwe versie, dan wijzen die
+   verwijzingen naar niets meer, zonder dat iets het meldt. Deze query telt per naam wat er
+   aan hangt, zodat het publiceren kan weigeren met een concreet verhaal. */
+export const getFormQuestionNameUsageSql = `
+declare @names table (question_name nvarchar(200) primary key);
+
+insert into @names (question_name)
+select distinct nullif(ltrim(rtrim(convert(nvarchar(200), [value]))), N'')
+from openjson(isnull(@questionNamesJson, N'[]'))
+where nullif(ltrim(rtrim(convert(nvarchar(200), [value]))), N'') is not null;
+
+select
+  n.question_name,
+  (
+    select count(*)
+    from dbo.FollowUpActionFormSource fs
+    join dbo.FormInstance fi
+      on fi.form_instance_id = fs.form_instance_id
+    join dbo.FormDefinitionVersion fv
+      on fv.form_version_id = fi.form_version_id
+    where fv.form_id = @formId
+      and fs.source_question_name = n.question_name
+  ) as follow_up_count,
+  (
+    select count(*)
+    from dbo.FormGuidanceLink gl
+    where gl.form_id = @formId
+      and gl.question_name = n.question_name
+  ) as guidance_count,
+  (
+    select count(*)
+    from dbo.FormAnswer fa
+    join dbo.FormInstance fi
+      on fi.form_instance_id = fa.form_instance_id
+    join dbo.FormDefinitionVersion fv
+      on fv.form_version_id = fi.form_version_id
+    where fv.form_id = @formId
+      and isjson(fa.answers_json) = 1
+      and exists (
+        select 1
+        from openjson(fa.answers_json) answer_key
+        -- openjson levert zijn sleutels in een binaire collatie; zonder deze omzetting
+        -- weigert SQL Server de vergelijking met de vraagnaam.
+        where answer_key.[key] collate database_default = n.question_name
+      )
+  ) as answered_instance_count
+from @names n
+order by n.question_name;
 `;

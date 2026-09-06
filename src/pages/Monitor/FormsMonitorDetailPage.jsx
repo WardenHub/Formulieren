@@ -1,5 +1,5 @@
 // src/pages/Monitor/FormsMonitorDetailPage.jsx
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 
 import {
@@ -26,6 +26,8 @@ import {
   putFormInstanceDocumentFollowUps,
   deleteFormInstanceDocument,
   getUserDirectory,
+  getFormsMonitorFollowUpAttachmentUrl,
+  putFormsMonitorFollowUpClassification,
 } from "../../api/emberApi.js";
 
 import { ArrowBigRightIcon } from "@/components/ui/arrow-big-right";
@@ -49,7 +51,13 @@ import { PartyPopperIcon } from "@/components/ui/party-popper";
 import { GavelIcon } from "@/components/ui/gavel";
 import { MenuIcon } from "@/components/ui/menu";
 import { LoaderPinwheelIcon } from "@/components/ui/loader-pinwheel";
-import ApiStartupLoader, { useApiStartupLoader } from "../../components/ApiStartupLoader.jsx";
+import ApiStartupLoader from "@/components/ApiStartupLoader.jsx";
+import FormsMonitorContextPanel from "./FormsMonitorContextPanel.jsx";
+import ActionPointPhoto from "@/components/ActionPointPhoto.jsx";
+import DateInput from "@/components/DateInput.jsx";
+import AnimatedIconButton from "@/components/AnimatedIconButton.jsx";
+import { MapPinIcon } from "@/components/ui/map-pin.jsx";
+import { useApiStartupLoader } from "@/components/apiStartupLoaderState.js";
 import { pushRecentHomeItem } from "../../lib/recentHomeItems.js";
 import Tabs from "../../components/Tabs.jsx";
 import UserAvatar from "../../components/UserAvatar.jsx";
@@ -57,11 +65,13 @@ import {
   NoteEditorToolbar,
   NoteLinkDialog,
   NoteRichTextContent,
+} from "../../components/notes/NoteRichText.jsx";
+import {
   applyMarkdownLink,
   insertRawText,
   isHttpUrl,
   normalizeHttpUrl,
-} from "../../components/notes/NoteRichText.jsx";
+} from "../../components/notes/noteRichTextUtils.js";
 import {
   buildInitials,
   buildDirectoryActorLookup,
@@ -90,6 +100,7 @@ import {
   getCreatedByDisplay,
   readStateFromStorage,
   saveStateToStorage,
+  describePrimaryContext,
 } from "./formsMonitorShared.jsx";
 
 const DETAIL_STATUS_FILTER_KEYS = [
@@ -104,6 +115,113 @@ const DETAIL_STATUS_FILTER_KEYS = [
 
 function buildDefaultStatusOpenMap(open = true) {
   return Object.fromEntries(FOLLOW_UP_STATUS_ORDER.map((status) => [status, open]));
+}
+
+// Alleen afbeeldingen krijgen een miniatuur; een pdf of een tekstbestand blijft in de
+// bijlagenlijst staan, waar hij thuishoort.
+function isImageAttachment(file) {
+  return String(file?.mime_type || "").toLowerCase().startsWith("image/");
+}
+
+// De foto bij een actiepunt, opgehaald via de formulierbron van dat punt. Zo werkt hij ook
+// voor een formulier zonder installatie.
+const CLASSIFICATION_PRIORITIES = [
+  { value: "LOW", label: "Laag" },
+  { value: "NORMAL", label: "Normaal" },
+  { value: "HIGH", label: "Hoog" },
+  { value: "CRITICAL", label: "Kritiek" },
+];
+
+const CLASSIFICATION_RESPONSIBILITIES = [
+  { value: "INTERN", label: "Ons bedrijf" },
+  { value: "KLANT", label: "Klant" },
+  { value: "DERDE", label: "Derde partij" },
+  { value: "ONBEPAALD", label: "Nog te bepalen" },
+];
+
+// Prioriteit, verantwoordelijkheid en deadline komen uit de formulierdefinitie, met NORMAL,
+// ons bedrijf en geen deadline als standaard. Hier kan een coordinator ze bijstellen; de
+// formuliersync draait dat daarna niet terug.
+function MonitorFollowUpClassification({ row, disabled, onSaved }) {
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState(null);
+
+  async function save(patch) {
+    if (saving) return;
+
+    setSaving(true);
+    setError(null);
+
+    try {
+      await putFormsMonitorFollowUpClassification(row.follow_up_action_id, patch);
+      await onSaved?.();
+    } catch (err) {
+      setError(err?.message || "Bijwerken is mislukt.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="monitor-followup-classification">
+      <label className="follow-up-field">
+        <span>Prioriteit</span>
+        <select
+          className="cf-input"
+          value={String(row.priority || "NORMAL").toUpperCase()}
+          disabled={disabled || saving}
+          onChange={(event) => save({ priority: event.target.value })}
+        >
+          {CLASSIFICATION_PRIORITIES.map((option) => (
+            <option key={option.value} value={option.value}>
+              {option.label}
+            </option>
+          ))}
+        </select>
+      </label>
+
+      <label className="follow-up-field">
+        <span>Verantwoordelijkheid</span>
+        <select
+          className="cf-input"
+          value={String(row.responsibility_type || "INTERN").toUpperCase()}
+          disabled={disabled || saving}
+          onChange={(event) => save({ responsibility_type: event.target.value })}
+        >
+          {CLASSIFICATION_RESPONSIBILITIES.map((option) => (
+            <option key={option.value} value={option.value}>
+              {option.label}
+            </option>
+          ))}
+        </select>
+      </label>
+
+      <label className="follow-up-field">
+        <span>Deadline</span>
+        <DateInput
+          value={row.due_date ? String(row.due_date).slice(0, 10) : null}
+          disabled={disabled || saving}
+          allowEmpty
+          onChange={(value) => save({ due_date: value || null })}
+        />
+      </label>
+
+      {error ? <div className="ember-error-text follow-up-field--wide">{error}</div> : null}
+    </div>
+  );
+}
+
+function MonitorFollowUpPhoto({ followUpActionId, file }) {
+  const loadUrl = useCallback(
+    (storedFileId) => getFormsMonitorFollowUpAttachmentUrl(followUpActionId, storedFileId),
+    [followUpActionId]
+  );
+
+  function openPhoto(url) {
+    if (url) window.open(url, "_blank", "noopener,noreferrer");
+  }
+
+  return <ActionPointPhoto loadUrl={loadUrl} file={file} onOpen={openPhoto} />;
 }
 
 function StatusTag({ status }) {
@@ -273,6 +391,7 @@ function getFollowUpStatusButtonClass(currentStatus, buttonStatus) {
 
 function ActionFooter({
   canFinish,
+  blockedNote,
   finishLabel,
   finishBusy,
   pdfExporting,
@@ -322,6 +441,13 @@ function ActionFooter({
           ? `${getPdfExportPhaseLabel(pdfExportPhase || "queued")}${pdfExportElapsedSeconds > 0 ? ` ; ${pdfExportElapsedSeconds}s` : ""}`
           : "PDF"}
       </button>
+
+      {!canFinish && blockedNote ? (
+        <span className="monitor-form-actions__note monitor-form-actions__note--footer">
+          <BadgeAlertIcon size={16} className="nav-anim-icon" />
+          <span>{blockedNote}</span>
+        </span>
+      ) : null}
 
       {canFinish && (
         <button
@@ -625,8 +751,6 @@ function FormDocumentPreview({ code, instanceId, doc, compact = false }) {
 
   useEffect(() => {
     let alive = true;
-    setUrl(null);
-    setFailed(false);
 
     if (!code || !instanceId || !doc?.form_instance_document_id || !isImageDocument(doc)) {
       return undefined;
@@ -640,8 +764,12 @@ function FormDocumentPreview({ code, instanceId, doc, compact = false }) {
         if (alive) setFailed(true);
       });
 
+    // De vorige voorbeeldweergave wordt opgeruimd bij het wisselen van document, niet
+    // aan het begin van het effect; dat scheelde een extra renderronde per document.
     return () => {
       alive = false;
+      setUrl(null);
+      setFailed(false);
     };
   }, [code, instanceId, doc?.form_instance_document_id, doc?.mime_type, doc?.file_name]);
 
@@ -1485,6 +1613,30 @@ function FollowUpLinkedDocuments({ code, instanceId, row, documents }) {
   );
 }
 
+// Een actiepunt kan aan een project, een klant, een werkbon of een medewerker hangen in
+// plaats van aan een installatie. Die satelliet werd wel gevuld maar nergens getoond, dus
+// een punt op een projectformulier liet niet zien waarover het ging.
+function describeAtriumContextType(contextType) {
+  const type = String(contextType || "").trim().toUpperCase();
+
+  if (type === "RELATION") return "Klant";
+  if (type === "PROJECT") return "Project";
+  if (type === "WORK_ORDER") return "Werkbon";
+  if (type === "EMPLOYEE") return "Medewerker";
+
+  return "Koppeling";
+}
+
+// De sleutel is samengesteld als businessunit en nummer; alleen het nummer is leesbaar.
+// Een kale sleutel zonder momentopname zegt de gebruiker niets, dus dan liever niets.
+function describeAtriumContextKey(contextKey) {
+  const key = String(contextKey || "").trim();
+  if (!key) return "onbekend";
+
+  const parts = key.split("|");
+  return parts[parts.length - 1] || "onbekend";
+}
+
 export default function FormsMonitorDetailPage() {
   const { instanceId } = useParams();
   const navigate = useNavigate();
@@ -1659,7 +1811,14 @@ export default function FormsMonitorDetailPage() {
   }, [pdfExporting]);
 
   const allowedActions = detail?.allowed_actions || {};
+  const actionHints = detail?.action_hints || {};
   const permissions = detail?.permissions || {};
+  // Kan het formulier niet definitief worden gemaakt en helpt beoordelen ook niet, dan verdween
+  // de knop tot nu toe zonder een woord uitleg. De server vertelt nu waarom; dat hoort hier.
+  const finalizeBlockedNote =
+    !allowedActions.set_afgehandeld && !allowedActions.review_followups
+      ? actionHints.set_afgehandeld || null
+      : null;
   const item = detail?.item || null;
   const canEditEvidence = ["CONCEPT", "INGEDIEND", "IN_BEHANDELING"].includes(
     String(item?.status || "")
@@ -1667,6 +1826,7 @@ export default function FormsMonitorDetailPage() {
   const canDeleteEvidence = String(item?.status || "") === "CONCEPT";
 
   const relationRows = useMemo(() => buildRelationRows(item), [item]);
+  const primaryContext = useMemo(() => describePrimaryContext(item), [item]);
   const followUpCounts = useMemo(() => buildFollowUpStatusCounts(followUps), [followUps]);
   const openLikeCount =
     Number(followUpCounts.OPEN ?? 0) +
@@ -1751,7 +1911,9 @@ export default function FormsMonitorDetailPage() {
   ];
   const metadataTabs = [
     { key: "form", label: "Formulier", Icon: SquarePenIcon },
-    { key: "relation", label: "Relatie", Icon: ArchiveIcon, iconTone: "warning" },
+    // De tab heette Relatie, maar toont ook project, werkbon, installatie en medewerker.
+    // Bij een formulier zonder installatie was hij bovendien leeg.
+    { key: "relation", label: "Koppelingen", Icon: ArchiveIcon, iconTone: "warning" },
   ];
 
   function handleEvidenceDocumentsChange(nextDocuments, options = {}) {
@@ -2163,6 +2325,20 @@ export default function FormsMonitorDetailPage() {
 
   async function refreshDetailOnly() {
     await loadDetailPage();
+  }
+
+  // Alleen de actiepunten opnieuw ophalen na een bijstelling; het hele detail herladen laat
+  // de pagina springen en klapt geopende blokken dicht.
+  async function refreshFollowUpsOnly() {
+    const cleanId = Number(instanceId);
+    if (!Number.isInteger(cleanId) || cleanId <= 0) return;
+
+    try {
+      const res = await getFormsMonitorFollowUps(cleanId);
+      setFollowUps(Array.isArray(res?.items) ? res.items : []);
+    } catch {
+      await loadDetailPage();
+    }
   }
 
   async function handleAssignmentSave(clear = false) {
@@ -2925,6 +3101,26 @@ export default function FormsMonitorDetailPage() {
                   {item.instance_title ? (
                     <div className="ember-page-subtitle">{item.instance_title}</div>
                   ) : null}
+
+                  {primaryContext ? (
+                    <button
+                      type="button"
+                      className="monitor-detail-hero__context"
+                      onClick={() => {
+                        openSection("relations");
+                        setActiveMetadataTab("relation");
+                      }}
+                      title="Bekijk waar dit formulier bij hoort"
+                    >
+                      <span className="monitor-detail-hero__context-label">{primaryContext.label}</span>
+                      <span>{primaryContext.value}</span>
+                      {primaryContext.extra > 0 ? (
+                        <span className="monitor-tag monitor-tag--muted">
+                          en nog {primaryContext.extra} koppeling{primaryContext.extra === 1 ? "" : "en"}
+                        </span>
+                      ) : null}
+                    </button>
+                  ) : null}
                 </div>
 
                 <div className="monitor-form-actions monitor-form-actions--detail">
@@ -2946,7 +3142,12 @@ export default function FormsMonitorDetailPage() {
                       type="button"
                       className="btn btn-secondary monitor-form-status-btn"
                       onClick={() => {
-                        const url = `/installaties/${encodeURIComponent(item.atrium_installation_code)}/formulieren/${encodeURIComponent(item.form_instance_id)}`;
+                        // Een formulier zonder installatie heeft geen installatiepad; dat
+                        // leverde eerder een link naar /installaties/undefined op.
+                        const installationCode = String(item.atrium_installation_code || "").trim();
+                        const url = installationCode
+                          ? `/installaties/${encodeURIComponent(installationCode)}/formulieren/${encodeURIComponent(item.form_instance_id)}`
+                          : `/formulieren/${encodeURIComponent(item.form_instance_id)}`;
                         window.open(url, "_blank", "noopener");
                       }}
                       onMouseEnter={() => openIconRef.current?.startAnimation?.()}
@@ -2994,6 +3195,15 @@ export default function FormsMonitorDetailPage() {
                       </button>
                     )}
                   </div>
+
+                  {finalizeBlockedNote ? (
+                    <div className="monitor-form-actions__note" role="status">
+                      <BadgeAlertIcon size={16} className="nav-anim-icon" />
+                      <span>
+                        <strong>Definitief maken kan nog niet.</strong> {finalizeBlockedNote}
+                      </span>
+                    </div>
+                  ) : null}
 
                   {hasStatusMenuActions ? (
                     <div className="monitor-form-actions__menu-wrap">
@@ -3409,23 +3619,11 @@ export default function FormsMonitorDetailPage() {
                 <Tabs tabs={metadataTabs} activeKey={activeMetadataTab} onChange={setActiveMetadataTab} />
 
                 {activeMetadataTab === "relation" ? (
-                <div className="monitor-detail-section is-open">
-                  <div className="monitor-detail-section__body">
-                    <div className="monitor-detail-section__title">Relatie</div>
-                    <div className="cf-grid">
-                      {relationRows.map((row) => (
-                        <div className="cf-row" key={row.label}>
-                          <div className="cf-label">
-                            <div className="cf-label-text cf-label-text--accent">{row.label}</div>
-                          </div>
-                          <div className="cf-control">
-                            <input className="input" readOnly value={row.value} />
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                </div>
+                  <FormsMonitorContextPanel
+                    contexts={item.contexts}
+                    relationRows={relationRows}
+                    actorLookup={actorLookup}
+                  />
                 ) : null}
 
                 {activeMetadataTab === "form" ? (
@@ -3563,6 +3761,14 @@ export default function FormsMonitorDetailPage() {
                           <PlusIcon size={17} className="nav-anim-icon" />
                           Actiepunt toevoegen
                         </button>
+                      ) : permissions.add_follow_ups_blocked_reason ? (
+                        <span
+                          className="monitor-form-actions__note monitor-form-actions__note--inline"
+                          role="status"
+                        >
+                          <BadgeAlertIcon size={16} className="nav-anim-icon" />
+                          <span>{permissions.add_follow_ups_blocked_reason}</span>
+                        </span>
                       ) : null}
                     </div>
                   </div>
@@ -3817,16 +4023,63 @@ export default function FormsMonitorDetailPage() {
                                           Laatste wijziging; {formatDateTime(row.updated_at || row.created_at)}
                                         </div>
 
-                                        {(row.drawing_pins || []).length ? (
+                                        {isWorkflow ? (
+                                          <MonitorFollowUpClassification
+                                            row={row}
+                                            disabled={!permissions.can_assign_form}
+                                            onSaved={refreshFollowUpsOnly}
+                                          />
+                                        ) : null}
+
+                                        {(row.attachments || []).filter(isImageAttachment).length ? (
+                                          <div className="monitor-followup-photos">
+                                            <div className="monitor-followup-photos__label">
+                                              Foto bij dit punt
+                                            </div>
+                                            <div className="action-point-card__media">
+                                              {(row.attachments || [])
+                                                .filter(isImageAttachment)
+                                                .map((file) => (
+                                                  <MonitorFollowUpPhoto
+                                                    key={file.stored_file_id}
+                                                    followUpActionId={row.follow_up_action_id}
+                                                    file={file}
+                                                  />
+                                                ))}
+                                            </div>
+                                          </div>
+                                        ) : null}
+
+                                        {/* De installatiecode kan ontbreken bij een formulier zonder
+                                            installatie; dan is er ook geen tekening om naar te wijzen. */}
+                                        {(row.drawing_pins || []).length && item.atrium_installation_code ? (
                                           <div className="monitor-followup-drawing-links">
                                             {(row.drawing_pins || []).map((pin) => (
-                                              <Link
+                                              <AnimatedIconButton
                                                 key={pin.drawing_pin_id}
+                                                Icon={MapPinIcon}
+                                                iconSize={17}
                                                 className="btn btn-secondary"
                                                 to={`/installaties/${encodeURIComponent(item.atrium_installation_code)}?tab=drawings&drawing=${encodeURIComponent(pin.installation_document_id)}&page=${encodeURIComponent(pin.page_number)}&pin=${encodeURIComponent(pin.drawing_pin_id)}`}
                                               >
                                                 Toon op tekening; {pin.drawing_title || pin.drawing_file_name || "tekening"}; pagina {pin.page_number}; {pin.pin_label}
-                                              </Link>
+                                              </AnimatedIconButton>
+                                            ))}
+                                          </div>
+                                        ) : null}
+
+                                        {(row.atrium_contexts || []).length ? (
+                                          <div className="monitor-followup-contexts">
+                                            {(row.atrium_contexts || []).map((context) => (
+                                              <span
+                                                key={`${context.context_type}-${context.context_key}`}
+                                                className="monitor-tag monitor-tag--muted"
+                                                title={context.context_key || undefined}
+                                              >
+                                                {describeAtriumContextType(context.context_type)};{" "}
+                                                {context.context_display_snapshot ||
+                                                  describeAtriumContextKey(context.context_key)}
+                                              </span>
                                             ))}
                                           </div>
                                         ) : null}
@@ -4112,6 +4365,7 @@ export default function FormsMonitorDetailPage() {
 
             <ActionFooter
               canFinish={allowedActions.set_afgehandeld || allowedActions.review_followups}
+              blockedNote={finalizeBlockedNote}
               finishLabel={allowedActions.review_followups ? "Opvolging beoordelen" : "Formulier definitief maken"}
               finishBusy={formActionBusy}
               onFinish={() => handleFormAction("set_afgehandeld")}

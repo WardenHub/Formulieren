@@ -39,11 +39,13 @@ import {
   NoteEditorToolbar,
   NoteLinkDialog,
   NoteRichTextContent,
+} from "../../components/notes/NoteRichText.jsx";
+import {
   applyMarkdownLink,
   insertRawText,
   isHttpUrl,
   normalizeHttpUrl,
-} from "../../components/notes/NoteRichText.jsx";
+} from "../../components/notes/noteRichTextUtils.js";
 
 const NOTE_KIND_OPTIONS = [
   { key: "NOTE", label: "Notitie", tone: "neutral", Icon: MessageCircleMore },
@@ -150,69 +152,6 @@ function NoteKindButton({ option, active, onClick, disabled = false }) {
         {option.label}
       </span>
     </button>
-  );
-}
-
-function MentionPicker({ directoryItems, selectedMentions, onAddMention, disabled = false }) {
-  const [query, setQuery] = useState("");
-  const selectedLookup = useMemo(() => buildMentionLookup(selectedMentions), [selectedMentions]);
-
-  const matches = useMemo(() => {
-    const cleanQuery = String(query || "").trim().toLowerCase();
-    if (!cleanQuery) return [];
-
-    return (directoryItems || [])
-      .filter((item) => {
-        const objectId = String(item?.user_object_id || "").trim();
-        if (!objectId || selectedLookup.has(objectId)) return false;
-
-        const haystack = [
-          getDirectoryDisplayName(item),
-          item?.email,
-          item?.email_snapshot,
-        ]
-          .map((value) => String(value || "").toLowerCase())
-          .join(" ");
-
-        return haystack.includes(cleanQuery);
-      })
-      .slice(0, 8);
-  }, [directoryItems, query, selectedLookup]);
-
-  return (
-    <div style={{ display: "grid", gap: 8 }}>
-      <input
-        className="cf-input"
-        value={query}
-        disabled={disabled}
-        onChange={(event) => setQuery(event.target.value)}
-        placeholder="Noem collega om toe te voegen"
-      />
-      {matches.length ? (
-        <div className="card" style={{ padding: 8, display: "grid", gap: 6 }}>
-          {matches.map((item) => {
-            const displayName = getDirectoryDisplayName(item) || item?.email || "-";
-            return (
-              <button
-                key={item.user_object_id}
-                type="button"
-                className="btn"
-                style={{ justifyContent: "space-between" }}
-                onClick={() => {
-                  onAddMention(normalizeMentionSelection(item));
-                  setQuery("");
-                }}
-              >
-                <span>{displayName}</span>
-                <span className="muted" style={{ fontSize: 12 }}>
-                  {item?.email || ""}
-                </span>
-              </button>
-            );
-          })}
-        </div>
-      ) : null}
-    </div>
   );
 }
 

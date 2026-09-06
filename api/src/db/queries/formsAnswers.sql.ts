@@ -132,3 +132,16 @@ where form_instance_id = @instanceId
 
 select @instanceId as form_instance_id, N'INGETROKKEN' as status;
 `;
+
+/* De definitie waaraan een instantie hangt, om de berekende waarden op de server te kunnen
+   uitrekenen in plaats van ze van de client aan te nemen. */
+export const getFormInstanceSurveyJsonSql = `
+select top (1)
+  fv.form_version_id,
+  fv.version_label,
+  fv.survey_json
+from dbo.FormInstance fi
+join dbo.FormDefinitionVersion fv
+  on fv.form_version_id = fi.form_version_id
+where fi.form_instance_id = @instanceId;
+`;

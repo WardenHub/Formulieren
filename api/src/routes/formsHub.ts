@@ -10,7 +10,9 @@ import {
   saveFormAnswers,
   searchContext,
   startForm,
+  addFormInstancePoint,
   submitFormInstance,
+  recordSubmitRejection,
   updateFormInstanceMetadata,
   withdrawFormInstance,
 } from "../controllers/formsHubController.js";
@@ -23,8 +25,10 @@ router.get("/instances", allowed, getMyForms);
 router.get("/instances/:instanceId", allowed, getFormInstance);
 router.put("/instances/:instanceId/metadata", allowed, updateFormInstanceMetadata);
 router.put("/instances/:instanceId/answers", allowed, saveFormAnswers);
+router.post("/instances/:instanceId/points", allowed, addFormInstancePoint);
 router.post("/instances/:instanceId/submit-preview", allowed, previewSubmitFormInstance);
 router.post("/instances/:instanceId/submit", allowed, submitFormInstance);
+router.post("/instances/:instanceId/submit-rejections", allowed, recordSubmitRejection);
 router.post("/instances/:instanceId/withdraw", allowed, withdrawFormInstance);
 router.post("/instances/:instanceId/reopen", allowed, reopenFormInstance);
 router.get("/contexts/:contextType/search", allowed, searchContext);

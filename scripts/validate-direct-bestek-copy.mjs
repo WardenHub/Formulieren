@@ -2,20 +2,15 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 
+import { createExternalArtifactReader } from "./externalArtifacts.mjs";
+
 const root = process.cwd();
 const emberRoot = path.resolve(root, "..", "..");
-const deploymentRoot = path.resolve(
-  process.env.USERPROFILE || "C:/Users/Jesse Veentjer",
-  ".codex/projects/atrium-semantic-model-nl/deployment/ember-revamp",
-);
+const external = createExternalArtifactReader("Directe bestek-Copy-Job");
 const schema = fs.readFileSync(path.join(emberRoot, "SQL DB/tabel-definities.sql"), "utf8");
 const properties = fs.readFileSync(path.join(emberRoot, "SQL DB/Eigenschappen.sql"), "utf8");
-const baseline = JSON.parse(fs.readFileSync(
-  path.join(deploymentRoot, "copyjob/Data-to-Ember-NL-Installationdata.remove-software-wachtwoord.json"), "utf8",
-));
-const proposed = JSON.parse(fs.readFileSync(
-  path.join(deploymentRoot, "copyjob/Data-to-Ember-NL-two-activity.proposed.json"), "utf8",
-));
+const baseline = external.readJson("copyjob/Data-to-Ember-NL-Installationdata.remove-software-wachtwoord.json");
+const proposed = external.readJson("copyjob/Data-to-Ember-NL-two-activity.proposed.json");
 
 const expectedColumns = [
   ["business_unit", "nvarchar(100) NOT NULL"], ["installation_code", "nvarchar(450) NOT NULL"],
@@ -64,44 +59,46 @@ for (const retired of [
   if (schema.includes(retired) || properties.includes(retired)) failures.push(`vervallen SQL-component aanwezig: ${retired}`);
 }
 
-const activities = proposed.activities || [];
-const pairs = activities.map((activity) => [
-  activity?.properties?.source?.datasetSettings?.table,
-  activity?.properties?.destination?.datasetSettings?.table,
-  activity?.properties?.destination?.writeBehavior,
-]);
-const expectedPairs = [
-  ["InstallationBase", "AtriumInstallationBase", "Upsert"],
-  ["InstallationBestekParagraphs", "AtriumInstallationBestekParagraph", "Overwrite"],
-];
-if (proposed?.properties?.jobMode !== "Batch") failures.push("Copy Job staat niet op Batch");
-if (JSON.stringify(pairs) !== JSON.stringify(expectedPairs)) failures.push("Copy Job-activiteiten wijken af");
+if (baseline && proposed) {
+  const activities = proposed.activities || [];
+  const pairs = activities.map((activity) => [
+    activity?.properties?.source?.datasetSettings?.table,
+    activity?.properties?.destination?.datasetSettings?.table,
+    activity?.properties?.destination?.writeBehavior,
+  ]);
+  const expectedPairs = [
+    ["InstallationBase", "AtriumInstallationBase", "Upsert"],
+    ["InstallationBestekParagraphs", "AtriumInstallationBestekParagraph", "Overwrite"],
+  ];
+  if (proposed?.properties?.jobMode !== "Batch") failures.push("Copy Job staat niet op Batch");
+  if (JSON.stringify(pairs) !== JSON.stringify(expectedPairs)) failures.push("Copy Job-activiteiten wijken af");
 
-if (activities.length === 2 && baseline.activities?.length === 1) {
-  const first = activities[0]?.properties || {};
-  const old = baseline.activities[0]?.properties || {};
-  for (const property of ["destination", "translator", "typeConversionSettings", "enableStaging"]) {
-    try { assert.deepEqual(first[property], old[property]); }
-    catch { failures.push(`bestaande InstallationBase-activiteit wijzigde onnodig: ${property}`); }
+  if (activities.length === 2 && baseline.activities?.length === 1) {
+    const first = activities[0]?.properties || {};
+    const old = baseline.activities[0]?.properties || {};
+    for (const property of ["destination", "translator", "typeConversionSettings", "enableStaging"]) {
+      try { assert.deepEqual(first[property], old[property]); }
+      catch { failures.push(`bestaande InstallationBase-activiteit wijzigde onnodig: ${property}`); }
+    }
+    if (JSON.stringify(first.source?.datasetSettings) !== JSON.stringify(old.source?.datasetSettings)) {
+      failures.push("bestaande InstallationBase-brondataset wijzigde onnodig");
+    }
+    if (first.source?.changeDataSettings) failures.push("Batch-activiteit bevat nog incrementele bronmetadata");
   }
-  if (JSON.stringify(first.source?.datasetSettings) !== JSON.stringify(old.source?.datasetSettings)) {
-    failures.push("bestaande InstallationBase-brondataset wijzigde onnodig");
-  }
-  if (first.source?.changeDataSettings) failures.push("Batch-activiteit bevat nog incrementele bronmetadata");
-}
 
-const mappings = activities[1]?.properties?.translator?.mappings || [];
-const sourceNames = mappings.map((mapping) => mapping?.source?.name);
-const destinationNames = mappings.map((mapping) => mapping?.destination?.name);
-const expectedNames = expectedColumns.map(([name]) => name);
-if (JSON.stringify(sourceNames) !== JSON.stringify(expectedNames)) failures.push("bronmapping bevat niet exact de 39 velden in contractvolgorde");
-if (JSON.stringify(destinationNames) !== JSON.stringify(expectedNames)) failures.push("doelmapping bevat niet exact de 39 velden in contractvolgorde");
-if (sourceNames.includes("snapshot_received_at") || destinationNames.includes("snapshot_received_at")) {
-  failures.push("snapshot_received_at mag niet vanuit Fabric worden gemapt");
-}
-if (activities[1]?.properties?.enableStaging !== false) failures.push("Fabric interne staging moet uit staan");
-if (activities[1]?.properties?.typeConversionSettings?.typeConversion?.allowDataTruncation !== false) {
-  failures.push("stille datatruncatie moet uit staan");
+  const mappings = activities[1]?.properties?.translator?.mappings || [];
+  const sourceNames = mappings.map((mapping) => mapping?.source?.name);
+  const destinationNames = mappings.map((mapping) => mapping?.destination?.name);
+  const expectedNames = expectedColumns.map(([name]) => name);
+  if (JSON.stringify(sourceNames) !== JSON.stringify(expectedNames)) failures.push("bronmapping bevat niet exact de 39 velden in contractvolgorde");
+  if (JSON.stringify(destinationNames) !== JSON.stringify(expectedNames)) failures.push("doelmapping bevat niet exact de 39 velden in contractvolgorde");
+  if (sourceNames.includes("snapshot_received_at") || destinationNames.includes("snapshot_received_at")) {
+    failures.push("snapshot_received_at mag niet vanuit Fabric worden gemapt");
+  }
+  if (activities[1]?.properties?.enableStaging !== false) failures.push("Fabric interne staging moet uit staan");
+  if (activities[1]?.properties?.typeConversionSettings?.typeConversion?.allowDataTruncation !== false) {
+    failures.push("stille datatruncatie moet uit staan");
+  }
 }
 
 const sourceFiles = (directory) => fs.readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
@@ -117,10 +114,15 @@ for (const sourceRoot of [path.join(root, "api/src"), path.join(root, "src")]) {
   }
 }
 
+const externalReport = external.report();
+failures.push(...externalReport.failures);
+
 if (failures.length) {
   console.error("Directe bestek-Copy-Jobvalidatie mislukt:");
   failures.forEach((failure) => console.error(`- ${failure}`));
   process.exit(1);
 }
+
+if (externalReport.notice) console.log(externalReport.notice);
 
 console.log("Directe bestek-Copy-Job geldig; Batch, twee activiteiten, 39 mappings, actieve overwrite en lokale ontvangsttijd bevestigd.");

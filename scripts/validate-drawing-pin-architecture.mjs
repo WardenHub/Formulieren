@@ -45,7 +45,7 @@ const checks = [
   },
   {
     name: "component drawing review workflow",
-    file: path.join(root, "src", "pages", "Installations", "FollowUpsTab.jsx"),
+    file: path.join(root, "src", "pages", "Installations", "ActionPointsTab.jsx"),
     patterns: [/historicalizeAllComponentPins/, /pinFilter === "COMPONENT_PLACED"/, /Begeleide tekencontrole/, /Alle componenten verwerkt/],
   },
   {
@@ -75,7 +75,7 @@ const checks = [
   },
   {
     name: "follow-up drawing navigation trigger",
-    file: path.join(root, "src", "pages", "Installations", "FollowUpsTab.jsx"),
+    file: path.join(root, "src", "pages", "Installations", "ActionPointsTab.jsx"),
     patterns: [/onOpenDrawing\?\.\(pin, options\)/, /Toon op tekening/],
   },
   {

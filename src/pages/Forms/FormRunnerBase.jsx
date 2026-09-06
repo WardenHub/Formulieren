@@ -1,7 +1,7 @@
 //src/pages/Forms/FormRunnerBase.jsx
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useLocation, useNavigate, useParams } from "react-router-dom";
 
 import { Survey } from "survey-react-ui";
 import "survey-core/survey-core.min.css";
@@ -9,6 +9,7 @@ import "../../styles/surveyjs-overrides.css";
 import "../../styles/ember-form-runtime.css";
 
 import { ChevronLeftIcon } from "@/components/ui/chevron-left";
+import { ClipboardCheckIcon } from "@/components/ui/clipboard-check";
 import { FileCogIcon } from "@/components/ui/file-cog";
 import { FileCheckIcon } from "@/components/ui/file-check";
 import { FileCheck2Icon } from "@/components/ui/file-check-2";
@@ -16,7 +17,6 @@ import { FolderInputIcon } from "@/components/ui/folder-input";
 import { FolderXIcon } from "@/components/ui/folder-x";
 import { HistoryIcon } from "@/components/ui/history";
 import { CheckCheckIcon } from "@/components/ui/check-check";
-import { CheckIcon } from "@/components/ui/check";
 import { PartyPopperIcon } from "@/components/ui/party-popper";
 import { RotateCCWIcon } from "@/components/ui/rotate-ccw";
 import { ChevronUpIcon } from "@/components/ui/chevron-up";
@@ -28,11 +28,19 @@ import { MenuIcon } from "@/components/ui/menu";
 import { CircleHelpIcon } from "@/components/ui/circle-help";
 import { HomeIcon } from "@/components/ui/home";
 import { pushRecentHomeItem } from "../../lib/recentHomeItems.js";
+import { focusFirstQuestionOnPage, trapFocus } from "./shared/focusTrap.js";
 
 import {
   getFormInstance,
   getFormInstanceDocuments,
+  startFormInstance,
   getFormsMonitorFollowUps,
+  addFormInstancePoint,
+  addFormInstancePointFromHub,
+  recordFormSubmitRejection,
+  recordFormSubmitRejectionFromHub,
+  putFormInstanceDocuments,
+  uploadFormInstanceDocumentFile,
   putFormInstanceMetadata,
   putFormInstanceDocumentFollowUps,
   putFormAnswers,
@@ -81,8 +89,23 @@ import {
   attachRuntimeBehaviors,
 } from "./shared/runtimeBehaviors.jsx";
 
+import { FormPageStepper } from "./shared/FormPageStepper.jsx";
+import FollowUpPointsSheet from "./shared/FollowUpPointsSheet.jsx";
+import { countOpenPoints } from "./shared/followUpPoints.js";
+
+import {
+  answersDiffer,
+  clearFormDraft,
+  readFormDraft,
+  saveFormDraft,
+} from "./shared/draftStore.js";
+
 const AUTOSAVE_IDLE_MS = 15000;
 const AUTOSAVE_SAFETY_MS = 60000;
+
+// Hoe lang de gebruiker stil moet zijn voordat het concept lokaal wordt weggeschreven.
+// Kort genoeg om weinig te verliezen, lang genoeg om tijdens typen niets te doen.
+const DRAFT_WRITE_MS = 1500;
 
 function isDirectVideoUrl(url) {
   const value = String(url || "").trim().toLowerCase();
@@ -164,16 +187,21 @@ function normalizeFormDocumentsResponse(data) {
   return [];
 }
 
-function normalizeFormsMonitorFollowUps(data) {
+// Rijkere normalisatie dan normalizeFormsMonitorFollowUps; die dient de
+// vingerafdrukkoppeling bij indienen en laat status, categorie en pins vallen.
+function normalizeFollowUpPoints(data) {
   const items = Array.isArray(data?.items) ? data.items : Array.isArray(data) ? data : [];
+
   return items
     .map((item) => ({
       follow_up_action_id: String(item?.follow_up_action_id || "").trim(),
-      source_fingerprint: String(item?.source_fingerprint || "").trim(),
-      workflow_title: String(item?.workflow_title || item?.title || "Actiepunt").trim(),
+      workflow_title: String(item?.workflow_title || "Actiepunt").trim(),
       workflow_description: String(item?.workflow_description || "").trim(),
       source_item_code: String(item?.source_item_code || "").trim(),
       kind: String(item?.kind || "").trim(),
+      status: String(item?.status || "").trim(),
+      category: String(item?.category || "").trim(),
+      drawing_pins: Array.isArray(item?.drawing_pins) ? item.drawing_pins : [],
     }))
     .filter((item) => item.follow_up_action_id);
 }
@@ -239,45 +267,6 @@ function normalizeSubmitDialogFollowUpItems(items) {
     itemCode: String(item?.itemCode || "").trim(),
     questionName: String(item?.questionName || "").trim(),
   }));
-}
-
-function buildSubmitDialogFollowUpLabel(item) {
-  const title = String(item?.title || "Actiepunt").trim();
-  const source = String(item?.itemCode || item?.questionName || "").trim();
-  return source ? `${title} ; ${source}` : title;
-}
-
-function buildDocumentFollowUpPayloadFromFingerprints(selectedFingerprints, actualFollowUps) {
-  const byFingerprint = new Map(
-    (Array.isArray(actualFollowUps) ? actualFollowUps : [])
-      .filter((item) => item?.source_fingerprint && item?.follow_up_action_id)
-      .map((item) => [String(item.source_fingerprint), item])
-  );
-
-  return Array.from(
-    new Set(
-      (Array.isArray(selectedFingerprints) ? selectedFingerprints : [])
-        .map((item) => String(item || "").trim())
-        .filter(Boolean)
-    )
-  )
-    .map((fingerprint, index) => {
-      const match = byFingerprint.get(fingerprint);
-      if (!match) return null;
-      return {
-        follow_up_action_id: match.follow_up_action_id,
-        is_primary: index === 0,
-      };
-    })
-    .filter(Boolean);
-}
-
-function formatBytes(value) {
-  const n = Number(value);
-  if (!Number.isFinite(n) || n <= 0) return null;
-  if (n < 1024) return `${n} B`;
-  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
-  return `${(n / (1024 * 1024)).toFixed(1)} MB`;
 }
 
 function formatFollowUpKindLabel(kind) {
@@ -418,6 +407,7 @@ function getEmberOwnedRuntimeCapabilityReport(surveyParsed) {
     "comment",
     "dropdown",
     "radiogroup",
+    "boolean",
     "matrixdynamic",
     "paneldynamic",
   ]);
@@ -599,6 +589,7 @@ export default function FormRunnerBase({ mode }) {
   const { code, instanceId } = useParams();
   const isGeneric = !String(code || "").trim();
   const navigate = useNavigate();
+  const routerLocation = useLocation();
 
   const [instance, setInstance] = useState(null);
 
@@ -608,6 +599,30 @@ export default function FormRunnerBase({ mode }) {
   const [validationSummary, setValidationSummary] = useState([]);
 
   const [dirty, setDirty] = useState(false);
+  const [draftNotice, setDraftNotice] = useState("");
+
+  // Een hervat concept. Het installatiescherm geeft dit mee als het bij het starten een
+  // bestaand concept heeft teruggekregen; de invuller ziet dan van wanneer het is en kan
+  // alsnog een nieuw formulier beginnen.
+  // Focusbeheer; de dialogen houden de focus vast en geven hem bij sluiten terug, en na een
+  // paginawissel gaat de focus naar het eerste veld in plaats van op het paginanummer te
+  // blijven staan.
+  const submitDialogRef = useRef(null);
+  const guidanceDialogRef = useRef(null);
+  const surveyShellRef = useRef(null);
+
+  const resumedConcept = routerLocation?.state?.resumedConcept || null;
+  const [resumedNoticeOpen, setResumedNoticeOpen] = useState(true);
+  const [startingNew, setStartingNew] = useState(false);
+  const [pointsOpen, setPointsOpen] = useState(false);
+  const [points, setPoints] = useState([]);
+  const [pointsLoading, setPointsLoading] = useState(false);
+  const [pointsError, setPointsError] = useState("");
+  const [pointsDelta, setPointsDelta] = useState(null);
+  // Paginas die na verlaten zijn gecontroleerd; voedt de status in de paginabalk.
+  const [checkedPages, setCheckedPages] = useState([]);
+  const previousOpenPointsRef = useRef(null);
+  const pointsDeltaTimerRef = useRef(null);
 
   const [instanceMetadata, setInstanceMetadata] = useState(buildInstanceMetadataState(null));
   const [savedInstanceMetadata, setSavedInstanceMetadata] = useState(buildInstanceMetadataState(null));
@@ -834,6 +849,17 @@ export default function FormRunnerBase({ mode }) {
       : previewSubmitFormInstance(code, instanceId, payload);
   }
 
+  // Een invuller die niet kan indienen blijft anders onzichtbaar; hij belt of hij stopt.
+  // Dit legt alleen vast welke controle hem tegenhield, nooit wat hij had ingevuld, en het
+  // mag nooit het indienen zelf in de weg zitten.
+  function reportSubmitRejection(payload) {
+    const request = isGeneric
+      ? recordFormSubmitRejectionFromHub(instanceId, payload)
+      : recordFormSubmitRejection(code, instanceId, payload);
+
+    return request.catch(() => undefined);
+  }
+
   function submitCurrentInstance() {
     return isGeneric
       ? submitFormInstanceFromHub(instanceId)
@@ -1002,6 +1028,37 @@ export default function FormRunnerBase({ mode }) {
     };
   }, [showValidateCelebration]);
 
+  // Zolang een dialoog open staat blijft de focus erbinnen; bij sluiten gaat hij terug naar
+  // de knop die hem opende. Zonder dit liep Tab achter de dialoog langs door het formulier.
+  useEffect(() => {
+    if (!submitDialog) return undefined;
+    return trapFocus(submitDialogRef.current);
+  }, [submitDialog]);
+
+  useEffect(() => {
+    if (!guidanceDialog) return undefined;
+    return trapFocus(guidanceDialogRef.current);
+  }, [guidanceDialog]);
+
+  // Na een paginawissel naar het eerste veld van de nieuwe pagina. Niet bij het openen van
+  // het formulier zelf; dan hoort de gebruiker eerst de kop te kunnen lezen.
+  const previousPageIndexRef = useRef(null);
+
+  useEffect(() => {
+    if (!runtimeReady) return;
+
+    const vorige = previousPageIndexRef.current;
+    previousPageIndexRef.current = currentPageIndex;
+
+    if (vorige === null || vorige === currentPageIndex) return;
+
+    const frame = window.requestAnimationFrame(() => {
+      focusFirstQuestionOnPage(surveyShellRef.current);
+    });
+
+    return () => window.cancelAnimationFrame(frame);
+  }, [currentPageIndex, runtimeReady]);
+
   useEffect(() => {
     if (isDebug) return undefined;
 
@@ -1058,7 +1115,6 @@ export default function FormRunnerBase({ mode }) {
       window.removeEventListener("keydown", onKeyDown);
     };
   }, [actionsMenuOpen]);
-
 
   useEffect(() => {
     if (typeof window === "undefined") return undefined;
@@ -1146,7 +1202,7 @@ export default function FormRunnerBase({ mode }) {
         suppressDirtyRef.current = true;
         try {
           surveyModelRef.current.data = parsed.value;
-          syncAllMatrixQuestionVisualErrors(surveyModelRef.current, true);
+          syncAllMatrixQuestionVisualErrors(surveyModelRef.current);
           const summary = collectValidationSummary(surveyModelRef.current);
 
           return {
@@ -1174,9 +1230,9 @@ export default function FormRunnerBase({ mode }) {
 
     try {
       model.validate(true);
-      syncAllMatrixQuestionVisualErrors(model, true);
+      syncAllMatrixQuestionVisualErrors(model);
 
-      const summary = collectValidationSummary(model);
+      const summary = collectValidationSummary(model, surveyParsed?.value || null);
       return {
         ok: summary.length === 0,
         summary,
@@ -1224,6 +1280,41 @@ export default function FormRunnerBase({ mode }) {
     return true;
   }
 
+  // Controleert alleen de pagina die de gebruiker verlaat en zet het resultaat in de
+  // paginabalk. Bewust geen foutmeldingen in beeld: de weergave hangt aan showErrors,
+  // en iemand die een pagina half invult en later terugkomt hoort niet onderbroken te
+  // worden. De balk wordt daarmee een voortgangskaart in plaats van een lege strip.
+  function checkPageOnLeave(pageIndex) {
+    if (isDebug) return;
+
+    const model = surveyModelRef.current;
+    const pages = Array.isArray(model?.visiblePages) ? model.visiblePages : [];
+    const page = pages[Number(pageIndex)];
+
+    if (!model || !page) return;
+
+    try {
+      page.validate(true);
+      syncAllMatrixQuestionVisualErrors(model);
+
+      const alle = collectValidationSummary(model, surveyParsed?.value || null);
+      const vanDezePagina = alle.filter((item) => Number(item?.pageIndex) === Number(pageIndex));
+
+      setValidationSummary((prev) => {
+        const overig = (Array.isArray(prev) ? prev : []).filter(
+          (item) => Number(item?.pageIndex) !== Number(pageIndex)
+        );
+        return [...overig, ...vanDezePagina];
+      });
+
+      setCheckedPages((prev) =>
+        prev.includes(Number(pageIndex)) ? prev : [...prev, Number(pageIndex)]
+      );
+    } catch {
+      // Een mislukte paginacontrole mag navigeren nooit in de weg zitten.
+    }
+  }
+
   function setRuntimePageIndex(pageIndex, { closeBookmarks = true } = {}) {
     if (isDebug) return false;
 
@@ -1233,6 +1324,10 @@ export default function FormRunnerBase({ mode }) {
     const targetPage = pages[safeIndex] || null;
 
     if (!model || !targetPage) return false;
+
+    if (safeIndex !== currentPageIndex) {
+      checkPageOnLeave(currentPageIndex);
+    }
 
     setCurrentPageIndex(safeIndex);
 
@@ -1334,6 +1429,51 @@ export default function FormRunnerBase({ mode }) {
     );
   }
 
+  // Een opslagconflict mag het werk van de gebruiker nooit weggooien.
+  // We halen de nieuwste revisie op en schrijven de lokale antwoorden daar bovenop.
+  // Lukt dat niet, dan blijft alles op het scherm staan en kan de gebruiker het opnieuw proberen.
+  async function recoverFromSaveConflict(prefix) {
+    const cur = getCurrentAnswersObject();
+
+    if (!cur.ok) {
+      setError(`${prefix} ${cur.error}`);
+      return false;
+    }
+
+    try {
+      const latest = normalizeInstanceResponse(await loadCurrentInstance());
+      const latestDraftRev = getDraftRev(latest);
+
+      await saveCurrentAnswers({
+        answers_json: cur.value,
+        expected_draft_rev: latestDraftRev,
+      });
+
+      applyAnswersSaveLocally(latestDraftRev + 1);
+      setDirty(false);
+      setLastSavedAt(new Date().toISOString());
+      setError(null);
+
+      clearFormDraft(instanceId);
+      setDraftNotice("");
+
+      setSaveOk(true);
+      saveOkIconRef.current?.startAnimation?.();
+      if (saveOkTimerRef.current) clearTimeout(saveOkTimerRef.current);
+      saveOkTimerRef.current = setTimeout(() => {
+        setSaveOk(false);
+        saveOkIconRef.current?.stopAnimation?.();
+      }, 1500);
+
+      return true;
+    } catch {
+      setError(
+        `${prefix} Je wijzigingen staan nog op het scherm en zijn niet verzonden. Probeer opnieuw op te slaan.`
+      );
+      return false;
+    }
+  }
+
   async function persistPendingChanges(
     curValue,
     { reloadAfter = true, animateSave = true, forceAnswerSave = false } = {}
@@ -1388,6 +1528,10 @@ export default function FormRunnerBase({ mode }) {
     if (didSaveSomething) {
       setLastSavedAt(new Date().toISOString());
 
+      // Het lokale concept heeft zijn werk gedaan zodra de server de antwoorden heeft.
+      clearFormDraft(instanceId);
+      setDraftNotice("");
+
       if (animateSave) {
         setSaveOk(true);
         saveOkIconRef.current?.startAnimation?.();
@@ -1436,8 +1580,7 @@ export default function FormRunnerBase({ mode }) {
       const msg = String(e?.message || e || "").toLowerCase();
 
       if (msg.includes("draft_rev") || msg.includes("expected_draft_rev")) {
-        setError("Automatisch opslaan na assistentbewerking gaf een conflict. Ik heb de nieuwste versie opgehaald; controleer het resultaat.");
-        await reload({ forceEditor: true });
+        await recoverFromSaveConflict("Opslaan na assistentbewerking gaf een conflict.");
       } else {
         setError(translateApiError(e, status));
       }
@@ -1469,12 +1612,10 @@ export default function FormRunnerBase({ mode }) {
       const msg = String(e?.message || e || "").toLowerCase();
 
       if (msg.includes("draft_rev") || msg.includes("expected_draft_rev")) {
-        setError("Automatisch opslaan conflict. Ik heb de nieuwste versie opgehaald. Controleer je wijzigingen en probeer opnieuw.");
-        await reload({ forceEditor: true });
-      } else {
-        setError(translateApiError(e, status));
+        return await recoverFromSaveConflict("Automatisch opslaan gaf een conflict.");
       }
 
+      setError(translateApiError(e, status));
       return false;
     } finally {
       autosaveRunningRef.current = false;
@@ -1485,31 +1626,35 @@ export default function FormRunnerBase({ mode }) {
     const reloadSeq = reloadSequenceRef.current + 1;
     reloadSequenceRef.current = reloadSeq;
 
-    const reloadStartedAt = performance.now();
-    const reloadScope = `${String(code)}::${String(instanceId)}::${Date.now()}::${reloadSeq}`;
-
     const isLatestReload = () => reloadSequenceRef.current === reloadSeq;
     const safeSetLoading = (value) => {
       if (isLatestReload()) setLoading(value);
     };
 
-    const logReloadStep = () => {};
+    // Had de gebruiker Controleer al ingedrukt, dan hoort hij dat na een herlaadslag niet
+    // opnieuw te moeten doen om te zien wat er nog open staat. Dat strafte precies het
+    // tussentijds opslaan dat we willen aanmoedigen: drie fouten verbeteren, opslaan, en
+    // alle markeringen waren weg.
+    const validationWasActive = validationActivatedRef.current;
+
+    const restoreValidationState = () => {
+      if (!validationWasActive) return;
+      if (!isLatestReload()) return;
+
+      validationActivatedRef.current = true;
+      setHasValidatedOnce(true);
+
+      const result = runLocalValidation();
+      setValidationSummary(Array.isArray(result?.summary) ? result.summary : []);
+    };
 
     setLoading(true);
     setError(null);
 
     const preferredPageIndex = readStoredPageIndex(pageStorageKey);
 
-    logReloadStep("start", {
-      code,
-      instanceId,
-      mode,
-      forceEditor: Boolean(forceEditor),
-      pageStorageKey,
-      preferredPageIndex,
-    });
-
     setValidationSummary([]);
+    setCheckedPages([]);
     setRuntimeReady(false);
     setCurrentPageIndex(preferredPageIndex ?? 0);
     setHasValidatedOnce(false);
@@ -1519,11 +1664,8 @@ export default function FormRunnerBase({ mode }) {
     pageRestoreCompletedRef.current = false;
 
     try {
-      logReloadStep("instance-fetch-start");
       const res = await loadCurrentInstance();
-      logReloadStep("instance-fetch-done");
       if (!isLatestReload()) {
-        logReloadStep("stale-after-instance-fetch");
         return;
       }
 
@@ -1533,26 +1675,12 @@ export default function FormRunnerBase({ mode }) {
       const nextDraftRev = getDraftRev(inst);
       const answersObj = getAnswersObject(inst);
 
-      logReloadStep("instance-normalized", {
-        formCode: inst?.form_code || null,
-        status: inst?.status || null,
-        draftRev: nextDraftRev,
-        hasSurveyJson: Boolean(inst?.survey_json),
-      });
-
       const key = `${String(instanceId)}::${String(nextDraftRev)}`;
       const alreadyLoaded = lastLoadedKeyRef.current === key;
 
       const parsedSurvey = safeSurveyParse(inst?.survey_json);
       const shouldOverwriteEditor = forceEditor || (!dirty && !alreadyLoaded);
       const shouldOverwriteMetadata = forceEditor || (!hasMetadataChanges && !alreadyLoaded);
-
-      logReloadStep("survey-parse-done", {
-        ok: parsedSurvey.ok,
-        shouldOverwriteEditor,
-        shouldOverwriteMetadata,
-        alreadyLoaded,
-      });
 
       if (shouldOverwriteMetadata) {
         const nextMetadata = buildInstanceMetadataState(inst);
@@ -1573,34 +1701,48 @@ export default function FormRunnerBase({ mode }) {
           lastLoadedKeyRef.current = key;
         }
 
-        logReloadStep("survey-parse-error", { error: parsedSurvey.error || null });
         safeSetLoading(false);
         return;
       }
 
       if (!shouldOverwriteEditor && surveyModelRef.current) {
-        logReloadStep("reuse-existing-model");
         setRuntimeReady(true);
+        restoreValidationState();
         safeSetLoading(false);
         return;
       }
 
       if (runtimeDetachRef.current) {
-        logReloadStep("detach-previous-runtime-start");
         runtimeDetachRef.current();
         runtimeDetachRef.current = null;
-        logReloadStep("detach-previous-runtime-done");
       }
 
       energyAutoStateRef.current = {};
       availabilityAutoStateRef.current = {};
       validationActivatedRef.current = false;
 
-      logReloadStep("runtime-build-start");
-      let runtimeBuildTimedOut = false;
+      // Een lokaal bewaard concept dat minstens even ver is als de server wordt
+      // teruggezet, zodat niet-verzonden werk na herladen, crash of sessieverloop
+      // niet verdwijnt. Alleen bij CONCEPT; een ingediend formulier blijft leidend.
+      let instanceForRuntime = inst;
+      let restoredDraft = false;
+
+      if (shouldOverwriteEditor && String(inst?.status || "") === "CONCEPT") {
+        const draft = await readFormDraft(instanceId);
+
+        if (
+          draft &&
+          Number(draft.draftRev) >= Number(nextDraftRev) &&
+          answersDiffer(draft.answers, answersObj)
+        ) {
+          instanceForRuntime = { ...inst, answers_json: draft.answers };
+          restoredDraft = true;
+        }
+      }
+
       const runtime = await Promise.race([
         buildRuntimeModelFromInstance({
-          instance: inst,
+          instance: instanceForRuntime,
           code,
           onDirtyChange: setDirty,
           canEditRef,
@@ -1609,7 +1751,6 @@ export default function FormRunnerBase({ mode }) {
         }),
         new Promise((resolve) => {
           window.setTimeout(() => {
-            runtimeBuildTimedOut = true;
             resolve({
               ok: false,
               error:
@@ -1618,9 +1759,7 @@ export default function FormRunnerBase({ mode }) {
           }, 12000);
         }),
       ]);
-      logReloadStep("runtime-build-done", { ok: runtime?.ok, timedOut: runtimeBuildTimedOut });
       if (!isLatestReload()) {
-        logReloadStep("stale-after-runtime-build");
         return;
       }
 
@@ -1635,17 +1774,10 @@ export default function FormRunnerBase({ mode }) {
         return;
       }
 
-      logReloadStep("page-restore-start");
       const restoredPageIndex = restoreStoredPageIndexToModel(runtime.model, pageStorageKey);
       const visiblePages = Array.isArray(runtime.model?.visiblePages) ? runtime.model.visiblePages : [];
       const currentRuntimePageIndex = visiblePages.indexOf(runtime.model.currentPage);
       const nextPageIndex = restoredPageIndex ?? (currentRuntimePageIndex >= 0 ? currentRuntimePageIndex : 0);
-      logReloadStep("page-restore-done", {
-        restoredPageIndex,
-        currentRuntimePageIndex,
-        nextPageIndex,
-        visiblePageCount: visiblePages.length,
-      });
 
       surveyModelRef.current = runtime.model;
       setCurrentPageIndex(nextPageIndex);
@@ -1656,11 +1788,14 @@ export default function FormRunnerBase({ mode }) {
       setLastAppliedMap(runtime.lastAppliedMap || {});
       setAnswersPreview({ ...(runtime.model.data || {}) });
 
-      logReloadStep("runtime-attach-start");
       let runtimeAttachTimedOut = false;
       const attachResult = await Promise.race([
         Promise.resolve().then(() => attachRuntimeBehaviors({
           model: runtime.model,
+          // Alleen de SurveyJS-renderer heeft de DOM-decoratielaag nodig; onder de
+          // Ember-runtime zou die alleen een permanente document-observer opleveren.
+          surveyJsDomActive: isDebug || !shouldUseEmberOwnedRuntime(inst, parsedSurvey),
+          surveyDefinition: parsedSurvey?.value || null,
           prefillPayload: runtime.prefillPayload,
           energyAutoStateRef,
           availabilityAutoStateRef,
@@ -1688,11 +1823,29 @@ export default function FormRunnerBase({ mode }) {
         }),
       ]);
       runtimeDetachRef.current = typeof attachResult === "function" ? attachResult : null;
-      logReloadStep("runtime-attach-done", { timedOut: runtimeAttachTimedOut });
       if (!isLatestReload()) {
-        logReloadStep("stale-after-runtime-attach");
         return;
       }
+
+      const meldingen = [];
+
+      if (inst?.version_upgrade?.applied) {
+        // Wat er veranderde is voor de invuller belangrijker dan dat er iets veranderde;
+        // die tekst komt uit change_summary van de versies die zijn overgeslagen.
+        const samenvatting = String(inst.version_upgrade.change_summary || "").trim();
+
+        meldingen.push(
+          `De formulierversie is bijgewerkt van ${inst.version_upgrade.previous} naar ${inst.version_upgrade.applied}.` +
+            (samenvatting ? ` ${samenvatting}` : " De nieuwste versie is toegepast.")
+        );
+      }
+
+      if (restoredDraft) {
+        setDirty(true);
+        meldingen.push("Niet-verzonden wijzigingen van dit apparaat zijn teruggezet.");
+      }
+
+      setDraftNotice(meldingen.join(" "));
 
       if (runtimeAttachTimedOut) {
         setError("Runtime behaviors konden niet tijdig worden gekoppeld. De formulierdata is geladen, maar de gedraglaag bleef hangen.");
@@ -1709,14 +1862,12 @@ export default function FormRunnerBase({ mode }) {
       setRuntimeReady(true);
       setSurveyRenderKey((prev) => prev + 1);
       lastLoadedKeyRef.current = key;
-      logReloadStep("done", { nextPageIndex });
+      restoreValidationState();
     } catch (e) {
       if (!isLatestReload()) {
-        logReloadStep("stale-error", { error: String(e?.message || e || "") });
         return;
       }
 
-      logReloadStep("error", { error: String(e?.message || e || "") });
       setError(translateApiError(e, status));
       setInstance(null);
       surveyModelRef.current = null;
@@ -1856,6 +2007,180 @@ export default function FormRunnerBase({ mode }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isDebug, canEditAnswers, busy, loading, hasUnsavedChanges, status, instance, instanceMetadata, savedInstanceMetadata, dirty]);
 
+  // Lokaal concept wegschrijven nadat de gebruiker even stil is, niet op een vaste tik.
+  // Tijdens doortypen gebeurt er dus niets; de timer schuift telkens op. Dit is opslag
+  // op het toestel zelf, dus er gaat geen data naar de API en het kost geen verkeer.
+  useEffect(() => {
+    if (isDebug || !canEditAnswers || !instanceId) return undefined;
+    if (!hasUnsavedChanges) return undefined;
+
+    const timer = window.setTimeout(() => {
+      const cur = getCurrentAnswersObject();
+      if (!cur.ok) return;
+
+      saveFormDraft({
+        instanceId,
+        draftRev: getDraftRev(instance),
+        answers: cur.value,
+      });
+    }, DRAFT_WRITE_MS);
+
+    return () => window.clearTimeout(timer);
+    // answersPreview verandert bij elke waardewijziging en is hier het signaal;
+    // het effect draait daardoor opnieuw en stelt het schrijven telkens uit.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isDebug, canEditAnswers, instanceId, hasUnsavedChanges, instance, answersPreview]);
+
+  useEffect(() => {
+    if (isDebug) return undefined;
+
+    function onBeforeUnload(e) {
+      if (!hasUnsavedChanges) return;
+
+      e.preventDefault();
+      e.returnValue = "";
+    }
+
+    window.addEventListener("beforeunload", onBeforeUnload);
+    return () => window.removeEventListener("beforeunload", onBeforeUnload);
+  }, [isDebug, hasUnsavedChanges]);
+
+  // Terugnavigatie probeert eerst gewoon op te slaan; alleen als dat niet lukt
+  // krijgt de gebruiker een vraag, en dan met de mededeling dat het werk lokaal blijft.
+  async function handleNavigateBack() {
+    if (isDebug || !hasUnsavedChanges || busy || !canEditAnswers) {
+      navigate(-1);
+      return;
+    }
+
+    const saved = await runAutosaveNow({ animateSave: false });
+
+    if (!saved) {
+      const leave = window.confirm(
+        "Opslaan is niet gelukt. Je werk blijft op dit apparaat bewaard en komt terug zodra je het formulier opnieuw opent. Toch terug?"
+      );
+
+      if (!leave) return;
+    }
+
+    navigate(-1);
+  }
+
+  // De punten van dit formulier. Ze bestaan al tijdens het invullen omdat de sync ook
+  // op opslaan draait, dus de teller klopt met wat de organisatie straks te zien krijgt.
+  async function loadFollowUpPoints() {
+    if (isDebug || !instanceId) return;
+
+    setPointsLoading(true);
+    setPointsError("");
+
+    try {
+      const res = await getFormsMonitorFollowUps(instanceId);
+      setPoints(normalizeFollowUpPoints(res));
+    } catch (e) {
+      setPointsError(translateApiError(e, status));
+    } finally {
+      setPointsLoading(false);
+    }
+  }
+
+  async function handleAddPoint(payload) {
+    if (isGeneric) {
+      await addFormInstancePointFromHub(instanceId, payload);
+    } else {
+      await addFormInstancePoint(code, instanceId, payload);
+    }
+
+    await loadFollowUpPoints();
+  }
+
+  // De "waar"-vraag. Pins horen bij de installatietekening, dus we sturen de gebruiker
+  // daarheen met het punt in de hand; de pin die hij plaatst wordt automatisch gekoppeld
+  // en daarna komt hij terug in het formulier op dezelfde plek. Dat vervangt de oude
+  // route van indienen, wegnavigeren, pin plaatsen en handmatig koppelen.
+  function handleSetPointLocation(point) {
+    const actionId = String(point?.follow_up_action_id || "").trim();
+    if (!actionId || isGeneric || !code) return;
+
+    const returnTo = `${routerLocation.pathname}${routerLocation.search || ""}`;
+
+    navigate(
+      `/installaties/${encodeURIComponent(code)}?tab=drawings` +
+        `&linkAction=${encodeURIComponent(actionId)}` +
+        `&returnTo=${encodeURIComponent(returnTo)}`
+    );
+  }
+
+  // Een foto of bestand bij een punt. Loopt via dezelfde formulierbijlagen als het
+  // contextpaneel, en wordt daarna aan het punt gekoppeld; zo is er één soort bijlage.
+  async function handleAttachFileToPoint(point, file) {
+    const actionId = String(point?.follow_up_action_id || "").trim();
+    if (!actionId || !file) return;
+
+    if (isGeneric || !code) {
+      throw new Error("Bijlagen bij een punt kunnen alleen op een installatiegebonden formulier.");
+    }
+
+    const createRes = await putFormInstanceDocuments(code, instanceId, [
+      {
+        title: point?.workflow_title || "Bewijs bij opvolgpunt",
+        note: null,
+        image_variant: null,
+        relation_type: null,
+        is_active: true,
+      },
+    ]);
+
+    const createdItems = Array.isArray(createRes?.items) ? createRes.items : [];
+    const created =
+      createdItems.find((x) => x?.file_name == null && x?.uploaded_at == null) ||
+      createdItems[0] ||
+      null;
+
+    const documentId =
+      created?.form_instance_document_id || created?.document_id || created?.id;
+
+    if (!documentId) throw new Error("Documentregel kon niet worden aangemaakt.");
+
+    await uploadFormInstanceDocumentFile(code, instanceId, documentId, file);
+    await putFormInstanceDocumentFollowUps(code, instanceId, documentId, [
+      { follow_up_action_id: actionId, is_primary: true },
+    ]);
+
+    await loadFollowUpPoints();
+  }
+
+  useEffect(() => {
+    if (isDebug || !runtimeReady || !instanceId) return;
+
+    loadFollowUpPoints();
+    // lastSavedAt is hier het signaal; na elke geslaagde opslag is de sync gedraaid.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isDebug, runtimeReady, instanceId, lastSavedAt]);
+
+  // Zelfde patroon als de blokkadeteller in de paginabalk; een korte +1 of -1 laat zien
+  // dat er iets is bijgekomen of afgevallen zonder dat de sheet open hoeft.
+  useEffect(() => {
+    const next = countOpenPoints(points);
+    const previous = previousOpenPointsRef.current;
+    previousOpenPointsRef.current = next;
+
+    if (previous === null || previous === next) return undefined;
+
+    setPointsDelta({ delta: next - previous, key: `${Date.now()}-${next}` });
+
+    if (pointsDeltaTimerRef.current) clearTimeout(pointsDeltaTimerRef.current);
+    pointsDeltaTimerRef.current = setTimeout(() => setPointsDelta(null), 2200);
+
+    return undefined;
+  }, [points]);
+
+  useEffect(() => {
+    return () => {
+      if (pointsDeltaTimerRef.current) clearTimeout(pointsDeltaTimerRef.current);
+    };
+  }, []);
+
   async function handleRefreshPrefill() {
     if (isDebug) return;
     if (isGeneric) return;
@@ -1968,13 +2293,14 @@ export default function FormRunnerBase({ mode }) {
     }
 
     try {
-      await persistPendingChanges(cur.value, { reloadAfter: true, animateSave: true });
+      // Geen reload na opslaan; persistPendingChanges houdt draft_rev en metadata lokaal bij.
+      // Een reload zou de validatiemarkeringen wissen en een tweede prefill-call doen.
+      await persistPendingChanges(cur.value, { reloadAfter: false, animateSave: true });
     } catch (e) {
       const msg = String(e?.message || e || "").toLowerCase();
 
       if (msg.includes("draft_rev") || msg.includes("expected_draft_rev")) {
-        setError("Opslaan conflict. Ik heb de nieuwste versie opgehaald. Probeer opnieuw.");
-        await reload({ forceEditor: true });
+        await recoverFromSaveConflict("Opslaan gaf een conflict.");
       } else {
         setError(translateApiError(e, status));
       }
@@ -2005,10 +2331,26 @@ export default function FormRunnerBase({ mode }) {
       const validation = runLocalValidation();
       const valid = applyValidationResult(validation, { showSuccess: false });
       if (!valid) {
-        if (Array.isArray(validation?.summary) && validation.summary.length > 0) {
+        const summary = Array.isArray(validation?.summary) ? validation.summary : [];
+
+        if (summary.length > 0) {
           setValidationListOpen(true);
           setBookmarksOpen(false);
         }
+
+        void reportSubmitRejection({
+          source: "CLIENT_VALIDATION",
+          reason_code: summary[0]?.kind || "validation",
+          reason_message: summary[0]?.message || "Formulier is niet volledig ingevuld.",
+          blocking_count: summary.length,
+          page_name: summary[0]?.pageTitle || null,
+          details: summary.map((entry) => ({
+            question_name: entry.questionName,
+            page_name: entry.pageTitle,
+            message: entry.message,
+          })),
+        });
+
         return;
       }
 
@@ -2017,10 +2359,25 @@ export default function FormRunnerBase({ mode }) {
       });
 
       if (preview?.can_submit === false) {
+        const blocking = Array.isArray(preview?.blocking) ? preview.blocking : [];
+
         setError(
           preview?.message ||
             "Indienen is nog niet mogelijk. Controleer het formulier en probeer opnieuw."
         );
+
+        void reportSubmitRejection({
+          source: "SERVER_PREVIEW",
+          reason_code: preview?.reason_code || blocking[0]?.code || "preview_blocked",
+          reason_message: preview?.message || blocking[0]?.message || null,
+          blocking_count: blocking.length,
+          details: blocking.map((entry) => ({
+            question_name: entry?.question_name || entry?.field || null,
+            page_name: entry?.page_name || null,
+            message: entry?.message || entry?.label || null,
+          })),
+        });
+
         return;
       }
 
@@ -2041,36 +2398,13 @@ export default function FormRunnerBase({ mode }) {
       const msg = String(e?.message || e || "").toLowerCase();
 
       if (msg.includes("draft_rev") || msg.includes("expected_draft_rev")) {
-        setError("Opslaan conflict. Ik heb de nieuwste versie opgehaald. Probeer opnieuw.");
-        await reload({ forceEditor: true });
+        await recoverFromSaveConflict("Indienen gaf een opslagconflict.");
       } else {
         setError(translateApiError(e, status));
       }
     } finally {
       setBusy(false);
     }
-  }
-
-  function toggleSubmitDialogDocumentFollowUp(documentId, fingerprint) {
-    setSubmitDialog((prev) => {
-      if (!prev) return prev;
-
-      return {
-        ...prev,
-        documents: prev.documents.map((doc) => {
-          if (doc.form_instance_document_id !== documentId) return doc;
-
-          const nextSet = new Set(doc.selectedFingerprints || []);
-          if (nextSet.has(fingerprint)) nextSet.delete(fingerprint);
-          else nextSet.add(fingerprint);
-
-          return {
-            ...doc,
-            selectedFingerprints: Array.from(nextSet),
-          };
-        }),
-      };
-    });
   }
 
   async function confirmSubmitDialog() {
@@ -2094,28 +2428,10 @@ export default function FormRunnerBase({ mode }) {
       const submitRes = await submitCurrentInstance();
       const syncCounts = normalizeSubmitSyncCounts(submitRes);
 
-      const selectedDocs = (submitDialog.documents || []).filter(
-        (doc) => Array.isArray(doc.selectedFingerprints) && doc.selectedFingerprints.length > 0
-      );
-
-      if (!isGeneric && selectedDocs.length > 0) {
-        const followUpsRes = await getFormsMonitorFollowUps(instanceId);
-        const actualFollowUps = normalizeFormsMonitorFollowUps(followUpsRes);
-
-        for (const doc of selectedDocs) {
-          const payload = buildDocumentFollowUpPayloadFromFingerprints(
-            doc.selectedFingerprints,
-            actualFollowUps
-          );
-
-          await putFormInstanceDocumentFollowUps(
-            code,
-            instanceId,
-            doc.form_instance_document_id,
-            payload
-          );
-        }
-      }
+      // Bijlagen worden nu per punt gekoppeld op het moment dat ze worden toegevoegd,
+      // dus hier hoeft na indienen niets meer te worden nagelopen. Dat maakt ook de
+      // vertaling van vingerafdruk naar actie-id overbodig, die brak zodra een vraagnaam
+      // veranderde.
 
       setSubmitSummary({
         ...submitDialog.previewSummary,
@@ -2170,9 +2486,15 @@ export default function FormRunnerBase({ mode }) {
     } catch (e) {
       const msg = String(e?.message || e || "").toLowerCase();
 
+      void reportSubmitRejection({
+        source: "SERVER_SUBMIT",
+        reason_code: e?.status ? `http_${e.status}` : "submit_failed",
+        reason_message: String(e?.message || e || "").slice(0, 2000),
+        blocking_count: 1,
+      });
+
       if (msg.includes("draft_rev") || msg.includes("expected_draft_rev")) {
-        setError("Opslaan conflict. Ik heb de nieuwste versie opgehaald. Probeer opnieuw.");
-        await reload({ forceEditor: true });
+        await recoverFromSaveConflict("Indienen gaf een opslagconflict.");
       } else {
         setError(translateApiError(e, status));
       }
@@ -2245,7 +2567,6 @@ export default function FormRunnerBase({ mode }) {
   const model = !isDebug ? surveyModelRef.current : null;
   const useEmberRuntime = !isDebug && shouldUseEmberOwnedRuntime(instance, surveyParsed);
   const canRenderRuntimeWhileLoading = !isDebug && runtimeReady && Boolean(model);
-
 
   if (loading && !canRenderRuntimeWhileLoading) return <div className="muted">Laden...</div>;
 
@@ -2371,7 +2692,7 @@ export default function FormRunnerBase({ mode }) {
               type="button"
               className="icon-btn"
               title="Terug"
-              onClick={() => navigate(-1)}
+              onClick={handleNavigateBack}
               onMouseEnter={() => backIconRef.current?.startAnimation?.()}
               onMouseLeave={() => backIconRef.current?.stopAnimation?.()}
             >
@@ -2922,6 +3243,7 @@ export default function FormRunnerBase({ mode }) {
           currentPageIndex={currentPageIndex}
           validationSummary={validationSummary}
           hasValidatedOnce={hasValidatedOnce}
+          checkedPages={checkedPages}
           bookmarksOpen={bookmarksOpen}
           validationOpen={validationListOpen}
           onToggleBookmarks={(next) => {
@@ -2959,38 +3281,143 @@ export default function FormRunnerBase({ mode }) {
               Formulierruntime wordt opgebouwd...
             </div>
           ) : (
-            <div
-              className={`form-runner-survey-shell ${
-                hasValidatedOnce ? "form-runner-survey-shell--validated" : ""
-              }`}
-              style={{
-                opacity: canEditAnswers ? 1 : 0.82,
-                color: "var(--text)",
-              }}
-            >
-              {useEmberRuntime ? (
-                <EmberRuntimeSurvey
-                  key={surveyRenderKey}
-                  model={model}
-                  activePageIndex={currentPageIndex}
-                  installationCode={code}
-                  canEdit={canEditAnswers}
-                  hasValidatedOnce={hasValidatedOnce}
-                  validationSummary={validationSummary}
-                  guidanceByQuestion={instance?.guidance_by_question || null}
-                  guidanceByMatrixRow={instance?.guidance_by_matrix_row || null}
-                  onOpenGuidance={setGuidanceDialog}
-                />
-              ) : (
-                <Survey key={surveyRenderKey} model={model} />
-              )}
-            </div>
+            <>
+              {draftNotice ? (
+                <div className="ember-draft-notice" role="status">
+                  <span>{draftNotice}</span>
+                  <button
+                    type="button"
+                    className="ember-draft-notice__dismiss"
+                    onClick={() => setDraftNotice("")}
+                  >
+                    Sluiten
+                  </button>
+                </div>
+              ) : null}
+
+              {resumedConcept && resumedNoticeOpen ? (
+                <div className="ember-draft-notice" role="status">
+                  <span>
+                    Je gaat verder met een bestaand concept
+                    {resumedConcept.createdAt
+                      ? ` van ${new Date(resumedConcept.createdAt).toLocaleDateString("nl-NL")}`
+                      : ""}
+                    {resumedConcept.createdBy ? ` van ${resumedConcept.createdBy}` : ""}. Hoort dit
+                    bezoek daar niet bij, begin dan een nieuw formulier.
+                  </span>
+                  <div className="ember-draft-notice__actions">
+                    <button
+                      type="button"
+                      className="ember-draft-notice__dismiss"
+                      disabled={startingNew}
+                      onClick={async () => {
+                        const formCode = String(resumedConcept.formCode || "").trim();
+                        if (!formCode || !code) return;
+
+                        setStartingNew(true);
+                        try {
+                          const res = await startFormInstance(code, formCode, { startNew: true });
+                          const nieuweId =
+                            res?.item?.form_instance_id || res?.form_instance_id || null;
+
+                          if (nieuweId) {
+                            navigate(
+                              `/installaties/${encodeURIComponent(code)}/formulieren/${encodeURIComponent(nieuweId)}`,
+                              { replace: true }
+                            );
+                          }
+                        } finally {
+                          setStartingNew(false);
+                        }
+                      }}
+                    >
+                      {startingNew ? "Bezig..." : "Nieuw formulier starten"}
+                    </button>
+                    <button
+                      type="button"
+                      className="ember-draft-notice__dismiss"
+                      onClick={() => setResumedNoticeOpen(false)}
+                    >
+                      Verdergaan
+                    </button>
+                  </div>
+                </div>
+              ) : null}
+
+              <div
+                ref={surveyShellRef}
+                className={`form-runner-survey-shell ${
+                  hasValidatedOnce ? "form-runner-survey-shell--validated" : ""
+                }`}
+                style={{
+                  opacity: canEditAnswers ? 1 : 0.82,
+                  color: "var(--text)",
+                }}
+              >
+                {useEmberRuntime ? (
+                  <EmberRuntimeSurvey
+                    key={surveyRenderKey}
+                    model={model}
+                    activePageIndex={currentPageIndex}
+                    surveyDefinition={surveyParsed?.value || null}
+                    installationCode={code}
+                    canEdit={canEditAnswers}
+                    hasValidatedOnce={hasValidatedOnce}
+                    validationSummary={validationSummary}
+                    guidanceByQuestion={instance?.guidance_by_question || null}
+                    guidanceByMatrixRow={instance?.guidance_by_matrix_row || null}
+                    onOpenGuidance={setGuidanceDialog}
+                  />
+                ) : (
+                  <Survey key={surveyRenderKey} model={model} />
+                )}
+              </div>
+
+              <FormPageStepper
+                pages={Array.isArray(model?.visiblePages) ? model.visiblePages : []}
+                currentPageIndex={currentPageIndex}
+                onGoToPage={goToPageIndex}
+                onSubmit={submit}
+                onSave={save}
+                canSubmit={showSubmit && canEditAnswers}
+                canSave={canEditAnswers}
+                saveBusy={busy}
+              />
+            </>
           )}
         </div>
       )}
 
       {!isDebug && (
         <>
+          {!isGeneric && !contextPanelOpen && !assistantPanelOpen && !pointsOpen && (
+            <div className="form-runner-floating-actions form-runner-floating-actions--points">
+              <button
+                type="button"
+                className="icon-btn form-runner-floating-btn ember-points-btn"
+                title="Opvolgacties van dit formulier"
+                onClick={() => {
+                  setPointsOpen(true);
+                  setPointsDelta(null);
+                  loadFollowUpPoints();
+                }}
+              >
+                <ClipboardCheckIcon size={20} />
+                <span className="ember-points-btn__count">{countOpenPoints(points)}</span>
+                {pointsDelta ? (
+                  <span
+                    key={pointsDelta.key}
+                    className={`ember-points-btn__delta ${
+                      pointsDelta.delta > 0 ? "ember-points-btn__delta--up" : "ember-points-btn__delta--down"
+                    }`}
+                  >
+                    {pointsDelta.delta > 0 ? `+${pointsDelta.delta}` : pointsDelta.delta}
+                  </span>
+                ) : null}
+              </button>
+            </div>
+          )}
+
           {!isGeneric && canEditAnswers && !contextPanelOpen && !assistantPanelOpen && (
             <>
               <div className="form-runner-floating-actions form-runner-floating-actions--middle">
@@ -3339,6 +3766,21 @@ export default function FormRunnerBase({ mode }) {
         </>
       )}
 
+      <FollowUpPointsSheet
+        open={pointsOpen}
+        onClose={() => setPointsOpen(false)}
+        points={points}
+        loading={pointsLoading}
+        error={pointsError}
+        onRefresh={loadFollowUpPoints}
+        installationCode={code}
+        canAdd={canEditAnswers && !isDebug}
+        onAddPoint={handleAddPoint}
+        canSetLocation={!isGeneric && Boolean(code)}
+        onSetLocation={handleSetPointLocation}
+        onAttachFile={handleAttachFileToPoint}
+      />
+
       {submitDialog ? (
         <>
           <button
@@ -3351,6 +3793,7 @@ export default function FormRunnerBase({ mode }) {
           />
 
           <div
+            ref={submitDialogRef}
             className="card form-guidance-modal"
             role="dialog"
             aria-modal="true"
@@ -3402,124 +3845,31 @@ export default function FormRunnerBase({ mode }) {
                 </span>
               </div>
 
-              {submitDialog.followUpItems.length > 0 ? (
-                <div className="card" style={{ padding: 12, display: "grid", gap: 10 }}>
-                  <div style={{ fontWeight: 800, fontSize: 14 }}>Opvolgacties</div>
-                  <div style={{ display: "grid", gap: 8 }}>
-                    {submitDialog.followUpItems.map((item) => (
-                      <div
-                        key={item.id}
-                        style={themedSoftBox({
-                          padding: "10px 12px",
-                          display: "grid",
-                          gap: 4,
-                        })}
-                      >
-                        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-                          <strong>{item.title || "Actiepunt"}</strong>
-                          {item.kind ? (
-                            <span className="muted" style={themedChip({ fontSize: 12 })}>
-                              {formatFollowUpKindLabel(item.kind)}
-                            </span>
-                          ) : null}
-                        </div>
-
-                        {item.description ? (
-                          <div className="muted" style={{ fontSize: 12 }}>
-                            {item.description}
-                          </div>
-                        ) : null}
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              ) : (
-                <div className="card" style={{ padding: 12, display: "grid", gap: 6 }}>
-                  <div style={{ fontWeight: 800, fontSize: 14 }}>Geen opvolgacties gevonden</div>
-                  <div className="muted" style={{ fontSize: 13 }}>
-                    Dit formulier levert op dit moment geen opvolgacties of rapportopmerkingen op.
-                  </div>
-                </div>
-              )}
-
-              <div className="card" style={{ padding: 12, display: "grid", gap: 12 }}>
-                <div style={{ fontWeight: 800, fontSize: 14 }}>Koppel bestanden aan de opvolgacties</div>
+              {/* Dezelfde sheet als tijdens het invullen. De oude opzet was
+                  bijlage-centrisch, met per bestand een vinkje voor elke actie; dat is
+                  omgedraaid naar punt-centrisch, waarbij locatie en bewijs eigenschappen
+                  van het punt zijn. De punten bestaan hier al echt, dus de vertaling van
+                  vingerafdruk naar id is niet meer nodig. */}
+              <div className="card ember-points-inline">
+                <div style={{ fontWeight: 800, fontSize: 14 }}>Opvolgacties</div>
                 <div className="muted" style={{ fontSize: 13 }}>
-                  Per formulierbijlage kun je aangeven of deze bij een opvolgactie hoort. Geen selectie betekent; niet koppelen.
+                  Vul aan waar het punt zit en voeg bewijs toe. Dat kan later ook nog.
                 </div>
 
-                {submitDialog.documents.length === 0 ? (
-                  <div className="muted" style={{ fontSize: 13 }}>
-                    Er zijn nog geen formulierbijlagen toegevoegd.
-                  </div>
-                ) : submitDialog.followUpItems.length === 0 ? (
-                  <div className="muted" style={{ fontSize: 13 }}>
-                    Er zijn wel formulierbijlagen aanwezig, maar er zijn geen opvolgacties om aan te koppelen.
-                  </div>
-                ) : (
-                  <div style={{ display: "grid", gap: 10 }}>
-                    {submitDialog.documents.map((doc) => (
-                      <div key={doc.form_instance_document_id} className="card" style={{ padding: 12, display: "grid", gap: 10 }}>
-                        <div style={{ display: "grid", gap: 4 }}>
-                          <div style={{ fontWeight: 800 }}>
-                            {doc.title || doc.file_name || "Bijlage"}
-                          </div>
-                          <div className="muted" style={{ fontSize: 12 }}>
-                            {[doc.file_name || null, formatBytes(doc.file_size_bytes) || null].filter(Boolean).join(" ; ")}
-                          </div>
-                          {doc.labels?.length ? (
-                            <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-                              {doc.labels.map((item, idx) => (
-                                <span key={`${item.label_key || idx}`} style={themedChip({ fontSize: 12 })}>
-                                  {item.display_name || item.label || item.label_key}
-                                </span>
-                              ))}
-                            </div>
-                          ) : null}
-                        </div>
-
-                        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                          {submitDialog.followUpItems.map((item) => {
-                            const active = doc.selectedFingerprints.includes(item.fingerprint);
-
-                            return (
-                              <button
-                                key={`${doc.form_instance_document_id}-${item.fingerprint}`}
-                                type="button"
-                                className="btn btn-secondary"
-                                aria-pressed={active}
-                                onClick={() =>
-                                  toggleSubmitDialogDocumentFollowUp(
-                                    doc.form_instance_document_id,
-                                    item.fingerprint
-                                  )
-                                }
-                                style={{
-                                  fontSize: 12,
-                                  textAlign: "left",
-                                  display: "inline-flex",
-                                  alignItems: "center",
-                                  gap: 6,
-                                  ...(active
-                                    ? {
-                                        background: "var(--success-bg)",
-                                        border: "1px solid var(--success-border)",
-                                        color: "var(--success-text)",
-                                        fontWeight: 800,
-                                      }
-                                    : {}),
-                                }}
-                              >
-                                {active ? <CheckIcon size={14} className="nav-anim-icon" /> : null}
-                                {buildSubmitDialogFollowUpLabel(item)}
-                              </button>
-                            );
-                          })}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
+                <FollowUpPointsSheet
+                  open
+                  variant="inline"
+                  points={points}
+                  loading={pointsLoading}
+                  error={pointsError}
+                  onRefresh={loadFollowUpPoints}
+                  installationCode={code}
+                  canAdd={canEditAnswers && !isDebug}
+                  onAddPoint={handleAddPoint}
+                  canSetLocation={!isGeneric && Boolean(code)}
+                  onSetLocation={handleSetPointLocation}
+                  onAttachFile={handleAttachFileToPoint}
+                />
               </div>
             </div>
           </div>
@@ -3535,7 +3885,13 @@ export default function FormRunnerBase({ mode }) {
             onClick={() => setGuidanceDialog(null)}
           />
 
-          <div className="card form-guidance-modal" role="dialog" aria-modal="true" aria-label="Toelichting bij vraag">
+          <div
+            ref={guidanceDialogRef}
+            className="card form-guidance-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Toelichting bij vraag"
+          >
             <div className="form-guidance-modal__head">
               <div style={{ display: "flex", gap: 10, alignItems: "flex-start", minWidth: 0 }}>
                 <CircleHelpIcon size={18} />

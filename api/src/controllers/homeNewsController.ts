@@ -6,7 +6,7 @@ export async function getHomeNews(req: Request, res: Response) {
   try {
     const items = await fetchHomeNews();
     res.json({ items });
-  } catch (err) {
+  } catch {
     console.warn("[home-news] returning empty result due to error");
     res.json({ items: [] });
   }
@@ -29,7 +29,7 @@ export async function getHomeNewsImage(req: Request, res: Response) {
     res.setHeader("Content-Type", result.contentType || "image/jpeg");
     res.setHeader("Cache-Control", "private, max-age=900");
     res.send(result.buffer);
-  } catch (err) {
+  } catch {
     console.warn("[home-news-image] failed");
     res.status(404).end();
   }

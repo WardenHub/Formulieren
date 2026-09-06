@@ -11,7 +11,9 @@ import {
   postFormsMonitorFollowUpStatusAction,
   postFormsMonitorManualFollowUp,
   putFormsMonitorFollowUpNote,
+  getFormsMonitorFollowUpAttachmentUrl,
   putFormsMonitorFollowUpCertificateImpact,
+  putFormsMonitorFollowUpClassification,
   downloadFormsMonitorPdf,
   postFormsMonitorPdfJob,
   getFormsMonitorPdfJob,
@@ -40,7 +42,17 @@ router.put("/:formInstanceId/compliment-point", requireRole("admin", "documentbe
 router.post("/:formInstanceId/follow-ups", requireRole("admin", "documentbeheerder"), postFormsMonitorManualFollowUp);
 router.post("/follow-ups/:followUpActionId/status-action", requireRole("admin", "documentbeheerder", "kam_coordinator"), postFormsMonitorFollowUpStatusAction);
 router.put("/follow-ups/:followUpActionId/note", requireRole("admin", "documentbeheerder"), putFormsMonitorFollowUpNote);
+router.get(
+  "/follow-ups/:followUpActionId/attachments/:storedFileId/download-url",
+  requireRole("admin", "gebruiker", "documentbeheerder", "kam_coordinator"),
+  getFormsMonitorFollowUpAttachmentUrl
+);
 router.put("/follow-ups/:followUpActionId/certificate-impact", requireRole("admin", "documentbeheerder"), putFormsMonitorFollowUpCertificateImpact);
+router.put(
+  "/follow-ups/:followUpActionId/classification",
+  requireRole("admin", "documentbeheerder"),
+  putFormsMonitorFollowUpClassification
+);
 
 
 export default router;

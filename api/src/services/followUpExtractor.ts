@@ -24,6 +24,13 @@ export type FollowUpCandidate = {
   category: string | null;
 
   certificateImpact: "yes" | "no" | null;
+
+  // Classificatie uit de definitie, niet van de invuller. Een punt dat uit een formulier
+  // komt stond altijd op NORMAL, INTERN en zonder deadline; daarmee ziet de hele
+  // werkvoorraad even dringend uit en ligt elke bevinding impliciet bij ons.
+  priority: "LOW" | "NORMAL" | "HIGH" | "CRITICAL" | null;
+  responsibilityType: "INTERN" | "KLANT" | "DERDE" | "ONBEPAALD" | null;
+  dueInDays: number | null;
 };
 
 type ExtractInput = {
@@ -153,6 +160,9 @@ function extractFromMatrixQuestion(args: {
       workflowDescription,
       category: normalizeNullableString(args.followUp.category),
       certificateImpact,
+      priority: resolvePriority(args.followUp),
+      responsibilityType: resolveResponsibility(args.followUp),
+      dueInDays: resolveDueInDays(args.followUp),
     });
   });
 }
@@ -207,6 +217,9 @@ function extractFromSingleQuestion(args: {
     workflowDescription,
     category: normalizeNullableString(args.followUp.category),
     certificateImpact,
+    priority: resolvePriority(args.followUp),
+    responsibilityType: resolveResponsibility(args.followUp),
+    dueInDays: resolveDueInDays(args.followUp),
   });
 }
 
@@ -237,6 +250,39 @@ function shouldCreateFollowUp(followUp: any, data: any) {
   const actual = data?.[field];
 
   return valuesEqualLoose(actual, expected);
+}
+
+const PRIORITIES = new Set(["LOW", "NORMAL", "HIGH", "CRITICAL"]);
+const RESPONSIBILITIES = new Set(["INTERN", "KLANT", "DERDE", "ONBEPAALD"]);
+
+// Een onbekende waarde levert null op in plaats van een gok; dan valt de tabeldefault in en
+// wordt de fout bij het publiceren gemeld in plaats van hier stil rechtgezet.
+function resolvePriority(followUp: any): FollowUpCandidate["priority"] {
+  const value = String(followUp?.priority ?? "").trim().toUpperCase();
+  return PRIORITIES.has(value) ? (value as FollowUpCandidate["priority"]) : null;
+}
+
+function resolveResponsibility(followUp: any): FollowUpCandidate["responsibilityType"] {
+  const value = String(followUp?.responsibility ?? "").trim().toUpperCase();
+  return RESPONSIBILITIES.has(value)
+    ? (value as FollowUpCandidate["responsibilityType"])
+    : null;
+}
+
+// Het aantal dagen dat een punt uit deze vraag mag blijven liggen, geteld vanaf het moment
+// dat het ontstaat. De invuller ziet en zet hier niets; dit is een keuze van wie het
+// formulier ontwerpt. Een jaar is de bovengrens; daarboven is een deadline geen deadline.
+function resolveDueInDays(followUp: any): number | null {
+  const raw = followUp?.dueInDays;
+  if (raw === null || raw === undefined || raw === "") return null;
+
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed)) return null;
+
+  const days = Math.trunc(parsed);
+  if (days < 1 || days > 365) return null;
+
+  return days;
 }
 
 function resolveCertificateImpact(

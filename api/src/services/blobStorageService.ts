@@ -336,6 +336,16 @@ export async function downloadFormInstanceDocumentBlob(storageKey: string) {
   return downloadBlob(storageKey);
 }
 
+/* Bijlagen bij een actiepunt liggen in dezelfde container; ze krijgen dezelfde kortlopende
+   verwijzing als formulierdocumenten. */
+export async function createFollowUpAttachmentDownloadUrl(args: {
+  storageKey: string;
+  expiresInSeconds?: number;
+  downloadFileName?: string | null;
+}) {
+  return createDownloadUrl(args);
+}
+
 export async function renameFormInstanceDocumentBlob(args: {
   installationCode: string;
   formInstanceId: string;

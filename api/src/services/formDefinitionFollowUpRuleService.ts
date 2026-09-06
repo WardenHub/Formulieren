@@ -15,7 +15,7 @@ type RuleRow = {
   action_description_template: string | null;
   category: string | null;
   priority: "LOW" | "NORMAL" | "HIGH" | "CRITICAL";
-  responsibility_type: "WARDENBURG" | "CUSTOMER" | "THIRD_PARTY" | "UNSPECIFIED";
+  responsibility_type: "INTERN" | "KLANT" | "DERDE" | "ONBEPAALD";
   assigned_role_code: string | null;
   due_after_days: number | null;
   certificate_impact: "yes" | "no" | null;
@@ -149,7 +149,7 @@ function toPreview(rule: RuleRow, answers: Record<string, any>): DefinitionFollo
     category: rule.category || null,
     certificateImpact: rule.certificate_impact || null,
     priority: rule.priority || "NORMAL",
-    responsibilityType: rule.responsibility_type || "WARDENBURG",
+    responsibilityType: rule.responsibility_type || "INTERN",
     assignedRoleCode: rule.assigned_role_code || null,
     dueAfterDays: rule.due_after_days == null ? null : Number(rule.due_after_days),
     customerVisible: rule.visibility === "CUSTOMER_VISIBLE",

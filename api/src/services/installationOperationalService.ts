@@ -6,6 +6,9 @@ export type InstallationOperationalFilters = {
   take?: number;
   onlyCurrent?: boolean;
   installationType?: string | null;
+  installationTypes?: string | string[] | null;
+  businessUnits?: string | string[] | null;
+  fields?: string | null;
   coordinateMode?: "ALL" | "WITH" | "WITHOUT";
   followUpMode?: "ALL" | "OPEN" | "NONE" | "OVERDUE";
   openFormsOnly?: boolean;
@@ -74,9 +77,43 @@ function normalizeRow(row: any) {
   };
 }
 
+/* Meerdere installatiesoorten in één keer. Het scherm kon er maar één meegeven en haalde
+   daarom bij twee of meer soorten alles op om zelf te filteren; dat was 25000 rijen en
+   tientallen megabytes voor een lijst die vijfhonderd regels toont. */
+function normalizeInstallationTypes(filters: InstallationOperationalFilters) {
+  const raw = filters.installationTypes ?? filters.installationType ?? "";
+  const list = Array.isArray(raw) ? raw : String(raw).split(",");
+
+  const types = Array.from(
+    new Set(
+      list
+        .map((value) => String(value || "").trim().toUpperCase())
+        .filter(Boolean)
+    )
+  );
+
+  return types.slice(0, 50);
+}
+
+/* Wardenburg en Hefas zijn twee bedrijfsonderdelen in dezelfde database. Hefas leest nu nul
+   rijen en gaat naar verwachting rond maart 2027 live; het filter is er daarom nu al, zodat
+   er straks niets aan de keten hoeft te veranderen. Meerdere onderdelen tegelijk kunnen, net
+   als bij installatiesoorten. */
+function normalizeBusinessUnits(filters: InstallationOperationalFilters) {
+  const raw = filters.businessUnits ?? "";
+  const list = Array.isArray(raw) ? raw : String(raw).split(",");
+
+  const units = Array.from(
+    new Set(list.map((value) => String(value || "").trim()).filter(Boolean))
+  );
+
+  return units.slice(0, 20);
+}
+
 function queryParams(filters: InstallationOperationalFilters, installationCode: string | null) {
   const q = String(filters.q ?? "").trim();
-  const installationType = String(filters.installationType ?? "").trim();
+  const installationTypes = normalizeInstallationTypes(filters);
+  const installationType = installationTypes.length === 1 ? installationTypes[0] : "";
   const configuredHorizon = Number(process.env.CERTIFICATE_EXPIRING_HORIZON_DAYS || 90);
 
   return {
@@ -85,6 +122,13 @@ function queryParams(filters: InstallationOperationalFilters, installationCode: 
     qLike: q ? `%${q}%` : null,
     onlyCurrent: boolValue(filters.onlyCurrent, true),
     installationType: installationType || null,
+    // Als er meer dan één soort is gekozen gaat de hele lijst als json mee; de query filtert
+    // er zelf op in plaats van dat het scherm alles ophaalt.
+    installationTypesJson: installationTypes.length > 1 ? JSON.stringify(installationTypes) : null,
+    businessUnitsJson: (() => {
+      const units = normalizeBusinessUnits(filters);
+      return units.length ? JSON.stringify(units) : null;
+    })(),
     coordinateMode: enumValue(filters.coordinateMode, COORDINATE_MODES, "ALL"),
     followUpMode: enumValue(filters.followUpMode, FOLLOW_UP_MODES, "ALL"),
     openFormsOnly: boolValue(filters.openFormsOnly),
@@ -101,7 +145,20 @@ function queryParams(filters: InstallationOperationalFilters, installationCode: 
   };
 }
 
-function groupMapRows(rows: any[]) {
+/* Wat een popup per installatie nodig heeft; code, naam en soort. De volledige rij ging
+   eerder mee, ook nog eens genest per marker. */
+function toMarkerInstallation(row: any) {
+  return {
+    atrium_installation_code: row?.atrium_installation_code ?? null,
+    installation_name: row?.installation_name ?? null,
+    installation_type_key: row?.installation_type_key ?? null,
+    installation_type_name: row?.installation_type_name ?? null,
+    attention_status: row?.attention_status ?? null,
+    open_follow_up_count: row?.open_follow_up_count ?? 0,
+  };
+}
+
+function groupMapRows(rows: any[], slimInstallations = true) {
   const markerGroups = new Map<string, any>();
   const withoutCoordinates: any[] = [];
 
@@ -147,7 +204,7 @@ function groupMapRows(rows: any[]) {
       group.attention_status = "ATTENTION";
       group.attention_reason = item.attention_reason;
     }
-    group.installations.push(item);
+    group.installations.push(slimInstallations ? toMarkerInstallation(item) : item);
   }
 
   return { markers: [...markerGroups.values()], withoutCoordinates };
@@ -162,15 +219,62 @@ export async function getInstallationOperationalSummary(code: string) {
   return { item };
 }
 
+/* Wat een lijstkaart en een marker werkelijk laten zien. Een rij heeft achtenveertig velden
+   en die gingen alle mee; vijfhonderd rijen was daarmee ruim twee megabyte, terwijl het
+   scherm er eenentwintig van gebruikt. Wie de volledige rij nodig heeft vraagt hem op per
+   installatie, en dat doet het detailscherm al. */
+const LIST_FIELDS = [
+  "atrium_installation_code",
+  "installation_id",
+  "installation_name",
+  "installation_status",
+  "installation_type_key",
+  "installation_type_name",
+  "object_gcid",
+  "object_name",
+  "formatted_address",
+  "latitude",
+  "longitude",
+  "has_valid_coordinates",
+  "marker_group_key",
+  "relation_name",
+  "attention_status",
+  "attention_reason",
+  "open_follow_up_count",
+  "overdue_follow_up_count",
+  "open_form_count",
+  "missing_required_document_count",
+  "has_maintenance_service",
+  "maintenance_contract_status",
+  "has_inspection_service",
+  "inspection_service_status",
+  "has_monitoring_service",
+  "monitoring_service_status",
+  "certification_required",
+  "certificate_status",
+];
+
+function toListRow(row: any) {
+  const slim: Record<string, any> = {};
+  for (const field of LIST_FIELDS) slim[field] = row?.[field] ?? null;
+  return slim;
+}
+
 export async function getInstallationMap(filters: InstallationOperationalFilters = {}) {
   const rows = await sqlQuery(getInstallationOperationalRowsSql, queryParams(filters, null));
   const items = (rows || []).map(normalizeRow);
-  const grouped = groupMapRows(items);
+  // fields=full geeft de volledige rij terug voor wie dat nodig heeft; standaard gaat de
+  // uitgeklede vorm mee, want dat is wat de lijst en de kaart tonen.
+  const wantsFullRows = String(filters.fields || "").trim().toLowerCase() === "full";
+  const grouped = groupMapRows(items, !wantsFullRows);
 
   return {
-    items,
+    items: wantsFullRows ? items : items.map(toListRow),
     markers: grouped.markers,
-    without_coordinates: grouped.withoutCoordinates,
+    // Deze rijen worden met dezelfde lijstkaart getoond, dus dezelfde uitgeklede vorm.
+    without_coordinates: wantsFullRows
+      ? grouped.withoutCoordinates
+      : grouped.withoutCoordinates.map(toListRow),
     summary: {
       result_count: items.length,
       marker_count: grouped.markers.length,
@@ -202,7 +306,18 @@ export async function getInstallationMapViewport(filters: InstallationMapViewpor
   // representative-only viewport projection.
   if (q) {
     const result = await getInstallationMap({ ...filters, take: Math.min(750, Math.max(25, Number(filters.take || 750))) });
-    return { markers: result.markers, meta: { query_mode: "search", truncated: result.items.length >= Number(filters.take || 750) } };
+
+    // Bij zoeken hoort er ook een lijst onder de kaart. Die kwam eerder uit de geneste
+    // installaties van de markers, en die dragen alleen wat een popup nodig heeft; de
+    // lijstkaarten misten daardoor hun labels. De lijstrijen gaan nu apart mee.
+    return {
+      markers: result.markers,
+      items: result.items,
+      meta: {
+        query_mode: "search",
+        truncated: result.items.length >= Number(filters.take || 750),
+      },
+    };
   }
 
   const zoom = Math.round(boundedNumber(filters.zoom, 7, 5, 19));
@@ -212,6 +327,14 @@ export async function getInstallationMapViewport(filters: InstallationMapViewpor
         : zoom >= 9 ? 0.03
           : zoom >= 7 ? 0.12
             : 0.35;
+  /* Hoeveel installaties per marker meegaan hangt af van hoe ver je uitgezoomd bent. Op
+     landniveau valt een rastercel met honderden installaties samen in één cirkel; een popup
+     die er vijfentwintig willekeurige van opsomt helpt niemand, en het maakte de eerste
+     kaartweergave megabytes groot. Uitgezoomd sturen we dus geen lijst en zegt de popup
+     alleen hoeveel het zijn; vanaf zoom 15 is een cel één adres en is de lijst precies wat
+     je wil zien. Het werkelijke aantal staat altijd in installation_count. */
+  const maxPerMarker = zoom >= 15 ? 50 : zoom >= 13 ? 25 : zoom >= 11 ? 10 : 0;
+
   const params = queryParams({
     ...filters,
     take: Math.min(750, Math.max(25, Number(filters.take || 750))),
@@ -226,6 +349,7 @@ export async function getInstallationMapViewport(filters: InstallationMapViewpor
     west: boundedNumber(filters.west, 3.1, -180, 180),
     zoom,
     cellSize,
+    maxPerMarker,
   });
 
   return {
@@ -246,6 +370,7 @@ export async function getInstallationMapViewport(filters: InstallationMapViewpor
     meta: {
       zoom,
       cell_size: cellSize,
+      max_per_marker: maxPerMarker,
       query_ms: Date.now() - startedAt,
       truncated: Number(rows?.length || 0) >= Number(params.take),
     },

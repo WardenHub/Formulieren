@@ -18,6 +18,8 @@ import {
   postInstallationFollowUp,
   getInstallationFollowUpCatalog,
   putInstallationFollowUpStatus,
+  putInstallationFollowUp,
+  getInstallationFollowUpAttachmentDownloadUrl,
   putInstallationType,
   postInstallationNote,
   putInstallationNote,
@@ -73,6 +75,8 @@ import {
   getFormInstance,
   postFormInstanceOfflinePackage,
   withdrawFormInstance,
+  addFormInstancePoint,
+  recordFormInstanceSubmitRejection,
   submitFormInstance,
   putFormAnswers,
   putFormInstanceMetadata,
@@ -172,10 +176,10 @@ router.get("/:code/forms/overview", requireRole("admin", "gebruiker"), getInstal
 router.get("/:code/forms/:formCode/preflight", requireRole("admin", "gebruiker"), getFormStartPreflight);
 
 // basis installatie data
-router.get("/:code", getInstallation);
+router.get("/:code", requireRole("admin", "gebruiker"), getInstallation);
 router.get("/:code/operational-summary", requireRole("admin", "gebruiker"), getInstallationOperationalSummary);
-router.get("/:code/catalog", getCatalog);
-router.get("/:code/custom-values", getCustomValues);
+router.get("/:code/catalog", requireRole("admin", "gebruiker"), getCatalog);
+router.get("/:code/custom-values", requireRole("admin", "gebruiker"), getCustomValues);
 router.get("/:code/components", requireRole("admin", "gebruiker"), getInstallationComponents);
 router.get("/:code/notes", requireRole(...documentRoles), getInstallationNotes);
 router.post("/:code/notes", requireRole(...documentRoles), postInstallationNote);
@@ -195,6 +199,12 @@ router.get("/:code/workflow-items", requireRole(...documentRoles), getInstallati
 router.get("/:code/follow-ups/catalog", requireRole(...documentRoles), getInstallationFollowUpCatalog);
 router.post("/:code/follow-ups", requireRole(...documentRoles), postInstallationFollowUp);
 router.put("/:code/follow-ups/:followUpActionId/status", requireRole(...documentRoles), putInstallationFollowUpStatus);
+router.put("/:code/follow-ups/:followUpActionId", requireRole(...documentRoles), putInstallationFollowUp);
+router.get(
+  "/:code/follow-ups/:followUpActionId/attachments/:storedFileId/download-url",
+  requireRole(...documentRoles),
+  getInstallationFollowUpAttachmentDownloadUrl
+);
 router.put("/:code/custom-values", requireRole("admin", "gebruiker"), putCustomValues);
 
 router.get("/:code/documents", requireRole(...documentRoles), getDocuments);
@@ -319,6 +329,12 @@ router.post(
 );
 router.put("/:code/forms/instances/:instanceId/metadata", requireRole("admin", "gebruiker"), putFormInstanceMetadata);
 router.put("/:code/forms/instances/:instanceId/answers", requireRole("admin", "gebruiker"), putFormAnswers);
+router.post("/:code/forms/instances/:instanceId/points", requireRole("admin", "gebruiker"), addFormInstancePoint);
+router.post(
+  "/:code/forms/instances/:instanceId/submit-rejections",
+  requireRole("admin", "gebruiker"),
+  recordFormInstanceSubmitRejection
+);
 router.post("/:code/forms/instances/:instanceId/submit-preview", requireRole("admin", "gebruiker"), previewSubmitFormInstance);
 router.post("/:code/forms/instances/:instanceId/submit", requireRole("admin", "gebruiker"), submitFormInstance);
 router.post("/:code/forms/instances/:instanceId/withdraw", requireRole("admin", "gebruiker"), withdrawFormInstance);

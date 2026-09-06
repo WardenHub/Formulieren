@@ -2,7 +2,7 @@
 
 import { Link } from "react-router-dom";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { httpJson } from "../api/http";
+import { fetchProtectedObjectUrl, httpJson } from "../api/http";
 import { getHomeNews } from "../api/emberApi.js";
 import { getRecentHomeItems } from "../lib/recentHomeItems.js";
 
@@ -13,7 +13,8 @@ import { ArrowBigRightIcon } from "@/components/ui/arrow-big-right";
 import { FileCheckIcon } from "@/components/ui/file-check";
 import { IdCardIcon } from "@/components/ui/id-card";
 import { BookTextIcon } from "@/components/ui/book-text";
-import ApiStartupLoader, { useApiStartupLoader } from "@/components/ApiStartupLoader.jsx";
+import ApiStartupLoader from "@/components/ApiStartupLoader.jsx";
+import { useApiStartupLoader } from "@/components/apiStartupLoaderState.js";
 
 function formatDate(value) {
   if (!value) return "";
@@ -42,15 +43,36 @@ function scheduleAfterFirstPaint(fn) {
   return () => window.clearTimeout(id);
 }
 
-function newsImageSrc(rawUrl) {
-  if (!rawUrl) return "";
+// De afbeeldingsroute zit achter de authenticatie, en een img-src stuurt geen token mee.
+// Daarom halen we de bytes zelf op en tonen we ze als blob; hetzelfde patroon als de
+// avatars en de formulierbijlagen.
+function NewsThumb({ imageUrl }) {
+  const [objectUrl, setObjectUrl] = useState(null);
 
-  const base = String(import.meta.env.VITE_API_BASE || "").trim().replace(/\/+$/, "");
-  if (!base) {
-    return `/home/news/image?url=${encodeURIComponent(rawUrl)}`;
-  }
+  useEffect(() => {
+    if (!imageUrl) return undefined;
 
-  return `${base}/home/news/image?url=${encodeURIComponent(rawUrl)}`;
+    let alive = true;
+    let created = null;
+
+    fetchProtectedObjectUrl(`/home/news/image?url=${encodeURIComponent(imageUrl)}`)
+      .then((url) => {
+        created = url;
+        if (alive) setObjectUrl(url);
+        else URL.revokeObjectURL(url);
+      })
+      .catch(() => undefined);
+
+    return () => {
+      alive = false;
+      if (created) URL.revokeObjectURL(created);
+      setObjectUrl(null);
+    };
+  }, [imageUrl]);
+
+  if (!objectUrl) return <div className="home-news-thumb-fallback" />;
+
+  return <img src={objectUrl} alt="" className="home-news-thumb" />;
 }
 
 function AnimatedHomeCard(props) {
@@ -327,11 +349,7 @@ export default function Home() {
                   <div className="home-news-item-row">
                     <div className="home-news-thumb-wrap">
                       {item.image_url ? (
-                        <img
-                          src={newsImageSrc(item.image_url)}
-                          alt=""
-                          className="home-news-thumb"
-                        />
+                        <NewsThumb imageUrl={item.image_url} />
                       ) : (
                         <div className="home-news-thumb-fallback" />
                       )}

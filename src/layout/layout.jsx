@@ -18,6 +18,7 @@ import { LaughIcon } from "@/components/ui/laugh";
 import { GavelIcon } from "@/components/ui/gavel";
 import { CircleHelpIcon } from "@/components/ui/circle-help";
 import { buildInitials, resolveProfileAvatarPath } from "../lib/avatar.js";
+import { publishProfileAvatar } from "../lib/profileAvatarStore.js";
 import NotificationCenter from "../components/NotificationCenter.jsx";
 import { ClipboardCheck } from "lucide-react";
 
@@ -266,12 +267,15 @@ export default function Layout() {
     };
   }, [avatarRefreshKey]);
 
+  // De topbar is de enige plek die de profielfoto ophaalt; andere schermen lezen mee via de
+  // store. De initialen gaan mee zodat een scherm zonder foto iets herkenbaars kan tonen in
+  // plaats van een anonieme stip.
   useEffect(() => {
-    window.__emberProfileAvatarObjectUrl = avatarObjectUrl || null;
-    window.dispatchEvent(new CustomEvent("ember:profile-avatar-ready", {
-      detail: { objectUrl: avatarObjectUrl || null },
-    }));
-  }, [avatarObjectUrl]);
+    publishProfileAvatar({
+      src: avatarObjectUrl || null,
+      initials: initialsFromProfilePayload(profileData, meData) || null,
+    });
+  }, [avatarObjectUrl, profileData, meData]);
 
   useEffect(() => {
     return () => {
@@ -431,13 +435,27 @@ export default function Layout() {
             </AnimatedNavButton>
           )}
 
-          <AnimatedNavButton to="/inspecties" Icon={ClipboardCheck}>
-            Inspecties
-          </AnimatedNavButton>
+          {/* Dit menu-item stond voor iedereen open, ook voor iemand zonder enige rol; die
+              kwam dan op een pagina die alleen 403's oplevert. */}
+          {roles.some((role) =>
+            [
+              "admin",
+              "documentbeheerder",
+              "gebruiker",
+              "kam_coordinator",
+              "certificering_coordinator",
+            ].includes(role)
+          ) && (
+            <AnimatedNavButton to="/inspecties" Icon={ClipboardCheck}>
+              Inspecties
+            </AnimatedNavButton>
+          )}
 
-          <AnimatedNavButton to="/smoelenboek" Icon={IdCardIcon}>
-            Smoelenboek
-          </AnimatedNavButton>
+          {roles.length > 0 && (
+            <AnimatedNavButton to="/smoelenboek" Icon={IdCardIcon}>
+              Smoelenboek
+            </AnimatedNavButton>
+          )}
 
           {(roles.includes("admin") || roles.includes("uitlegbeheerder")) && (
             <AnimatedNavButton to="/uitlegbeheer" Icon={BookTextIcon}>

@@ -1,6 +1,6 @@
 {
   "fixture_version": 1,
-  "exported_at": "2026-08-21",
+  "exported_at": "2026-09-05",
   "source": {
     "server": "ember-sql.database.windows.net",
     "database": "ember-sql-db",
@@ -17,10 +17,10 @@
     "sort_order": 0
   },
   "version": {
-    "version": 1,
-    "version_label": "1.0",
-    "published_at": "2026-06-12T12:56:51.608000",
-    "published_by": "Jesse Local",
+    "version": 3,
+    "version_label": "3.0",
+    "published_at": "2026-09-05T17:12:42.733000",
+    "published_by": "ember-database helper; formulierronde consistency en hele_dag",
     "survey_json": {
       "title": "Onderhoudsrapport Brandmeldinstallaties",
       "checkErrorsMode": "onComplete",
@@ -62,7 +62,45 @@
               "Indien alle onderdelen uit D.2.2.1 ‘Bevindingen deel A’ en D.2.2.2 ‘Bevindingen deel B’ van het rapport van onderhoud met ‘Ja’ zijn beoordeeld, mag door het onderhoudsbedrijf tevens een verklaring worden verstrekt dat de brandmeldinstallatie zich in nominale staat bevindt. Indien onderdelen uit D.2.2.2 ‘Bevindingen deel B’ van het rapport met ‘Nee’ zijn beoordeeld, moeten deze eerst worden hersteld. De beheerder/gebruiker is ervoor verantwoordelijk dat deze correcties aan de brandmeldinstallatie worden uitgevoerd. Na correctie mag door het onderhoudsbedrijf een verklaring worden verstrekt dat de brandmeldinstallatie zich in nominale staat bevindt."
             ]
           }
-        }
+        },
+        "calculations": [
+          {
+            "id": "energy-supply-capacity",
+            "watch": [
+              "es_regels",
+              "es_verouderingsfactor"
+            ]
+          },
+          {
+            "id": "system-availability",
+            "watch": [
+              "a2_buitenbedrijfstellingen",
+              "performance_data_view",
+              "a2_systeembeschikbaarheid_pve"
+            ]
+          }
+        ],
+        "consistency": [
+          {
+            "id": "a2-systeembeschikbaarheid",
+            "compare": {
+              "field": "a2_systeembeschikbaarheid_geconstateerd",
+              "operator": "lt",
+              "otherField": "a2_systeembeschikbaarheid_pve"
+            },
+            "highlight": [
+              "a2_systeembeschikbaarheid_geconstateerd"
+            ],
+            "require": {
+              "matrix": "a_beheer_items",
+              "matchColumn": "item_code",
+              "matchValue": "A2",
+              "column": "voldoet",
+              "equals": "Nee"
+            },
+            "message": "De geconstateerde systeembeschikbaarheid is lager dan de eis volgens PvE; A2 moet daarom op Nee staan."
+          }
+        ]
       },
       "pages": [
         {
@@ -591,7 +629,10 @@
                           "cellType": "text",
                           "readOnly": true
                         }
-                      ]
+                      ],
+                      "ember": {
+                        "layout": "default"
+                      }
                     }
                   ]
                 }
@@ -707,7 +748,8 @@
                         "mode": "fixed",
                         "value": "yes"
                       }
-                    }
+                    },
+                    "layout": "assessment"
                   }
                 }
               ]
@@ -823,7 +865,8 @@
                         "mode": "fixed",
                         "value": "yes"
                       }
-                    }
+                    },
+                    "layout": "assessment"
                   }
                 }
               ]
@@ -951,7 +994,8 @@
                         "mode": "fixed",
                         "value": "yes"
                       }
-                    }
+                    },
+                    "layout": "assessment"
                   }
                 }
               ]
@@ -1091,7 +1135,8 @@
                         "mode": "fixed",
                         "value": "yes"
                       }
-                    }
+                    },
+                    "layout": "assessment"
                   }
                 },
                 {
@@ -1240,7 +1285,8 @@
                   "kind": "prefill",
                   "key": "performance_data",
                   "mode": "always-overwrite"
-                }
+                },
+                "layout": "performance-readonly"
               }
             },
             {
@@ -1387,7 +1433,8 @@
                         "mode": "fixed",
                         "value": "yes"
                       }
-                    }
+                    },
+                    "layout": "assessment"
                   }
                 }
               ]
@@ -1434,6 +1481,13 @@
                       "width": "11%"
                     },
                     {
+                      "name": "hele_dag",
+                      "title": "Hele dag",
+                      "cellType": "boolean",
+                      "defaultValue": false,
+                      "width": "8%"
+                    },
+                    {
                       "name": "tijdsduur_dagen",
                       "title": "Tijdsduur (dagen)",
                       "cellType": "text",
@@ -1469,7 +1523,10 @@
                       "rows": 2,
                       "width": "22%"
                     }
-                  ]
+                  ],
+                  "ember": {
+                    "layout": "availability-periods"
+                  }
                 },
                 {
                   "type": "html",
@@ -1628,7 +1685,8 @@
                         "mode": "fixed",
                         "value": "yes"
                       }
-                    }
+                    },
+                    "layout": "assessment"
                   }
                 },
                 {
@@ -1694,7 +1752,54 @@
                   "key": "es_regels",
                   "mode": "always-overwrite",
                   "refreshable": true
-                }
+                },
+                "layout": "energy-supply",
+                "capacityWarning": {
+                  "actualColumn": "es_effectieve_ah",
+                  "requiredColumn": "es_benodigd_ah"
+                },
+                "groups": [
+                  {
+                    "id": "accu",
+                    "label": "Accu",
+                    "columns": [
+                      "es_datum",
+                      "es_aantal",
+                      "es_capaciteit_ah",
+                      "es_schakeling",
+                      "es_merk_type"
+                    ]
+                  },
+                  {
+                    "id": "capaciteit",
+                    "label": "Capaciteit",
+                    "columns": [
+                      "es_alarmstroom_ma",
+                      "es_ruststroom_ma",
+                      "es_overbrugging_uren",
+                      "es_effectieve_ah",
+                      "es_benodigd_ah"
+                    ]
+                  },
+                  {
+                    "id": "metingen",
+                    "label": "Metingen",
+                    "columns": [
+                      "es_accu1_v",
+                      "es_accu2_v",
+                      "es_t0_v",
+                      "es_t1_v",
+                      "es_laadspanning_v_gemeten"
+                    ]
+                  },
+                  {
+                    "id": "opmerking",
+                    "label": "Opmerking",
+                    "columns": [
+                      "es_opmerking"
+                    ]
+                  }
+                ]
               },
               "columns": [
                 {
@@ -1929,7 +2034,10 @@
                   "inputType": "time",
                   "width": "10%"
                 }
-              ]
+              ],
+              "ember": {
+                "layout": "default"
+              }
             }
           ]
         },
@@ -1997,7 +2105,8 @@
                     "filter": {
                       "panelField": "doc_type",
                       "equals": "stuurfunctiematrix"
-                    }
+                    },
+                    "layout": "default"
                   }
                 }
               ]
@@ -2191,7 +2300,8 @@
                   "certificateImpact": {
                     "mode": "none"
                   }
-                }
+                },
+                "layout": "assessment"
               }
             },
             {
@@ -2265,7 +2375,8 @@
                     "filter": {
                       "panelField": "doc_type",
                       "equals": "stuurfunctiematrix"
-                    }
+                    },
+                    "layout": "default"
                   }
                 }
               ]
@@ -2470,7 +2581,8 @@
                   "certificateImpact": {
                     "mode": "none"
                   }
-                }
+                },
+                "layout": "assessment"
               }
             },
             {
@@ -2572,7 +2684,8 @@
                       "mode": "none"
                     }
                   }
-                ]
+                ],
+                "layout": "additional-remarks"
               }
             }
           ]

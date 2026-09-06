@@ -118,28 +118,43 @@ export function computeMeldurenNietBeschikbaar(
   return formatMaybeNumber(uren * melders * dagen, 3);
 }
 
-export function sumAvailabilityMelduren(rows) {
+// De kolomnaam komt uit de veldkaart van de berekening; hij stond hier voluit, waardoor
+// een tweede formulier met een andere kolomnaam stil nul opleverde.
+export function sumAvailabilityMelduren(rows, detectorHoursColumn = "melduren_niet_beschikbaar") {
   if (!Array.isArray(rows)) return 0;
 
   let total = 0;
   for (const row of rows) {
-    const n = toNumberOrNull(row?.melduren_niet_beschikbaar);
+    const n = toNumberOrNull(row?.[detectorHoursColumn]);
     if (n !== null) total += n;
   }
 
   return formatMaybeNumber(total, 3) ?? 0;
 }
 
-export function sumAantalMeldersFromPerformanceRows(rows) {
+const DEFAULT_DETECTOR_COUNT_COLUMNS = [
+  "pr_aantal_auto",
+  "pr_aantal_hand",
+  "pr_aantal_vlam",
+  "pr_aantal_lijn",
+  "pr_aantal_asp",
+];
+
+export function sumAantalMeldersFromPerformanceRows(
+  rows,
+  detectorCountColumns = DEFAULT_DETECTOR_COUNT_COLUMNS
+) {
   if (!Array.isArray(rows)) return 0;
+
+  const columns = Array.isArray(detectorCountColumns) && detectorCountColumns.length
+    ? detectorCountColumns
+    : DEFAULT_DETECTOR_COUNT_COLUMNS;
 
   let total = 0;
   for (const row of rows) {
-    total += toNumberOrNull(row?.pr_aantal_auto) ?? 0;
-    total += toNumberOrNull(row?.pr_aantal_hand) ?? 0;
-    total += toNumberOrNull(row?.pr_aantal_vlam) ?? 0;
-    total += toNumberOrNull(row?.pr_aantal_lijn) ?? 0;
-    total += toNumberOrNull(row?.pr_aantal_asp) ?? 0;
+    for (const column of columns) {
+      total += toNumberOrNull(row?.[column]) ?? 0;
+    }
   }
 
   return formatMaybeNumber(total, 3) ?? 0;

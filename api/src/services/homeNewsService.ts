@@ -108,6 +108,34 @@ export async function fetchHomeNews(): Promise<HomeNewsItem[]> {
   }
 }
 
+/* De afbeeldingsroute nam elke URL aan en stuurde de inloggegevens van de nieuwsfeed mee.
+   Daarmee kon een aanvrager de server naar zijn eigen host laten kijken en dat wachtwoord
+   opvangen, of het interne netwerk van de App Service aftasten.
+
+   De doel-URL moet nu op dezelfde host staan als de feed zelf. Alleen naar die host gaat de
+   Authorization-header mee, en een omleiding wordt geweigerd; anders kan een omleiding op de
+   eigen host de header alsnog naar buiten dragen. */
+function resolveAllowedImageUrl(rawUrl: string): URL | null {
+  const feedUrl = String(process.env.HOME_NEWS_RSS_URL || "").trim();
+  if (!feedUrl) return null;
+
+  let feed: URL;
+  let target: URL;
+
+  try {
+    feed = new URL(feedUrl);
+    target = new URL(String(rawUrl || "").trim());
+  } catch {
+    return null;
+  }
+
+  if (target.protocol !== feed.protocol) return null;
+  if (target.host !== feed.host) return null;
+  if (target.username || target.password) return null;
+
+  return target;
+}
+
 export async function fetchHomeNewsImage(
   url: string
 ): Promise<{ buffer: Buffer, contentType: string | null } | null> {
@@ -116,16 +144,23 @@ export async function fetchHomeNewsImage(
 
   if (!auth) return null;
 
+  const target = resolveAllowedImageUrl(url);
+  if (!target) {
+    console.warn("[home-news-image] doel-url staat niet op de host van de nieuwsfeed");
+    return null;
+  }
+
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
 
   try {
-    const res = await fetch(url, {
+    const res = await fetch(target, {
       method: "GET",
       headers: {
         Authorization: auth,
         Accept: "image/*,*/*;q=0.8",
       },
+      redirect: "error",
       signal: controller.signal,
     });
 

@@ -3,8 +3,10 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
 import { getFormsMonitorList, getUserDirectory } from "../../api/emberApi.js";
-import ApiStartupLoader, { useApiStartupLoader } from "../../components/ApiStartupLoader.jsx";
+import ApiStartupLoader from "@/components/ApiStartupLoader.jsx";
+import { useApiStartupLoader } from "@/components/apiStartupLoaderState.js";
 import UserAvatar from "../../components/UserAvatar.jsx";
+import AnimatedIconButton from "../../components/AnimatedIconButton.jsx";
 import {
   buildInitials,
   buildDirectoryActorLookup,
@@ -12,6 +14,8 @@ import {
   resolveDirectoryAvatarPath,
 } from "../../lib/avatar.js";
 import { SearchIcon } from "@/components/ui/search";
+import { ChevronLeftIcon } from "@/components/ui/chevron-left";
+import { ChevronRightIcon } from "@/components/ui/chevron-right";
 import { ArrowBigRightIcon } from "@/components/ui/arrow-big-right";
 import { RefreshCWIcon } from "@/components/ui/refresh-cw";
 import { RefreshCWOffIcon } from "@/components/ui/refresh-cw-off";
@@ -27,12 +31,11 @@ import {
   getToneClass,
   getCardToneClass,
   getLastModifiedBy,
-  compactInstallationLine,
   buildMonitorRowActionCounts,
   buildMonitorVisibleTotals,
-  rowHasMonitorActionFilter,
   readStateFromStorage,
   saveStateToStorage,
+  describePrimaryContext,
 } from "./formsMonitorShared.jsx";
 
 const STATUS_GROUP_OPTIONS = [
@@ -45,6 +48,8 @@ const STATUS_GROUP_OPTIONS = [
 const DEFAULT_SELECTED_STATUS_GROUPS = ["TODO"];
 const VIEW_MODES = new Set(["list", "grid"]);
 
+const PAGE_SIZES = [25, 50, 100, 200];
+
 function buildDefaultFilters() {
   return {
     q: "",
@@ -56,7 +61,7 @@ function buildDefaultFilters() {
     noRemainingOpenActionPoints: false,
     selectedStatusGroups: DEFAULT_SELECTED_STATUS_GROUPS,
     actionStatusFilter: "ALL",
-    take: 200,
+    take: 25,
     skip: 0,
   };
 }
@@ -297,6 +302,7 @@ export default function FormsMonitorPage() {
   const [filters, setFilters] = useState(buildInitialFilters(storedState));
 
   const [items, setItems] = useState([]);
+  const [totalCount, setTotalCount] = useState(0);
   const [autoRefreshEnabled, setAutoRefreshEnabled] = useState(storedState?.autoRefreshEnabled ?? false);
   const [viewMode, setViewMode] = useState(
     VIEW_MODES.has(storedState?.viewMode) ? storedState.viewMode : "list"
@@ -304,35 +310,11 @@ export default function FormsMonitorPage() {
   const [directoryItems, setDirectoryItems] = useState([]);
   const [viewerUserObjectId, setViewerUserObjectId] = useState(null);
 
-  const effectiveSelectedStatuses = useMemo(() => {
-    return buildEffectiveStatuses(filters.selectedStatusGroups);
-  }, [filters.selectedStatusGroups]);
-
-  const baseVisibleItems = useMemo(() => {
-    const selectedStatusesSet = new Set(effectiveSelectedStatuses || []);
-
-    return (items || [])
-      .filter((x) => selectedStatusesSet.has(x.status))
-      .filter((x) => {
-        if (!filters.noRemainingOpenActionPoints) return true;
-        return hasNoRemainingOpenActionPoints(x);
-      })
-      .filter((x) => {
-        if (!filters.onlyActionable) return true;
-        return getRemainingOpenActionCount(x) > 0;
-      })
-      .filter((x) => {
-        return true;
-      });
-  }, [items, filters, effectiveSelectedStatuses]);
-
-  const visibleItems = useMemo(() => {
-    return baseVisibleItems.filter((x) => {
-      if (!filters.actionStatusFilter || filters.actionStatusFilter === "ALL") return true;
-      if (filters.actionStatusFilter === "OPEN") return getRemainingOpenActionCount(x) > 0;
-      return rowHasMonitorActionFilter(x, filters.actionStatusFilter);
-    });
-  }, [baseVisibleItems, filters.actionStatusFilter]);
+  // De status- en actiefilters draaien nu op de server. Nog een keer filteren in de browser
+  // zou rijen van de huidige pagina wegstrepen terwijl de teller ze wel meetelt; dan klopt
+  // "formulier 1 tot 25 van 312" niet meer met wat je ziet.
+  const baseVisibleItems = items;
+  const visibleItems = items;
 
   const visibleTotals = useMemo(() => {
     const base = buildMonitorVisibleTotals(baseVisibleItems);
@@ -440,17 +422,40 @@ export default function FormsMonitorPage() {
     };
   }, [infoOpen, statusInfoOpen]);
 
-  function toggleStatusGroup(groupKey) {
-    setFilters((prev) => {
-      const current = new Set(prev.selectedStatusGroups || []);
-      if (current.has(groupKey)) current.delete(groupKey);
-      else current.add(groupKey);
+  async function toggleStatusGroup(groupKey) {
+    const current = new Set(filters.selectedStatusGroups || []);
+    if (current.has(groupKey)) current.delete(groupKey);
+    else current.add(groupKey);
 
-      return {
-        ...prev,
-        selectedStatusGroups: Array.from(current),
-      };
-    });
+    await applyFilters({ ...filters, selectedStatusGroups: Array.from(current) });
+  }
+
+  // Een filter of een zoekterm wijzigen zet de lijst terug op de eerste pagina.
+  // Wat je nu ziet, en hoeveel er in totaal zijn. Het serverfilter kapt af op 200 per keer;
+  // zonder deze getallen en knoppen zag je stilzwijgend alleen de nieuwste tweehonderd.
+  const pageSize = Number(filters.take) || 25;
+  const pageSkip = Number(filters.skip) || 0;
+  const pageStart = items.length ? pageSkip + 1 : 0;
+  const pageEnd = pageSkip + items.length;
+  const hasPreviousPage = pageSkip > 0;
+  const hasNextPage = pageEnd < totalCount;
+
+  async function applyFilters(next) {
+    const reset = { ...next, skip: 0 };
+    setFilters(reset);
+    await loadList(reset);
+  }
+
+  async function goToSkip(nextSkip) {
+    const next = { ...filters, skip: Math.max(0, nextSkip) };
+    setFilters(next);
+    await loadList(next);
+  }
+
+  async function changePageSize(nextTake) {
+    const next = { ...filters, take: nextTake, skip: 0 };
+    setFilters(next);
+    await loadList(next);
   }
 
   async function loadList(nextFilters = filters) {
@@ -468,11 +473,15 @@ export default function FormsMonitorPage() {
           unassignedOnly: nextFilters.unassignedOnly,
           onlyActionable: nextFilters.onlyActionable,
           includeWithdrawn: true,
+          selectedStatuses: buildEffectiveStatuses(nextFilters.selectedStatusGroups),
+          actionStatusFilter: nextFilters.actionStatusFilter,
+          noRemainingOpenActionPoints: nextFilters.noRemainingOpenActionPoints,
           take: nextFilters.take,
           skip: nextFilters.skip,
         });
 
         setItems(Array.isArray(res?.items) ? res.items : []);
+        setTotalCount(Number(res?.meta?.total ?? 0));
         setViewerUserObjectId(String(res?.meta?.viewer?.user_object_id || "").trim() || null);
         setListLoading(false);
         return;
@@ -480,6 +489,7 @@ export default function FormsMonitorPage() {
         if (attempt >= maxAttempts || !isRetryableListLoadError(e)) {
           setError(e?.message || String(e));
           setItems([]);
+          setTotalCount(0);
           setListLoading(false);
           return;
         }
@@ -546,8 +556,7 @@ export default function FormsMonitorPage() {
 
   async function clearAllFilters() {
     const next = buildDefaultFilters();
-    setFilters(next);
-    await loadList(next);
+    await applyFilters(next);
   }
 
   function openRow(row) {
@@ -556,8 +565,7 @@ export default function FormsMonitorPage() {
 
   async function toggleMine() {
     const next = { ...filters, mine: !filters.mine };
-    setFilters(next);
-    await loadList(next);
+    await applyFilters(next);
   }
 
   async function toggleMyAssignments() {
@@ -569,8 +577,7 @@ export default function FormsMonitorPage() {
       assignedUserObjectId: nextAssignedUserObjectId,
       unassignedOnly: false,
     };
-    setFilters(next);
-    await loadList(next);
+    await applyFilters(next);
   }
 
   async function toggleUnassignedOnly() {
@@ -579,8 +586,7 @@ export default function FormsMonitorPage() {
       unassignedOnly: !filters.unassignedOnly,
       assignedUserObjectId: "",
     };
-    setFilters(next);
-    await loadList(next);
+    await applyFilters(next);
   }
 
   async function toggleOnlyActionable() {
@@ -589,8 +595,7 @@ export default function FormsMonitorPage() {
       onlyActionable: !filters.onlyActionable,
       noRemainingOpenActionPoints: false,
     };
-    setFilters(next);
-    await loadList(next);
+    await applyFilters(next);
   }
 
   async function toggleNoRemainingOpenActionPoints() {
@@ -600,15 +605,14 @@ export default function FormsMonitorPage() {
       mine: false,
       onlyActionable: false,
     };
-    setFilters(next);
-    await loadList(next);
+    await applyFilters(next);
   }
 
-  function setActionStatusFilter(nextKey) {
-    setFilters((prev) => ({
-      ...prev,
-      actionStatusFilter: prev.actionStatusFilter === nextKey ? "ALL" : nextKey,
-    }));
+  async function setActionStatusFilter(nextKey) {
+    await applyFilters({
+      ...filters,
+      actionStatusFilter: filters.actionStatusFilter === nextKey ? "ALL" : nextKey,
+    });
   }
 
   async function applyAssignedUserSelection(userObjectId) {
@@ -619,8 +623,7 @@ export default function FormsMonitorPage() {
       assignedSearch: nextUserObjectId ? filters.assignedSearch : "",
       unassignedOnly: false,
     };
-    setFilters(next);
-    await loadList(next);
+    await applyFilters(next);
   }
 
   function openPopupNearButton(buttonEl, setStyle, width = 420) {
@@ -680,6 +683,7 @@ export default function FormsMonitorPage() {
       },
       isReady: hasNoRemainingOpenActionPoints(row),
       id: String(row.form_instance_id),
+      rowContext: describePrimaryContext(row),
     };
   }
 
@@ -689,7 +693,7 @@ export default function FormsMonitorPage() {
   }
 
   function renderGridRow(row) {
-    const { ownerEntry, actionCounts, isReady, id } = getRowPresentation(row);
+    const { ownerEntry, actionCounts, isReady, id, rowContext } = getRowPresentation(row);
 
     return (
       <div
@@ -744,8 +748,20 @@ export default function FormsMonitorPage() {
           </div>
         </div>
 
-        <div className="monitor-grid-row__cell" data-label="Installatie">
-          <div className="monitor-dossier-row__sub">{compactInstallationLine(row) || "-"}</div>
+        <div className="monitor-grid-row__cell" data-label="Hoort bij">
+          {rowContext ? (
+            <div className="monitor-row-context">
+              <span className="monitor-row-context__label">{rowContext.label}</span>
+              <span className="monitor-row-context__value">{rowContext.value}</span>
+              {rowContext.extra > 0 ? (
+                <span className="monitor-row-context__extra">
+                  en nog {rowContext.extra} koppeling{rowContext.extra === 1 ? "" : "en"}
+                </span>
+              ) : null}
+            </div>
+          ) : (
+            <div className="monitor-dossier-row__sub">Nergens aan gekoppeld</div>
+          )}
           {row.instance_title ? <div className="monitor-dossier-row__meta">{row.instance_title}</div> : null}
         </div>
 
@@ -969,7 +985,7 @@ export default function FormsMonitorPage() {
               <SearchIcon ref={searchIconRef} size={18} className="nav-anim-icon" />
               <input
                 className="searchbar-input"
-                placeholder="Zoek op installatie, object, relatie, formulier, invuller of opmerking"
+                placeholder="Zoek op installatie, klant, project, werkbon, formulier, actiepunt, bijlage of invuller"
                 value={filters.q}
                 onChange={(e) => setFilters((prev) => ({ ...prev, q: e.target.value }))}
                 onKeyDown={(e) => {
@@ -1061,7 +1077,11 @@ export default function FormsMonitorPage() {
             </div>
 
             <div className="ember-page-subtitle">
-              {listLoading ? "laden..." : `${visibleItems.length} dossier(s) zichtbaar`}
+              {listLoading
+                ? "laden..."
+                : totalCount > visibleItems.length
+                  ? `Formulier ${pageStart} tot ${pageEnd} van ${totalCount}`
+                  : `${visibleItems.length} formulier${visibleItems.length === 1 ? "" : "en"} in beeld`}
             </div>
           </div>
 
@@ -1135,7 +1155,7 @@ export default function FormsMonitorPage() {
               <div className="monitor-grid" role="region" aria-label="Formulierafhandelingen">
                 <div className="monitor-grid__header">
                   <div>Formulier</div>
-                  <div>Installatie</div>
+                  <div>Hoort bij</div>
                   <div>Toegewezen aan</div>
                   <div>Actiepunten</div>
                   <div>Status</div>
@@ -1151,6 +1171,7 @@ export default function FormsMonitorPage() {
                 const ownerEntry = directoryByUserObjectId.get(
                   String(row?.assigned_user_object_id || "").trim()
                 );
+                const rowContext = describePrimaryContext(row);
                 const actionCountsRaw = buildMonitorRowActionCounts(row);
                 const actionCounts = {
                   open: Number(actionCountsRaw?.open ?? getOpenCount(row)),
@@ -1231,7 +1252,9 @@ export default function FormsMonitorPage() {
                       </div>
 
                       <div className="monitor-dossier-row__sub">
-                        {compactInstallationLine(row) || "-"}
+                        {rowContext
+                          ? `${rowContext.label}; ${rowContext.value}`
+                          : "Nergens aan gekoppeld"}
                       </div>
 
                       {row.instance_title ? (
@@ -1287,6 +1310,53 @@ export default function FormsMonitorPage() {
               })}
             </div>
           )}
+
+          {!listLoading && totalCount > 0 ? (
+            <div className="monitor-pager">
+              <div className="monitor-pager__count">
+                {totalCount > items.length
+                  ? `Je ziet formulier ${pageStart} tot ${pageEnd} van ${totalCount}`
+                  : totalCount === 1
+                    ? "Er is één formulier dat aan je filters voldoet"
+                    : `Alle ${totalCount} formulieren staan hieronder`}
+              </div>
+
+              <div className="monitor-pager__controls">
+                <label className="monitor-pager__size">
+                  <span>Per pagina</span>
+                  <select
+                    className="cf-input"
+                    value={pageSize}
+                    onChange={(event) => changePageSize(Number(event.target.value))}
+                  >
+                    {PAGE_SIZES.map((size) => (
+                      <option key={size} value={size}>
+                        {size}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+
+                <AnimatedIconButton
+                  Icon={ChevronLeftIcon}
+                  iconSize={17}
+                  disabled={!hasPreviousPage}
+                  onClick={() => goToSkip(pageSkip - pageSize)}
+                >
+                  Vorige
+                </AnimatedIconButton>
+
+                <AnimatedIconButton
+                  Icon={ChevronRightIcon}
+                  iconSize={17}
+                  disabled={!hasNextPage}
+                  onClick={() => goToSkip(pageSkip + pageSize)}
+                >
+                  Volgende
+                </AnimatedIconButton>
+              </div>
+            </div>
+          ) : null}
         </section>
       </div>
     </div>

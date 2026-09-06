@@ -614,6 +614,9 @@ export default function FormDesigner() {
     runtimeDetachRef.current = (() => {
       const detachRuntime = attachRuntimeBehaviors({
         model,
+        // Zonder de definitie kent de preview de declaratieve rekenkoppeling niet
+        // en zou hij anders rekenen dan de runner.
+        surveyDefinition: nextSurveyJson,
         prefillPayload: nextPrefillPayload,
         energyAutoStateRef,
         availabilityAutoStateRef,

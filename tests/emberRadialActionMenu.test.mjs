@@ -144,7 +144,11 @@ test("de bestaande DrawingPin-interactie en versiecontracten blijven aangesloten
   assert.match(source, /setBoundaryElement\(element\)/);
   assert.match(source, /downloadInstallationDocumentFile\(code, selectedDocumentId\)/);
   assert.match(source, /createDrawingPin\(code, selectedDocumentId, draft\)/);
-  assert.match(source, /quickActionKind === "defect"/);
-  assert.match(source, /newFollowUpPin/);
+  // De snelactie heette eerder quickActionKind en de opvolgactie newFollowUpPin. Beide zijn
+  // hernoemd; de test controleerde daarmee namen in plaats van gedrag en viel stil om.
+  // Wat werkelijk vast moet liggen is de afbeelding van snelactie naar pinsoort en het
+  // bestaan van de opvolgactie vanaf een pin.
+  assert.match(source, /pin_kind: kind === "defect" \? "DEFICIENCY"/);
+  assert.match(source, /createManualFollowUpForDrawingPin\(code, pin\.drawing_pin_id, draft\)/);
   assert.match(source, /selectedDrawing\?\.is_current_version === false/);
 });

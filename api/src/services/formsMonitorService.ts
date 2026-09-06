@@ -11,6 +11,7 @@ import {
   updateFormInstanceAssignmentSql,
   getFormInstanceComplimentPointsSql,
   upsertFormInstanceComplimentPointSql,
+  getFormInstanceOwnershipSql,
 } from "../db/queries/formsMonitor.sql.js";
 import {
   getFormFollowUpSummaryByChainSql,
@@ -20,7 +21,9 @@ import {
   updateFormFollowUpStatusSql,
   updateFormFollowUpNoteSql,
   updateFormFollowUpCertificateImpactSql,
+  updateFormFollowUpClassificationSql,
   insertManualFormFollowUpSql,
+  getMonitorFollowUpAttachmentSql,
 } from "../db/queries/formFollowUps.sql.js";
 import {
   getFollowUpFinalizeGateSql,
@@ -28,6 +31,7 @@ import {
   createFollowUpReviewBatchSql,
 } from "../db/queries/followUpReviews.sql.js";
 import { getUserProfileSql } from "../db/queries/profile.sql.js";
+import { createFollowUpAttachmentDownloadUrl } from "./blobStorageService.js";
 import { isHistoricalInstallationStatus } from "./installationsService.js";
 import { syncDefinitionFollowUps } from "./formDefinitionFollowUpRuleService.js";
 import {
@@ -141,11 +145,39 @@ async function assertWorkflowRoleCanAccessFormInstance(
   if (!rows?.[0]?.has_access) throw new Error("forbidden");
 }
 
+// Het detail en de PDF-export pasten alleen de KAM-poort toe. Een gewone gebruiker kon
+// daarmee elk formulier van iedereen openen en exporteren, terwijl het overzicht hem tot
+// zijn eigen werk beperkte. Nu geldt dezelfde grens op beide plaatsen.
+export async function assertMayReadFormInstance(formInstanceId: any, context: any) {
+  const roles = context?.roles || [];
+
+  await assertWorkflowRoleCanAccessFormInstance(formInstanceId, roles);
+
+  if (mayReadEveryFormInstance(roles)) return;
+
+  const rows = await sqlQuery(getFormInstanceOwnershipSql, {
+    formInstanceId,
+    actorCandidatesJson: JSON.stringify(getUserActorCandidates(context?.user)),
+  });
+
+  if (!rows?.[0]?.is_owner) throw new Error("forbidden");
+}
+
 function isGebruiker(roles: string[]) {
   return roles.includes("gebruiker");
 }
 
+// Een gewone gebruiker zag in de UI standaard alleen zijn eigen formulieren, maar
+// ?mine=false gaf gewoon alles terug; de scoping was dus een schermkeuze en geen regel.
+// Wie geen leidinggevende rol heeft blijft nu ook op de server bij zijn eigen werk, en de
+// meegestuurde parameter wordt in dat geval genegeerd in plaats van gerespecteerd.
+function mayReadEveryFormInstance(roles: string[]) {
+  return isManager(roles) || isKamCoordinator(roles);
+}
+
 function buildMineDefault(roles: string[], rawMine: any) {
+  if (!mayReadEveryFormInstance(roles)) return true;
+
   if (rawMine !== undefined) {
     return normalizeBoolean(rawMine, false);
   }
@@ -188,9 +220,15 @@ function buildAllowedActions(item: any, followUpSummary: any, roles: string[]) {
     allowed.set_ingediend = true;
     allowed.set_concept = true;
     allowed.set_afgehandeld = canMarkDone;
-    allowed.review_followups = !canMarkDone;
+    // Beoordelen aanbieden heeft alleen zin als er een beoordelingsronde bestaat waarin de
+    // punten meekunnen. Is die er niet, dan opent het scherm een lege lijst en lijkt het alsof
+    // er niets aan de hand is.
+    const reviewCanHelp = Boolean(followUpSummary?.review_can_help);
+    allowed.review_followups = !canMarkDone && reviewCanHelp;
     if (!canMarkDone) {
-      hints.set_afgehandeld = "Leg eerst de installatiebrede opvolgingsreview vast.";
+      hints.set_afgehandeld =
+        followUpSummary?.finalize_blocked_reason ||
+        "Leg eerst de installatiebrede opvolgingsreview vast.";
     }
   }
 
@@ -236,6 +274,34 @@ async function getFollowUpChainSummary(formInstanceId: number) {
   };
 }
 
+function buildFinalizeBlockedReason(row: any): string | null {
+  if (Boolean(row?.can_finalize)) return null;
+
+  const unreachable = Number(row?.unreachable_review_count ?? 0);
+  if (unreachable > 0) {
+    return (
+      `${unreachable} actiepunt${unreachable === 1 ? "" : "en"} van dit formulier hangt niet aan ` +
+      "een installatie en kan daardoor niet worden beoordeeld. De beoordeling loopt nu per " +
+      "installatie; zonder installatie is er geen beoordelingsronde om het punt in mee te nemen."
+    );
+  }
+
+  const parts: string[] = [];
+  const missingReview = Number(row?.missing_review_count ?? 0);
+  const missingAssignment = Number(row?.missing_assignment_count ?? 0);
+  const missingDueDate = Number(row?.missing_due_date_count ?? 0);
+  const missingAttachment = Number(row?.missing_attachment_count ?? 0);
+
+  if (missingReview > 0) parts.push(`${missingReview} nog te beoordelen`);
+  if (missingAssignment > 0) parts.push(`${missingAssignment} zonder toegewezen persoon`);
+  if (missingDueDate > 0) parts.push(`${missingDueDate} zonder deadline`);
+  if (missingAttachment > 0) parts.push(`${missingAttachment} zonder bijlage`);
+
+  if (!parts.length) return null;
+
+  return `Er zijn nog actiepunten die aandacht vragen; ${parts.join(", ")}.`;
+}
+
 async function getFinalizeGate(formInstanceId: number) {
   const rows = await sqlQuery(getFollowUpFinalizeGateSql, { formInstanceId });
   const row: any = rows?.[0] ?? {};
@@ -248,7 +314,12 @@ async function getFinalizeGate(formInstanceId: number) {
     missing_assignment_count: Number(row?.missing_assignment_count ?? 0),
     missing_due_date_count: Number(row?.missing_due_date_count ?? 0),
     missing_attachment_count: Number(row?.missing_attachment_count ?? 0),
+    unreachable_review_count: Number(row?.unreachable_review_count ?? 0),
+    review_context_available: Boolean(row?.review_context_available),
     can_finalize: Boolean(row?.can_finalize),
+    // Waarom het niet kan, in gewone taal, zodat het scherm het kan zeggen in plaats van
+    // een knop uit te zetten zonder uitleg.
+    blocked_reason: buildFinalizeBlockedReason(row),
   };
 }
 
@@ -419,6 +490,45 @@ export async function getMonitorList(input: {
   const viewerUserObjectId = getUserObjectId(input.user);
   const workflowRoleCode = isKamOnly(input.roles || []) ? "KAM_COORDINATOR" : null;
 
+  // De statuschips en de actiechips filterden tot nu toe in de browser, binnen de opgehaalde
+  // pagina. Met paginering klopt dat niet meer; daarom komen ze nu mee naar de server.
+  const allowedFormStatuses = new Set([
+    "CONCEPT",
+    "INGEDIEND",
+    "IN_BEHANDELING",
+    "AFGEHANDELD",
+    "INGETROKKEN",
+  ]);
+  const selectedStatuses = Array.isArray(input?.query?.selectedStatuses)
+    ? input.query.selectedStatuses
+    : String(input?.query?.selectedStatuses || "")
+        .split(",")
+        .map((value: string) => value.trim())
+        .filter(Boolean);
+  const cleanSelectedStatuses = selectedStatuses
+    .map((value: any) => String(value || "").trim().toUpperCase())
+    .filter((value: string) => allowedFormStatuses.has(value));
+
+  const allowedActionFilters = new Set([
+    "ALL",
+    "OPEN",
+    "PLANNING_NODIG",
+    "WACHTENOPDERDEN",
+    "GEPLAND",
+    "DONE",
+  ]);
+  const requestedActionFilter = String(input?.query?.actionStatusFilter || "ALL")
+    .trim()
+    .toUpperCase();
+  const actionStatusFilter = allowedActionFilters.has(requestedActionFilter)
+    ? requestedActionFilter
+    : "ALL";
+
+  const noRemainingOpenActionPoints = normalizeBoolean(
+    input?.query?.noRemainingOpenActionPoints,
+    false
+  );
+
   const rows = await sqlQuery(getFormsMonitorListSql, {
     q,
     status,
@@ -434,6 +544,9 @@ export async function getMonitorList(input: {
     assignedSearch,
     unassignedOnly,
     workflowRoleCode,
+    selectedStatusesJson: JSON.stringify(cleanSelectedStatuses),
+    actionStatusFilter,
+    noRemainingOpenActionPoints,
   });
 
   const items = (rows || []).map((r: any) => ({
@@ -467,6 +580,11 @@ export async function getMonitorList(input: {
     object_name: r.obj_naam ?? null,
     gebruiker_code: r.gebruiker_code ?? null,
     gebruiker_name: r.gebruiker_naam ?? null,
+
+    primary_context_type: r.primary_context_type ?? null,
+    primary_context_code: r.primary_context_code ?? null,
+    primary_context_label: r.primary_context_label ?? null,
+    context_count: Number(r.context_count ?? 0),
 
     follow_up_summary: {
       total_count: Number(r.follow_up_total_count ?? 0),
@@ -519,7 +637,7 @@ export async function getMonitorDetail(formInstanceIdRaw: any, context: DetailCo
 
   let item = await getMonitorDetailRow(formInstanceId);
   if (!item) return { error: "not found" };
-  await assertWorkflowRoleCanAccessFormInstance(formInstanceId, context.roles || []);
+  await assertMayReadFormInstance(formInstanceId, context);
 
   const changed = await maybeAutoClaim(
     formInstanceId,
@@ -555,6 +673,8 @@ export async function getMonitorDetail(formInstanceIdRaw: any, context: DetailCo
   const followUpSummary = {
     ...followUpSummaryRaw,
     can_mark_form_done: finalizeGate.can_finalize,
+    finalize_blocked_reason: finalizeGate.blocked_reason,
+    review_can_help: finalizeGate.review_context_available && finalizeGate.unreachable_review_count === 0,
   };
   const complimentPoints = await sqlQuery(getFormInstanceComplimentPointsSql, { formInstanceId });
 
@@ -568,11 +688,19 @@ export async function getMonitorDetail(formInstanceIdRaw: any, context: DetailCo
       ...row,
       drawing_pins: parseJsonArray(row.drawing_pins_json),
       drawing_pins_json: undefined,
+      attachments: parseJsonArray(row.attachments_json),
+      attachments_json: undefined,
+      atrium_contexts: parseJsonArray(row.atrium_contexts_json),
+      atrium_contexts_json: undefined,
     })),
     follow_up_reviews: (reviewRows || []).map((row: any) => ({
       ...row,
       drawing_pins: parseJsonArray(row.drawing_pins_json),
       drawing_pins_json: undefined,
+      attachments: parseJsonArray(row.attachments_json),
+      attachments_json: undefined,
+      atrium_contexts: parseJsonArray(row.atrium_contexts_json),
+      atrium_contexts_json: undefined,
     })),
     follow_up_summary: followUpSummary,
     finalize_gate: finalizeGate,
@@ -582,10 +710,17 @@ export async function getMonitorDetail(formInstanceIdRaw: any, context: DetailCo
     permissions: {
       can_assign_form: isManager(context.roles || []),
       can_set_compliment_points: isManager(context.roles || []),
+      // Een handmatig punt krijgt verplicht een installatiecontext; die tabel is de plek
+      // waar de werklijst en de beoordelingsronde hem vinden. Zonder installatie liep de
+      // aanroep op een harde SQL-fout terwijl de knop gewoon aanklikbaar was.
       can_add_follow_ups:
         isManager(context.roles || []) &&
         !isHistoricalInstallationStatus(item.installation_status) &&
+        Boolean(normalizeOptionalString(item.atrium_installation_code)) &&
         ["INGEDIEND", "IN_BEHANDELING"].includes(String(item.status || "").trim()),
+      add_follow_ups_blocked_reason: !normalizeOptionalString(item.atrium_installation_code)
+        ? "Dit formulier hangt niet aan een installatie. Een actiepunt hoort bij een installatie; zonder installatie is er geen werklijst en geen beoordelingsronde om het punt in te zetten."
+        : null,
     },
     viewer: {
       actor: getUserAuditActor(context.user),
@@ -600,7 +735,7 @@ export async function getMonitorFollowUps(formInstanceIdRaw: any, _context: User
 
   const detail = await getMonitorDetailRow(formInstanceId);
   if (!detail) return { error: "not found" };
-  await assertWorkflowRoleCanAccessFormInstance(formInstanceId, _context.roles || []);
+  await assertMayReadFormInstance(formInstanceId, _context);
 
   const [rows, summaryRaw, finalizeGate] = await Promise.all([
     sqlQuery(getFormFollowUpsMonitorByChainSql, { formInstanceId }),
@@ -614,9 +749,17 @@ export async function getMonitorFollowUps(formInstanceIdRaw: any, _context: User
           ...row,
           drawing_pins: parseJsonArray(row.drawing_pins_json),
           drawing_pins_json: undefined,
+          attachments: parseJsonArray(row.attachments_json),
+          attachments_json: undefined,
+          atrium_contexts: parseJsonArray(row.atrium_contexts_json),
+          atrium_contexts_json: undefined,
         }))
       : [],
-    summary: { ...summaryRaw, can_mark_form_done: finalizeGate.can_finalize },
+    summary: {
+      ...summaryRaw,
+      can_mark_form_done: finalizeGate.can_finalize,
+      finalize_blocked_reason: finalizeGate.blocked_reason,
+    },
     finalize_gate: finalizeGate,
   };
 }
@@ -643,6 +786,10 @@ export async function getMonitorFollowUpReview(formInstanceIdRaw: any, context: 
           ...row,
           drawing_pins: parseJsonArray(row.drawing_pins_json),
           drawing_pins_json: undefined,
+          attachments: parseJsonArray(row.attachments_json),
+          attachments_json: undefined,
+          atrium_contexts: parseJsonArray(row.atrium_contexts_json),
+          atrium_contexts_json: undefined,
         }))
       : [],
     gate,
@@ -717,6 +864,12 @@ export async function createMonitorManualFollowUp(
     throw new Error("manual follow-ups require a submitted form");
   }
 
+  // Voor de insert; anders komt de gebruiker uit op 'installation context not found' uit
+  // de database, en dat leest als een storing in plaats van als een onmogelijkheid.
+  if (!normalizeOptionalString(item.atrium_installation_code)) {
+    throw new Error("manual follow-up requires an installation");
+  }
+
   const workflowTitle = normalizeOptionalString(payload?.workflow_title ?? payload?.title);
   if (!workflowTitle) {
     throw new Error("manual follow-up title is required");
@@ -786,6 +939,8 @@ export async function runMonitorFormStatusAction(formInstanceIdRaw: any, action:
   const followUpSummary = {
     ...followUpSummaryRaw,
     can_mark_form_done: finalizeGate.can_finalize,
+    finalize_blocked_reason: finalizeGate.blocked_reason,
+    review_can_help: finalizeGate.review_context_available && finalizeGate.unreachable_review_count === 0,
   };
 
   assertFormStatusActionAllowed(item, action, context.roles || [], followUpSummary);
@@ -909,6 +1064,68 @@ export async function updateMonitorFollowUpNote(
     ok: true,
     item: rows?.[0] ?? null,
   };
+}
+
+const CLASSIFICATION_PRIORITIES = new Set(["LOW", "NORMAL", "HIGH", "CRITICAL"]);
+const CLASSIFICATION_RESPONSIBILITIES = new Set(["INTERN", "KLANT", "DERDE", "ONBEPAALD"]);
+
+/* Prioriteit, verantwoordelijkheid en deadline bijstellen vanuit de Monitor. Dit kon alleen
+   op de installatietab, en die route eist een installatiecode; een formulier zonder
+   installatie viel er dus buiten terwijl de Monitor juist het scherm is waar beoordeeld
+   wordt. Alleen de meegestuurde velden wijzigen. */
+export async function updateMonitorFollowUpClassification(
+  followUpActionIdRaw: any,
+  payload: any,
+  context: UserContext
+) {
+  const followUpActionId = normalizeOptionalString(followUpActionIdRaw);
+  if (!followUpActionId) return { error: "not found" };
+
+  if (!isManager(context.roles || [])) {
+    throw new Error("forbidden");
+  }
+
+  const has = (key: string) => payload != null && Object.hasOwn(payload, key);
+
+  let priority: string | null = null;
+  if (has("priority")) {
+    priority = String(payload.priority || "").trim().toUpperCase();
+    if (!CLASSIFICATION_PRIORITIES.has(priority)) return { ok: false, error: "priority invalid" };
+  }
+
+  let responsibilityType: string | null = null;
+  if (has("responsibility_type")) {
+    responsibilityType = String(payload.responsibility_type || "").trim().toUpperCase();
+    if (!CLASSIFICATION_RESPONSIBILITIES.has(responsibilityType)) {
+      return { ok: false, error: "responsibility invalid" };
+    }
+  }
+
+  const dueDateSet = has("due_date");
+  const dueDate = dueDateSet ? normalizeOptionalString(payload.due_date) : null;
+
+  if (priority === null && responsibilityType === null && !dueDateSet) {
+    return { ok: false, error: "niets om bij te werken" };
+  }
+
+  const existingRows = await sqlQuery(getFormFollowUpByIdSql, { followUpActionId });
+  const existing = existingRows?.[0] ?? null;
+  if (!existing) return { error: "not found" };
+
+  if (isHistoricalInstallationStatus(existing.installation_status)) {
+    throw new Error("historical installation read-only");
+  }
+
+  const rows = await sqlQuery(updateFormFollowUpClassificationSql, {
+    followUpActionId,
+    priority,
+    responsibilityType,
+    dueDate,
+    dueDateSet: dueDateSet ? 1 : 0,
+    actor: getUserAuditActor(context.user),
+  });
+
+  return { ok: true, item: rows?.[0] ?? null };
 }
 
 export async function updateMonitorFollowUpCertificateImpact(
@@ -1045,4 +1262,41 @@ export async function upsertMonitorComplimentPoint(
     roles: context.roles || [],
     autoClaim: false,
   });
+}
+
+/* De foto of het bestand bij een actiepunt tonen in de Monitor. De installatieroute werkt
+   alleen voor formulieren met een installatie; deze werkt voor beide, omdat hij via de
+   formulierbron van het punt loopt. */
+export async function getMonitorFollowUpAttachmentDownloadUrl(
+  followUpActionId: string,
+  storedFileId: string
+) {
+  const cleanActionId = String(followUpActionId || "").trim();
+  const cleanFileId = String(storedFileId || "").trim();
+
+  if (!/^[0-9a-f-]{36}$/i.test(cleanActionId)) throw new Error("follow-up attachment not found");
+  if (!/^[0-9a-f-]{36}$/i.test(cleanFileId)) throw new Error("follow-up attachment not found");
+
+  const rows = await sqlQuery(getMonitorFollowUpAttachmentSql, {
+    followUpActionId: cleanActionId,
+    storedFileId: cleanFileId,
+  });
+
+  const attachment = (rows || [])[0];
+  if (!attachment || !attachment.storage_key) throw new Error("follow-up attachment not found");
+
+  const url = await createFollowUpAttachmentDownloadUrl({
+    storageKey: String(attachment.storage_key),
+    expiresInSeconds: 300,
+    downloadFileName: attachment.file_name ?? null,
+  });
+
+  return {
+    ok: true,
+    url,
+    expires_in_seconds: 300,
+    file_name: attachment.file_name ?? null,
+    mime_type: attachment.mime_type ?? null,
+    file_size_bytes: attachment.file_size_bytes ?? null,
+  };
 }

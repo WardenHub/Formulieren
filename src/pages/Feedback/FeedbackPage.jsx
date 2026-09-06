@@ -3,16 +3,19 @@ import { useLocation } from "react-router-dom";
 import { HandHeart, Pencil, Trash2 } from "lucide-react";
 
 import { createMyFeedback, deleteMyFeedback, getMyFeedback, getUserDirectory, putMyFeedback } from "../../api/emberApi.js";
-import ApiStartupLoader, { useApiStartupLoader } from "../../components/ApiStartupLoader.jsx";
+import ApiStartupLoader from "@/components/ApiStartupLoader.jsx";
+import { useApiStartupLoader } from "@/components/apiStartupLoaderState.js";
 import {
   NoteEditorToolbar,
   NoteLinkDialog,
   NoteRichTextContent,
+} from "../../components/notes/NoteRichText.jsx";
+import {
   applyMarkdownLink,
   insertRawText,
   isHttpUrl,
   normalizeHttpUrl,
-} from "../../components/notes/NoteRichText.jsx";
+} from "../../components/notes/noteRichTextUtils.js";
 import { DownvoteIcon } from "../../components/ui/downvote.jsx";
 import { MessageCircleMoreIcon } from "../../components/ui/message-circle-more.jsx";
 import { UpvoteIcon } from "../../components/ui/upvote.jsx";

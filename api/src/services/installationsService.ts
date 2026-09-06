@@ -57,6 +57,8 @@ import {
   getInstallationFollowUpCatalogSql,
   createManualInstallationFollowUpSql,
   updateInstallationFollowUpStatusSql,
+  updateInstallationFollowUpFieldsSql,
+  getInstallationFollowUpAttachmentSql,
   insertInstallationNoteSql,
   insertUserNotificationEventSql,
   markInstallationNoteNotificationsReadSql,
@@ -64,6 +66,7 @@ import {
   toggleInstallationNoteReactionSql,
   updateInstallationNoteSql,
 } from "../db/queries/installationNotes.sql.js";
+import { createFollowUpAttachmentDownloadUrl } from "./blobStorageService.js";
 import {
   getUserAuditActor,
   getUserDisplayNameSnapshot,
@@ -975,7 +978,7 @@ export async function getInstallationWorkflowItems(code: string) {
     workflow_description: row.workflow_description ?? "",
     category: row.category ?? null,
     priority: row.priority ?? "NORMAL",
-    responsibility_type: row.responsibility_type ?? "WARDENBURG",
+    responsibility_type: row.responsibility_type ?? "INTERN",
     customer_visible: Boolean(row.customer_visible),
     certificate_impact: row.certificate_impact ?? null,
     certificate_impact_override: row.certificate_impact_override ?? null,
@@ -983,6 +986,9 @@ export async function getInstallationWorkflowItems(code: string) {
     status_set_at: row.status_set_at ?? null,
     status_set_by: row.status_set_by ?? null,
     assigned_to: row.assigned_to ?? null,
+    assignment_type: row.assignment_type ?? "NONE",
+    assigned_user_object_id: row.assigned_user_object_id ?? null,
+    assigned_role_code: row.assigned_role_code ?? null,
     due_date: row.due_date ?? null,
     note: row.note ?? "",
     resolution_note: row.resolution_note ?? "",
@@ -1001,6 +1007,16 @@ export async function getInstallationWorkflowItems(code: string) {
     drawing_pins: parseJsonArray(row.drawing_pins_json),
     attachments: parseJsonArray(row.attachments_json),
     events: parseJsonArray(row.events_json),
+    atrium_contexts: parseJsonArray(row.atrium_contexts_json),
+    inspection_case_id: row.inspection_case_id ?? null,
+    inspection_source_kind: row.inspection_source_kind ?? null,
+    inspection_is_blocking: row.inspection_is_blocking == null ? null : Boolean(row.inspection_is_blocking),
+    inspection_type: row.inspection_type ?? null,
+    inspection_status: row.inspection_status ?? null,
+    last_review_decision: row.last_review_decision ?? null,
+    last_reviewed_at: row.last_reviewed_at ?? null,
+    last_reviewed_by: row.last_reviewed_by ?? null,
+    last_review_note: row.last_review_note ?? null,
   }));
 
   const activeItems = items.filter((item) => WORKFLOW_ACTIVE_STATUSES.has(String(item.status || "").trim().toUpperCase()));
@@ -1029,6 +1045,7 @@ export async function getInstallationFollowUpCatalog(code: string) {
     statuses: Array.isArray(recordsets[0]) ? recordsets[0] : [],
     workflow_roles: Array.isArray(recordsets[1]) ? recordsets[1] : [],
     attachments: Array.isArray(recordsets[2]) ? recordsets[2] : [],
+    concept_form_points: Array.isArray(recordsets[3]) ? recordsets[3] : [],
   };
 }
 
@@ -1041,8 +1058,8 @@ export async function createManualInstallationFollowUp(code: string, payload: an
   const description = normalizeOptionalString(payload?.description ?? payload?.workflow_description);
   const priority = String(payload?.priority || "NORMAL").trim().toUpperCase();
   if (!["LOW", "NORMAL", "HIGH", "CRITICAL"].includes(priority)) throw new Error("follow-up priority invalid");
-  const responsibilityType = String(payload?.responsibility_type || "WARDENBURG").trim().toUpperCase();
-  if (!["WARDENBURG", "CUSTOMER", "THIRD_PARTY", "UNSPECIFIED"].includes(responsibilityType)) throw new Error("follow-up responsibility invalid");
+  const responsibilityType = String(payload?.responsibility_type || "INTERN").trim().toUpperCase();
+  if (!["INTERN", "KLANT", "DERDE", "ONBEPAALD"].includes(responsibilityType)) throw new Error("follow-up responsibility invalid");
   const status = String(payload?.status || "OPEN").trim().toUpperCase();
   if (!["OPEN", "PLANNING_NODIG", "WACHTENOPDERDEN", "GEPLAND"].includes(status)) throw new Error("follow-up status invalid");
   const assignedUserObjectId = normalizeOptionalString(payload?.assigned_user_object_id);
@@ -1098,6 +1115,132 @@ export async function updateInstallationFollowUpStatus(code: string, followUpAct
     actorEmail: getUserEmail(user),
   });
   return { ok: true };
+}
+
+/* Een actiepunt bijwerken vanuit de installatie. Alleen de meegestuurde velden wijzigen;
+   de status loopt langs updateInstallationFollowUpStatus omdat daar de afhandelvelden en
+   het juiste logboektype bij horen. */
+export async function updateInstallationFollowUp(
+  code: string,
+  followUpActionId: string,
+  payload: any,
+  user: any
+) {
+  const cleanCode = String(code || "").trim();
+  await assertInstallationWritable(cleanCode);
+
+  const cleanId = String(followUpActionId || "").trim();
+  if (!/^[0-9a-f-]{36}$/i.test(cleanId)) throw new Error("follow-up action not found");
+
+  const has = (key: string) => payload != null && Object.hasOwn(payload, key);
+
+  const title = has("title") || has("workflow_title")
+    ? normalizeOptionalString(payload.title ?? payload.workflow_title)
+    : null;
+  if ((has("title") || has("workflow_title")) && !title) throw new Error("follow-up title required");
+  if (title && title.length > 300) throw new Error("follow-up title too long");
+
+  const descriptionSet = has("description") || has("workflow_description");
+  const description = descriptionSet
+    ? normalizeOptionalString(payload.description ?? payload.workflow_description)
+    : null;
+
+  const categorySet = has("category") || has("tags");
+  const category = categorySet ? normalizeOptionalString(payload.category ?? payload.tags) : null;
+
+  let priority: string | null = null;
+  if (has("priority")) {
+    priority = String(payload.priority || "").trim().toUpperCase();
+    if (!["LOW", "NORMAL", "HIGH", "CRITICAL"].includes(priority)) throw new Error("follow-up priority invalid");
+  }
+
+  let responsibilityType: string | null = null;
+  if (has("responsibility_type")) {
+    responsibilityType = String(payload.responsibility_type || "").trim().toUpperCase();
+    if (!["INTERN", "KLANT", "DERDE", "ONBEPAALD"].includes(responsibilityType)) {
+      throw new Error("follow-up responsibility invalid");
+    }
+  }
+
+  const dueDateSet = has("due_date");
+  const dueDate = dueDateSet ? normalizeOptionalString(payload.due_date) : null;
+
+  const internalNoteSet = has("internal_note") || has("note");
+  const internalNote = internalNoteSet ? normalizeOptionalString(payload.internal_note ?? payload.note) : null;
+
+  const customerVisible = has("customer_visible") ? (payload.customer_visible ? 1 : 0) : null;
+
+  const assignmentSet = has("assigned_user_object_id") || has("assigned_role_code");
+  const assignedUserObjectId = assignmentSet ? normalizeOptionalString(payload.assigned_user_object_id) : null;
+  const assignedRoleCode = assignmentSet ? normalizeOptionalString(payload.assigned_role_code) : null;
+  if (assignedUserObjectId && assignedRoleCode) throw new Error("follow-up assignment invalid");
+
+  await sqlQuery(updateInstallationFollowUpFieldsSql, {
+    code: cleanCode,
+    followUpActionId: cleanId,
+    title,
+    description,
+    descriptionSet: descriptionSet ? 1 : 0,
+    category,
+    categorySet: categorySet ? 1 : 0,
+    priority,
+    responsibilityType,
+    dueDate,
+    dueDateSet: dueDateSet ? 1 : 0,
+    internalNote,
+    internalNoteSet: internalNoteSet ? 1 : 0,
+    customerVisible,
+    assignmentSet: assignmentSet ? 1 : 0,
+    assignedUserObjectId,
+    assignedRoleCode,
+    assignedDisplayName: normalizeOptionalString(payload?.assigned_display_name_snapshot),
+    assignedEmail: normalizeOptionalString(payload?.assigned_email_snapshot),
+    actor: getUserAuditActor(user),
+    actorUserObjectId: getUserObjectId(user),
+    actorDisplayName: getUserDisplayNameSnapshot(user),
+    actorEmail: getUserEmail(user),
+  });
+
+  return { ok: true };
+}
+
+/* Een foto of bestand bij een actiepunt tonen. De installatie zit in de query, dus een
+   punt van een andere installatie levert hier geen bruikbare verwijzing op. */
+export async function getInstallationFollowUpAttachmentDownloadUrl(
+  code: string,
+  followUpActionId: string,
+  storedFileId: string
+) {
+  const cleanCode = String(code || "").trim();
+  const cleanActionId = String(followUpActionId || "").trim();
+  const cleanFileId = String(storedFileId || "").trim();
+
+  if (!/^[0-9a-f-]{36}$/i.test(cleanActionId)) throw new Error("follow-up attachment not found");
+  if (!/^[0-9a-f-]{36}$/i.test(cleanFileId)) throw new Error("follow-up attachment not found");
+
+  const rows = await sqlQuery(getInstallationFollowUpAttachmentSql, {
+    code: cleanCode,
+    followUpActionId: cleanActionId,
+    storedFileId: cleanFileId,
+  });
+
+  const attachment = (rows || [])[0];
+  if (!attachment || !attachment.storage_key) throw new Error("follow-up attachment not found");
+
+  const url = await createFollowUpAttachmentDownloadUrl({
+    storageKey: String(attachment.storage_key),
+    expiresInSeconds: 300,
+    downloadFileName: attachment.file_name ?? null,
+  });
+
+  return {
+    ok: true,
+    url,
+    expires_in_seconds: 300,
+    file_name: attachment.file_name ?? null,
+    mime_type: attachment.mime_type ?? null,
+    file_size_bytes: attachment.file_size_bytes ?? null,
+  };
 }
 
 export async function upsertInstallationDocuments(code: string, documents: any[], user: any) {

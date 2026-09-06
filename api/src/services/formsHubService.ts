@@ -16,10 +16,13 @@ import {
   getUserActorCandidates,
   getUserAuditActor,
 } from "../utils/userIdentity.js";
+import { getFormInstanceSurveyJsonSql } from "../db/queries/formsAnswers.sql.js";
+import { calculateFormValues, hasDeclaredCalculations } from "./formCalculationsService.js";
 import { getFormStartPreflight } from "./formsService.js";
 import {
   previewFormFollowUps,
   syncFormFollowUps,
+  vervalFormInstanceFollowUps,
 } from "./followUpService.js";
 import {
   previewDefinitionFollowUps,
@@ -422,6 +425,21 @@ export async function updateFormInstanceMetadata(
   return { ok: true, result: rows?.[0] ?? null };
 }
 
+async function buildHubCalculatedJson(instanceId: number, answers: any) {
+  try {
+    const rows = await sqlQuery(getFormInstanceSurveyJsonSql, { instanceId });
+    const raw = rows?.[0]?.survey_json;
+    const surveyJson = typeof raw === "string" ? JSON.parse(raw) : raw;
+
+    if (!hasDeclaredCalculations(surveyJson)) return null;
+
+    return calculateFormValues(surveyJson, answers || {});
+  } catch (err) {
+    console.error("[forms-hub] berekende waarden op de server bepalen mislukt", err);
+    return null;
+  }
+}
+
 export async function saveFormAnswers(instanceId: any, payload: any, user: any) {
   const id = parsePositiveId(instanceId);
   if (id == null) return { ok: false, error: "ongeldige form_instance_id" };
@@ -433,7 +451,11 @@ export async function saveFormAnswers(instanceId: any, payload: any, user: any) 
   }
 
   const answers = payload?.answers_json ?? payload?.answersJson ?? {};
-  const calculated = payload?.calculated_json ?? payload?.calculatedJson ?? null;
+
+  // Dezelfde regel als op de installatieroute; de server rekent zelf en negeert wat de
+  // client als calculated_json meestuurt.
+  const calculated = await buildHubCalculatedJson(id, answers);
+
   const rows = await sqlQuery(saveFormsHubAnswersSql, {
     instanceId: id,
     answersJson: JSON.stringify(answers ?? {}),
@@ -441,7 +463,36 @@ export async function saveFormAnswers(instanceId: any, payload: any, user: any) 
     expectedDraftRev,
     updatedBy: getUserAuditActor(user),
   });
-  return { ok: true, result: rows?.[0] ?? null };
+
+  // Zelfde regel als op de installatieroute; punten bestaan al tijdens het invullen,
+  // maar blijven tot indienen buiten de gedeelde werklijsten.
+  const followUpSync = await syncConceptFollowUps(id, user);
+
+  return { ok: true, result: rows?.[0] ?? null, follow_up_sync: followUpSync };
+}
+
+async function syncConceptFollowUps(id: number, user: any) {
+  try {
+    const current = await getFormInstance(id);
+    const item: any = current?.item ?? null;
+
+    if (!item) return null;
+    if (String(item.status || "").trim().toUpperCase() !== "CONCEPT") return null;
+
+    return await syncFormFollowUps({
+      formInstance: {
+        form_instance_id: id,
+        installation_id: null,
+        atrium_installation_code: null,
+        status: "CONCEPT",
+      },
+      surveyJson: parseJsonObject(item.survey_json, {}),
+      answers: parseJsonObject(item.answers_json, {}),
+      user,
+    });
+  } catch (err) {
+    return { ok: false, error: String((err as any)?.message || err) };
+  }
 }
 
 export async function previewSubmitFormInstance(instanceId: any, payload: any) {
@@ -511,6 +562,8 @@ export async function submitFormInstance(instanceId: any, user: any) {
       form_instance_id: id,
       installation_id: null,
       atrium_installation_code: null,
+      // Zojuist ingediend; vanaf hier geldt de audit-vaste route.
+      status: String(rows?.[0]?.status || "INGEDIEND"),
     },
     surveyJson,
     answers,
@@ -538,7 +591,10 @@ export async function withdrawFormInstance(instanceId: any, user: any) {
     instanceId: id,
     actor: getUserAuditActor(user),
   });
-  return { ok: true, result: rows?.[0] ?? null };
+
+  const followUpSync = await vervalFormInstanceFollowUps(id, user);
+
+  return { ok: true, result: rows?.[0] ?? null, follow_up_sync: followUpSync };
 }
 
 export async function reopenFormInstance(instanceId: any, user: any) {

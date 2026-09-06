@@ -13,7 +13,14 @@
     "playwright:install": "node ./scripts/playwright-install.mjs",
     "playwright:check": "node ./scripts/playwright-check.mjs",
     "playwright:bundle-linux-libs": "bash ./scripts/playwright-bundle-linux-libs.sh",
-    "test:forms-hub-context": "node --import tsx --test ./tests/formsHubContext.test.ts"
+    "test:forms-hub-context": "node --import tsx --test ./tests/formsHubContext.test.ts",
+    "test:follow-up-classification": "node --import tsx --test ./tests/followUpClassification.test.ts",
+    "test": "node --import tsx --test ./tests/formsHubContext.test.ts ./tests/followUpClassification.test.ts ./tests/answerKeys.test.ts ./tests/parentInstanceGuard.test.ts ./tests/calculationFields.test.ts ./tests/kamSclPoc.test.ts",
+    "typecheck": "node ./node_modules/typescript/bin/tsc --noEmit -p tsconfig.json",
+    "verify": "npm run typecheck && npm run test",
+    "test:answer-keys": "node --import tsx --test ./tests/answerKeys.test.ts",
+    "test:parenting": "node --import tsx --test ./tests/parentInstanceGuard.test.ts",
+    "test:calculation-fields": "node --import tsx --test ./tests/calculationFields.test.ts"
   },
   "dependencies": {
     "@azure/identity": "^4.13.0",

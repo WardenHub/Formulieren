@@ -1,0 +1,82 @@
+# Controle voor het samenvoegen. De twee bestaande workflows bouwen en publiceren; geen
+# van beide controleerde iets. Lint, tests, de architectuurvalidators en de builds liepen
+# alleen op de machine van wie er net aan werkte, dus een regressie kwam pas op productie
+# aan het licht.
+#
+# Deze workflow publiceert niets. Hij faalt alleen, en dat is precies de bedoeling.
+
+name: Verify
+
+on:
+  pull_request:
+    branches:
+      - main
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  frontend:
+    name: Frontend; lint, tests, validators, build
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: read
+
+    steps:
+      - name: checkout
+        uses: actions/checkout@v4
+
+      - name: setup node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: "npm"
+          cache-dependency-path: package-lock.json
+
+      - name: install
+        run: npm ci
+
+      - name: lint
+        run: npm run lint
+
+      - name: tests
+        run: npm run test
+
+      # De validators lezen een deel van hun bewijs buiten de repository. Zonder
+      # EMBER_EXTERNAL_ARTIFACTS slaan ze dat deel over en melden dat; met
+      # EMBER_EXTERNAL_STRICT zouden ze erop vallen. In CI is overslaan het juiste gedrag.
+      - name: architectuurvalidators
+        run: npm run validate:all
+
+      - name: build
+        run: npm run build
+
+  api:
+    name: API; typecheck en tests
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: read
+
+    steps:
+      - name: checkout
+        uses: actions/checkout@v4
+
+      - name: setup node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: "npm"
+          cache-dependency-path: api/package-lock.json
+
+      - name: install
+        working-directory: api
+        run: npm ci
+
+      - name: typecheck
+        working-directory: api
+        run: npm run typecheck
+
+      - name: tests
+        working-directory: api
+        run: npm run test

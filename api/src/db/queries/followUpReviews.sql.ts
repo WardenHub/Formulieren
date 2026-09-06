@@ -50,6 +50,33 @@ evaluated as (
   left join dbo.FollowUpCategoryRule category_rule
     on category_rule.category = ra.category
    and category_rule.is_active = 1
+),
+/* Punten die aan dit formulier hangen maar geen installatiecontext hebben. Die vallen buiten
+   relevant_actions, en dus buiten de poort. De reviewbatch is per installatie, dus zulke
+   punten zijn met de huidige mechaniek niet te beoordelen; afronden hoort dan te blokkeren
+   met een reden in plaats van stil door te laten. */
+unreachable_review as (
+  select count(*) as unreachable_count
+  from dbo.FollowUpAction a
+  join dbo.FollowUpActionFormSource fs
+    on fs.follow_up_action_id = a.follow_up_action_id
+  join dbo.FollowUpStatusDefinition sd
+    on sd.status_code = a.status
+  where fs.form_instance_id = @formInstanceId
+    and a.kind = N'workflow'
+    and sd.requires_review = 1
+    and not exists (
+      select 1
+      from dbo.FollowUpActionInstallationContext ic
+      where ic.follow_up_action_id = a.follow_up_action_id
+    )
+),
+review_context as (
+  select
+    case
+      when (select atrium_installation_code from form_context) is null then 0
+      else 1
+    end as context_available
 )
 `;
 
@@ -70,6 +97,11 @@ select
                                              and due_date is null then 1 else 0 end), 0),
   missing_attachment_count = isnull(sum(case when isnull(requires_attachment, 0) = 1
                                                and attachment_count = 0 then 1 else 0 end), 0),
+  unreachable_review_count = (select unreachable_count from unreachable_review),
+  review_context_available = (select context_available from review_context),
+  -- Drieledig in plaats van impliciet; voldoende gereviewd, niets te reviewen, of er is een
+  -- punt dat niet te reviewen valt. Dat laatste gaf eerder stil "mag afronden", omdat een
+  -- lege set elke som op nul zette.
   can_finalize = cast(case when
     isnull(sum(case when reviewed_at is null
               or reviewed_at < coalesce(updated_at, created_at)
@@ -77,6 +109,7 @@ select
     and isnull(sum(case when isnull(requires_assignment, 0) = 1 and assignment_type = N'NONE' then 1 else 0 end), 0) = 0
     and isnull(sum(case when isnull(requires_due_date, 0) = 1 and due_date is null then 1 else 0 end), 0) = 0
     and isnull(sum(case when isnull(requires_attachment, 0) = 1 and attachment_count = 0 then 1 else 0 end), 0) = 0
+    and (select unreachable_count from unreachable_review) = 0
     then 1 else 0 end as bit)
 from evaluated;
 `;

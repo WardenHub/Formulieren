@@ -1,14 +1,61 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { Link } from "react-router-dom";
 import L from "leaflet";
 import { CircleMarker, MapContainer, Marker, Popup, TileLayer, useMap, useMapEvents } from "react-leaflet";
 import "leaflet/dist/leaflet.css";
 
-import { fetchProtectedObjectUrl, httpJson } from "@/api/http.js";
 import { getInstallationTypeAppearance, getInstallationTypeLegend } from "@/lib/installationTypeAppearance.js";
-import { resolveProfileAvatarPath } from "@/lib/avatar.js";
+import { getProfileAvatarSnapshot, subscribeProfileAvatar } from "@/lib/profileAvatarStore.js";
 
 const NETHERLANDS_CENTER = [52.15, 5.3];
+
+/* Waar de kaart zijn beeld haalt.
+
+   Op het diepste zoomniveau heeft de gewone kaart bijna niets te tekenen; een tegel van
+   een bedrijventerrein of een landelijk adres is dan een vlak zonder inhoud, en dat las
+   als een kapotte kaart. Een luchtfoto laat daar juist het gebouw zelf zien, en dat is
+   precies wat je wil weten als je naar een installatie toe moet.
+
+   De luchtfoto komt van PDOK, de open dataservice van het Kadaster; Nederlandse dekking
+   tot en met zoom 19, ook buiten de steden. maxNativeZoom zorgt dat er nooit om een tegel
+   wordt gevraagd die niet bestaat; verder inzoomen schaalt de diepste tegel op in plaats
+   van grijs te worden. */
+const MAP_LAYERS = {
+  kaart: {
+    label: "Kaart",
+    url: "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+    maxNativeZoom: 19,
+  },
+  luchtfoto: {
+    label: "Luchtfoto",
+    url: "https://service.pdok.nl/hwh/luchtfotorgb/wmts/v1_0/Actueel_ortho25/EPSG:3857/{z}/{x}/{y}.jpeg",
+    attribution: 'Luchtfoto &copy; <a href="https://www.pdok.nl">PDOK</a> / Kadaster',
+    maxNativeZoom: 19,
+  },
+};
+
+const LAYER_PREFERENCE_KEY = "ember.installations.mapLayer";
+
+function readLayerPreference() {
+  try {
+    const stored = window.localStorage.getItem(LAYER_PREFERENCE_KEY);
+    if (stored && MAP_LAYERS[stored]) return stored;
+  } catch {
+    // Zonder opslag begint de kaart gewoon op de gewone weergave.
+  }
+  return "kaart";
+}
+
+// De markers zijn divIcons met een HTML-string; wat daarin komt moet ontdaan zijn van
+// tekens die de markup kunnen breken.
+function escapeHtml(value) {
+  return String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
 
 function FitVisibleMarkers({ markers, fitRequestKey }) {
   const map = useMap();
@@ -38,56 +85,20 @@ function ViewportReporter({ onViewportChange }) {
   return null;
 }
 
+// De topbar laadt de profielfoto en zet hem in de store; zie src/lib/profileAvatarStore.js
+// voor waarom dat een store is en geen window-variabele.
 function useProfileAvatar() {
-  const [avatarSrc, setAvatarSrc] = useState(() => window.__emberProfileAvatarObjectUrl || null);
-
-  useEffect(() => {
-    let cancelled = false;
-    let objectUrl = null;
-
-    function onAvatarReady(event) {
-      if (!cancelled) setAvatarSrc(event?.detail?.objectUrl || null);
-    }
-
-    async function load() {
-      try {
-        const [profileData, meData] = await Promise.all([
-          httpJson("/me/profile"),
-          httpJson("/me"),
-        ]);
-        const mediaPath = resolveProfileAvatarPath(profileData, meData);
-        if (!mediaPath) {
-          if (!cancelled) setAvatarSrc(null);
-          return;
-        }
-        const nextObjectUrl = await fetchProtectedObjectUrl(mediaPath);
-        if (cancelled) {
-          URL.revokeObjectURL(nextObjectUrl);
-          return;
-        }
-        if (objectUrl) URL.revokeObjectURL(objectUrl);
-        objectUrl = nextObjectUrl;
-        setAvatarSrc(nextObjectUrl);
-      } catch {
-        if (!cancelled) setAvatarSrc(null);
-      }
-    }
-
-    window.addEventListener("ember:profile-avatar-ready", onAvatarReady);
-    if (!window.__emberProfileAvatarObjectUrl) load();
-    window.addEventListener("ember:profile-updated", load);
-    return () => {
-      cancelled = true;
-      window.removeEventListener("ember:profile-avatar-ready", onAvatarReady);
-      window.removeEventListener("ember:profile-updated", load);
-      if (objectUrl) URL.revokeObjectURL(objectUrl);
-    };
-  }, []);
-
-  return avatarSrc;
+  // Leest de huidige waarde bij elke render, dus onafhankelijk van de vraag of de topbar er
+  // eerder was dan dit scherm. Dat was precies de reden dat hier soms een blauwe stip stond
+  // terwijl de foto rechtsboven wel zichtbaar was.
+  return useSyncExternalStore(
+    subscribeProfileAvatar,
+    getProfileAvatarSnapshot,
+    getProfileAvatarSnapshot
+  );
 }
 
-function UserLocationControl({ avatarSrc }) {
+function UserLocationControl({ avatar }) {
   const map = useMap();
   const [location, setLocation] = useState(null);
   const [state, setState] = useState("idle");
@@ -147,12 +158,14 @@ function UserLocationControl({ avatarSrc }) {
         {state === "error" ? <span role="status">Locatietoestemming niet beschikbaar.</span> : null}
       </div>
       {location ? (
-        avatarSrc ? (
+        avatar?.src || avatar?.initials ? (
           <Marker
             position={location}
             icon={L.divIcon({
               className: "installation-map-user-marker-wrap",
-              html: `<span class="installation-map-user-marker"><img src="${avatarSrc}" alt="" /></span>`,
+              html: avatar.src
+                ? `<span class="installation-map-user-marker"><img src="${avatar.src}" alt="" /></span>`
+                : `<span class="installation-map-user-marker installation-map-user-marker--initials">${escapeHtml(avatar.initials)}</span>`,
               iconSize: [42, 42],
               iconAnchor: [21, 21],
             })}
@@ -183,21 +196,38 @@ function markerIcon(marker) {
 
 function InstallationPopup({ marker }) {
   const items = marker.installations || [];
+  const total = Number(marker.installation_count || items.length || 0);
+  const remaining = Math.max(0, total - items.length);
+
   return (
     <div className="installation-map-popup">
       <div className="installation-map-popup__title">{marker.object_name || "Installaties"}</div>
       {marker.formatted_address ? <div className="installation-map-popup__address">{marker.formatted_address}</div> : null}
       {marker.relation ? <div className="installation-map-popup__address">{marker.relation}</div> : null}
-      <div className="installation-map-popup__installations">
-        {items.map((installation) => (
-          <Link key={installation.atrium_installation_code} className="installation-map-popup__installation" to={`/installaties/${encodeURIComponent(installation.atrium_installation_code)}`}>
-            <div className="installation-map-popup__installation-top">
-              <span className="installation-map-popup__installation-code">{installation.atrium_installation_code}</span>
-              <span>{installation.installation_name || "Geen naam"}</span>
-            </div>
-          </Link>
-        ))}
-      </div>
+
+      {items.length ? (
+        <div className="installation-map-popup__installations">
+          {items.map((installation) => (
+            <Link key={installation.atrium_installation_code} className="installation-map-popup__installation" to={`/installaties/${encodeURIComponent(installation.atrium_installation_code)}`}>
+              <div className="installation-map-popup__installation-top">
+                <span className="installation-map-popup__installation-code">{installation.atrium_installation_code}</span>
+                <span>{installation.installation_name || "Geen naam"}</span>
+              </div>
+            </Link>
+          ))}
+        </div>
+      ) : null}
+
+      {/* Uitgezoomd staat een marker voor een gebied en niet voor een adres. Dan is een lijst
+          van willekeurige installaties geen hulp; zeggen hoeveel het zijn en uitnodigen om in
+          te zoomen wel. Het aantal komt altijd van de server, ook als de lijst leeg is. */}
+      {remaining > 0 ? (
+        <div className="installation-map-popup__more">
+          {items.length
+            ? `En nog ${remaining} installatie${remaining === 1 ? "" : "s"} op deze plek; zoom in om ze te zien.`
+            : `${total} installatie${total === 1 ? "" : "s"} in dit gebied; zoom in om ze te zien.`}
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -205,7 +235,40 @@ function InstallationPopup({ marker }) {
 export default function InstallationsMap({ markers = [], compact = false, loading = false, onViewportChange, fitRequestKey = "", showLegend = false, showUserLocation = true }) {
   const stableMarkers = useMemo(() => markers.filter((marker) => Number.isFinite(Number(marker.latitude)) && Number.isFinite(Number(marker.longitude))), [markers]);
   const legend = useMemo(() => getInstallationTypeLegend(), []);
-  const avatarSrc = useProfileAvatar();
+  const avatar = useProfileAvatar();
+  const [layerKey, setLayerKey] = useState(readLayerPreference);
+  const layer = MAP_LAYERS[layerKey] || MAP_LAYERS.kaart;
+
+  function kiesLaag(nextKey) {
+    setLayerKey(nextKey);
+    try {
+      window.localStorage.setItem(LAYER_PREFERENCE_KEY, nextKey);
+    } catch {
+      // De keuze geldt dan alleen voor deze sessie.
+    }
+  }
+
+  // De markers hangen alleen van de markerlijst af. Zonder dit hertekende elke
+  // kaartbeweging ze allemaal, want de loading-indicator zit in dezelfde component en elk
+  // divIcon werd dan opnieuw opgebouwd; bij driehonderd markers is dat merkbaar.
+  const renderedMarkers = useMemo(
+    () =>
+      stableMarkers.map((marker) => (
+        <Marker
+          key={marker.marker_group_key}
+          position={[Number(marker.latitude), Number(marker.longitude)]}
+          icon={markerIcon(marker)}
+          title={`${marker.object_name || "Installatie"}; ${marker.installation_count || 1} installatie(s)`}
+          alt={marker.object_name || "Installatie"}
+          keyboard
+        >
+          <Popup minWidth={260} maxWidth={380}>
+            <InstallationPopup marker={marker} />
+          </Popup>
+        </Marker>
+      )),
+    [stableMarkers]
+  );
 
   return (
     <div className={`installation-map-shell${compact ? " installation-map-shell--compact" : ""}`}>
@@ -214,23 +277,47 @@ export default function InstallationsMap({ markers = [], compact = false, loadin
         center={NETHERLANDS_CENTER}
         zoom={compact && stableMarkers.length === 1 ? 15 : 7}
         minZoom={5}
-        maxZoom={19}
+        // Een stap verder dan de diepste tegel; die wordt dan opgeschaald in plaats van
+        // grijs te blijven.
+        maxZoom={20}
         scrollWheelZoom
         keyboard
         touchZoom
         zoomControl
-        attributionControl={false}
+        // Beide tegelbronnen vragen om naamsvermelding; dat is een voorwaarde en geen
+        // voorkeur, dus die staat aan.
+        attributionControl
       >
-        <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
-        {showUserLocation ? <UserLocationControl avatarSrc={avatarSrc} /> : null}
+        <TileLayer
+          key={layerKey}
+          url={layer.url}
+          attribution={layer.attribution}
+          maxNativeZoom={layer.maxNativeZoom}
+          maxZoom={20}
+          // Bij pannen niet elke tussenstand ophalen; dat scheelt verzoeken en het voelt
+          // rustiger.
+          updateWhenIdle
+          keepBuffer={3}
+        />
+        {showUserLocation ? <UserLocationControl avatar={avatar} /> : null}
         <ViewportReporter onViewportChange={onViewportChange} />
         <FitVisibleMarkers markers={stableMarkers} fitRequestKey={fitRequestKey} />
-        {stableMarkers.map((marker) => (
-          <Marker key={marker.marker_group_key} position={[Number(marker.latitude), Number(marker.longitude)]} icon={markerIcon(marker)} title={`${marker.object_name || "Installatie"}; ${marker.installation_count || 1} installatie(s)`} alt={marker.object_name || "Installatie"} keyboard>
-            <Popup minWidth={260} maxWidth={380}><InstallationPopup marker={marker} /></Popup>
-          </Marker>
-        ))}
+        {renderedMarkers}
       </MapContainer>
+      <div className="installation-map-layer-switch" role="group" aria-label="Kaartweergave">
+        {Object.entries(MAP_LAYERS).map(([key, item]) => (
+          <button
+            key={key}
+            type="button"
+            className={key === layerKey ? "is-active" : ""}
+            aria-pressed={key === layerKey}
+            onClick={() => kiesLaag(key)}
+          >
+            {item.label}
+          </button>
+        ))}
+      </div>
+
       {loading ? (
         <div className="installation-map-loading" role="status" aria-live="polite">
           <span className="installation-map-loading__bar" aria-hidden="true" />

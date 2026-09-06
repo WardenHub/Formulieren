@@ -1,6 +1,7 @@
 // /api/src/controllers/adminFormsController.ts
 
 import type { Request, Response } from "express";
+import * as submitRejectionService from "../services/formSubmitRejectionService.js";
 import * as service from "../services/adminFormsService.js";
 
 export async function getAdminForms(req: Request, res: Response) {
@@ -124,5 +125,32 @@ export async function createAdminFormVersion(req: any, res: Response) {
 
     console.error(err);
     return res.status(500).json({ error: "createAdminFormVersion failed" });
+  }
+}
+
+export async function getAdminSubmitRejections(req: any, res: any) {
+  try {
+    const data = await submitRejectionService.listFormSubmitRejections({
+      sinceDays: req.query?.sinceDays,
+      formCode: req.query?.formCode,
+      source: req.query?.source,
+      take: req.query?.take,
+    });
+    return res.json(data);
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ error: "getAdminSubmitRejections failed" });
+  }
+}
+
+export async function getAdminSubmitRejectionSummary(req: any, res: any) {
+  try {
+    const data = await submitRejectionService.getFormSubmitRejectionSummary({
+      sinceDays: req.query?.sinceDays,
+    });
+    return res.json(data);
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ error: "getAdminSubmitRejectionSummary failed" });
   }
 }

@@ -85,9 +85,15 @@ function RequirementCard({ item, summary, readOnly, busy, onSave }) {
   const [draft, setDraft] = useState(() => ({ ...emptyRequirement(item.scope), ...item }));
   const [showHistory, setShowHistory] = useState(false);
 
-  useEffect(() => {
+  // Concept opnieuw afleiden zodra er een andere serverversie binnenkomt. Dit is het
+  // aanpassen van state tijdens renderen, wat React voor precies dit geval voorschrijft;
+  // in een effect zou het een extra renderronde kosten na elke verversing.
+  const [gezienItem, setGezienItem] = useState(item);
+
+  if (gezienItem !== item) {
+    setGezienItem(item);
     setDraft({ ...emptyRequirement(item.scope), ...item });
-  }, [item]);
+  }
 
   function change(key, value) {
     setDraft((current) => ({ ...current, [key]: value }));

@@ -4,7 +4,6 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { MicIcon } from "@/components/ui/mic";
 import { MicOffIcon } from "@/components/ui/mic-off";
 import { RefreshCWIcon } from "@/components/ui/refresh-cw";
-import { BrainIcon } from "@/components/ui/brain";
 import {
   getAdminAssistantAudit,
   getUserDirectory,

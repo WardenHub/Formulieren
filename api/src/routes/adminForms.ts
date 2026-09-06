@@ -7,6 +7,8 @@ import {
   saveAdminFormsOrder,
   saveAdminFormConfig,
   createAdminFormVersion,
+  getAdminSubmitRejections,
+  getAdminSubmitRejectionSummary,
 } from "../controllers/adminFormsController.js";
 
 import { requireRole } from "../middleware/roleMiddleware.js";
@@ -14,6 +16,9 @@ import { requireRole } from "../middleware/roleMiddleware.js";
 const router = Router();
 
 router.get("/", requireRole("admin"), getAdminForms);
+// Deze twee staan bewust boven /:formId; anders vangt de formId-route ze op.
+router.get("/submit-rejections", requireRole("admin"), getAdminSubmitRejections);
+router.get("/submit-rejections/summary", requireRole("admin"), getAdminSubmitRejectionSummary);
 router.get("/:formId", requireRole("admin"), getAdminFormDetail);
 router.post("/", requireRole("admin"), createAdminForm);
 router.put("/order", requireRole("admin"), saveAdminFormsOrder);

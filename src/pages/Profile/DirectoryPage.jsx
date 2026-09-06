@@ -4,7 +4,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { getUserDirectory } from "../../api/emberApi.js";
 import teamsLogo from "../../assets/teams-logo.png";
-import ApiStartupLoader, { useApiStartupLoader } from "../../components/ApiStartupLoader.jsx";
+import ApiStartupLoader from "@/components/ApiStartupLoader.jsx";
+import { useApiStartupLoader } from "@/components/apiStartupLoaderState.js";
 import UserAvatar from "../../components/UserAvatar.jsx";
 import {
   buildInitials,

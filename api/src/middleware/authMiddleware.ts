@@ -7,6 +7,10 @@ const ROLE_GROUPS: Record<string, string> = {
   documentbeheerder: "7cadb29c-c15c-4e1e-acff-71214865e00a",
   uitlegbeheerder: "c4b6dc5c-e4e9-4dd0-a283-08747e1ea505",
   kam_coordinator: "b8a5b9cc-84f9-40e6-837c-91e69be6f6f8",
+  // Groep EMBER-CERTIFICERING-COORDINATOR uit
+  // deployment/ember-certificering-coordinator-app-role-plan.json. Ontbrak hier, waardoor de
+  // rol onbereikbaar was zodra de app-rol niet in het token meekwam.
+  certificering_coordinator: "bdc3e9b2-669d-4d12-b28a-e546b7f0a6e1",
 };
 
 const APP_ROLE_MAP: Record<string, string> = {
@@ -29,7 +33,9 @@ const credential = new DefaultAzureCredential();
 // simpele cache zodat je niet elke request Graph aanroept
 // key = userObjectId, value = { roles, expiresAt }
 const rolesCache = new Map<string, { roles: string[]; expiresAt: number }>();
-const CACHE_TTL_MS = 600 * 60 * 1000;
+// Tien minuten. Dit stond op 600 * 60 * 1000, tien uur; een ingetrokken
+// groepslidmaatschap werkte daardoor een werkdag lang niet door.
+const CACHE_TTL_MS = 10 * 60 * 1000;
 
 // OpenID / JWKS cache
 const openIdConfigCache = new Map<string, { value: any; expiresAt: number }>();
@@ -55,14 +61,6 @@ function getClaim(principal: any, claimType: string) {
   return found?.val || null;
 }
 
-function getClaims(principal: any, claimType: string) {
-  const claims = principal?.claims || [];
-  return claims
-    .filter((c: any) => c.typ === claimType)
-    .map((c: any) => c.val)
-    .filter(Boolean);
-}
-
 function uniqueStrings(values: string[]) {
   return [...new Set(values.filter(Boolean))];
 }
@@ -73,16 +71,6 @@ function mapAppRolesToInternalRoles(appRoles: string[]) {
       .map((role) => APP_ROLE_MAP[role])
       .filter(Boolean)
   );
-}
-
-function getAppRolesFromPrincipal(principal: any) {
-  const directRoles = getClaims(principal, "roles");
-  const uriRoles = getClaims(
-    principal,
-    "http://schemas.microsoft.com/ws/2008/06/identity/claims/role"
-  );
-
-  return uniqueStrings([...directRoles, ...uriRoles]);
 }
 
 async function graphGet(url: string) {
@@ -406,7 +394,21 @@ async function applyRoleResolutionForUser(req: any, userObjectId: string, appRol
   req.roles = roles;
 }
 
+// De header x-ms-client-principal is base64, geen ondertekend token. Wie de App Service
+// direct kan bereiken stuurde hem zelf mee en was admin, want dit pad werd voor de
+// bearer-validatie geprobeerd en nam ook de roles-claims uit de header over.
+//
+// Of de ingress de header strip is hier niet vast te stellen, dus het pad staat nu uit
+// tenzij iemand het bewust aanzet. En ook dan komen rollen nooit uit de header; die worden
+// altijd via Graph opgelost, zodat een verzonnen header hoogstens een identiteit voorstelt
+// die verder niets mag.
+function isClientPrincipalTrusted() {
+  return String(process.env.TRUST_CLIENT_PRINCIPAL || "").trim() === "1";
+}
+
 async function tryAuthenticateFromClientPrincipal(req: any) {
+  if (!isClientPrincipalTrusted()) return false;
+
   const principal = getClientPrincipal(req);
   if (!principal) return false;
 
@@ -427,8 +429,8 @@ async function tryAuthenticateFromClientPrincipal(req: any) {
     name: getClaim(principal, "name") || null,
   };
 
-  const appRolesFromClaims = getAppRolesFromPrincipal(principal);
-  await applyRoleResolutionForUser(req, userObjectId, appRolesFromClaims);
+  // Bewust een lege lijst; rollen komen uit Graph en niet uit de header.
+  await applyRoleResolutionForUser(req, userObjectId, []);
 
   return true;
 }

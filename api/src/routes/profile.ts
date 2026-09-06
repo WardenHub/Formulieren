@@ -20,6 +20,8 @@ import {
   postMyNotificationsReadAll,
 } from "../controllers/profileController.js";
 
+import { requireRole } from "../middleware/roleMiddleware.js";
+
 const router = Router();
 
 const upload = multer({
@@ -40,7 +42,9 @@ router.get("/signature/file", getMySignatureFile);
 router.delete("/signature", deleteMySignature);
 router.post("/signature", upload.single("file"), uploadMySignature);
 
-router.get("/directory", getDirectory);
+// Het smoelenboek is bedrijfsgegevens; het stond open voor elke geauthenticeerde
+// gebruiker, ook voor iemand wiens rollookup was mislukt en die dus geen enkele rol had.
+router.get("/directory", requireRole("admin", "gebruiker", "documentbeheerder", "uitlegbeheerder", "kam_coordinator", "certificering_coordinator"), getDirectory);
 router.get("/directory/:userObjectId/avatar/file", getDirectoryAvatarFile);
 router.get("/notifications", getMyNotifications);
 router.post("/notifications/read-all", postMyNotificationsReadAll);

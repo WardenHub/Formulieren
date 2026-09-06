@@ -72,15 +72,9 @@ const AtriumTab = forwardRef(function AtriumTab({ catalog, installation, isAdmin
   const [openMap, setOpenMap] = useState({});
   const toggleIconRefs = useRef({});
 
-  useEffect(() => {
-    setOpenMap((prev) => {
-      const next = { ...prev };
-      for (const sectionKey of orderedSectionKeys) {
-        if (next[sectionKey] === undefined) next[sectionKey] = false;
-      }
-      return next;
-    });
-  }, [orderedSectionKeys]);
+  // Er stond hier een effect dat elke sectie expliciet op false zette. Dat was overbodig,
+  // want de sectie wordt gelezen als Boolean(openMap[sectionKey]) en een ontbrekende
+  // sleutel betekent daarmee al dicht.
 
   useEffect(() => {
     const anyOpen = Object.values(openMap).some(Boolean);

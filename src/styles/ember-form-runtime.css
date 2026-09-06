@@ -105,13 +105,18 @@
   cursor: pointer;
 }
 
+/* "Je bent hier" is neutraal en niet rood. Het merkaccent is rood, maar in deze strip
+   betekent rood ook blokkade; dezelfde kleur voor twee dingen laat een gewone pagina
+   dreigend lijken. Selectie is nu een neutrale ring die over elke status heen leesbaar
+   blijft, zodat de statuskleur zelf het enige signaal is dat iets zegt over de inhoud. */
 .ember-page-nav-item--active {
   min-width: 46px;
   height: 46px;
   font-size: 15px;
   transform: translateY(-1px);
+  border-color: transparent;
   box-shadow:
-    0 0 0 2px var(--accent-border) inset,
+    0 0 0 2px var(--text-strong) inset,
     0 8px 18px rgba(15, 23, 42, 0.10);
 }
 
@@ -771,25 +776,6 @@ html[data-appearance="dark"] .ember-runtime-select option {
   align-content: end;
 }
 
-.ember-runtime-checkbox {
-  min-height: 46px;
-  display: inline-flex;
-  align-items: center;
-  gap: 9px;
-  padding: 0 13px;
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  background: var(--input-bg, var(--surface));
-  color: var(--text);
-  font-weight: 700;
-}
-
-.ember-runtime-checkbox input {
-  width: 18px;
-  height: 18px;
-  accent-color: var(--accent);
-}
-
 .ember-runtime-card-field--energy-primary .ember-runtime-card-field__label,
 .ember-runtime-card-field--energy-note .ember-runtime-card-field__label,
 .ember-runtime-card-field--availability-primary .ember-runtime-card-field__label,
@@ -919,12 +905,15 @@ html[data-appearance="dark"] .ember-runtime-select option {
 
 .ember-runtime-assessment__grid {
   display: grid;
+  /* Nr bevat kort materiaal zoals "1.10" of "D20" en had veel te veel ruimte.
+     Onderwerp draagt de eigenlijke vraag en moet altijd volledig leesbaar zijn;
+     die krijgt daarom het grootste aandeel van de resterende breedte. */
   grid-template-columns:
-    minmax(72px, 96px)
+    minmax(44px, 60px)
     32px
-    minmax(260px, 1.45fr)
-    minmax(240px, 0.82fr)
-    minmax(280px, 1.05fr);
+    minmax(300px, 2.1fr)
+    minmax(220px, 0.7fr)
+    minmax(250px, 0.95fr);
   column-gap: 10px;
   row-gap: 12px;
   align-items: center;
@@ -1159,10 +1148,10 @@ html[data-appearance="dark"] .ember-runtime-select option {
 @media (max-width: 1180px) {
   .ember-runtime-assessment__grid {
     grid-template-columns:
-      minmax(72px, 90px)
+      minmax(44px, 58px)
       30px
-      minmax(220px, 1.2fr)
-      minmax(250px, 0.9fr);
+      minmax(240px, 1.75fr)
+      minmax(210px, 0.8fr);
   }
 
   .ember-runtime-assessment__header > :last-child {
@@ -1198,7 +1187,7 @@ html[data-appearance="dark"] .ember-runtime-select option {
   }
 
   .ember-runtime-assessment__grid {
-    grid-template-columns: minmax(78px, 96px) minmax(0, 1fr) 36px;
+    grid-template-columns: minmax(44px, 60px) minmax(0, 1fr) 36px;
     gap: 10px;
     align-items: start;
   }
@@ -1317,12 +1306,31 @@ html[data-appearance="dark"] .ember-runtime-select option {
     display: grid;
   }
 
+  /* Ja/Nee/N.v.t. blijft naast elkaar staan. Drie kolommen van 44 px hoog passen op een
+     scherm van 360 px; onder elkaar werd een matrixrij drie keer zo hoog en een pagina met
+     twintig regels daarmee onwerkbaar lang. Alleen bij vier of meer keuzes wordt het een
+     kolom, want dan past het echt niet meer. */
   .ember-runtime-segment-row {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 6px;
+  }
+
+  .ember-runtime-segment-row:has(> :nth-child(4)) {
     grid-template-columns: 1fr;
+    gap: 8px;
   }
 
   .ember-runtime-segment {
     white-space: normal;
+    min-height: 44px;
+    padding: 0 8px;
+    font-size: 0.85rem;
+    letter-spacing: -0.01em;
+  }
+
+  .ember-runtime-segment-row:has(> :nth-child(4)) .ember-runtime-segment {
+    padding: 0 14px;
+    font-size: 0.9rem;
   }
 
   .ember-runtime-assessment__grid {
@@ -1466,7 +1474,6 @@ html[data-appearance="dark"] .ember-runtime-select option {
   background: var(--success-bg, var(--card-bg));
   color: var(--success-text, var(--text));
 }
-
 
 /* =========================================================
    Form runner responsive action placement
@@ -1647,7 +1654,6 @@ html[data-appearance="dark"] .ember-runtime-select option {
   }
 }
 
-
 /* =========================================================
    Form runner header-aware action docking
    ========================================================= */
@@ -1706,4 +1712,648 @@ html[data-appearance="dark"] .ember-runtime-select option {
     max-width: 370px !important;
     gap: 6px !important;
   }
+}
+
+/* Paginanavigatie onderaan het formulier. Op smalle schermen is dit de enige
+   navigatie die zonder terugscrollen bereikbaar is, dus de knoppen zijn hier
+   bewust groter dan de genummerde pills bovenin. */
+.ember-page-stepper {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: stretch;
+  gap: 12px;
+  margin-top: 24px;
+  padding-top: 18px;
+  border-top: 1px solid var(--border);
+}
+
+.ember-page-stepper__btn {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 2px;
+  min-height: 52px;
+  padding: 8px 16px;
+  border-radius: 14px;
+  border: 1px solid var(--input-border, var(--border));
+  background: var(--control-bg, var(--card-bg, var(--surface)));
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+  text-align: center;
+  transition:
+    border-color 160ms ease,
+    background 160ms ease,
+    opacity 160ms ease;
+}
+
+.ember-page-stepper__btn:hover:not(:disabled) {
+  border-color: var(--border-strong, var(--accent-border));
+  background: var(--row-bg-hover, var(--surface-2));
+}
+
+.ember-page-stepper__btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.ember-page-stepper__btn--next,
+.ember-page-stepper__btn--submit {
+  border-color: var(--accent-border, var(--border-strong));
+  background: var(--accent-bg, var(--surface-2));
+}
+
+.ember-page-stepper__btn-label {
+  font-weight: 850;
+}
+
+.ember-page-stepper__btn-title {
+  font-size: 12px;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ember-page-stepper__middle {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+
+.ember-page-stepper__position {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 8px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+/* Opslaan onderaan de pagina. Bewust rustiger dan Vorige en Volgende; het is een
+   hulpactie en niet de doorloop. */
+.ember-page-stepper__save {
+  min-height: 34px;
+  padding: 0 14px;
+  border-radius: 10px;
+  border: 1px solid var(--input-border, var(--border));
+  background: var(--control-bg, var(--card-bg, var(--surface)));
+  color: var(--text);
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 800;
+  cursor: pointer;
+  white-space: nowrap;
+  transition:
+    border-color 160ms ease,
+    background-color 160ms ease,
+    color 160ms ease;
+}
+
+.ember-page-stepper__save:hover:not(:disabled) {
+  border-color: var(--accent, var(--border));
+  color: var(--accent, var(--text));
+}
+
+.ember-page-stepper__save:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+@media (max-width: 680px) {
+  .ember-page-stepper {
+    grid-template-columns: 1fr 1fr;
+    grid-template-areas:
+      "position position"
+      "prev next";
+    gap: 10px;
+  }
+
+  .ember-page-stepper__middle {
+    grid-area: position;
+    flex-direction: row;
+    gap: 10px;
+  }
+
+  .ember-page-stepper__btn--prev {
+    grid-area: prev;
+  }
+
+  .ember-page-stepper__btn--next,
+  .ember-page-stepper__btn--submit {
+    grid-area: next;
+  }
+
+  /* De paginatitel valt weg zodra de knop smal wordt; het label blijft leidend. */
+  .ember-page-stepper__btn-title {
+    display: none;
+  }
+}
+
+/* Melding dat lokaal bewaard werk is teruggezet. Bewust rustig van toon; het is
+   een geruststelling en geen fout. */
+.ember-draft-notice {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+  padding: 10px 14px;
+  border: 1px solid var(--success-border, var(--border));
+  border-radius: 14px;
+  background: var(--success-bg-soft, var(--surface-2));
+  color: var(--success-text, var(--text));
+  font-size: 13px;
+  font-weight: 700;
+}
+
+/* Twee keuzes naast elkaar in de meldingsbalk; verdergaan met het concept of een nieuw
+   formulier beginnen. */
+.ember-draft-notice__actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-left: auto;
+}
+
+.ember-draft-notice__dismiss {
+  flex: none;
+  border: none;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-weight: 850;
+  text-decoration: underline;
+  cursor: pointer;
+  padding: 2px 4px;
+}
+
+/* Accucapaciteit te laag; de aanwezige capaciteit haalt de benodigde niet.
+   Zichtbaar op de waarde zelf, met een tekstuele toelichting zodat de melding niet
+   alleen op kleur leunt. */
+.ember-runtime-row-card__grid > .ember-cap-too-low .ember-runtime-card-field__label {
+  color: var(--danger-text, var(--danger));
+}
+
+.ember-runtime-row-card__grid > .ember-cap-too-low .ember-runtime-input {
+  border-color: var(--danger-border, var(--danger));
+  background: var(--danger-bg-soft, var(--surface-2));
+}
+
+.ember-runtime-row-card__grid > .ember-cap-too-low .ember-runtime-card-field__label::after {
+  content: " ; te laag";
+  font-weight: 850;
+  color: var(--danger-text, var(--danger));
+}
+
+/* Gelabelde veldgroepen binnen een matrixkaart. Een kaart met veel velden wordt zo
+   leesbaar in plaats van één vlakke muur invoervelden. Zonder ember.groups in de
+   formulierdefinitie verschijnt hier niets en verandert de weergave niet. */
+.ember-runtime-row-card__group + .ember-runtime-row-card__group {
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+}
+
+.ember-runtime-row-card__group-title {
+  margin-bottom: 8px;
+  font-size: 12px;
+  font-weight: 850;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+/* Read-only resultaat of read-only tekst. Ziet eruit als een veld maar is duidelijk
+   niet invulbaar, en houdt zijn hoogte ook wanneer er nog geen waarde is; anders
+   zweeft het label boven een lege plek. Lange tekst loopt door in plaats van af te
+   kappen, want een read-only cel draagt vaak de vraag zelf. */
+.ember-runtime-readonly-text {
+  min-height: 46px;
+  display: flex;
+  align-items: center;
+  padding: 12px 14px;
+  border: 1px dashed var(--border);
+  border-radius: 14px;
+  background: var(--surface-2);
+  color: var(--text);
+  font-weight: 700;
+  white-space: pre-wrap;
+  word-break: break-word;
+  box-sizing: border-box;
+}
+
+/* Schakelaar voor een boolean binnen een matrix. Daar is een boolean vrijwel altijd
+   een compacte instelling naast andere velden; twee knoppen worden er te smal. */
+.ember-runtime-switch {
+  min-height: 46px;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 14px 0 10px;
+  border: 1px solid var(--input-border, var(--border));
+  border-radius: 14px;
+  background: var(--control-bg, var(--card-bg, var(--surface)));
+  color: var(--text);
+  font: inherit;
+  font-weight: 850;
+  cursor: pointer;
+  transition:
+    background 160ms ease,
+    border-color 160ms ease;
+}
+
+.ember-runtime-switch:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.ember-runtime-switch__track {
+  position: relative;
+  width: 42px;
+  height: 24px;
+  border-radius: 999px;
+  background: var(--neutral-bg, var(--surface-2));
+  border: 1px solid var(--border);
+  flex: none;
+  transition:
+    background 160ms ease,
+    border-color 160ms ease;
+}
+
+.ember-runtime-switch__thumb {
+  position: absolute;
+  top: 50%;
+  left: 3px;
+  width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  background: var(--surface);
+  border: 1px solid var(--border-strong, var(--border));
+  transform: translate(0, -50%);
+  transition: transform 160ms ease;
+}
+
+.ember-runtime-switch--on {
+  border-color: var(--success-border);
+  background: var(--success-bg-soft, var(--success-bg));
+  color: var(--success-text);
+}
+
+.ember-runtime-switch--on .ember-runtime-switch__track {
+  background: var(--success-bg, var(--success-bg-soft));
+  border-color: var(--success-border);
+}
+
+.ember-runtime-switch--on .ember-runtime-switch__thumb {
+  transform: translate(18px, -50%);
+  border-color: var(--success-border);
+}
+
+/* Een vraag die door een consistentieregel is gemarkeerd, bijvoorbeeld een berekende
+   beschikbaarheid die onder de eis uitkomt. Rood met tekst erbij, want kleur alleen is
+   geen boodschap. De blokkade zelf loopt via de controlelijst; dit is de attendering. */
+.ember-runtime-field--warn .ember-runtime-field__label {
+  color: var(--danger-text, var(--danger));
+}
+
+.ember-runtime-field--warn .ember-runtime-input,
+.ember-runtime-field--warn .ember-runtime-readonly-text {
+  border-color: var(--danger-border, var(--danger));
+  background: var(--danger-bg-soft, var(--surface-2));
+  color: var(--danger-text, var(--text));
+  font-weight: 850;
+}
+
+.ember-runtime-field--warn .ember-runtime-field__label::after {
+  content: " ; voldoet niet aan de eis";
+  font-weight: 850;
+  color: var(--danger-text, var(--danger));
+}
+
+/* Knop naar de opvolgacties, naast Bestanden en Assistent. De teller staat op de knop
+   zelf zodat je tijdens het invullen ziet wat je achterlaat, zonder hem te openen. */
+.form-runner-floating-actions--points {
+  top: calc(50% - 116px);
+  bottom: auto;
+  transform: none;
+}
+
+.ember-points-btn {
+  position: relative;
+}
+
+.ember-points-btn__count {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  min-width: 22px;
+  height: 22px;
+  padding: 0 6px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text-strong, var(--text));
+  font-size: 12px;
+  font-weight: 900;
+  line-height: 20px;
+  text-align: center;
+}
+
+/* Korte +1 of -1 bij verandering, zelfde gedachte als de blokkadeteller in de
+   paginabalk; je ziet dat er iets bijkwam zonder dat er iets opengaat. */
+.ember-points-btn__delta {
+  position: absolute;
+  right: -4px;
+  bottom: -10px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 900;
+  animation: ember-points-delta 2.2s ease forwards;
+  pointer-events: none;
+}
+
+.ember-points-btn__delta--up {
+  background: var(--danger-bg, var(--danger-bg-soft));
+  border: 1px solid var(--danger-border);
+  color: var(--danger-text);
+}
+
+.ember-points-btn__delta--down {
+  background: var(--success-bg, var(--success-bg-soft));
+  border: 1px solid var(--success-border);
+  color: var(--success-text);
+}
+
+@keyframes ember-points-delta {
+  0% { opacity: 0; transform: translateY(4px); }
+  15% { opacity: 1; transform: translateY(0); }
+  75% { opacity: 1; transform: translateY(0); }
+  100% { opacity: 0; transform: translateY(-6px); }
+}
+
+.ember-points-sheet {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: min(560px, 100vw);
+  z-index: 70;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  background: var(--card-bg, var(--surface));
+  border-left: 1px solid var(--border);
+  box-shadow: var(--shadow-soft);
+  color: var(--text);
+}
+
+.ember-points-sheet__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 16px 18px;
+  border-bottom: 1px solid var(--border);
+}
+
+.ember-points-sheet__title {
+  font-weight: 900;
+  font-size: 16px;
+  color: var(--text-strong, var(--text));
+}
+
+.ember-points-sheet__subtitle {
+  margin-top: 2px;
+  font-size: 13px;
+}
+
+.ember-points-sheet__head-actions {
+  display: flex;
+  gap: 8px;
+  flex: none;
+}
+
+.ember-points-sheet__body {
+  overflow: auto;
+  padding: 16px 18px;
+  display: grid;
+  gap: 12px;
+  align-content: start;
+}
+
+.ember-points-sheet__error {
+  padding: 10px 12px;
+  border: 1px solid var(--danger-border);
+  border-radius: 12px;
+  background: var(--danger-bg-soft, var(--danger-bg));
+  color: var(--danger-text);
+  font-weight: 700;
+}
+
+.ember-points-sheet__empty,
+.ember-points-sheet__section {
+  font-size: 13px;
+}
+
+.ember-points-sheet__section {
+  margin-top: 6px;
+  font-weight: 850;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+
+.ember-point {
+  padding: 12px 14px;
+  display: grid;
+  gap: 8px;
+}
+
+.ember-point--dimmed {
+  opacity: 0.62;
+}
+
+.ember-point__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.ember-point__title-wrap {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+  flex-wrap: wrap;
+}
+
+.ember-point__code {
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  font-size: 12px;
+  font-weight: 900;
+  flex: none;
+}
+
+.ember-point__title {
+  font-weight: 850;
+  color: var(--text-strong, var(--text));
+}
+
+.ember-point__status {
+  flex: none;
+  padding: 3px 9px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.ember-point__status--open {
+  background: var(--danger-bg-soft, var(--danger-bg));
+  border: 1px solid var(--danger-border);
+  color: var(--danger-text);
+}
+
+.ember-point__status--done {
+  background: var(--success-bg-soft, var(--success-bg));
+  border: 1px solid var(--success-border);
+  color: var(--success-text);
+}
+
+.ember-point__status--dropped,
+.ember-point__status--info {
+  background: var(--neutral-bg);
+  border: 1px solid var(--neutral-border);
+  color: var(--neutral-text);
+}
+
+.ember-point__meta {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  font-size: 12px;
+}
+
+.ember-point__description {
+  font-size: 13px;
+  line-height: 1.4;
+  white-space: pre-wrap;
+}
+
+.ember-point__missing {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 800;
+  color: var(--muted);
+}
+
+.ember-point__toggle {
+  justify-self: start;
+  border: none;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-weight: 850;
+  text-decoration: underline;
+  cursor: pointer;
+  padding: 0;
+}
+
+.ember-point__pins {
+  display: grid;
+  gap: 6px;
+}
+
+.ember-point__pin {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface-2);
+  font-size: 12px;
+}
+
+.ember-point__pin-label {
+  font-weight: 850;
+}
+
+.ember-point__pin-link {
+  margin-left: auto;
+  font-weight: 850;
+}
+
+@media (max-width: 680px) {
+  .ember-points-sheet {
+    width: 100vw;
+  }
+}
+
+/* Punt toevoegen in de opvolgacties-sheet. */
+.ember-points-add-toggle {
+  justify-self: start;
+}
+
+.ember-points-add {
+  padding: 12px 14px;
+  display: grid;
+  gap: 10px;
+}
+
+.ember-points-add__title {
+  font-weight: 900;
+  color: var(--text-strong, var(--text));
+}
+
+.ember-points-add__field {
+  display: grid;
+  gap: 5px;
+}
+
+.ember-points-add__field > span {
+  font-size: 12px;
+  font-weight: 850;
+  color: var(--muted);
+}
+
+.ember-points-add__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+/* Acties bij een punt; waar en waarmee. Bewust naast elkaar en groot genoeg om op een
+   tablet met handschoenen te raken. */
+.ember-point__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding-top: 4px;
+}
+
+.ember-point__actions .btn {
+  min-height: 40px;
+}
+
+/* De opvolgacties-sheet ingebed in de indien-dialoog. */
+.ember-points-inline {
+  padding: 12px;
+  display: grid;
+  gap: 6px;
+}
+
+.ember-points-inline .ember-points-sheet__body {
+  padding: 6px 0 0;
+  max-height: min(46vh, 460px);
 }

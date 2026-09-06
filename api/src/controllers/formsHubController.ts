@@ -1,5 +1,8 @@
 import type { Response } from "express";
 import * as service from "../services/formsHubService.js";
+import * as followUpService from "../services/followUpService.js";
+import * as submitRejectionService from "../services/formSubmitRejectionService.js";
+import { describeParentInstanceProblem } from "../db/queries/parentInstanceGuard.sql.js";
 
 function sendKnownError(res: Response, err: any, fallback: string) {
   if (["TIMEOUT", "UNAVAILABLE", "CONFIGURATION", "BAD_RESPONSE"].includes(String(err?.category || ""))) {
@@ -9,6 +12,13 @@ function sendKnownError(res: Response, err: any, fallback: string) {
     return res.status(400).json({ error: "atrium reader request invalid" });
   }
   const message = String(err?.message || err || "").toLowerCase();
+
+  // Vóór de generieke melding; anders vangt "not found" het ouder-kindgeval af en staat er
+  // "not found" waar de gebruiker een uitleg nodig heeft.
+  const parentProblem = describeParentInstanceProblem(message);
+  if (parentProblem) {
+    return res.status(parentProblem.status).json({ error: parentProblem.error });
+  }
 
   if (message.includes("not found")) {
     return res.status(404).json({ error: "not found" });
@@ -165,6 +175,45 @@ export async function submitFormInstance(req: any, res: Response) {
     return res.json(data);
   } catch (err) {
     return sendKnownError(res, err, "submitFormInstance failed");
+  }
+}
+
+export async function addFormInstancePoint(req: any, res: Response) {
+  try {
+    const data: any = await followUpService.addRunnerFollowUpPoint({
+      formInstanceId: req.params.instanceId,
+      title: req.body?.title,
+      description: req.body?.description,
+      category: req.body?.category,
+      priority: req.body?.priority,
+      sourceQuestionName: req.body?.source_question_name,
+      user: req.user,
+    });
+
+    if (data?.ok === false) return res.status(400).json(data);
+    return res.json(data);
+  } catch (err) {
+    return sendKnownError(res, err, "addFormInstancePoint failed");
+  }
+}
+
+export async function recordSubmitRejection(req: any, res: Response) {
+  try {
+    const data: any = await submitRejectionService.recordFormSubmitRejection({
+      formInstanceId: req.params.instanceId,
+      source: req.body?.source,
+      reasonCode: req.body?.reason_code,
+      reasonMessage: req.body?.reason_message,
+      blockingCount: req.body?.blocking_count,
+      pageName: req.body?.page_name,
+      details: req.body?.details,
+      user: req.user,
+    });
+
+    if (data?.ok === false) return res.status(400).json(data);
+    return res.json(data);
+  } catch (err) {
+    return sendKnownError(res, err, "recordSubmitRejection failed");
   }
 }
 

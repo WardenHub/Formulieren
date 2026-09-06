@@ -12,7 +12,7 @@ import FormsTab from "./FormsTab.jsx";
 import ComponentsTab from "./ComponentsTab.jsx";
 import SoftwareTab from "./SoftwareTab.jsx";
 import NotesTab from "./NotesTab.jsx";
-import FollowUpsTab from "./FollowUpsTab.jsx";
+import ActionPointsTab from "./ActionPointsTab.jsx";
 import LogbookTab from "./LogbookTab.jsx";
 import InstallationOverviewTab from "./InstallationOverviewTab.jsx";
 import DrawingPinsTab from "./DrawingPinsTab.jsx";
@@ -922,17 +922,26 @@ export default function InstallationDetails() {
       },
       {
         key: "followups",
-        label: "Opvolgingen",
+        label: "Actiepunten",
         count: notesWorkflowOpenCount,
-        countAriaLabel: "openstaande opvolgingen",
+        countAriaLabel: "openstaande actiepunten",
         Icon: ClipboardList,
         content: (
-          <FollowUpsTab
+          <ActionPointsTab
             code={code}
             readOnly={isHistorical}
             initialDrawingPinId={searchParams.get("newFollowUpPin") || ""}
             initialView={searchParams.get("followupView") || "actions"}
             onCountChange={setNotesWorkflowOpenCount}
+            onSetLocation={(item) => {
+              // Zelfde ronde als vanuit de formulierrunner: naar de tekening met het punt
+              // in de hand, de geplaatste pin wordt automatisch aan dat punt gekoppeld.
+              setDrawingNavigationTarget({
+                linkActionId: String(item?.follow_up_action_id || ""),
+              });
+              skipNextTabUrlSyncRef.current = true;
+              setActiveTab("drawings");
+            }}
             onOpenDrawing={(pin, options = {}) => {
               setDrawingNavigationTarget({
                 documentId: String(pin.installation_document_id),
@@ -1218,7 +1227,20 @@ export default function InstallationDetails() {
                 }
 
                 navigate(
-                  `/installaties/${encodeURIComponent(code)}/formulieren/${encodeURIComponent(id)}`
+                  `/installaties/${encodeURIComponent(code)}/formulieren/${encodeURIComponent(id)}`,
+                  // Is er een bestaand concept hervat, dan hoort de invuller dat te zien en
+                  // te kunnen kiezen voor een nieuw formulier.
+                  res?.resumed
+                    ? {
+                        state: {
+                          resumedConcept: {
+                            formCode: clean,
+                            createdAt: res?.resumed_created_at || null,
+                            createdBy: res?.resumed_created_by || null,
+                          },
+                        },
+                      }
+                    : undefined
                 );
               } finally {
                 setFormsBusy(false);

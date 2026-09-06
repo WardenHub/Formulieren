@@ -139,7 +139,13 @@ join dbo.FollowUpAction a
   on a.follow_up_action_id = c.follow_up_action_id
 join dbo.FollowUpStatusDefinition sd
   on sd.status_code = a.status
+left join dbo.FollowUpActionFormSource fs
+  on fs.follow_up_action_id = a.follow_up_action_id
+left join dbo.FormInstance fi
+  on fi.form_instance_id = fs.form_instance_id
 where c.atrium_installation_code = @code
+  -- Zelfde regel als in de werklijst; een concept lekt niet naar de koppelkeuze.
+  and (fs.form_instance_id is null or fi.status <> N'CONCEPT')
 order by sd.is_terminal, sd.sort_order, coalesce(a.updated_at, a.created_at) desc;
 `;
 

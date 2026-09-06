@@ -4,6 +4,7 @@ import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState }
 import Tabs from "../../components/Tabs.jsx";
 import { BrainIcon } from "@/components/ui/brain";
 import { CogIcon } from "@/components/ui/cog";
+import { BadgeAlertIcon } from "@/components/ui/badge-alert.jsx";
 
 import {
   createAdminForm,
@@ -17,6 +18,7 @@ import {
 
 import AdminFormsVersionsTab from "./AdminFormsVersionsTab.jsx";
 import AdminFormsConfigTab from "./AdminFormsConfigTab.jsx";
+import AdminFormsSubmitRejectionsTab from "./AdminFormsSubmitRejectionsTab.jsx";
 
 const EMPTY_HEADER_STATE = {
   visible: false,
@@ -308,7 +310,7 @@ const AdminFormsTab = forwardRef(function AdminFormsTab({ onHeaderSaveStateChang
     }
   }
 
-  async function handleCreateVersionFromJsonText(form, surveyJsonText) {
+  async function handleCreateVersionFromJsonText(form, surveyJsonText, changeSummary) {
     const formId = form?.form_id;
 
     if (!formId) {
@@ -323,6 +325,7 @@ const AdminFormsTab = forwardRef(function AdminFormsTab({ onHeaderSaveStateChang
 
       const res = await createAdminFormVersion(formId, {
         survey_json: surveyJsonText,
+        change_summary: changeSummary,
       });
 
       const item = res?.item || null;
@@ -415,6 +418,12 @@ const AdminFormsTab = forwardRef(function AdminFormsTab({ onHeaderSaveStateChang
             onSaveConfig={handleSaveConfig}
           />
         ),
+      },
+      {
+        key: "rejections",
+        label: "Vastgelopen indieningen",
+        Icon: BadgeAlertIcon,
+        content: <AdminFormsSubmitRejectionsTab forms={forms} />,
       },
     ];
   }, [

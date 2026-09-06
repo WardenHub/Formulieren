@@ -100,8 +100,7 @@ if (!/FollowUpActionReview[\s\S]*status_at_review[\s\S]*customer_discussed[\s\S]
 
 const runtimeFiles = runtimeRoots
   .flatMap(listFiles)
-  .filter((filePath) => /\.(?:ts|tsx|js|jsx)$/.test(filePath))
-  .filter((filePath) => !filePath.endsWith("installationNotes.sql-ZwarteLaptop.ts"));
+  .filter((filePath) => /\.(?:ts|tsx|js|jsx)$/.test(filePath));
 
 for (const filePath of runtimeFiles) {
   const contents = readRequired(filePath);

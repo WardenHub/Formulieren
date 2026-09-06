@@ -1,15 +1,14 @@
 import fs from "node:fs";
 import path from "node:path";
 
+import { createExternalArtifactReader } from "./externalArtifacts.mjs";
+
 const root = process.cwd();
 const schemaPath = path.resolve(root, "..", "..", "SQL DB", "tabel-definities.sql");
 const propertiesPath = path.resolve(root, "..", "..", "SQL DB", "Eigenschappen.sql");
-const readerPath = path.resolve(
-  process.env.USERPROFILE || "C:/Users/Jesse Veentjer",
-  ".codex/projects/atrium-semantic-model-nl/deployment/ember-revamp/reader/source-proposed",
-);
+const external = createExternalArtifactReader("Inspectiearchitectuur");
 const read = (relative) => fs.readFileSync(path.resolve(root, relative), "utf8");
-const readReader = (relative) => fs.readFileSync(path.resolve(readerPath, relative), "utf8");
+const readReader = (relative) => external.readText(`reader/source-proposed/${relative}`);
 const schema = fs.readFileSync(schemaPath, "utf8");
 const properties = fs.readFileSync(propertiesPath, "utf8");
 const queries = read("api/src/db/queries/inspections.sql.ts");
@@ -26,7 +25,7 @@ const readerProgram = readReader("Program.cs");
 const readerCatalog = readReader("QueryCatalog.cs");
 const readerService = readReader("AtriumQueryService.cs");
 const readerOptions = readReader("ReaderOptions.cs");
-const readerManifest = JSON.parse(readReader("queries.json"));
+const readerManifest = external.readJson("reader/source-proposed/queries.json");
 const readerInspectionQuery = readReader("Queries/inspection-workorders-by-installations.sql");
 const operationalQueries = read("api/src/db/queries/installationOperational.sql.ts");
 
@@ -69,38 +68,40 @@ for (const event of ["CASE_CREATED", "STATUS_CHANGED", "WORK_ORDER_REFRESHED", "
 expect("typed Ember Readerclient", client, ["findRelations:", "findProjects:", "findWorkorders:", "resolveContext(typeValue", "getInspectionWorkorders(", "getWorkorder:", "async function run(", "MAXIMUM_ROWS = 25", "installationCodes: codes", "payload?.truncated"]);
 if (/export\s+(async\s+)?function\s+run\b/.test(client) || /queryId\s*[:=].*req\.(body|query)/.test(client)) failures.push("Readerclient exposeert een generieke queryroute");
 
-expect("Reader correlation", readerProgram, ["CorrelationIds.GetOrCreate", 'httpResponse.Headers["X-Correlation-ID"]', "correlationId"]);
-expect("Reader gecontroleerde fouten", readerProgram, ['error = "invalid_request"', 'error = "unknown_query"', 'error = "atrium_query_failed"', 'error = "atrium_query_timeout"']);
-if (readerProgram.includes("exceptionType") || readerProgram.includes("detail = exception.Message")) failures.push("Reader exposeert technische foutdetails");
-expect("Reader bounded response", readerService, ["rows.Count >= _options.MaximumRows", "bool Truncated", "string CorrelationId", "rows.Count, _options.MaximumRows, truncated"]);
-expect("Reader minimale typed parameters", readerService, ["JsonValueKind.Array", "OdbcType.Date", "OdbcType.NVarChar", "definition.MaximumItems", "definition.ItemMaximumLength"]);
-expect("Reader catalogguards", readerCatalog, ["ValidateSelectOnly", "ProhibitedTokenRegex", "IsInsideContentRoot", "unsupported parameter type", "unsafe parameter bound"]);
-expect("Reader requestcontract", readerOptions, ["IReadOnlyDictionary<string, JsonElement>"]);
-expect("Reader inspectiequery", readerInspectionQuery, [
-  "IN (@installationCodes)",
-  "@businessUnit",
-  "@dateFrom",
-  "@dateTo",
-  "JOIN AT_CONTRSRT CS2",
-  "CS2.GC_CODE IN ('200', '201')",
-]);
-if (/CONTAINING\s+'(?:INSPECT|KEUR)'/i.test(readerInspectionQuery)) {
-  failures.push("Reader inspectieclassificatie gebruikt nog titelherkenning");
-}
-expect("Reader Business Unit-allowlist", readerOptions, ["AllowedBusinessUnits"]);
-expect("Reader Business Unit-validatie", readerService, ["ValidateBusinessUnit", "AllowedBusinessUnits"]);
+if (readerProgram && readerCatalog && readerService && readerOptions && readerManifest && readerInspectionQuery) {
+  expect("Reader correlation", readerProgram, ["CorrelationIds.GetOrCreate", 'httpResponse.Headers["X-Correlation-ID"]', "correlationId"]);
+  expect("Reader gecontroleerde fouten", readerProgram, ['error = "invalid_request"', 'error = "unknown_query"', 'error = "atrium_query_failed"', 'error = "atrium_query_timeout"']);
+  if (readerProgram.includes("exceptionType") || readerProgram.includes("detail = exception.Message")) failures.push("Reader exposeert technische foutdetails");
+  expect("Reader bounded response", readerService, ["rows.Count >= _options.MaximumRows", "bool Truncated", "string CorrelationId", "rows.Count, _options.MaximumRows, truncated"]);
+  expect("Reader minimale typed parameters", readerService, ["JsonValueKind.Array", "OdbcType.Date", "OdbcType.NVarChar", "definition.MaximumItems", "definition.ItemMaximumLength"]);
+  expect("Reader catalogguards", readerCatalog, ["ValidateSelectOnly", "ProhibitedTokenRegex", "IsInsideContentRoot", "unsupported parameter type", "unsafe parameter bound"]);
+  expect("Reader requestcontract", readerOptions, ["IReadOnlyDictionary<string, JsonElement>"]);
+  expect("Reader inspectiequery", readerInspectionQuery, [
+    "IN (@installationCodes)",
+    "@businessUnit",
+    "@dateFrom",
+    "@dateTo",
+    "JOIN AT_CONTRSRT CS2",
+    "CS2.GC_CODE IN ('200', '201')",
+  ]);
+  if (/CONTAINING\s+'(?:INSPECT|KEUR)'/i.test(readerInspectionQuery)) {
+    failures.push("Reader inspectieclassificatie gebruikt nog titelherkenning");
+  }
+  expect("Reader Business Unit-allowlist", readerOptions, ["AllowedBusinessUnits"]);
+  expect("Reader Business Unit-validatie", readerService, ["ValidateBusinessUnit", "AllowedBusinessUnits"]);
 
-const queryIds = readerManifest.queries.map((query) => query.id);
-for (const queryId of ["healthcheck", "customer-search-by-email", "installation-context-by-code", "contract-context-by-relation-code", "current-workorders-by-relation-code", "recent-workorders-by-relation-code", "workorder-paragraphs-by-document-id", "workorder-solutions-by-document-id", "workorder-followups-by-document-id", "relation-search", "project-search", "workorder-search", "context-resolve", "inspection-workorders-by-installations", "workorder-by-key"]) {
-  if (!queryIds.includes(queryId)) failures.push(`Readercatalogus mist query: ${queryId}`);
-}
-if (queryIds.length !== 15 || new Set(queryIds).size !== 15) failures.push("Readercatalogus moet exact 15 unieke querys bevatten");
-const inspectionDefinition = readerManifest.queries.find((query) => query.id === "inspection-workorders-by-installations");
-if (inspectionDefinition?.parameters?.find((parameter) => parameter.name === "installationCodes")?.type !== "stringList") failures.push("Reader inspectiequery mist bounded stringList");
-for (const queryId of ["relation-search", "project-search", "workorder-search", "context-resolve", "inspection-workorders-by-installations", "workorder-by-key"]) {
-  const definition = readerManifest.queries.find((query) => query.id === queryId);
-  if (!definition?.parameters?.some((parameter) => parameter.name === "businessUnit")) {
-    failures.push(`Readerquery mist server-gevalideerde Business Unit: ${queryId}`);
+  const queryIds = readerManifest.queries.map((query) => query.id);
+  for (const queryId of ["healthcheck", "customer-search-by-email", "installation-context-by-code", "contract-context-by-relation-code", "current-workorders-by-relation-code", "recent-workorders-by-relation-code", "workorder-paragraphs-by-document-id", "workorder-solutions-by-document-id", "workorder-followups-by-document-id", "relation-search", "project-search", "workorder-search", "context-resolve", "inspection-workorders-by-installations", "workorder-by-key"]) {
+    if (!queryIds.includes(queryId)) failures.push(`Readercatalogus mist query: ${queryId}`);
+  }
+  if (queryIds.length !== 15 || new Set(queryIds).size !== 15) failures.push("Readercatalogus moet exact 15 unieke querys bevatten");
+  const inspectionDefinition = readerManifest.queries.find((query) => query.id === "inspection-workorders-by-installations");
+  if (inspectionDefinition?.parameters?.find((parameter) => parameter.name === "installationCodes")?.type !== "stringList") failures.push("Reader inspectiequery mist bounded stringList");
+  for (const queryId of ["relation-search", "project-search", "workorder-search", "context-resolve", "inspection-workorders-by-installations", "workorder-by-key"]) {
+    const definition = readerManifest.queries.find((query) => query.id === queryId);
+    if (!definition?.parameters?.some((parameter) => parameter.name === "businessUnit")) {
+      failures.push(`Readerquery mist server-gevalideerde Business Unit: ${queryId}`);
+    }
   }
 }
 
@@ -123,13 +124,18 @@ expect("overzichtservice", service, ["listInspectionOverview", "ATTENTION_FILTER
 expect("gescheiden overzicht- en caseroutes", routes, ['router.get("/",', 'router.get("/cases",']);
 expect("overzichtfilters", list, ["CERTIFICATE_MISSING", "PLANNING_MISSING", "APPOINTMENT_UNCONFIRMED", "DOCUMENTS_MISSING", "REPORT_MISSING", "REINSPECTION_REQUIRED", "OPEN_ACTIONS"]);
 
-const inspectedArtifacts = [schema, properties, queries, operationalQueries, service, client, routes, controller, detail, list, readerProgram, readerCatalog, readerService, readerOptions, readerInspectionQuery];
+const inspectedArtifacts = [schema, properties, queries, operationalQueries, service, client, routes, controller, detail, list, readerProgram, readerCatalog, readerService, readerOptions, readerInspectionQuery].filter(Boolean);
 if (/\u2014/.test(inspectedArtifacts.join("\n"))) failures.push("inspectie-artifact bevat een em dash");
+
+const externalReport = external.report();
+failures.push(...externalReport.failures);
 
 if (failures.length) {
   console.error("Inspectiearchitectuurvalidatie mislukt:");
   failures.forEach((failure) => console.error(`- ${failure}`));
   process.exit(1);
 }
+
+if (externalReport.notice) console.log(externalReport.notice);
 
 console.log("Inspectiearchitectuur geldig; scenario's A tot en met U, immutable bestanden, permissions en de gedeelde typed Readercapability zijn structureel gevalideerd.");

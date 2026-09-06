@@ -8,8 +8,14 @@ import {
   saveAdminFormsOrderSql,
   saveAdminFormConfigSql,
   createAdminFormVersionSql,
+  getActiveFormVersionSurveySql,
+  getFormQuestionNameUsageSql,
 } from "../db/queries/adminForms.sql.js";
 import { getUserAuditActor } from "../utils/userIdentity.js";
+import {
+  getCalculationFieldKeys,
+  getKnownCalculationIds,
+} from "./formCalculationFields.js";
 
 function parseJsonObject(value: any, fallback: any = null) {
   if (value == null) return fallback;
@@ -51,7 +57,7 @@ function isPlainObject(value: any) {
 const CONTEXT_TYPES = new Set(["RELATION", "PROJECT", "WORK_ORDER", "INSTALLATION", "EMPLOYEE"]);
 const FOLLOW_UP_TRIGGERS = new Set(["ON_SUBMIT", "ON_FINALIZE", "CONDITIONAL"]);
 const FOLLOW_UP_PRIORITIES = new Set(["LOW", "NORMAL", "HIGH", "CRITICAL"]);
-const RESPONSIBILITY_TYPES = new Set(["WARDENBURG", "CUSTOMER", "THIRD_PARTY", "UNSPECIFIED"]);
+const RESPONSIBILITY_TYPES = new Set(["INTERN", "KLANT", "DERDE", "ONBEPAALD"]);
 const FOLLOW_UP_VISIBILITIES = new Set(["INTERNAL_ONLY", "CUSTOMER_VISIBLE"]);
 const CONDITION_OPERATORS = new Set([
   "equals", "not_equals", "contains", "in", "not_in", "is_empty", "is_not_empty",
@@ -119,7 +125,7 @@ function normalizeFollowUpRules(value: any) {
     if (id) seenIds.add(id.toLowerCase());
     const trigger_type = String(row?.trigger_type || "").trim().toUpperCase();
     const priority = String(row?.priority || "NORMAL").trim().toUpperCase();
-    const responsibility_type = String(row?.responsibility_type || "WARDENBURG").trim().toUpperCase();
+    const responsibility_type = String(row?.responsibility_type || "INTERN").trim().toUpperCase();
     const visibility = String(row?.visibility || "INTERNAL_ONLY").trim().toUpperCase();
     const title = String(row?.action_title_template || "").trim();
     if (!FOLLOW_UP_TRIGGERS.has(trigger_type)) throw new Error(`follow_up_rules[${index}] heeft een ongeldige trigger`);
@@ -167,6 +173,151 @@ function normalizeFollowUpRules(value: any) {
   });
 }
 
+const FOLLOW_UP_PRIORITY_VALUES = new Set(["LOW", "NORMAL", "HIGH", "CRITICAL"]);
+const FOLLOW_UP_RESPONSIBILITY_VALUES = new Set(["INTERN", "KLANT", "DERDE", "ONBEPAALD"]);
+
+/* Prioriteit, verantwoordelijkheid en deadline staan in ember.followUp van een vraag. De
+   extractor negeert een waarde die hij niet kent, want stil gokken is erger dan de default;
+   maar dan moet de fout hier wel gemeld worden, anders publiceert iemand een formulier
+   waarin een typefout stil niets doet. */
+function validateFollowUpClassification(surveyJson: any): string | null {
+  const problems: string[] = [];
+
+  function checkConfig(questionName: string, config: any) {
+    if (!isPlainObject(config)) return;
+
+    if (config.priority !== undefined) {
+      const value = String(config.priority).trim().toUpperCase();
+      if (!FOLLOW_UP_PRIORITY_VALUES.has(value)) {
+        problems.push(`${questionName}; priority '${config.priority}' bestaat niet`);
+      }
+    }
+
+    if (config.responsibility !== undefined) {
+      const value = String(config.responsibility).trim().toUpperCase();
+      if (!FOLLOW_UP_RESPONSIBILITY_VALUES.has(value)) {
+        problems.push(`${questionName}; responsibility '${config.responsibility}' bestaat niet`);
+      }
+    }
+
+    if (config.dueInDays !== undefined && config.dueInDays !== null) {
+      const days = Number(config.dueInDays);
+      if (!Number.isInteger(days) || days < 1 || days > 365) {
+        problems.push(
+          `${questionName}; dueInDays '${config.dueInDays}' moet een heel getal tussen 1 en 365 zijn`
+        );
+      }
+    }
+  }
+
+  function walk(node: any) {
+    if (Array.isArray(node)) {
+      for (const entry of node) walk(entry);
+      return;
+    }
+
+    if (!isPlainObject(node)) return;
+
+    const followUp = (node as any).ember?.followUp;
+    const questionName = String((node as any).name || "een vraag zonder naam");
+
+    if (Array.isArray(followUp)) {
+      for (const config of followUp) checkConfig(questionName, config);
+    } else {
+      checkConfig(questionName, followUp);
+    }
+
+    walk((node as any).elements);
+    walk((node as any).templateElements);
+    walk((node as any).questions);
+  }
+
+  walk(surveyJson?.pages);
+
+  return problems.length ? problems.join("; ") : null;
+}
+
+/* De veldkaart van een berekening. Een definitie mag de vraag- en kolomnamen zelf noemen
+   onder ember.calculations[].fields; noemt hij een sleutel die de berekening niet kent, of
+   een naam die niet in de vragenlijst bestaat, dan doet die declaratie stil niets. Dat is
+   precies het soort fout dat je pas maanden later ontdekt aan een leeg getal op een
+   certificaat, dus hij wordt hier geweigerd. */
+function validateCalculationFields(surveyJson: any): string | null {
+  const declared = Array.isArray(surveyJson?.ember?.calculations)
+    ? surveyJson.ember.calculations
+    : [];
+
+  if (!declared.length) return null;
+
+  const bestaandeNamen = collectQuestionAndColumnNames(surveyJson);
+  const problems: string[] = [];
+
+  for (const entry of declared) {
+    const id = String(entry?.id || "").trim();
+    if (!id) continue;
+
+    const known = getKnownCalculationIds();
+    if (!known.includes(id)) {
+      problems.push(`berekening '${id}' bestaat niet; bekend zijn ${known.join(", ")}`);
+      continue;
+    }
+
+    const fields = entry?.fields;
+    if (!isPlainObject(fields)) continue;
+
+    const toegestaneSleutels = getCalculationFieldKeys(id);
+
+    for (const [key, value] of Object.entries(fields)) {
+      if (!toegestaneSleutels.includes(key)) {
+        problems.push(`berekening '${id}' kent geen veld '${key}'`);
+        continue;
+      }
+
+      const namen = Array.isArray(value) ? value : [value];
+      for (const naam of namen) {
+        const clean = String(naam || "").trim();
+        if (!clean) {
+          problems.push(`berekening '${id}', veld '${key}' is leeg`);
+          continue;
+        }
+        if (!bestaandeNamen.has(clean)) {
+          problems.push(
+            `berekening '${id}', veld '${key}' verwijst naar '${clean}' en die vraag of kolom bestaat niet`
+          );
+        }
+      }
+    }
+  }
+
+  return problems.length ? problems.join("; ") : null;
+}
+
+/* Alle vraagnamen en kolomnamen van de vragenlijst; dezelfde verzameling waarop de
+   sleutelcontrole van antwoorden werkt. */
+function collectQuestionAndColumnNames(surveyJson: any) {
+  const namen = new Set<string>();
+
+  function walk(node: any) {
+    if (Array.isArray(node)) {
+      for (const entry of node) walk(entry);
+      return;
+    }
+
+    if (!isPlainObject(node)) return;
+
+    const naam = String((node as any).name || "").trim();
+    if (naam) namen.add(naam);
+
+    walk((node as any).elements);
+    walk((node as any).questions);
+    walk((node as any).templateElements);
+    walk((node as any).columns);
+  }
+
+  walk(surveyJson?.pages);
+  return namen;
+}
+
 function validateSurveyJson(surveyJson: any) {
   if (!isPlainObject(surveyJson)) {
     return {
@@ -212,6 +363,22 @@ function validateSurveyJson(surveyJson: any) {
     return {
       ok: false,
       error: "survey_json.title moet een string zijn",
+    };
+  }
+
+  const followUpProblem = validateFollowUpClassification(surveyJson);
+  if (followUpProblem) {
+    return {
+      ok: false,
+      error: `ember.followUp bevat een onbekende waarde; ${followUpProblem}`,
+    };
+  }
+
+  const calculationProblem = validateCalculationFields(surveyJson);
+  if (calculationProblem) {
+    return {
+      ok: false,
+      error: `ember.calculations klopt niet; ${calculationProblem}`,
     };
   }
 
@@ -277,6 +444,8 @@ export async function getAdminFormDetail(formId: string) {
     published_at: r.published_at ?? null,
     published_by: r.published_by ?? null,
     certification_mark_key: normalizeNullableString(r.certification_mark_key),
+    change_summary: normalizeNullableString(r.change_summary),
+    is_active: Boolean(r.is_active),
     is_latest: index === 0,
     survey_json: parseJsonObject(r.survey_json, {}),
   }));
@@ -331,7 +500,7 @@ export async function getAdminFormDetail(formId: string) {
       action_description_template: r.action_description_template ?? null,
       category: r.category ?? null,
       priority: String(r.priority || "NORMAL").trim().toUpperCase(),
-      responsibility_type: String(r.responsibility_type || "WARDENBURG").trim().toUpperCase(),
+      responsibility_type: String(r.responsibility_type || "INTERN").trim().toUpperCase(),
       assigned_role_code: r.assigned_role_code ?? null,
       due_after_days: r.due_after_days == null ? null : Number(r.due_after_days),
       certificate_impact: r.certificate_impact ?? null,
@@ -483,6 +652,48 @@ export async function saveAdminFormConfig(formId: string, payload: any, user: an
   return await getAdminFormDetail(id);
 }
 
+// Een vraagnaam is de sleutel waar een antwoord, een opvolgactie en een stuk uitleg aan
+// vastzitten. Hernoemen of weghalen breekt die verbinding stil; daarom halen we alle namen
+// uit een definitie op om twee versies met elkaar te kunnen vergelijken.
+function collectQuestionNames(surveyJson: any) {
+  const names = new Set<string>();
+
+  function walk(node: any) {
+    if (!node || typeof node !== "object") return;
+
+    if (Array.isArray(node)) {
+      for (const entry of node) walk(entry);
+      return;
+    }
+
+    const name = typeof node.name === "string" ? node.name.trim() : "";
+    if (name && (node.type || Array.isArray(node.columns) || Array.isArray(node.rows))) {
+      names.add(name);
+    }
+
+    walk(node.pages);
+    walk(node.elements);
+    walk(node.templateElements);
+    walk(node.questions);
+  }
+
+  walk(surveyJson?.pages);
+  return names;
+}
+
+function describeUsage(row: any) {
+  const parts: string[] = [];
+  const followUps = Number(row?.follow_up_count || 0);
+  const guidance = Number(row?.guidance_count || 0);
+  const answers = Number(row?.answered_instance_count || 0);
+
+  if (answers > 0) parts.push(answers === 1 ? "1 ingevuld formulier" : `${answers} ingevulde formulieren`);
+  if (followUps > 0) parts.push(`${followUps} actiepunt${followUps === 1 ? "" : "en"}`);
+  if (guidance > 0) parts.push(guidance === 1 ? "1 stuk uitleg" : `${guidance} stukken uitleg`);
+
+  return parts.join(", ");
+}
+
 export async function createAdminFormVersion(formId: string, payload: any, user: any) {
   const id = parseFormId(formId);
   if (!id) return { ok: false, error: "ongeldig form_id" };
@@ -515,12 +726,77 @@ export async function createAdminFormVersion(formId: string, payload: any, user:
     return { ok: false, error: validation.error };
   }
 
+  // Een versie zonder uitleg is later niet meer te plaatsen; de invuller krijgt bovendien
+  // een melding dat zijn formulier is bijgewerkt en die melding hoort te zeggen waarom.
+  const changeSummary = normalizeNullableString(
+    payload?.change_summary ?? payload?.changeSummary
+  );
+  if (!changeSummary) {
+    return { ok: false, error: "change_summary is verplicht; beschrijf kort wat er wijzigt" };
+  }
+  if (changeSummary.length > 2000) {
+    return { ok: false, error: "change_summary mag maximaal 2000 tekens bevatten" };
+  }
+
+  // Vraagnamen die verdwijnen breken bestaande antwoorden, opvolgacties en uitleg. Dat mag,
+  // maar niet per ongeluk; het moet met naam en toenaam bevestigd worden.
+  const activeRows = await sqlQuery(getActiveFormVersionSurveySql, { formId: id });
+  const activeVersion: any = activeRows?.[0] ?? null;
+
+  if (activeVersion?.survey_json) {
+    const previousSurvey = parseJsonObject(activeVersion.survey_json, null);
+    const previousNames = collectQuestionNames(previousSurvey);
+    const nextNames = collectQuestionNames(surveyJsonObject);
+    const removedNames = [...previousNames].filter((name) => !nextNames.has(name));
+
+    if (removedNames.length > 0) {
+      const usageRows = await sqlQuery(getFormQuestionNameUsageSql, {
+        formId: id,
+        questionNamesJson: JSON.stringify(removedNames),
+      });
+
+      const blocking = (usageRows || []).filter(
+        (row: any) =>
+          Number(row.follow_up_count || 0) > 0 ||
+          Number(row.guidance_count || 0) > 0 ||
+          Number(row.answered_instance_count || 0) > 0
+      );
+
+      const acknowledged = new Set(
+        (Array.isArray(payload?.accept_removed_questions) ? payload.accept_removed_questions : [])
+          .map((value: any) => String(value || "").trim())
+          .filter(Boolean)
+      );
+
+      const unacknowledged = blocking.filter((row: any) => !acknowledged.has(String(row.question_name)));
+
+      if (unacknowledged.length > 0) {
+        return {
+          ok: false,
+          error:
+            "Deze vragen verdwijnen terwijl er nog gegevens aan hangen: " +
+            unacknowledged
+              .map((row: any) => `${row.question_name} (${describeUsage(row)})`)
+              .join("; ") +
+            ". Bevestig ze in accept_removed_questions als dit de bedoeling is.",
+          removed_questions: blocking.map((row: any) => ({
+            question_name: row.question_name,
+            follow_up_count: Number(row.follow_up_count || 0),
+            guidance_count: Number(row.guidance_count || 0),
+            answered_instance_count: Number(row.answered_instance_count || 0),
+          })),
+        };
+      }
+    }
+  }
+
   const publishedBy = getUserAuditActor(user);
 
   const rows = await sqlQuery(createAdminFormVersionSql, {
     formId: id,
     surveyJson: JSON.stringify(surveyJsonObject),
     publishedBy,
+    changeSummary,
   });
 
   const row: any = rows?.[0] ?? null;

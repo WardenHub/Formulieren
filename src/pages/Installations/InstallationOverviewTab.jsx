@@ -42,19 +42,24 @@ export default function InstallationOverviewTab({ code, onOpenTab }) {
 
   useEffect(() => {
     let cancelled = false;
-    setLoading(true);
-    setError(null);
 
-    getInstallationOperationalSummary(code)
-      .then((response) => {
+    // De laadstand hoort bij het ophalen zelf en niet los in het effect; zo staat de
+    // hele levenscyclus van deze aanroep op een plek.
+    async function laad() {
+      setLoading(true);
+      setError(null);
+
+      try {
+        const response = await getInstallationOperationalSummary(code);
         if (!cancelled) setItem(response?.item || null);
-      })
-      .catch((requestError) => {
+      } catch (requestError) {
         if (!cancelled) setError(requestError?.message || String(requestError));
-      })
-      .finally(() => {
+      } finally {
         if (!cancelled) setLoading(false);
-      });
+      }
+    }
+
+    laad();
 
     return () => {
       cancelled = true;
@@ -167,7 +172,7 @@ export default function InstallationOverviewTab({ code, onOpenTab }) {
 
         {Number(item.open_follow_up_count || 0) > 0 ? (
           <button type="button" className="btn btn-secondary" onClick={() => onOpenTab?.("followups")}>
-            Open opvolgingen en notities
+            Open de actiepunten
           </button>
         ) : null}
       </section>

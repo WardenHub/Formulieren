@@ -139,6 +139,19 @@ export function updateInstallationFollowUpStatus(code, followUpActionId, status)
   return apiPut(`/installations/${encodeURIComponent(code)}/follow-ups/${encodeURIComponent(followUpActionId)}/status`, { status });
 }
 
+export function updateInstallationFollowUp(code, followUpActionId, payload) {
+  return apiPut(
+    `/installations/${encodeURIComponent(code)}/follow-ups/${encodeURIComponent(followUpActionId)}`,
+    payload
+  );
+}
+
+export function getInstallationFollowUpAttachmentUrl(code, followUpActionId, storedFileId) {
+  return apiGet(
+    `/installations/${encodeURIComponent(code)}/follow-ups/${encodeURIComponent(followUpActionId)}/attachments/${encodeURIComponent(storedFileId)}/download-url`
+  );
+}
+
 export function getInstallationTypes() {
   return apiGet("/installation-types");
 }
@@ -338,6 +351,14 @@ export function getInstallationsMap(filters = {}) {
     take: filters.take,
     onlyCurrent: filters.onlyCurrent,
     installationType: filters.installationType,
+    // Meerdere soorten in één keer; het scherm hoefde daarvoor alles op te halen om zelf te
+    // filteren.
+    installationTypes: Array.isArray(filters.installationTypes)
+      ? filters.installationTypes.join(",")
+      : filters.installationTypes,
+    businessUnits: Array.isArray(filters.businessUnits)
+      ? filters.businessUnits.join(",")
+      : filters.businessUnits,
     coordinateMode: filters.coordinateMode,
     followUpMode: filters.followUpMode,
     openFormsOnly: filters.openFormsOnly,
@@ -436,9 +457,12 @@ export function getInstallationFormInstances(code, params = {}) {
 }
 
 // forms runtime
-export function startFormInstance(code, formCode) {
+// startNew slaat het hervatten van een bestaand concept over. Zonder die keuze deelden twee
+// losse bezoeken stil dezelfde conceptrij.
+export function startFormInstance(code, formCode, { startNew = false } = {}) {
+  const suffix = startNew ? "?new=1" : "";
   return apiPost(
-    `/installations/${encodeURIComponent(code)}/forms/${encodeURIComponent(formCode)}/start`,
+    `/installations/${encodeURIComponent(code)}/forms/${encodeURIComponent(formCode)}/start${suffix}`,
     {}
   );
 }
@@ -633,6 +657,35 @@ export function previewSubmitFormInstanceFromHub(formInstanceId, payload = {}) {
   );
 }
 
+// Een opvolgpunt dat de invuller zelf toevoegt tijdens het invullen.
+export function addFormInstancePoint(code, formInstanceId, payload) {
+  return apiPost(
+    `/installations/${encodeURIComponent(code)}/forms/instances/${encodeURIComponent(formInstanceId)}/points`,
+    payload || {}
+  );
+}
+
+export function recordFormSubmitRejection(code, formInstanceId, payload) {
+  return apiPost(
+    `/installations/${encodeURIComponent(code)}/forms/instances/${encodeURIComponent(formInstanceId)}/submit-rejections`,
+    payload || {}
+  );
+}
+
+export function recordFormSubmitRejectionFromHub(formInstanceId, payload) {
+  return apiPost(
+    `/forms/instances/${encodeURIComponent(formInstanceId)}/submit-rejections`,
+    payload || {}
+  );
+}
+
+export function addFormInstancePointFromHub(formInstanceId, payload) {
+  return apiPost(
+    `/forms/instances/${encodeURIComponent(formInstanceId)}/points`,
+    payload || {}
+  );
+}
+
 export function submitFormInstanceFromHub(formInstanceId) {
   return apiPost(`/forms/instances/${encodeURIComponent(formInstanceId)}/submit`, {});
 }
@@ -766,6 +819,18 @@ export async function getFormsMonitorList(params = {}) {
     qs.set("onlyActionable", params.onlyActionable ? "1" : "0");
   }
 
+  if (Array.isArray(params.selectedStatuses) && params.selectedStatuses.length) {
+    qs.set("selectedStatuses", params.selectedStatuses.join(","));
+  }
+
+  if (params.actionStatusFilter && String(params.actionStatusFilter).trim()) {
+    qs.set("actionStatusFilter", String(params.actionStatusFilter).trim());
+  }
+
+  if (params.noRemainingOpenActionPoints !== undefined && params.noRemainingOpenActionPoints !== null) {
+    qs.set("noRemainingOpenActionPoints", params.noRemainingOpenActionPoints ? "1" : "0");
+  }
+
   if (params.assignedUserObjectId && String(params.assignedUserObjectId).trim()) {
     qs.set("assignedUserObjectId", String(params.assignedUserObjectId).trim());
   }
@@ -861,6 +926,35 @@ export function putFormsMonitorFollowUpCertificateImpact(followUpActionId, paylo
 }
 
 // admin forms
+export function putFormsMonitorFollowUpClassification(followUpActionId, payload) {
+  return apiPut(
+    `/forms-monitor/follow-ups/${encodeURIComponent(followUpActionId)}/classification`,
+    payload || {}
+  );
+}
+
+export function getFormsMonitorFollowUpAttachmentUrl(followUpActionId, storedFileId) {
+  return apiGet(
+    `/forms-monitor/follow-ups/${encodeURIComponent(followUpActionId)}/attachments/${encodeURIComponent(storedFileId)}/download-url`
+  );
+}
+
+export function getAdminSubmitRejections(params = {}) {
+  const qs = new URLSearchParams();
+  if (params.sinceDays) qs.set("sinceDays", String(params.sinceDays));
+  if (params.formCode) qs.set("formCode", String(params.formCode));
+  if (params.source) qs.set("source", String(params.source));
+  if (params.take) qs.set("take", String(params.take));
+
+  const query = qs.toString();
+  return apiGet(`/admin/forms/submit-rejections${query ? `?${query}` : ""}`);
+}
+
+export function getAdminSubmitRejectionSummary(sinceDays) {
+  const query = sinceDays ? `?sinceDays=${encodeURIComponent(sinceDays)}` : "";
+  return apiGet(`/admin/forms/submit-rejections/summary${query}`);
+}
+
 export function getAdminForms() {
   return apiGet("/admin/forms");
 }

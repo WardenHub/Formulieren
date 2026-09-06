@@ -4,6 +4,7 @@ import { sqlQuery } from "../db/index.js";
 
 import {
   saveFormAnswersSql,
+  getFormInstanceSurveyJsonSql,
   submitFormInstanceSql,
   withdrawFormInstanceSql,
 } from "../db/queries/formsAnswers.sql.js";
@@ -18,6 +19,7 @@ import {
   getFormsCatalogForInstallationSql,
   getFormStartPreflightSql,
   reopenFormInstanceSql,
+  upgradeConceptInstanceToActiveVersionSql,
   updateFormInstanceMetadataSql,
 } from "../db/queries/forms.sql.js";
 
@@ -25,6 +27,7 @@ import { getFormPrefillSql } from "../db/queries/prefill.sql.js";
 import {
   previewFormFollowUps,
   syncFormFollowUps,
+  vervalFormInstanceFollowUps,
 } from "./followUpService.js";
 import {
   previewDefinitionFollowUps,
@@ -35,6 +38,13 @@ import {
   getInstallationArchiveState,
 } from "./installationsService.js";
 import { createFormGuidanceMediaDownloadUrl } from "./blobStorageService.js";
+import { calculateFormValues, hasDeclaredCalculations } from "./formCalculationsService.js";
+import {
+  buildUnknownAnswerKeyMessage,
+  checkAnswerKeys,
+  reportUnknownAnswerKeys,
+  shouldRejectUnknownAnswerKeys,
+} from "./formAnswerKeyService.js";
 import { getUserAuditActor } from "../utils/userIdentity.js";
 
 function parseJsonObject(value: any, fallback: any = {}) {
@@ -193,6 +203,29 @@ async function buildGuidanceMap(rows: any[]) {
     byQuestion,
     byMatrixRow,
   };
+}
+
+// Tilt een concept naar de actieve formulierversie en geeft terug wat er is gewijzigd,
+// zodat de runner de gebruiker kan melden dat de nieuwste versie is toegepast.
+// Mislukt dit, dan blijft het formulier gewoon op zijn huidige versie werken.
+async function applyLatestFormVersion(instanceId: number, user: any) {
+  try {
+    const rows = await sqlQuery(upgradeConceptInstanceToActiveVersionSql, {
+      instanceId,
+      actor: getUserAuditActor(user),
+    });
+
+    const row: any = rows?.[0] ?? null;
+    const previous = normalizeOptionalText(row?.previous_version_label);
+    const applied = normalizeOptionalText(row?.applied_version_label);
+
+    if (!previous || !applied || previous === applied) return null;
+
+    return { previous, applied, change_summary: normalizeOptionalText(row?.change_summary) };
+  } catch (err) {
+    console.error("[forms] versie-upgrade van concept mislukt", err);
+    return null;
+  }
 }
 
 export async function getFormStartPreflight(code: string, formCode: string, user: any) {
@@ -419,7 +452,12 @@ export async function getInstallationFormInstances(
   return { items };
 }
 
-export async function startFormInstance(code: string, formCode: string, user: any) {
+export async function startFormInstance(
+  code: string,
+  formCode: string,
+  user: any,
+  options?: { startNew?: boolean }
+) {
   const cleanCode = String(code || "").trim();
   const cleanFormCode = String(formCode || "").trim();
   const createdBy = getUserAuditActor(user);
@@ -430,12 +468,23 @@ export async function startFormInstance(code: string, formCode: string, user: an
     code: cleanCode,
     formCode: cleanFormCode,
     createdBy,
+    forceNew: options?.startNew ? 1 : 0,
   });
 
   const row: any = rows?.[0] ?? null;
   if (!row) return { error: "not found" };
 
-  return await getFormInstance(cleanCode, row.form_instance_id);
+  const instance = await getFormInstance(cleanCode, row.form_instance_id);
+  if ((instance as any)?.error) return instance;
+
+  // Of er een bestaand concept is hervat, en van wanneer. Zonder dit deelden twee losse
+  // bezoeken stil één rij; nu kan het scherm het zeggen en een nieuw formulier aanbieden.
+  return {
+    ...instance,
+    resumed: Boolean(row.resumed),
+    resumed_created_at: row.resumed_created_at ?? null,
+    resumed_created_by: String(row.resumed_created_by || '').trim() || null,
+  };
 }
 
 export async function startChildFormInstance(
@@ -468,11 +517,23 @@ export async function startChildFormInstance(
   return await getFormInstance(cleanCode, row.form_instance_id);
 }
 
-export async function getFormInstance(code: string, instanceId: number | string) {
+// applyLatestVersion staat alleen aan wanneer de gebruiker het formulier opent. Interne
+// leesacties, zoals tijdens opslaan of indienen, mogen de versiebinding niet verschuiven.
+export async function getFormInstance(
+  code: string,
+  instanceId: number | string,
+  options: { applyLatestVersion?: boolean; user?: any } = {}
+) {
   const cleanCode = String(code || "").trim();
   const id = parseInstanceId(instanceId);
 
   if (id == null) return { error: "not found" };
+
+  let versionUpgrade: { previous: string; applied: string; change_summary: string | null } | null = null;
+
+  if (options.applyLatestVersion) {
+    versionUpgrade = await applyLatestFormVersion(id, options.user);
+  }
 
   const rows = await sqlQuery(getFormInstanceSql, { code: cleanCode, instanceId: id });
 
@@ -489,6 +550,7 @@ export async function getFormInstance(code: string, instanceId: number | string)
       ...row,
       guidance_by_question: guidanceMaps.byQuestion,
       guidance_by_matrix_row: guidanceMaps.byMatrixRow,
+      version_upgrade: versionUpgrade,
     },
   };
 }
@@ -558,6 +620,35 @@ export async function updateFormInstanceMetadata(
   return { ok: true, result: r };
 }
 
+// De server rekent zelf uit wat er berekend moet worden. Wat de client als
+// calculated_json meestuurt wordt genegeerd; die waarden komen op een certificaat terecht en
+// mogen niet afhangen van de versie van de browser die toevallig openstond.
+async function buildServerCalculatedJson(instanceId: number, answers: any) {
+  try {
+    const rows = await sqlQuery(getFormInstanceSurveyJsonSql, { instanceId });
+    const surveyJson = parseSurveyJson(rows?.[0]?.survey_json);
+
+    if (!hasDeclaredCalculations(surveyJson)) return null;
+
+    return calculateFormValues(surveyJson, answers || {});
+  } catch (err) {
+    console.error("[forms] berekende waarden op de server bepalen mislukt", err);
+    return null;
+  }
+}
+
+// Dezelfde bron als de berekening; de vragenlijst van de versie waaraan de instance hangt.
+async function checkAnswerKeysForInstance(instanceId: number, answers: any) {
+  try {
+    const rows = await sqlQuery(getFormInstanceSurveyJsonSql, { instanceId });
+    const surveyJson = parseSurveyJson(rows?.[0]?.survey_json);
+    return checkAnswerKeys(surveyJson, answers || {});
+  } catch (err) {
+    console.error("[forms] antwoordsleutels controleren mislukt", err);
+    return { checked: false, unknownKeys: [], unknownRowKeys: [], knownKeyCount: 0 };
+  }
+}
+
 export async function saveFormAnswers(code: string, instanceId: number | string, payload: any, user: any) {
   const cleanCode = String(code || "").trim();
   const id = parseInstanceId(instanceId);
@@ -570,12 +661,24 @@ export async function saveFormAnswers(code: string, instanceId: number | string,
   await assertInstallationWritable(cleanCode);
 
   const answers_json = payload?.answers_json ?? payload?.answersJson ?? {};
-  const calculated_json = payload?.calculated_json ?? payload?.calculatedJson ?? null;
   const expected_draft_rev = Number(payload?.expected_draft_rev ?? payload?.expectedDraftRev);
 
   if (!Number.isFinite(expected_draft_rev) || expected_draft_rev < 0) {
     return { ok: false, error: "expected_draft_rev is verplicht" };
   }
+
+  // De sleutels moeten bij de gebonden versie horen. Log-eerst; weigeren gaat pas aan met
+  // EMBER_REJECT_UNKNOWN_ANSWER_KEYS=1, zodat een bestaand concept met een oude sleutel
+  // niet onverwacht vastloopt.
+  const keyCheck = await checkAnswerKeysForInstance(id, answers_json);
+  reportUnknownAnswerKeys("save", id, keyCheck);
+
+  if (shouldRejectUnknownAnswerKeys()) {
+    const message = buildUnknownAnswerKeyMessage(keyCheck);
+    if (message) return { ok: false, error: message };
+  }
+
+  const calculated_json = await buildServerCalculatedJson(id, answers_json);
 
   const rows = await sqlQuery(saveFormAnswersSql, {
     code: cleanCode,
@@ -587,7 +690,39 @@ export async function saveFormAnswers(code: string, instanceId: number | string,
   });
 
   const r: any = rows?.[0] ?? null;
-  return { ok: true, result: r };
+
+  // Opvolgpunten ontstaan al tijdens het invullen, zodat er meteen een pin, foto of
+  // bestand aan gehangen kan worden. Zolang het formulier concept is blijven ze
+  // buiten de installatiebrede werklijsten; zie getInstallationWorkflowItemsSql.
+  const followUpSync = await syncConceptFollowUps(cleanCode, id, user);
+
+  return { ok: true, result: r, follow_up_sync: followUpSync };
+}
+
+// Een mislukte sync mag het opslaan van antwoorden nooit tegenhouden; het werk van
+// de gebruiker staat voorop en de volgende opslag probeert het opnieuw.
+async function syncConceptFollowUps(cleanCode: string, id: number, user: any) {
+  try {
+    const instanceRes = await getFormInstance(cleanCode, id);
+    const item: any = instanceRes?.item ?? null;
+
+    if (!item) return null;
+    if (String(item.status || "").trim().toUpperCase() !== "CONCEPT") return null;
+
+    return await syncFormFollowUps({
+      formInstance: {
+        form_instance_id: String(item.form_instance_id ?? id),
+        installation_id: String(item.installation_id || ""),
+        atrium_installation_code: String(item.atrium_installation_code || cleanCode),
+        status: "CONCEPT",
+      },
+      surveyJson: parseSurveyJson(item.survey_json) || {},
+      answers: parseJsonObject(item.answers_json, {}) || {},
+      user,
+    });
+  } catch (err) {
+    return { ok: false, error: String((err as any)?.message || err) };
+  }
 }
 
 export async function previewSubmitFormInstance(
@@ -746,6 +881,15 @@ export async function submitFormInstance(code: string, instanceId: number | stri
   const surveyJson = parseSurveyJson(item.survey_json);
   const answers = parseJsonObject(item.answers_json, {});
 
+  // Laatste kans voordat het formulier vaststaat. Zelfde log-eerst-regel als bij opslaan.
+  const keyCheck = checkAnswerKeys(surveyJson, answers || {});
+  reportUnknownAnswerKeys("submit", id, keyCheck);
+
+  if (shouldRejectUnknownAnswerKeys()) {
+    const message = buildUnknownAnswerKeyMessage(keyCheck);
+    if (message) return { ok: false, error: message };
+  }
+
   const rows = await sqlQuery(submitFormInstanceSql, {
     code: cleanCode,
     instanceId: id,
@@ -759,6 +903,9 @@ export async function submitFormInstance(code: string, instanceId: number | stri
       form_instance_id: String(item.form_instance_id ?? id),
       installation_id: String(item.installation_id || ""),
       atrium_installation_code: String(item.atrium_installation_code || cleanCode),
+      // Het formulier is hierboven zojuist ingediend; vanaf nu geldt de
+      // audit-vaste route en wordt een verdwenen punt VERVALLEN in plaats van verwijderd.
+      status: String(submitResult?.status || "INGEDIEND"),
     },
     surveyJson: surveyJson || {},
     answers: answers || {},
@@ -795,7 +942,10 @@ export async function withdrawFormInstance(code: string, instanceId: number | st
     updatedBy,
   });
 
-  return { ok: true, result: rows?.[0] ?? null };
+  // Een ingetrokken formulier hoort geen open punten meer in de werklijst te laten staan.
+  const followUpSync = await vervalFormInstanceFollowUps(id, user);
+
+  return { ok: true, result: rows?.[0] ?? null, follow_up_sync: followUpSync };
 }
 
 export async function reopenFormInstance(code: string, instanceId: number | string, user: any) {
@@ -825,36 +975,79 @@ export async function importFormAnswerFile(code: string, file: any, user: any) {
 
   await assertInstallationWritable(cleanCode);
 
-  const formCode = String(file?.form?.code || "").trim();
-  const versionLabel = String(file?.form?.version_label || "").trim();
-  if (!formCode) return { ok: false, error: "form.code ontbreekt" };
-  if (!versionLabel) return { ok: false, error: "form.version_label ontbreekt" };
+  // Het exportpakket schrijft form_instance en runtime; de oudere handmatige vorm schrijft
+  // form, instance en payload. Beide worden gelezen, zodat een pakket dat Ember zelf heeft
+  // gemaakt ook echt terug naar binnen kan. Zonder dit was de rondgang per constructie kapot.
+  const packageBody = file?.package ?? file;
+  const instanceBlock = packageBody?.form_instance ?? packageBody?.instance ?? {};
+  const runtimeBlock = packageBody?.runtime ?? packageBody?.payload ?? {};
 
-  const formInstanceId = parseInstanceId(file?.instance?.form_instance_id);
-  const draftRev = file?.instance?.draft_rev ?? null;
+  const formCode = String(
+    packageBody?.form?.code ?? instanceBlock?.form_code ?? ""
+  ).trim();
+  const versionLabel = String(
+    packageBody?.form?.version_label ?? instanceBlock?.version_label ?? ""
+  ).trim();
 
-  const answers = file?.payload?.answers_json ?? {};
-  const calculated = file?.payload?.calculated_json ?? null;
+  if (!formCode) return { ok: false, error: "formuliercode ontbreekt in het bestand" };
+  if (!versionLabel) return { ok: false, error: "formulierversie ontbreekt in het bestand" };
 
-  const rows = await sqlQuery(importAnswerFileSql, {
-    code: cleanCode,
-    formCode,
-    versionLabel,
-    formInstanceId,
-    draftRev,
-    answersJson: JSON.stringify(answers ?? {}),
-    calculatedJson: calculated == null ? null : JSON.stringify(calculated),
-    updatedBy,
-  });
+  const formInstanceId = parseInstanceId(instanceBlock?.form_instance_id);
+  const draftRev = instanceBlock?.draft_rev ?? null;
 
-  return { ok: true, result: rows?.[0] ?? null };
+  const answers = runtimeBlock?.answers_json ?? {};
+
+  // Ook bij import rekent de server zelf; een pakket kan oud of aangepast zijn en de
+  // berekende waarden eruit zijn niet te vertrouwen.
+  const calculated = formInstanceId == null
+    ? null
+    : await buildServerCalculatedJson(formInstanceId, answers);
+
+  const allowVersionRebind = Boolean(file?.accept_version_rebind ?? file?.allow_version_rebind);
+
+  try {
+    const rows = await sqlQuery(importAnswerFileSql, {
+      code: cleanCode,
+      formCode,
+      versionLabel,
+      formInstanceId,
+      draftRev,
+      answersJson: JSON.stringify(answers ?? {}),
+      calculatedJson: calculated == null ? null : JSON.stringify(calculated),
+      updatedBy,
+      allowVersionRebind: allowVersionRebind ? 1 : 0,
+    });
+
+    return { ok: true, result: rows?.[0] ?? null, version_rebound: allowVersionRebind };
+  } catch (err: any) {
+    const message = String(err?.message || err || "");
+
+    if (message.includes("form version mismatch")) {
+      return {
+        ok: false,
+        error:
+          `Dit bestand is gemaakt op versie ${versionLabel}, en het formulier staat inmiddels op een ` +
+          "andere versie. Vraagnamen kunnen intussen zijn gewijzigd. Bevestig met " +
+          "accept_version_rebind als je de antwoorden toch wilt terugzetten.",
+        expected_version_label: versionLabel,
+      };
+    }
+
+    if (message.includes("installation not found")) {
+      return { ok: false, error: "de installatie uit dit bestand bestaat niet in Ember" };
+    }
+
+    throw err;
+  }
 }
 
 export async function getFormPrefill(
   code: string,
   formCode: string,
   keys: string[],
-  user: any
+  // De prefill leest alleen installatiegegevens; de aanroeper geeft de gebruiker
+  // mee omdat elke andere formsService-functie dat doet. Bewust ongebruikt.
+  _user: any
 ) {
   const cleanCode = String(code || "").trim();
   const cleanFormCode = String(formCode || "").trim();

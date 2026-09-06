@@ -1,6 +1,6 @@
 //api/src/controllers/formsMonitorController.ts
 import { randomUUID } from "node:crypto";
-import type { Request, Response } from "express";
+import type { Response } from "express";
 import * as service from "../services/formsMonitorService.js";
 import { buildFormReportPdf } from "../services/formReportPdfService.js";
 import {
@@ -15,6 +15,13 @@ function isHistoricalReadOnlyMessage(msg: string) {
 
 export async function downloadFormsMonitorPdf(req: any, res: any) {
   try {
+    // Dezelfde leespoort als het detail; de export gaf anders het hele formulier van
+    // iemand anders mee, terwijl het scherm het niet eens mocht openen.
+    await service.assertMayReadFormInstance(req.params.formInstanceId, {
+      user: req.user,
+      roles: req.roles || [],
+    });
+
     const result: any = await buildFormReportPdf(req.params.formInstanceId, req.user);
 
     if (result?.error === "not found") {
@@ -29,6 +36,11 @@ export async function downloadFormsMonitorPdf(req: any, res: any) {
     return res.status(200).send(result.buffer);
   } catch (err) {
     const message = String((err as any)?.message || err || "downloadFormsMonitorPdf failed");
+
+    if (message.toLowerCase().includes("forbidden")) {
+      return res.status(403).json({ error: "forbidden" });
+    }
+
     console.error("[form report pdf] failed", err);
     return res.status(500).json({
       error: message.includes("timed out") ? message : "downloadFormsMonitorPdf failed",
@@ -39,9 +51,20 @@ export async function downloadFormsMonitorPdf(req: any, res: any) {
 export async function postFormsMonitorPdfJob(req: any, res: any) {
   try {
     const formInstanceId = String(req.params.formInstanceId || "");
+
+    // Ook de omweg via een achtergrondopdracht hoort langs de leespoort.
+    await service.assertMayReadFormInstance(formInstanceId, {
+      user: req.user,
+      roles: req.roles || [],
+    });
+
     const job = createFormReportPdfJob(formInstanceId, req.user);
     return res.status(202).json(job);
   } catch (err) {
+    if (String((err as any)?.message || err).toLowerCase().includes("forbidden")) {
+      return res.status(403).json({ error: "forbidden" });
+    }
+
     console.error("[form report pdf] could not create job", err);
     return res.status(500).json({ error: "createFormsMonitorPdfJob failed" });
   }
@@ -124,6 +147,10 @@ export async function getFormsMonitorDetail(req: any, res: Response) {
 
     if (msg.includes("not found")) {
       return res.status(404).json({ error: "not found" });
+    }
+
+    if (msg.includes("forbidden")) {
+      return res.status(403).json({ error: "forbidden" });
     }
 
     const correlationId = randomUUID();
@@ -322,6 +349,12 @@ export async function postFormsMonitorManualFollowUp(req: any, res: Response) {
     if (msg.includes("require a submitted form")) {
       return res.status(409).json({ error: "manual follow-ups require a submitted form" });
     }
+    if (msg.includes("requires an installation")) {
+      return res.status(409).json({
+        error:
+          "Dit formulier hangt niet aan een installatie; een actiepunt kan daar niet aan worden gehangen.",
+      });
+    }
     if (msg.includes("forbidden")) return res.status(403).json({ error: "forbidden" });
 
     console.error(err);
@@ -359,6 +392,32 @@ export async function putFormsMonitorFollowUpNote(req: any, res: Response) {
 
     console.error(err);
     return res.status(500).json({ error: "putFormsMonitorFollowUpNote failed" });
+  }
+}
+
+export async function putFormsMonitorFollowUpClassification(req: any, res: Response) {
+  try {
+    const data = await service.updateMonitorFollowUpClassification(
+      String(req.params.followUpActionId || ""),
+      req.body || {},
+      { user: req.user, roles: req.roles || [] }
+    );
+
+    if (data?.error === "not found") return res.status(404).json({ error: "not found" });
+    if (data?.ok === false) return res.status(400).json(data);
+
+    return res.json(data);
+  } catch (err: any) {
+    const msg = String(err?.message || err).toLowerCase();
+
+    if (msg.includes("not found")) return res.status(404).json({ error: "not found" });
+    if (isHistoricalReadOnlyMessage(msg)) {
+      return res.status(409).json({ error: "historical installation read-only" });
+    }
+    if (msg.includes("forbidden")) return res.status(403).json({ error: "forbidden" });
+
+    console.error(err);
+    return res.status(500).json({ error: "putFormsMonitorFollowUpClassification failed" });
   }
 }
 
@@ -473,5 +532,20 @@ export async function putFormsMonitorComplimentPoint(req: any, res: Response) {
 
     console.error(err);
     return res.status(500).json({ error: "putFormsMonitorComplimentPoint failed" });
+  }
+}
+
+export async function getFormsMonitorFollowUpAttachmentUrl(req: any, res: any) {
+  try {
+    const data = await service.getMonitorFollowUpAttachmentDownloadUrl(
+      String(req.params.followUpActionId || ""),
+      String(req.params.storedFileId || "")
+    );
+    return res.json(data);
+  } catch (err: any) {
+    const message = String(err?.message || err || "").toLowerCase();
+    if (message.includes("not found")) return res.status(404).json({ error: "attachment not found" });
+    console.error(err);
+    return res.status(500).json({ error: "getFormsMonitorFollowUpAttachmentUrl failed" });
   }
 }

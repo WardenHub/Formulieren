@@ -21,7 +21,7 @@ import {
 } from "../utils/userIdentity.js";
 
 const PRIORITIES = new Set(["LOW", "NORMAL", "HIGH", "CRITICAL"]);
-const RESPONSIBILITY_TYPES = new Set(["WARDENBURG", "CUSTOMER", "THIRD_PARTY", "UNSPECIFIED"]);
+const RESPONSIBILITY_TYPES = new Set(["INTERN", "KLANT", "DERDE", "ONBEPAALD"]);
 const PIN_KINDS = new Set(["DEFICIENCY", "NOTE", "COMPONENT_PLACED"]);
 const PIN_STATUSES = new Set(["ACTIVE", "HISTORICAL"]);
 
@@ -266,7 +266,7 @@ export async function createManualFollowUpForPin(
   const installationCode = cleanCode(code);
   await assertInstallationWritable(installationCode);
   const priority = String(payload?.priority || "NORMAL").trim().toUpperCase();
-  const responsibilityType = String(payload?.responsibility_type || "WARDENBURG").trim().toUpperCase();
+  const responsibilityType = String(payload?.responsibility_type || "INTERN").trim().toUpperCase();
   if (!PRIORITIES.has(priority)) throw new Error("priority invalid");
   if (!RESPONSIBILITY_TYPES.has(responsibilityType)) throw new Error("responsibility type invalid");
   const certificateImpact = String(payload?.certificate_impact || "").trim().toLowerCase() || null;

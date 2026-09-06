@@ -1,6 +1,8 @@
 // // /src/auth/AuthGate.jsx
 import { useEffect, useState } from "react";
 import loginGif from "../assets/login.gif";
+import loginWebm from "../assets/login.webm";
+import LoopingClip from "../components/LoopingClip.jsx";
 import { getApiAccessToken } from "./msal";
 
 export default function AuthGate({ children }) {
@@ -35,7 +37,12 @@ export default function AuthGate({ children }) {
     return (
       <div style={{ height: "100vh", display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}>
         <div style={{ textAlign: "center", maxWidth: 360 }}>
-          <img src={loginGif} alt="inloggen" style={{ maxWidth: "100%", borderRadius: 12, marginBottom: 16 }} />
+          <LoopingClip
+            webmSrc={loginWebm}
+            gifSrc={loginGif}
+            alt="inloggen"
+            style={{ maxWidth: "100%", borderRadius: 12, marginBottom: 16 }}
+          />
           <div style={{ fontSize: 18, marginBottom: 6 }}>inloggen…</div>
           <div className="muted">even geduld; je sessie wordt geladen</div>
         </div>

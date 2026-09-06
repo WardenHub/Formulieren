@@ -102,6 +102,7 @@ const AdminFormsVersionsTab = forwardRef(function AdminFormsVersionsTab(
   const [uploadText, setUploadText] = useState("");
   const [uploadError, setUploadError] = useState(null);
   const [uploadOk, setUploadOk] = useState(false);
+  const [uploadChangeSummary, setUploadChangeSummary] = useState("");
 
   useEffect(() => {
     setOrderDraft(Array.isArray(forms) ? forms : []);
@@ -219,6 +220,15 @@ const AdminFormsVersionsTab = forwardRef(function AdminFormsVersionsTab(
       return;
     }
 
+    const changeSummary = uploadChangeSummary.trim();
+    if (!changeSummary) {
+      setUploadError(
+        "Beschrijf kort wat er in deze versie wijzigt; die tekst krijgt de invuller te zien."
+      );
+      setUploadOk(false);
+      return;
+    }
+
     const formName = selectedForm.name || selectedForm.code || "dit formulier";
     const nextVersionNumber =
       Number(selectedForm.latest_version ?? selectedForm.version_count ?? 0) + 1;
@@ -237,9 +247,10 @@ const AdminFormsVersionsTab = forwardRef(function AdminFormsVersionsTab(
     if (!ok) return;
 
     try {
-      await onCreateVersionFromJsonText?.(selectedForm, uploadText);
+      await onCreateVersionFromJsonText?.(selectedForm, uploadText, changeSummary);
 
       setUploadText("");
+      setUploadChangeSummary("");
       setUploadError(null);
       setUploadOk(false);
       setShowUpload(false);
@@ -378,6 +389,22 @@ const AdminFormsVersionsTab = forwardRef(function AdminFormsVersionsTab(
                 setUploadOk(false);
               }}
             />
+
+            <label className="follow-up-field follow-up-field--wide">
+              <span>Wat wijzigt er in deze versie</span>
+              <textarea
+                className="cf-textarea"
+                rows={3}
+                maxLength={2000}
+                value={uploadChangeSummary}
+                placeholder="Bijvoorbeeld; kolom hele dag toegevoegd bij perioden niet beschikbaar, en A2 wordt automatisch op nee gezet bij te lage beschikbaarheid"
+                onChange={(e) => setUploadChangeSummary(e.target.value)}
+              />
+              <small className="muted">
+                Verplicht. Deze tekst staat bij de versie in dit overzicht en wordt getoond aan de
+                invuller wanneer zijn concept naar deze versie wordt bijgewerkt.
+              </small>
+            </label>
 
             <div className="ember-toolbar">
               <button type="button" className="btn btn-secondary" onClick={handleFormatUploadJson}>
@@ -548,6 +575,15 @@ const AdminFormsVersionsTab = forwardRef(function AdminFormsVersionsTab(
                   <span className="ember-label ember-label--muted">
                     Door; {version.published_by || "-"}
                   </span>
+                </div>
+
+                {/* Waarom deze versie er is. Zonder deze regel is een versiesprong later
+                    niet meer te plaatsen, en weet de invuller ook niet wat er veranderde. */}
+                <div className="admin-version-change">
+                  <div className="admin-version-change__label">Wat er is gewijzigd</div>
+                  <div className={version.change_summary ? "" : "muted"}>
+                    {version.change_summary || "Niet vastgelegd bij deze versie."}
+                  </div>
                 </div>
               </div>
             ))}

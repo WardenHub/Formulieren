@@ -22,6 +22,51 @@ import {
   syncAllMatrixQuestionVisualErrors,
   collectValidationSummary,
 } from "./validation.jsx";
+import { resolveCalculationFields } from "./calculationFields.js";
+
+// De rekenregels zelf blijven in code; het zijn echte domeinberekeningen over
+// accucapaciteit en systeembeschikbaarheid en die laten zich niet zinnig in JSON
+// uitdrukken. Wat wél declaratief hoort is de koppeling: welk formulier welke
+// berekening gebruikt en op welke vragen die moet reageren. Een formulier zet dat
+// neer als "ember": { "calculations": [ { "id": ..., "watch": [...] } ] }.
+const RUNTIME_CALCULATIONS = {
+  "energy-supply-capacity": ({ model, prefillPayload, energyAutoStateRef, fields }) =>
+    normalizeEnergyRows(model, prefillPayload, energyAutoStateRef, fields),
+  "system-availability": ({ model, availabilityAutoStateRef, fields }) =>
+    normalizeAvailabilityRows(model, availabilityAutoStateRef, fields),
+};
+
+function getDeclaredCalculations(surveyDefinition) {
+  const declared = surveyDefinition?.ember?.calculations;
+  if (!Array.isArray(declared)) return [];
+
+  return declared
+    .map((entry) => {
+      const id = String(entry?.id || "").trim();
+      const run = RUNTIME_CALCULATIONS[id];
+
+      if (!run) {
+        console.warn(`[ember runtime] onbekende berekening in formulierdefinitie: ${id || "(leeg)"}`);
+        return null;
+      }
+
+      const watch = (Array.isArray(entry?.watch) ? entry.watch : [])
+        .map((value) => String(value || "").trim())
+        .filter(Boolean);
+
+      if (!watch.length) {
+        console.warn(`[ember runtime] berekening ${id} heeft geen watch-lijst en doet dus niets`);
+        return null;
+      }
+
+      // De veldnamen komen uit de declaratie, met de bekende namen als standaard. Zo hoeft
+      // een tweede formulier met eigen kolomnamen niets in deze gedeelde runtime te wijzigen.
+      const fields = resolveCalculationFields(id, entry?.fields);
+
+      return { id, watch, run, fields };
+    })
+    .filter(Boolean);
+}
 
 function queryQuestionRoot(name) {
   const escaped =
@@ -901,24 +946,27 @@ function applyAllMatrixLayoutClasses(
 
 function syncValidationVisualsOnlyWhenActivated(model, validationActivatedRef) {
   if (!validationActivatedRef?.current) return;
-  syncAllMatrixQuestionVisualErrors(model, true);
+  syncAllMatrixQuestionVisualErrors(model);
 }
 
-export function applyCapWarnings(model) {
+export function applyCapWarnings(model, fields) {
   if (!model) return;
 
-  const matrixRoot = queryQuestionRoot("es_regels");
+  const veld = fields || resolveCalculationFields("energy-supply-capacity", null);
+  if (!veld) return;
+
+  const matrixRoot = queryQuestionRoot(veld.rows);
   if (!matrixRoot) return;
 
-  const rows = Array.isArray(model.getValue("es_regels")) ? model.getValue("es_regels") : [];
+  const rows = Array.isArray(model.getValue(veld.rows)) ? model.getValue(veld.rows) : [];
   const trList = matrixRoot.querySelectorAll("tbody tr");
 
   trList.forEach((tr, rowIndex) => {
     const row = rows[rowIndex];
     if (!row || typeof row !== "object") return;
 
-    const aanwezige = toNumberOrNull(row.es_effectieve_ah);
-    const benodigd = toNumberOrNull(row.es_benodigd_ah);
+    const aanwezige = toNumberOrNull(row[veld.effectiveAh]);
+    const benodigd = toNumberOrNull(row[veld.requiredAh]);
 
     const shouldWarn =
       aanwezige !== null &&
@@ -939,30 +987,36 @@ export function applyCapWarnings(model) {
   });
 }
 
-export function applyAvailabilityWarnings(model) {
+export function applyAvailabilityWarnings(model, fields) {
   if (!model) return;
 
-  const geconstateerd = toNumberOrNull(model.getValue("a2_systeembeschikbaarheid_geconstateerd"));
-  const pve = toNumberOrNull(model.getValue("a2_systeembeschikbaarheid_pve"));
+  const veld = fields || resolveCalculationFields("system-availability", null);
+  if (!veld) return;
+
+  const geconstateerd = toNumberOrNull(model.getValue(veld.observedAvailability));
+  const pve = toNumberOrNull(model.getValue(veld.requiredAvailability));
 
   const shouldWarn =
     geconstateerd !== null &&
     pve !== null &&
     geconstateerd < pve;
 
-  const root = queryQuestionRoot("a2_systeembeschikbaarheid_geconstateerd");
+  const root = queryQuestionRoot(veld.observedAvailability);
   if (!root) return;
 
   root.classList.toggle("ember-availability-too-low", shouldWarn);
 }
 
-export function normalizeEnergyRows(model, prefillPayload, energyAutoStateRef) {
+export function normalizeEnergyRows(model, prefillPayload, energyAutoStateRef, fields) {
   if (!model) return;
 
-  const rows = Array.isArray(model.getValue("es_regels")) ? model.getValue("es_regels") : [];
+  const veld = fields || resolveCalculationFields("energy-supply-capacity", null);
+  if (!veld) return;
+
+  const rows = Array.isArray(model.getValue(veld.rows)) ? model.getValue(veld.rows) : [];
   if (!rows.length) return;
 
-  const agingFactor = model.getValue("es_verouderingsfactor");
+  const agingFactor = model.getValue(veld.agingFactor);
   const brandTypeMap = buildBrandTypeMap(prefillPayload);
 
   let changed = false;
@@ -979,17 +1033,17 @@ export function normalizeEnergyRows(model, prefillPayload, energyAutoStateRef) {
 
     const nextState = { ...prevState };
 
-    const merkType = row.es_merk_type ? String(row.es_merk_type) : "";
+    const merkType = row[veld.brandType] ? String(row[veld.brandType]) : "";
     const brand = merkType ? brandTypeMap.get(merkType) : null;
     const merkTypeChanged = prevState.lastMerkType !== merkType;
 
     if (brand?.default_capacity_ah != null) {
       const defaultCap = formatMaybeNumber(brand.default_capacity_ah, 3);
-      const currentCap = toNumberOrNull(row.es_capaciteit_ah);
+      const currentCap = toNumberOrNull(row[veld.capacityAh]);
 
       if (merkTypeChanged || currentCap === null) {
-        if (!valuesEqualLoose(row.es_capaciteit_ah, defaultCap)) {
-          row.es_capaciteit_ah = defaultCap;
+        if (!valuesEqualLoose(row[veld.capacityAh], defaultCap)) {
+          row[veld.capacityAh] = defaultCap;
           changed = true;
         }
 
@@ -998,11 +1052,11 @@ export function normalizeEnergyRows(model, prefillPayload, energyAutoStateRef) {
     }
 
     const computedEffectiveAh = formatMaybeNumber(
-      computeEffectiveAh(row.es_capaciteit_ah, row.es_aantal, row.es_schakeling),
+      computeEffectiveAh(row[veld.capacityAh], row[veld.count], row[veld.wiring]),
       3
     );
 
-    const currentEffective = row.es_effectieve_ah;
+    const currentEffective = row[veld.effectiveAh];
     const effectiveIsEmpty = toNumberOrNull(currentEffective) === null;
     const effectiveStillAuto =
       prevState.autoEffectieveAh != null &&
@@ -1010,7 +1064,7 @@ export function normalizeEnergyRows(model, prefillPayload, energyAutoStateRef) {
 
     if (effectiveIsEmpty || effectiveStillAuto || merkTypeChanged) {
       if (!valuesEqualLoose(currentEffective, computedEffectiveAh)) {
-        row.es_effectieve_ah = computedEffectiveAh;
+        row[veld.effectiveAh] = computedEffectiveAh;
         changed = true;
       }
 
@@ -1019,16 +1073,16 @@ export function normalizeEnergyRows(model, prefillPayload, energyAutoStateRef) {
 
     const requiredAh = formatMaybeNumber(
       computeRequiredAh(
-        row.es_ruststroom_ma,
-        row.es_alarmstroom_ma,
-        row.es_overbrugging_uren,
+        row[veld.standbyCurrentMa],
+        row[veld.alarmCurrentMa],
+        row[veld.bridgingHours],
         agingFactor
       ),
       3
     );
 
-    if (!valuesEqualLoose(row.es_benodigd_ah, requiredAh)) {
-      row.es_benodigd_ah = requiredAh;
+    if (!valuesEqualLoose(row[veld.requiredAh], requiredAh)) {
+      row[veld.requiredAh] = requiredAh;
       changed = true;
     }
 
@@ -1039,23 +1093,24 @@ export function normalizeEnergyRows(model, prefillPayload, energyAutoStateRef) {
   });
 
   if (changed) {
-    model.setValue("es_regels", nextRows);
+    model.setValue(veld.rows, nextRows);
   } else {
     requestAnimationFrame(() => {
-      applyCapWarnings(model);
+      applyCapWarnings(model, veld);
     });
   }
 }
 
-export function normalizeAvailabilityRows(model, availabilityAutoStateRef) {
+export function normalizeAvailabilityRows(model, availabilityAutoStateRef, fields) {
   if (!model) return;
 
-  const rows = Array.isArray(model.getValue("a2_buitenbedrijfstellingen"))
-    ? model.getValue("a2_buitenbedrijfstellingen")
-    : [];
+  const veld = fields || resolveCalculationFields("system-availability", null);
+  if (!veld) return;
 
-  const perfRows = Array.isArray(model.getValue("performance_data_view"))
-    ? model.getValue("performance_data_view")
+  const rows = Array.isArray(model.getValue(veld.rows)) ? model.getValue(veld.rows) : [];
+
+  const perfRows = Array.isArray(model.getValue(veld.detectorRows))
+    ? model.getValue(veld.detectorRows)
     : [];
 
   let changed = false;
@@ -1067,76 +1122,65 @@ export function normalizeAvailabilityRows(model, availabilityAutoStateRef) {
     const prevState = availabilityAutoStateRef.current[stateKey] || {};
     availabilityAutoStateRef.current[stateKey] = { ...prevState };
 
-    const isFullDay = row.hele_dag === true || ["1", "true", "ja", "yes"].includes(
-      String(row.hele_dag || "").trim().toLowerCase()
-    );
+    const isFullDay =
+      row[veld.fullDay] === true ||
+      ["1", "true", "ja", "yes"].includes(String(row[veld.fullDay] || "").trim().toLowerCase());
     const urenPerDag = isFullDay
       ? "24"
-      : formatMaybeNumber(computeHoursBetween(row.tijd_begin, row.tijd_einde), 3);
+      : formatMaybeNumber(computeHoursBetween(row[veld.startTime], row[veld.endTime]), 3);
 
-    if (!valuesEqualLoose(row.uren_pd_niet_beschikbaar, urenPerDag)) {
-      row.uren_pd_niet_beschikbaar = urenPerDag;
+    if (!valuesEqualLoose(row[veld.hoursPerDay], urenPerDag)) {
+      row[veld.hoursPerDay] = urenPerDag;
       changed = true;
     }
 
     const meldurenNietBeschikbaar = formatMaybeNumber(
       computeMeldurenNietBeschikbaar(
-        row.uren_pd_niet_beschikbaar,
-        row.melders_niet_beschikbaar,
-        row.tijdsduur_dagen
+        row[veld.hoursPerDay],
+        row[veld.unavailableDetectors],
+        row[veld.durationDays]
       ),
       3
     );
 
-    if (!valuesEqualLoose(row.melduren_niet_beschikbaar, meldurenNietBeschikbaar)) {
-      row.melduren_niet_beschikbaar = meldurenNietBeschikbaar;
+    if (!valuesEqualLoose(row[veld.detectorHours], meldurenNietBeschikbaar)) {
+      row[veld.detectorHours] = meldurenNietBeschikbaar;
       changed = true;
     }
 
     return row;
   });
 
-  const totaalMeldurenBuitenWerking = sumAvailabilityMelduren(nextRows);
-  const totaalAantalMelders = sumAantalMeldersFromPerformanceRows(perfRows);
+  const totaalMeldurenBuitenWerking = sumAvailabilityMelduren(nextRows, veld.detectorHours);
+  const totaalAantalMelders = sumAantalMeldersFromPerformanceRows(perfRows, veld.detectorCountColumns);
   const geconstateerd = computeGeconstateerdeSysteembeschikbaarheid(
     totaalAantalMelders,
     totaalMeldurenBuitenWerking
   );
 
   if (changed) {
-    model.setValue("a2_buitenbedrijfstellingen", nextRows);
+    model.setValue(veld.rows, nextRows);
     return;
   }
 
-  if (!valuesEqualLoose(model.getValue("a2_melduren_buiten_werking"), totaalMeldurenBuitenWerking)) {
-    model.setValue("a2_melduren_buiten_werking", totaalMeldurenBuitenWerking);
+  if (!valuesEqualLoose(model.getValue(veld.totalDetectorHours), totaalMeldurenBuitenWerking)) {
+    model.setValue(veld.totalDetectorHours, totaalMeldurenBuitenWerking);
   }
 
-  if (!valuesEqualLoose(model.getValue("a2_aantal_melders"), totaalAantalMelders)) {
-    model.setValue("a2_aantal_melders", totaalAantalMelders);
+  if (!valuesEqualLoose(model.getValue(veld.detectorCount), totaalAantalMelders)) {
+    model.setValue(veld.detectorCount, totaalAantalMelders);
   }
 
-  if (!valuesEqualLoose(model.getValue("a2_systeembeschikbaarheid_geconstateerd"), geconstateerd)) {
-    model.setValue("a2_systeembeschikbaarheid_geconstateerd", geconstateerd);
+  if (!valuesEqualLoose(model.getValue(veld.observedAvailability), geconstateerd)) {
+    model.setValue(veld.observedAvailability, geconstateerd);
   }
 
-  const a2Rows = Array.isArray(model.getValue("a2_items")) ? model.getValue("a2_items") : [];
-  if (a2Rows.length > 0) {
-    const nextA2Rows = a2Rows.map((row, idx) => {
-      if (idx !== 0) return row;
-
-      const rr = row && typeof row === "object" ? { ...row } : {};
-      rr.eis = "NEN 2535:1996 & 2009 §4.4";
-      return rr;
-    });
-
-    if (JSON.stringify(nextA2Rows) !== JSON.stringify(a2Rows)) {
-      model.setValue("a2_items", nextA2Rows);
-    }
-  }
+  // De normtekst in de eis-kolom stond hier als vaste string in de gedeelde runtime.
+  // Dat is inhoud van één formulier, dus die hoort in de formulierdefinitie als
+  // defaultValue op de kolom en niet in code die elk formulier raakt.
 
   requestAnimationFrame(() => {
-    applyAvailabilityWarnings(model);
+    applyAvailabilityWarnings(model, veld);
   });
 }
 
@@ -1152,8 +1196,16 @@ export function attachRuntimeBehaviors({
   guidanceByQuestion = null,
   guidanceByMatrixRow = null,
   onOpenQuestionGuidance,
+  // De DOM-decoratielaag hieronder werkt uitsluitend op SurveyJS-markup (.sd-*).
+  // Draait de Ember-runtime, dan levert die laag niets op en kost hij alleen
+  // batterij; hij blijft wel bestaan voor de terugval op de SurveyJS-renderer.
+  surveyJsDomActive = false,
+  // De ruwe formulierdefinitie; hieruit komt de declaratieve rekenkoppeling.
+  surveyDefinition = null,
 }) {
   if (!model) return () => {};
+
+  const declaredCalculations = getDeclaredCalculations(surveyDefinition);
 
   let normalizeRaf = 0;
   let validationRaf = 0;
@@ -1289,32 +1341,40 @@ export function attachRuntimeBehaviors({
   function refreshDerivedState(name) {
     const key = String(name || "");
 
-    const isEnergyRelevant =
-      key === "es_verouderingsfactor" ||
-      key.startsWith("es_regels");
+    const triggered = declaredCalculations.filter((calculation) =>
+      calculation.watch.some((watched) => key === watched || key.startsWith(watched))
+    );
 
-    const isAvailabilityRelevant =
-      key === "a2_systeembeschikbaarheid_pve" ||
-      key.startsWith("a2_buitenbedrijfstellingen") ||
-      key.startsWith("performance_data_view") ||
-      key.startsWith("a2_items");
+    if (!triggered.length) return;
 
     if (normalizeRaf) cancelAnimationFrame(normalizeRaf);
 
     normalizeRaf = requestAnimationFrame(() => {
       normalizeRaf = 0;
 
-      if (isEnergyRelevant) {
-        normalizeEnergyRows(model, prefillPayload, energyAutoStateRef);
-      }
-
-      if (isAvailabilityRelevant) {
-        normalizeAvailabilityRows(model, availabilityAutoStateRef);
-      }
+      triggered.forEach((calculation) => {
+        try {
+          calculation.run({
+            model,
+            prefillPayload,
+            energyAutoStateRef,
+            availabilityAutoStateRef,
+            fields: calculation.fields,
+          });
+        } catch (err) {
+          console.error(`[ember runtime] berekening ${calculation.id} faalde`, err);
+        }
+      });
 
       requestAnimationFrame(() => {
-        applyCapWarnings(model);
-        applyAvailabilityWarnings(model);
+        triggered.forEach((calculation) => {
+          if (calculation.id === "energy-supply-capacity") {
+            applyCapWarnings(model, calculation.fields);
+          }
+          if (calculation.id === "system-availability") {
+            applyAvailabilityWarnings(model, calculation.fields);
+          }
+        });
       });
     });
   }
@@ -1330,7 +1390,7 @@ export function attachRuntimeBehaviors({
 
       try {
         model.validate(true);
-        syncAllMatrixQuestionVisualErrors(model, true);
+        syncAllMatrixQuestionVisualErrors(model);
 
         const summary = collectValidationSummary(model);
         onValidationSummaryChange?.(summary);
@@ -1444,17 +1504,23 @@ export function attachRuntimeBehaviors({
 
     const qname = String(options?.question?.name || "");
 
-    if (qname === "es_regels") {
-      requestAnimationFrame(() => applyCapWarnings(model));
-    }
+    // Welke vraag een waarschuwing moet verversen volgt uit de veldkaart van de berekening
+    // die het formulier declareert; niet uit vaste namen.
+    declaredCalculations.forEach((calculation) => {
+      const veld = calculation.fields;
+      if (!veld) return;
 
-    if (
-      qname === "a2_buitenbedrijfstellingen" ||
-      qname === "a2_resultaat_panel" ||
-      qname === "a2_systeembeschikbaarheid_geconstateerd"
-    ) {
-      requestAnimationFrame(() => applyAvailabilityWarnings(model));
-    }
+      if (calculation.id === "energy-supply-capacity" && qname === veld.rows) {
+        requestAnimationFrame(() => applyCapWarnings(model, veld));
+      }
+
+      if (
+        calculation.id === "system-availability" &&
+        (qname === veld.rows || qname === veld.observedAvailability)
+      ) {
+        requestAnimationFrame(() => applyAvailabilityWarnings(model, veld));
+      }
+    });
 
     if (options?.question?.getType?.() === "matrixdynamic") {
       requestAnimationFrame(() => {
@@ -1474,17 +1540,19 @@ export function attachRuntimeBehaviors({
   model.onValueChanged.add(valueChangedHandler);
   model.onAfterRenderQuestion.add(afterRenderQuestionHandler);
 
-  popupObserver = new MutationObserver(() => {
-    tryRepositionActiveDropdownPopup();
-    scheduleAnswerClassRefresh(document);
-  });
+  if (surveyJsDomActive) {
+    popupObserver = new MutationObserver(() => {
+      tryRepositionActiveDropdownPopup();
+      scheduleAnswerClassRefresh(document);
+    });
 
-  popupObserver.observe(document.body, {
-    childList: true,
-    subtree: true,
-    attributes: true,
-    attributeFilter: ["class", "style"],
-  });
+    popupObserver.observe(document.body, {
+      childList: true,
+      subtree: true,
+      attributes: true,
+      attributeFilter: ["class", "style"],
+    });
+  }
 
   const handleWindowResize = () => {
     scheduleMatrixLayoutStabilization();
@@ -1493,14 +1561,35 @@ export function attachRuntimeBehaviors({
   window.addEventListener("resize", handleWindowResize);
 
   requestAnimationFrame(() => {
-    normalizeEnergyRows(model, prefillPayload, energyAutoStateRef);
-    normalizeAvailabilityRows(model, availabilityAutoStateRef);
+    // Eerste ronde; alleen de berekeningen die dit formulier declareert, met hun eigen
+    // veldnamen. Eerder werden beide altijd gedraaid, ook voor een formulier dat er geen
+    // van kent.
+    declaredCalculations.forEach((calculation) => {
+      try {
+        calculation.run({
+          model,
+          prefillPayload,
+          energyAutoStateRef,
+          availabilityAutoStateRef,
+          fields: calculation.fields,
+        });
+      } catch (err) {
+        console.error(`[ember runtime] berekening ${calculation.id} faalde`, err);
+      }
+    });
+
     applyAllAnswerItemClasses(model);
     refreshAllMatrixLayouts();
 
     requestAnimationFrame(() => {
-      applyCapWarnings(model);
-      applyAvailabilityWarnings(model);
+      declaredCalculations.forEach((calculation) => {
+        if (calculation.id === "energy-supply-capacity") {
+          applyCapWarnings(model, calculation.fields);
+        }
+        if (calculation.id === "system-availability") {
+          applyAvailabilityWarnings(model, calculation.fields);
+        }
+      });
       syncValidationVisualsOnlyWhenActivated(model, validationActivatedRef);
       tryRepositionActiveDropdownPopup();
       applyAllAnswerItemClasses(model);

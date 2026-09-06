@@ -136,10 +136,9 @@ export default function ProfileSignaturePadModal({
     };
   }, [open, busy, onClose]);
 
-  useEffect(() => {
-    if (!open) return;
-    setHasStroke(false);
-  }, [open]);
+  // Het losse effect dat hasStroke op false zette bij openen is samengevoegd met de
+  // canvasopbouw hieronder; die draait bij dezelfde wisseling en weet als enige of er
+  // werkelijk streken zijn overgenomen.
 
   useEffect(() => {
     if (!open) return;
@@ -166,10 +165,13 @@ export default function ProfileSignaturePadModal({
 
     pad.clear();
 
-    if (previousData && previousData.length > 0) {
-      pad.fromData(previousData);
-      setHasStroke(true);
-    }
+    const heeftStreken = Boolean(previousData && previousData.length > 0);
+    if (heeftStreken) pad.fromData(previousData);
+
+    // Deze stand is alleen na het opbouwen van het canvas te kennen, dus hij hoort hier.
+    // De regel kan dat onderscheid niet maken; herstructureren zou de code slechter maken.
+    /* eslint-disable-next-line react-hooks/set-state-in-effect */
+    setHasStroke(heeftStreken);
   }, [open, canvasSize, dpr]);
 
   function handleOverlayMouseDown(e) {

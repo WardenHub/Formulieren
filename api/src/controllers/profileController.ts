@@ -52,7 +52,7 @@ async function tryDownloadMicrosoftUserPhoto(identifier: string | null | undefin
   let token = null;
   try {
     token = await graphCredential.getToken("https://graph.microsoft.com/.default");
-  } catch (err) {
+  } catch {
     return null;
   }
 
@@ -116,7 +116,7 @@ export async function getMyMicrosoftAvatarFile(req: any, res: Response) {
       userObjectId,
       email,
     });
-  } catch (err) {
+  } catch {
     return res.status(404).json({ error: "microsoft avatar not available" });
   }
 }
@@ -143,7 +143,7 @@ export async function getDirectoryMicrosoftAvatarFile(req: any, res: Response) {
     res.setHeader("Content-Type", photo.contentType);
     res.setHeader("Content-Length", String(photo.buffer.length));
     return res.send(photo.buffer);
-  } catch (err) {
+  } catch {
     return res.status(404).end();
   }
 }

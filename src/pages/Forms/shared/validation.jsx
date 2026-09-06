@@ -1,6 +1,5 @@
 // src/pages/Forms/shared/validation.jsx
 
-import { CustomError } from "survey-core";
 import { getPageTitle, getQuestionTitle } from "./surveyCore.jsx";
 
 export function isQuestionReportOnly(question) {
@@ -23,7 +22,9 @@ export function isBlankValue(value) {
   );
 }
 
-function getValidationErrorText(error) {
+// Ook gebruikt door de renderer; een survey-core fout heeft de tekst niet altijd op .text
+// staan, en zonder deze resolver rendert een veldfout als "[object Object]".
+export function getValidationErrorText(error) {
   let resolvedText = null;
 
   if (typeof error?.getText === "function") {
@@ -192,21 +193,127 @@ export function buildMatrixRowValidationItems(question, pageIndex, pageTitle) {
   return items;
 }
 
-export function syncMatrixQuestionVisualError(question, showErrors = false) {
+// Matrixfouten worden niet via question.errors getoond maar via de validatiesamenvatting;
+// SurveyJS-validators op matrices worden bij het bouwen al gestript. Deze helper haalt
+// daarom alleen de resterende SurveyJS-fouten weg zodat er geen dubbele melding staat.
+export function syncMatrixQuestionVisualError(question) {
   if (!question || question?.getType?.() !== "matrixdynamic") return;
 
   question.clearErrors();
 }
 
-export function syncAllMatrixQuestionVisualErrors(model, showErrors = false) {
+export function syncAllMatrixQuestionVisualErrors(model) {
   if (!model) return;
 
   const questions = model.getAllQuestions?.() || [];
   questions.forEach((question) => {
     if (question?.getType?.() === "matrixdynamic") {
-      syncMatrixQuestionVisualError(question, showErrors);
+      syncMatrixQuestionVisualError(question);
     }
   });
+}
+
+function parseVergelijkbaarGetal(waarde) {
+  if (waarde === null || waarde === undefined || waarde === "") return null;
+
+  const getal = Number(String(waarde).replace(",", "."));
+  return Number.isFinite(getal) ? getal : null;
+}
+
+function vergelijkingGeldt(operator, links, rechts) {
+  if (links === null || rechts === null) return false;
+
+  switch (String(operator || "").trim().toLowerCase()) {
+    case "lt":
+      return links < rechts;
+    case "lte":
+      return links <= rechts;
+    case "gt":
+      return links > rechts;
+    case "gte":
+      return links >= rechts;
+    case "ne":
+      return links !== rechts;
+    case "eq":
+      return links === rechts;
+    default:
+      return false;
+  }
+}
+
+// Consistentieregels uit de formulierdefinitie, als "ember": { "consistency": [ ... ] }.
+// Een regel stelt een feit vast door twee antwoorden te vergelijken en eist dan een
+// bepaald antwoord in een matrixregel. Zo blijft de vaststelling bij het systeem en het
+// oordeel bij de invuller, terwijl het rapport zichzelf niet kan tegenspreken.
+//
+//   { "id": "a2-beschikbaarheid",
+//     "compare": { "field": "...geconstateerd", "operator": "lt", "otherField": "...pve" },
+//     "highlight": ["...geconstateerd"],
+//     "require": { "matrix": "a_beheer_items", "matchColumn": "item_code",
+//                  "matchValue": "A2", "column": "voldoet", "equals": "Nee" },
+//     "message": "..." }
+export function evaluateConsistencyRules(model, surveyDefinition) {
+  const regels = surveyDefinition?.ember?.consistency;
+  const leeg = { items: [], highlightQuestions: new Set() };
+
+  if (!model || !Array.isArray(regels) || regels.length === 0) return leeg;
+
+  const items = [];
+  const highlightQuestions = new Set();
+  const pages = Array.isArray(model.visiblePages) ? model.visiblePages : [];
+
+  regels.forEach((regel, regelIndex) => {
+    const links = parseVergelijkbaarGetal(model.getValue?.(regel?.compare?.field));
+    const rechts = parseVergelijkbaarGetal(model.getValue?.(regel?.compare?.otherField));
+
+    if (!vergelijkingGeldt(regel?.compare?.operator, links, rechts)) return;
+
+    (Array.isArray(regel?.highlight) ? regel.highlight : []).forEach((naam) => {
+      const schoon = String(naam || "").trim();
+      if (schoon) highlightQuestions.add(schoon);
+    });
+
+    const eis = regel?.require;
+    const matrixNaam = String(eis?.matrix || "").trim();
+    if (!matrixNaam) return;
+
+    const rijen = Array.isArray(model.getValue?.(matrixNaam)) ? model.getValue(matrixNaam) : [];
+    const matchKolom = String(eis?.matchColumn || "").trim();
+    const matchWaarde = String(eis?.matchValue ?? "").trim();
+    const kolom = String(eis?.column || "").trim();
+    const verwacht = String(eis?.equals ?? "").trim();
+
+    const rijIndex = matchKolom
+      ? rijen.findIndex((rij) => String(rij?.[matchKolom] ?? "").trim() === matchWaarde)
+      : 0;
+
+    if (rijIndex < 0) return;
+
+    const huidig = String(rijen[rijIndex]?.[kolom] ?? "").trim();
+    if (huidig === verwacht) return;
+
+    const matrixQuestion = model.getQuestionByName?.(matrixNaam) || null;
+    const page = matrixQuestion?.page || null;
+    const pageIndex = page ? pages.indexOf(page) : -1;
+
+    items.push({
+      id: `consistency::${regel?.id || regelIndex}`,
+      pageIndex: pageIndex >= 0 ? pageIndex : 0,
+      pageTitle: getPageTitle(page, pageIndex >= 0 ? pageIndex : 0),
+      questionName: matrixNaam,
+      questionTitle: getQuestionTitle(matrixQuestion),
+      questionNumber: matchWaarde || null,
+      questionSubject: null,
+      rowIndex: rijIndex + 1,
+      columnName: kolom,
+      message:
+        String(regel?.message || "").trim() ||
+        `Deze regel moet op '${verwacht}' staan op basis van de berekende waarden.`,
+      kind: "consistency",
+    });
+  });
+
+  return { items, highlightQuestions };
 }
 
 export function collectMatrixValidationSummary(model) {
@@ -223,80 +330,6 @@ export function collectMatrixValidationSummary(model) {
 
       items.push(...buildMatrixRowValidationItems(question, pageIndex, pageTitle));
     });
-  });
-
-  return items;
-}
-
-export function matrixHasAnyNee(rows) {
-  if (!Array.isArray(rows)) return false;
-
-  return rows.some((row) => {
-    const voldoet = String(row?.voldoet ?? "").trim();
-    return voldoet === "Nee";
-  });
-}
-
-export function matrixHasNeeWithoutOpmerking(rows) {
-  if (!Array.isArray(rows)) return false;
-
-  return rows.some((row) => {
-    const voldoet = String(row?.voldoet ?? "").trim();
-    const opmerking = String(row?.opmerking ?? "").trim();
-    return voldoet === "Nee" && opmerking.length === 0;
-  });
-}
-
-export function collectConditionalAdviceValidationSummary(model) {
-  if (!model) return [];
-
-  const items = [];
-  const pages = Array.isArray(model.visiblePages) ? model.visiblePages : [];
-
-  pages.forEach((page, pageIndex) => {
-    const pageTitle = getPageTitle(page, pageIndex);
-
-    const bevindingenBRows = Array.isArray(model.getValue("bevindingen_b_items"))
-      ? model.getValue("bevindingen_b_items")
-      : [];
-
-    const adviesBeheerderGebruiker = String(
-      model.getValue("advies_beheerder_gebruiker") ?? ""
-    ).trim();
-
-    if (matrixHasAnyNee(bevindingenBRows) && adviesBeheerderGebruiker.length === 0) {
-      items.push({
-        id: `conditional-advice::${pageIndex}::advies_beheerder_gebruiker`,
-        pageIndex,
-        pageTitle,
-        questionName: "advies_beheerder_gebruiker",
-        questionTitle: "Advies voor beheerder/gebruiker",
-        rowIndex: null,
-        columnName: null,
-        message: "Vul advies in als er één of meer items met 'Nee' zijn beoordeeld.",
-        kind: "question",
-      });
-    }
-
-    const aBeheerRows = Array.isArray(model.getValue("a_beheer_items"))
-      ? model.getValue("a_beheer_items")
-      : [];
-
-    const adviesAanBeheerder = String(model.getValue("advies_aan_beheerder") ?? "").trim();
-
-    if (matrixHasAnyNee(aBeheerRows) && adviesAanBeheerder.length === 0) {
-      items.push({
-        id: `conditional-advice::${pageIndex}::advies_aan_beheerder`,
-        pageIndex,
-        pageTitle,
-        questionName: "advies_aan_beheerder",
-        questionTitle: "Advies aan beheerder",
-        rowIndex: null,
-        columnName: null,
-        message: "Vul advies in als er één of meer items met 'Nee' zijn beoordeeld.",
-        kind: "question",
-      });
-    }
   });
 
   return items;
@@ -322,7 +355,7 @@ export function dedupeValidationSummary(items) {
   return Array.from(map.values());
 }
 
-export function collectValidationSummary(model) {
+export function collectValidationSummary(model, surveyDefinition = null) {
   if (!model) return [];
 
   const items = [];
@@ -361,9 +394,11 @@ export function collectValidationSummary(model) {
   });
 
   const matrixItems = collectMatrixValidationSummary(model);
+  const consistencyItems = evaluateConsistencyRules(model, surveyDefinition).items;
 
   return dedupeValidationSummary([
     ...items,
     ...matrixItems,
+    ...consistencyItems,
   ]);
 }

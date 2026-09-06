@@ -2,7 +2,6 @@
 import express from "express";
 import cors from "cors";
 import { authMiddleware } from "./middleware/authMiddleware.js";
-import { requireRole } from "./middleware/roleMiddleware.js";
 import { getDbConnection } from "./db/index.js";
 import installationsRouter from "./routes/installations.js";
 import installationTypesRouter from "./routes/installationTypes.js";
@@ -183,10 +182,13 @@ app.get("/runtime/status", (req, res) => {
   return res.json(runtime);
 });
 
-app.use("/home", homeRouter);
+// /internal/maintenance heeft zijn eigen sleutelcontrole en hoort daarom voor de
+// authenticatie. /home stond daar ook, maar zonder reden; het nieuws komt uit een
+// authenticated feed en de afbeeldingsroute stuurde de inloggegevens van die feed mee.
 app.use("/internal/maintenance", internalMaintenanceRouter);
 
 app.use(authMiddleware);
+app.use("/home", homeRouter);
 app.use("/me/profile", profileRouter);
 app.use("/me/feedback", meFeedbackRouter);
 app.use("/installations", installationsRouter);
