@@ -313,6 +313,15 @@ a{
 
 .ember-warmup-strip__text{ flex: 1; min-width: 0; }
 
+.ember-warmup-strip__detail{
+  display: block;
+  margin-top: 3px;
+  opacity: .72;
+  font-size: 11px;
+  font-weight: 600;
+  word-break: break-word;
+}
+
 .ember-warmup-strip__spinner{
   flex: none;
   width: 13px;
@@ -335,6 +344,13 @@ a{
   font-size: 12px;
   font-weight: 800;
   cursor: pointer;
+}
+
+.ember-warmup-strip__button{
+  display: inline-flex;
+  align-items: center;
+  text-decoration: none;
+  white-space: nowrap;
 }
 
 .ember-warmup-strip__button:hover{
@@ -1087,10 +1103,66 @@ select.input option{
 }
 
 .brand{
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-left: -6px;
+  padding: 4px 6px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-strong);
+  font: inherit;
   font-weight: 800;
   letter-spacing: .2px;
   cursor: pointer;
-  color: var(--text-strong);
+}
+
+.brand:hover{ background: color-mix(in srgb, currentColor 7%, transparent); }
+.brand:focus-visible{ outline: 3px solid var(--focus-ring, var(--brand-red)); outline-offset: 2px; }
+
+.brand-word{ display: inline-flex; }
+
+/* Elke letter veert een fractie later op dan de vorige; dat leest als een golfje in plaats
+   van als een blok dat verschuift. */
+.brand-letter{
+  display: inline-block;
+  transition: transform 240ms cubic-bezier(.2, .85, .3, 1.25), color 200ms ease;
+  transition-delay: calc(var(--letter-index) * 30ms);
+}
+
+.brand:hover .brand-letter,
+.brand:focus-visible .brand-letter{
+  transform: translateY(-3px);
+  color: var(--brand-red);
+}
+
+/* Het huisje staat er altijd, maar zonder breedte; zo verspringt de topbar niet als het
+   verschijnt. */
+.brand-home{
+  display: inline-flex;
+  max-width: 0;
+  align-items: center;
+  overflow: hidden;
+  color: var(--brand-red);
+  opacity: 0;
+  transform: translateX(-4px);
+  transition: max-width 240ms ease, opacity 200ms ease, transform 240ms ease;
+}
+
+.brand:hover .brand-home,
+.brand:focus-visible .brand-home{
+  max-width: 20px;
+  opacity: 1;
+  transform: none;
+}
+
+@media (prefers-reduced-motion: reduce){
+  .brand-letter{ transition: color 200ms ease; }
+  .brand:hover .brand-letter,
+  .brand:focus-visible .brand-letter{ transform: none; }
+  .brand-home{ transition: opacity 150ms ease; transform: none; }
 }
 
 .topbar-spacer{ flex: 1; }

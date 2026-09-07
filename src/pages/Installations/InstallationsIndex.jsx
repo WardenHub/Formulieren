@@ -7,7 +7,7 @@ import {
   getInstallationsMap,
   getInstallationsMapViewport,
 } from "@/api/emberApi.js";
-import { describeApiFailure, shouldRetryApiError, warmupRetryDelayMs } from "@/api/apiWarmup.js";
+import { createApiWarmupRetry, describeApiFailure } from "@/api/apiWarmup.js";
 import ApiStartupLoader from "@/components/ApiStartupLoader.jsx";
 import { useApiStartupLoader } from "@/components/apiStartupLoaderState.js";
 import InstallationTypeTag from "@/components/InstallationTypeTag.jsx";
@@ -182,23 +182,25 @@ export default function InstallationsIndex() {
      gebruiker en ook niets om een pagina voor te herladen; dit vraagt het gewoon opnieuw,
      met steeds iets langere tussenpozen. */
   const retryTimerRef = useRef(null);
-  const retryAttemptRef = useRef(0);
+  const warmupRef = useRef(null);
+  if (warmupRef.current == null) {
+    warmupRef.current = createApiWarmupRetry();
+  }
   const [retryToken, setRetryToken] = useState(0);
 
   const handleLoadError = useCallback((error) => {
     setErr(describeApiFailure(error));
 
-    if (!shouldRetryApiError(error, retryAttemptRef.current)) return;
+    const pauze = warmupRef.current.planNext(error);
+    if (pauze === null) return;
 
-    const delay = warmupRetryDelayMs(retryAttemptRef.current);
-    retryAttemptRef.current += 1;
     window.clearTimeout(retryTimerRef.current);
-    retryTimerRef.current = window.setTimeout(() => setRetryToken((n) => n + 1), delay);
+    retryTimerRef.current = window.setTimeout(() => setRetryToken((n) => n + 1), pauze);
   }, []);
 
   const retryNow = useCallback(() => {
     window.clearTimeout(retryTimerRef.current);
-    retryAttemptRef.current = 0;
+    warmupRef.current.reset();
     setRetryToken((n) => n + 1);
   }, []);
 
@@ -243,7 +245,7 @@ export default function InstallationsIndex() {
             summary: response?.summary || {},
           });
         }
-        if (!cancelled) retryAttemptRef.current = 0;
+        if (!cancelled) warmupRef.current.reset();
       } catch (error) {
         if (!cancelled) handleLoadError(error);
       } finally {
@@ -311,7 +313,7 @@ export default function InstallationsIndex() {
             marker_count: markers.length,
           },
         }));
-        retryAttemptRef.current = 0;
+        warmupRef.current.reset();
       } catch (error) {
         if (error?.name !== "AbortError") handleLoadError(error);
       } finally {

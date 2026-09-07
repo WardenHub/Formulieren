@@ -28,8 +28,8 @@ function pickErrorMessage(status, data, fallback) {
 /* De boodschap blijft "unauthorized"; daar matchen meerdere schermen op. Wat erbij komt is
    de status, zodat een scherm het verschil kan zien tussen "je mag dit niet" en "de API is
    nog niet warm" en in het tweede geval gewoon opnieuw kan vragen. */
-function unauthorizedError() {
-  return new ApiError("unauthorized", { status: 401 });
+function unauthorizedError(tokenSent) {
+  return new ApiError("unauthorized", { status: 401, payload: { token_sent: tokenSent } });
 }
 
 function buildUrl(path) {
@@ -42,12 +42,18 @@ export function buildApiUrl(path) {
   return buildUrl(path);
 }
 
+/* Geeft de headers terug plus de vraag of er een token in zat. Zonder token krijg je van de
+   API een 401 die niet te onderscheiden is van een geweigerd token, en dat is precies het
+   verschil tussen "log opnieuw in" en "de dienst is nog niet warm". */
 async function buildHeaders(extraHeaders = {}) {
   const token = await getApiAccessToken();
 
   return {
-    ...(extraHeaders || {}),
-    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    headers: {
+      ...(extraHeaders || {}),
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+    tokenSent: Boolean(token),
   };
 }
 
@@ -75,7 +81,7 @@ function parseFilenameFromDisposition(value) {
 export async function httpJson(path, options = {}) {
   const url = buildUrl(path);
 
-  const headers = await buildHeaders({
+  const { headers, tokenSent } = await buildHeaders({
     ...(options.headers || {}),
     Accept: "application/json",
   });
@@ -87,7 +93,7 @@ export async function httpJson(path, options = {}) {
   });
 
   if (res.status === 401) {
-    throw unauthorizedError();
+    throw unauthorizedError(tokenSent);
   }
 
   if (!res.ok) {
@@ -133,7 +139,7 @@ export async function httpJson(path, options = {}) {
 export async function httpUpload(path, formData, options = {}) {
   const url = buildUrl(path);
 
-  const headers = await buildHeaders({
+  const { headers, tokenSent } = await buildHeaders({
     ...(options.headers || {}),
     Accept: "application/json",
   });
@@ -147,7 +153,7 @@ export async function httpUpload(path, formData, options = {}) {
   });
 
   if (res.status === 401) {
-    throw unauthorizedError();
+    throw unauthorizedError(tokenSent);
   }
 
   const ct = res.headers.get("content-type") || "";
@@ -177,7 +183,7 @@ export async function httpUpload(path, formData, options = {}) {
 export async function httpDownload(path, options = {}) {
   const url = buildUrl(path);
 
-  const headers = await buildHeaders({
+  const { headers, tokenSent } = await buildHeaders({
     ...(options.headers || {}),
     Accept: "*/*",
   });
@@ -190,7 +196,7 @@ export async function httpDownload(path, options = {}) {
   });
 
   if (res.status === 401) {
-    throw unauthorizedError();
+    throw unauthorizedError(tokenSent);
   }
 
   if (!res.ok) {

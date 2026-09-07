@@ -3,7 +3,7 @@
 import { Link, useOutletContext } from "react-router-dom";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { fetchProtectedObjectUrl } from "../api/http";
-import { shouldRetryApiError, warmupRetryDelayMs } from "../api/apiWarmup.js";
+import { createApiWarmupRetry } from "../api/apiWarmup.js";
 import { getHomeNews } from "../api/emberApi.js";
 import { getRecentHomeItems } from "../lib/recentHomeItems.js";
 
@@ -148,12 +148,16 @@ export default function Home() {
   const [newsState, setNewsState] = useState("idle");
   const [recentItems, setRecentItems] = useState([]);
   const [newsRetryToken, setNewsRetryToken] = useState(0);
-  const newsAttemptRef = useRef(0);
   const newsRetryTimerRef = useRef(null);
+  // Vijf minuten blijven proberen; zie src/api/apiWarmup.js voor waarom dat daar staat.
+  const newsRetryRef = useRef(null);
+  if (newsRetryRef.current == null) {
+    newsRetryRef.current = createApiWarmupRetry();
+  }
 
   const retryNewsNow = useCallback(() => {
     window.clearTimeout(newsRetryTimerRef.current);
-    newsAttemptRef.current = 0;
+    newsRetryRef.current.reset();
     setNewsRetryToken((n) => n + 1);
   }, []);
 
@@ -178,7 +182,7 @@ export default function Home() {
 
         setNews(Array.isArray(data?.items) ? data.items : []);
         setNewsState("ready");
-        newsAttemptRef.current = 0;
+        newsRetryRef.current.reset();
       } catch (err) {
         if (cancelled) return;
         setNews([]);
@@ -186,13 +190,12 @@ export default function Home() {
 
         // Een koude API geeft hier 401 of 503; dat is geen "geen berichten", dat is nog
         // even wachten.
-        if (shouldRetryApiError(err, newsAttemptRef.current)) {
-          const delay = warmupRetryDelayMs(newsAttemptRef.current);
-          newsAttemptRef.current += 1;
+        const pauze = newsRetryRef.current.planNext(err);
+        if (pauze !== null) {
           window.clearTimeout(newsRetryTimerRef.current);
           newsRetryTimerRef.current = window.setTimeout(
             () => setNewsRetryToken((n) => n + 1),
-            delay
+            pauze
           );
         }
       }
