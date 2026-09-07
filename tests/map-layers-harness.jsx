@@ -1,6 +1,7 @@
 // De kaart zonder aanmelden, met een handvol markers, om de laagkeuze en het diepste
 // zoomniveau te kunnen bekijken. Openen op /tests/map-layers-harness.html.
 
+import { useState } from "react";
 import ReactDOM from "react-dom/client";
 
 import InstallationsMap from "../src/pages/Installations/InstallationsMap.jsx";
@@ -14,6 +15,8 @@ const MARKERS = [
 ];
 
 function Harness() {
+  const [error, setError] = useState(null);
+
   return (
     <div style={{ padding: 16 }}>
       <h1 style={{ marginTop: 0, fontSize: 18 }}>Kaartlagen</h1>
@@ -22,8 +25,24 @@ function Harness() {
         de gewone kaart heeft het diepste niveau bijna niets te tekenen; op de luchtfoto zie
         je het gebouw.
       </p>
-      <div style={{ height: "70vh" }}>
-        <InstallationsMap markers={MARKERS} showLegend showUserLocation={false} />
+
+      {/* De foutmelding hoort over de kaart te liggen en de kaart niet te verplaatsen; met
+          deze knop is dat te meten in plaats van aan te nemen. Het knopje "i" naast de
+          laagkeuze hoort de bronvermelding te tonen; rechtsonder hoort niets te staan. */}
+      <p>
+        <button type="button" id="harness-toggle-error" onClick={() => setError((huidig) => (huidig ? null : "Ember is nog aan het opstarten; dit probeert automatisch opnieuw."))}>
+          Foutmelding {error ? "uit" : "aan"}
+        </button>
+      </p>
+
+      <div style={{ height: "70vh" }} id="harness-map-wrap">
+        <InstallationsMap
+          markers={MARKERS}
+          showLegend
+          showUserLocation={false}
+          error={error}
+          onRetry={() => setError(null)}
+        />
       </div>
     </div>
   );

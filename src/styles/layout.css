@@ -292,6 +292,81 @@ a{
   overflow: visible;
 }
 
+/* Zichtbaar maken dat de API nog niet warm is. Sticky onder de topbar van 56px, zodat de
+   melding blijft staan zolang de rollen onbekend zijn; hij verdwijnt zodra ze binnen zijn. */
+.ember-warmup-strip{
+  position: sticky;
+  top: 56px;
+  z-index: 45;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 14px;
+  padding: 10px 12px;
+  border: 1px solid var(--warning-border, var(--border));
+  border-radius: var(--radius-md);
+  background: var(--warning-bg, var(--surface-2));
+  color: var(--warning-text, var(--text));
+  box-shadow: var(--shadow-soft);
+  font-size: 12.5px;
+}
+
+.ember-warmup-strip__text{ flex: 1; min-width: 0; }
+
+.ember-warmup-strip__spinner{
+  flex: none;
+  width: 13px;
+  height: 13px;
+  border: 2px solid color-mix(in srgb, currentColor 28%, transparent);
+  border-top-color: currentColor;
+  border-radius: 50%;
+  animation: installation-map-loading-spin 750ms linear infinite;
+}
+
+.ember-warmup-strip__button{
+  flex: none;
+  min-height: 30px;
+  padding: 0 11px;
+  border: 1px solid currentColor;
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.ember-warmup-strip__button:hover{
+  background: color-mix(in srgb, currentColor 12%, transparent);
+}
+
+/* Een knop die als tekstlink oogt; voor "opnieuw proberen" binnen een melding. */
+.link-button{
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--accent, var(--text));
+  font: inherit;
+  font-weight: 800;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.link-button:hover{ color: var(--text-strong, var(--text)); }
+
+/* Opgegeven is geen opwarmen meer; dan hoort het ook niet als tijdelijk te lezen. */
+.ember-warmup-strip--failed{
+  border-color: var(--danger-border, var(--border));
+  background: var(--danger-bg, var(--surface-2));
+  color: var(--danger-text, var(--text));
+}
+
+@media (max-width: 620px){
+  .ember-warmup-strip{ flex-wrap: wrap; }
+  .ember-warmup-strip__text{ flex-basis: 100%; }
+}
+
 .ui-stack,
 .ember-page-stack,
 .profile-grid,
@@ -5305,6 +5380,116 @@ html[data-appearance="dark"] .installation-map-loading__spinner{
 .installation-map-layer-switch button.is-active{
   background: var(--accent-soft, var(--surface-2));
   color: var(--accent, var(--text));
+}
+
+/* De bronvermelding hoort bij de kaart, maar niet permanent over de kaart. Dit knopje
+   houdt hem een klik weg. */
+.installation-map-layer-switch__info{
+  width: 32px;
+  min-height: 32px;
+  padding: 0;
+  border-radius: 9px;
+  font-size: 13px;
+  font-style: italic;
+  font-weight: 800;
+}
+
+.installation-map-credit{
+  position: absolute;
+  z-index: 500;
+  top: 52px;
+  right: 12px;
+  max-width: min(320px, calc(100% - 24px));
+  padding: 7px 10px;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-md);
+  background: var(--card-bg, var(--surface));
+  box-shadow: 0 6px 18px rgba(0, 0, 0, .16);
+  font-size: 11px;
+}
+
+.installation-map-credit a{ color: var(--muted); text-decoration: none; }
+.installation-map-credit a:hover{ color: var(--text); text-decoration: underline; }
+
+/* Zelfde plek als de laadmelding; een fout hoort de kaart niet naar beneden te duwen. */
+.installation-map-error{
+  position: absolute;
+  inset: 0;
+  z-index: 460;
+  pointer-events: none;
+}
+
+.installation-map-error__pill{
+  position: absolute;
+  top: 12px;
+  left: 50%;
+  display: inline-flex;
+  max-width: min(560px, calc(100% - 24px));
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  border: 1px solid var(--danger-border, var(--border));
+  border-radius: var(--radius-pill);
+  background: var(--danger-bg, var(--card-bg));
+  color: var(--danger-text, var(--text));
+  box-shadow: var(--shadow-soft);
+  transform: translateX(-50%);
+  pointer-events: auto;
+  font-size: 11.5px;
+  font-weight: 700;
+}
+
+.installation-map-error__pill button{
+  flex: none;
+  min-height: 26px;
+  padding: 0 10px;
+  border: 1px solid currentColor;
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.installation-map-error__pill button:hover{
+  background: color-mix(in srgb, currentColor 12%, transparent);
+}
+
+/* In het donkere thema zijn --card-bg en --danger-bg doorschijnend wit; over een luchtfoto
+   is dat onleesbaar. Deze twee lagen liggen op de kaart en krijgen daarom een dekkende
+   ondergrond, net als de laadmelding hierboven. */
+/* Dezelfde reden voor de weergavekeuze; die stond in het donkere thema doorschijnend over
+   de luchtfoto, waardoor "Kaart" niet te lezen was zolang "Luchtfoto" actief stond. */
+html[data-appearance="dark"] .installation-map-layer-switch{
+  border-color: #64748b;
+  background: #111827;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, .42);
+}
+
+html[data-appearance="dark"] .installation-map-layer-switch button{ color: #cbd5e1; }
+html[data-appearance="dark"] .installation-map-layer-switch button:hover{ color: #f8fafc; }
+
+html[data-appearance="dark"] .installation-map-layer-switch button.is-active{
+  background: #1f2937;
+  color: #f8fafc;
+}
+
+html[data-appearance="dark"] .installation-map-credit{
+  border-color: #64748b;
+  background: #111827;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, .42);
+}
+
+html[data-appearance="dark"] .installation-map-credit a{ color: #cbd5e1; }
+html[data-appearance="dark"] .installation-map-credit a:hover{ color: #f8fafc; }
+
+html[data-appearance="dark"] .installation-map-error__pill{
+  border-color: #b91c1c;
+  background: #3f1416;
+  color: #fecaca;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, .42);
 }
 
 .installation-map-legend{

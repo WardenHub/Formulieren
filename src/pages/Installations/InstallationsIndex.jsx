@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { CheckCircle2 } from "lucide-react";
 
@@ -7,6 +7,7 @@ import {
   getInstallationsMap,
   getInstallationsMapViewport,
 } from "@/api/emberApi.js";
+import { describeApiFailure, shouldRetryApiError, warmupRetryDelayMs } from "@/api/apiWarmup.js";
 import ApiStartupLoader from "@/components/ApiStartupLoader.jsx";
 import { useApiStartupLoader } from "@/components/apiStartupLoaderState.js";
 import InstallationTypeTag from "@/components/InstallationTypeTag.jsx";
@@ -177,6 +178,32 @@ export default function InstallationsIndex() {
   const mapRequestRef = useRef(null);
   const startupLoader = useApiStartupLoader(loading);
 
+  /* Een koude API geeft 401 of 503 terug op een geldig verzoek. Dat is geen fout van de
+     gebruiker en ook niets om een pagina voor te herladen; dit vraagt het gewoon opnieuw,
+     met steeds iets langere tussenpozen. */
+  const retryTimerRef = useRef(null);
+  const retryAttemptRef = useRef(0);
+  const [retryToken, setRetryToken] = useState(0);
+
+  const handleLoadError = useCallback((error) => {
+    setErr(describeApiFailure(error));
+
+    if (!shouldRetryApiError(error, retryAttemptRef.current)) return;
+
+    const delay = warmupRetryDelayMs(retryAttemptRef.current);
+    retryAttemptRef.current += 1;
+    window.clearTimeout(retryTimerRef.current);
+    retryTimerRef.current = window.setTimeout(() => setRetryToken((n) => n + 1), delay);
+  }, []);
+
+  const retryNow = useCallback(() => {
+    window.clearTimeout(retryTimerRef.current);
+    retryAttemptRef.current = 0;
+    setRetryToken((n) => n + 1);
+  }, []);
+
+  useEffect(() => () => window.clearTimeout(retryTimerRef.current), []);
+
   useEffect(() => {
     let cancelled = false;
     getInstallationTypes()
@@ -216,8 +243,9 @@ export default function InstallationsIndex() {
             summary: response?.summary || {},
           });
         }
+        if (!cancelled) retryAttemptRef.current = 0;
       } catch (error) {
-        if (!cancelled) setErr(error?.message || String(error));
+        if (!cancelled) handleLoadError(error);
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -228,7 +256,7 @@ export default function InstallationsIndex() {
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [filters, onlyCurrent, q, mode, selectedInstallationTypes, selectedBusinessUnits]);
+  }, [filters, onlyCurrent, q, mode, selectedInstallationTypes, selectedBusinessUnits, retryToken, handleLoadError]);
 
   useEffect(() => {
     if (mode !== "map" || !viewport) return undefined;
@@ -283,8 +311,9 @@ export default function InstallationsIndex() {
             marker_count: markers.length,
           },
         }));
+        retryAttemptRef.current = 0;
       } catch (error) {
-        if (error?.name !== "AbortError") setErr(error?.message || String(error));
+        if (error?.name !== "AbortError") handleLoadError(error);
       } finally {
         if (!controller.signal.aborted) setLoading(false);
       }
@@ -294,7 +323,7 @@ export default function InstallationsIndex() {
       window.clearTimeout(timer);
       controller.abort();
     };
-  }, [filters, mode, onlyCurrent, q, selectedInstallationTypes, selectedBusinessUnits, viewport]);
+  }, [filters, mode, onlyCurrent, q, selectedInstallationTypes, selectedBusinessUnits, viewport, retryToken, handleLoadError]);
 
   const visibleList = useMemo(() => data.items.slice(0, 500), [data.items]);
   const summary = data.summary || {};
@@ -453,7 +482,11 @@ export default function InstallationsIndex() {
             <span className="ember-label ember-label--muted">{summary.without_coordinates_count || 0} zonder coördinaten</span>
           </div>
 
-          {err ? <p className="doc-error">{err}</p> : null}
+          {/* In lijstmodus mag de melding gewoon meelopen. Op de kaart niet: een regel die
+              erboven verschijnt duwt de hele kaart naar beneden en dan verschuift alles waar
+              je net naar keek. Daar gaat hij als laag over de kaart heen; zie de prop error
+              op InstallationsMap. */}
+          {err && mode === "list" ? <p className="doc-error">{err}</p> : null}
           {mode === "list" && startupLoader.showStartupCard ? <ApiStartupLoader state={startupLoader} /> : null}
 
           {!loading && !err && mode === "list" && data.items.length === 0 ? (
@@ -464,6 +497,8 @@ export default function InstallationsIndex() {
             <InstallationsMap
               markers={data.markers}
               loading={loading}
+              error={err}
+              onRetry={retryNow}
               onViewportChange={setViewport}
               fitRequestKey={q.trim().length >= 2 ? q.trim() : ""}
               showLegend

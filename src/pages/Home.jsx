@@ -1,8 +1,9 @@
 // /src/pages/Home.jsx
 
-import { Link } from "react-router-dom";
-import { useEffect, useMemo, useRef, useState } from "react";
-import { fetchProtectedObjectUrl, httpJson } from "../api/http";
+import { Link, useOutletContext } from "react-router-dom";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { fetchProtectedObjectUrl } from "../api/http";
+import { shouldRetryApiError, warmupRetryDelayMs } from "../api/apiWarmup.js";
 import { getHomeNews } from "../api/emberApi.js";
 import { getRecentHomeItems } from "../lib/recentHomeItems.js";
 
@@ -138,31 +139,25 @@ function RecentKindTag({ kind }) {
 }
 
 export default function Home() {
-  const [roles, setRoles] = useState([]);
-  const [homeLoading, setHomeLoading] = useState(true);
+  /* De rollen komen van de layout. Home haalde /me zelf nog een keer op; dat was niet
+     alleen een dubbel verzoek, het miste ook de herkansing die de layout doet. Bij een
+     koude API zag je daardoor een Home zonder beheerkaarten die dat nooit meer bijwerkte. */
+  const { roles = [], rolesStatus = "ready" } = useOutletContext() || {};
+  const homeLoading = rolesStatus === "loading";
   const [news, setNews] = useState([]);
   const [newsState, setNewsState] = useState("idle");
   const [recentItems, setRecentItems] = useState([]);
+  const [newsRetryToken, setNewsRetryToken] = useState(0);
+  const newsAttemptRef = useRef(0);
+  const newsRetryTimerRef = useRef(null);
 
-  useEffect(() => {
-    let cancelled = false;
-
-    async function loadMe() {
-      try {
-        const data = await httpJson("/me");
-        if (!cancelled) setRoles(data.roles ?? []);
-      } catch {
-        if (!cancelled) setRoles([]);
-      } finally {
-        if (!cancelled) setHomeLoading(false);
-      }
-    }
-
-    loadMe();
-    return () => {
-      cancelled = true;
-    };
+  const retryNewsNow = useCallback(() => {
+    window.clearTimeout(newsRetryTimerRef.current);
+    newsAttemptRef.current = 0;
+    setNewsRetryToken((n) => n + 1);
   }, []);
+
+  useEffect(() => () => window.clearTimeout(newsRetryTimerRef.current), []);
 
   const startupLoader = useApiStartupLoader(homeLoading, {
     slowHintDelayMs: 1200,
@@ -183,10 +178,23 @@ export default function Home() {
 
         setNews(Array.isArray(data?.items) ? data.items : []);
         setNewsState("ready");
-      } catch {
+        newsAttemptRef.current = 0;
+      } catch (err) {
         if (cancelled) return;
         setNews([]);
         setNewsState("error");
+
+        // Een koude API geeft hier 401 of 503; dat is geen "geen berichten", dat is nog
+        // even wachten.
+        if (shouldRetryApiError(err, newsAttemptRef.current)) {
+          const delay = warmupRetryDelayMs(newsAttemptRef.current);
+          newsAttemptRef.current += 1;
+          window.clearTimeout(newsRetryTimerRef.current);
+          newsRetryTimerRef.current = window.setTimeout(
+            () => setNewsRetryToken((n) => n + 1),
+            delay
+          );
+        }
       }
     });
 
@@ -194,7 +202,7 @@ export default function Home() {
       cancelled = true;
       cancelScheduled?.();
     };
-  }, []);
+  }, [newsRetryToken]);
 
   useEffect(() => {
     function refreshRecent() {
@@ -332,7 +340,16 @@ export default function Home() {
                 </div>
               )}
 
-              {newsState !== "loading" && news.length === 0 && (
+              {newsState === "error" && (
+                <div className="home-news-placeholder muted">
+                  De berichten konden niet worden opgehaald.{" "}
+                  <button type="button" className="link-button" onClick={retryNewsNow}>
+                    Opnieuw proberen
+                  </button>
+                </div>
+              )}
+
+              {newsState !== "loading" && newsState !== "error" && news.length === 0 && (
                 <div className="home-news-placeholder muted">
                   Geen recente berichten beschikbaar.
                 </div>

@@ -208,6 +208,9 @@ app.get("/me", async (req: any, res) => {
       user: req.user,
       roles: req.roles || [],
       permissions: await getPermissionsForRoles(req.roles || []),
+      // Onbekend is niet hetzelfde als leeg. Lukte de groepslookup niet, dan moet de
+      // frontend dat kunnen zien; anders toont hij een compleet ogende app zonder menu.
+      roles_unavailable: Boolean(req.rolesUnavailable),
     };
 
     if (!req.user?.objectId) {
@@ -231,6 +234,7 @@ app.get("/me", async (req: any, res) => {
       user: req.user,
       roles: req.roles || [],
       permissions: [],
+      roles_unavailable: Boolean(req.rolesUnavailable),
     });
   }
 });

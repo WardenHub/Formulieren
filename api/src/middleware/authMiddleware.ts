@@ -193,6 +193,17 @@ function getApiAudienceCandidates() {
   return [...values];
 }
 
+/* Een niet op te halen openid-configuratie of JWKS is geen ongeldig token; het is een
+   dienst die Entra nog niet kan bereiken. Dat verschil hoort de client te zien: op 401
+   gaat hij opnieuw inloggen, op 503 wacht hij even. Zonder dit onderscheid gaf een koude
+   start "unauthorized" terug op een geldig token. */
+class AuthDependencyError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "AuthDependencyError";
+  }
+}
+
 async function fetchJsonWithCache(
   cache: Map<string, { value: any; expiresAt: number }>,
   key: string,
@@ -204,13 +215,27 @@ async function fetchJsonWithCache(
     return cached.value;
   }
 
-  const res = await fetch(url);
-  if (!res.ok) {
-    const text = await res.text().catch(() => "");
-    throw new Error(`openid fetch failed ${res.status}: ${text}`);
+  let res: Response;
+
+  try {
+    res = await fetch(url);
+  } catch (e: any) {
+    throw new AuthDependencyError(`openid fetch unreachable: ${e?.message || e}`);
   }
 
-  const value = await res.json();
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new AuthDependencyError(`openid fetch failed ${res.status}: ${text}`);
+  }
+
+  let value: any;
+
+  try {
+    value = await res.json();
+  } catch (e: any) {
+    throw new AuthDependencyError(`openid fetch unparsable: ${e?.message || e}`);
+  }
+
   cache.set(key, {
     value,
     expiresAt: Date.now() + ttlMs,
@@ -361,6 +386,43 @@ function getUserFromJwtPayload(payload: any) {
   };
 }
 
+// Een koude App Service haalt eerst een managed-identity token op en zet daarna een
+// verbinding naar Graph op. Die eerste poging mislukt soms; eenmaal opnieuw proberen na een
+// korte pauze vangt dat op zonder een normaal verzoek merkbaar te vertragen.
+const ROLE_LOOKUP_RETRY_DELAY_MS = 400;
+
+function pauze(ms: number) {
+  return new Promise((klaar) => setTimeout(klaar, ms));
+}
+
+async function resolveRolesViaGraph(userObjectId: string) {
+  try {
+    return mapGroupsToRoles(await getUserGroupIds(userObjectId));
+  } catch (eerste: any) {
+    console.error("[GRAPH] roles lookup failed, one retry", eerste?.message || eerste);
+  }
+
+  await pauze(ROLE_LOOKUP_RETRY_DELAY_MS);
+  return mapGroupsToRoles(await getUserGroupIds(userObjectId));
+}
+
+/* Een mislukte lookup gaat niet in de cache, dus tijdens het opwarmen vraagt elk verzoek
+   het opnieuw. Een paginalading zijn er vijf tegelijk; die horen samen één lookup te doen
+   in plaats van vijf. Dit deelt de lopende poging en laat hem daarna weer los. */
+const rolesInFlight = new Map<string, Promise<string[]>>();
+
+function resolveRolesOnce(userObjectId: string) {
+  const lopend = rolesInFlight.get(userObjectId);
+  if (lopend) return lopend;
+
+  const poging = resolveRolesViaGraph(userObjectId).finally(() => {
+    rolesInFlight.delete(userObjectId);
+  });
+
+  rolesInFlight.set(userObjectId, poging);
+  return poging;
+}
+
 async function applyRoleResolutionForUser(req: any, userObjectId: string, appRoles: string[]) {
   const mappedAppRoles = mapAppRolesToInternalRoles(appRoles);
 
@@ -370,6 +432,7 @@ async function applyRoleResolutionForUser(req: any, userObjectId: string, appRol
       ...mappedAppRoles,
       ...(mappedAppRoles.includes("certificering_coordinator") ? ["gebruiker"] : []),
     ]);
+    req.rolesUnavailable = false;
     return;
   }
 
@@ -377,21 +440,28 @@ async function applyRoleResolutionForUser(req: any, userObjectId: string, appRol
   const cached = rolesCache.get(userObjectId);
   if (cached && cached.expiresAt > Date.now()) {
     req.roles = cached.roles || [];
+    req.rolesUnavailable = false;
     return;
   }
 
-  let roles: string[] = [];
-
   try {
-    const groupIds = await getUserGroupIds(userObjectId);
-    roles = mapGroupsToRoles(groupIds);
+    const roles = await resolveRolesOnce(userObjectId);
+    rolesCache.set(userObjectId, { roles, expiresAt: Date.now() + CACHE_TTL_MS });
+    req.roles = roles;
+    req.rolesUnavailable = false;
   } catch (e: any) {
-    console.error("[GRAPH] roles lookup failed", e?.message || e);
-    roles = [];
-  }
+    /* Een mislukte lookup is geen antwoord. Hij werd hier eerder als lege rollenlijst in
+       de cache gezet; een enkele koude start maakte de gebruiker daarmee tien minuten
+       rechteloos, ook nadat de API al warm was. Dat is precies het beeld van 's ochtends:
+       inloggen lukt, het beheermenu ontbreekt en het nieuws laadt niet.
 
-  rolesCache.set(userObjectId, { roles, expiresAt: Date.now() + CACHE_TTL_MS });
-  req.roles = roles;
+       Nu blijft de cache leeg, zodat het volgende verzoek het opnieuw probeert, en weet de
+       rest van de keten dat de rollen onbekend zijn in plaats van leeg. */
+    console.error("[GRAPH] roles lookup failed", e?.message || e);
+    rolesCache.delete(userObjectId);
+    req.roles = [];
+    req.rolesUnavailable = true;
+  }
 }
 
 // De header x-ms-client-principal is base64, geen ondertekend token. Wie de App Service
@@ -468,6 +538,7 @@ export async function authMiddleware(req: any, res: any, next: any) {
         .split(",")
         .map((r) => r.trim())
         .filter(Boolean);
+      req.rolesUnavailable = false;
 
       return next();
     }
@@ -486,6 +557,17 @@ export async function authMiddleware(req: any, res: any, next: any) {
 
     return res.status(401).json({ error: "not authenticated" });
   } catch (err: any) {
+    if (err instanceof AuthDependencyError) {
+      console.error("[AUTH] dependency unavailable", err?.message || err);
+      res.setHeader("Retry-After", "5");
+      return res.status(503).json({
+        error: "auth_unavailable",
+        message:
+          "Ember kan de inlogdienst nu niet bereiken; meestal is dat het opstarten. " +
+          "Probeer het over een paar seconden opnieuw.",
+      });
+    }
+
     console.error("[AUTH] failed", err?.message || err);
     return res.status(401).json({ error: "not authenticated" });
   }

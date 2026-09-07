@@ -1,5 +1,6 @@
 // src/layout/layout.jsx
 import { httpJson, fetchProtectedObjectUrl } from "../api/http";
+import { shouldRetryApiError, warmupRetryDelayMs } from "../api/apiWarmup.js";
 import { Outlet, Link, useLocation, useNavigate } from "react-router-dom";
 import { useEffect, useMemo, useRef, useState } from "react";
 import "../styles/layout.css";
@@ -52,6 +53,13 @@ export default function Layout() {
   const [avatarOpen, setAvatarOpen] = useState(false);
   const [roles, setRoles] = useState([]);
   const [permissions, setPermissions] = useState([]);
+  /* Vier standen: "loading" bij het eerste ophalen, "ready" zodra de API antwoord gaf,
+     "unavailable" zolang de rollen niet op te halen zijn en er nog een poging volgt, en
+     "failed" als er geen poging meer komt. Onbekende rollen zijn bewust een eigen stand;
+     ze zien er in de app precies zo uit als lege rollen, en dan staat iemand 's ochtends in
+     een compleet ogende Ember zonder beheermenu en zonder nieuws. */
+  const [rolesStatus, setRolesStatus] = useState("loading");
+  const [meRetryToken, setMeRetryToken] = useState(0);
   const [meData, setMeData] = useState(null);
   const [profileData, setProfileData] = useState(null);
   const [avatarObjectUrl, setAvatarObjectUrl] = useState(null);
@@ -163,6 +171,13 @@ export default function Layout() {
 
   useEffect(() => {
     let cancelled = false;
+    let timer = null;
+    let attempt = 0;
+
+    function opnieuwProberen() {
+      timer = window.setTimeout(loadMe, warmupRetryDelayMs(attempt));
+      attempt += 1;
+    }
 
     async function loadMe() {
       try {
@@ -172,22 +187,45 @@ export default function Layout() {
         setMeData(data || null);
         setRoles(data?.roles ?? []);
         setPermissions(data?.permissions ?? []);
-      } catch (err) {
-        console.error("me fetch failed", err);
-        if (!cancelled) {
-          setMeData(null);
-          setRoles([]);
-          setPermissions([]);
+
+        // De API zegt zelf of de groepslookup gelukt is. Zo niet, dan is dit geen antwoord
+        // om op te bouwen en blijft dit vragen tot het wel lukt.
+        if (data?.roles_unavailable) {
+          setRolesStatus("unavailable");
+          opnieuwProberen();
+          return;
         }
+
+        setRolesStatus("ready");
+      } catch (err) {
+        if (cancelled) return;
+        console.error("me fetch failed", err);
+
+        /* Bewust niet de rollen wissen. Een warme sessie die één keer misgrijpt hoort niet
+           halverwege zijn menu te verliezen; wat er stond blijft staan tot er een echt
+           antwoord is. */
+        if (shouldRetryApiError(err, attempt)) {
+          setRolesStatus("unavailable");
+          opnieuwProberen();
+          return;
+        }
+
+        setMeData(null);
+        setRoles([]);
+        setPermissions([]);
+        setRolesStatus("failed");
       }
     }
 
+    /* Bewust geen tussenstand naar "loading" hier. Bij een herkansing zou de strook dan
+       verdwijnen en meteen weer terugkomen, en dan lijkt de knop niets te doen. */
     loadMe();
 
     return () => {
       cancelled = true;
+      if (timer) window.clearTimeout(timer);
     };
-  }, [profileRefreshToken]);
+  }, [profileRefreshToken, meRetryToken]);
 
   useEffect(() => {
     let cancelled = false;
@@ -472,7 +510,36 @@ export default function Layout() {
       </aside>
 
       <main className="content">
-        <Outlet context={{ roles, permissions }} />
+        {/* De strook staat binnen de inhoud en niet als extra rij in .app-shell; die rij is
+            1fr en zou hem over het halve scherm uitrekken. Sticky onder de topbar, zodat
+            hij zichtbaar blijft terwijl je scrollt. */}
+        {rolesStatus === "unavailable" || rolesStatus === "failed" ? (
+          <div
+            className={`ember-warmup-strip${rolesStatus === "failed" ? " ember-warmup-strip--failed" : ""}`}
+            role="status"
+            aria-live="polite"
+          >
+            {rolesStatus === "unavailable" ? (
+              <span className="ember-warmup-strip__spinner" aria-hidden="true" />
+            ) : null}
+
+            <span className="ember-warmup-strip__text">
+              {rolesStatus === "unavailable"
+                ? "Ember is aan het opstarten en je rollen zijn nog niet bekend. Menu-items, nieuws en installaties kunnen daardoor ontbreken. Dit probeert automatisch opnieuw."
+                : "Je rollen zijn niet opgehaald, dus menu-items en gegevens kunnen ontbreken. Probeer het opnieuw; blijft dit staan, log dan opnieuw in."}
+            </span>
+
+            <button
+              type="button"
+              className="ember-warmup-strip__button"
+              onClick={() => setMeRetryToken((n) => n + 1)}
+            >
+              Nu opnieuw proberen
+            </button>
+          </div>
+        ) : null}
+
+        <Outlet context={{ roles, permissions, rolesStatus }} />
       </main>
     </div>
   );

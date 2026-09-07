@@ -24,13 +24,15 @@ const MAP_LAYERS = {
   kaart: {
     label: "Kaart",
     url: "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
-    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+    credit: "Kaartgegevens © OpenStreetMap-bijdragers, ODbL",
+    creditHref: "https://www.openstreetmap.org/copyright",
     maxNativeZoom: 19,
   },
   luchtfoto: {
     label: "Luchtfoto",
     url: "https://service.pdok.nl/hwh/luchtfotorgb/wmts/v1_0/Actueel_ortho25/EPSG:3857/{z}/{x}/{y}.jpeg",
-    attribution: 'Luchtfoto &copy; <a href="https://www.pdok.nl">PDOK</a> / Kadaster',
+    credit: "Luchtfoto © PDOK / Kadaster",
+    creditHref: "https://www.pdok.nl",
     maxNativeZoom: 19,
   },
 };
@@ -232,11 +234,12 @@ function InstallationPopup({ marker }) {
   );
 }
 
-export default function InstallationsMap({ markers = [], compact = false, loading = false, onViewportChange, fitRequestKey = "", showLegend = false, showUserLocation = true }) {
+export default function InstallationsMap({ markers = [], compact = false, loading = false, error = null, onRetry, onViewportChange, fitRequestKey = "", showLegend = false, showUserLocation = true }) {
   const stableMarkers = useMemo(() => markers.filter((marker) => Number.isFinite(Number(marker.latitude)) && Number.isFinite(Number(marker.longitude))), [markers]);
   const legend = useMemo(() => getInstallationTypeLegend(), []);
   const avatar = useProfileAvatar();
   const [layerKey, setLayerKey] = useState(readLayerPreference);
+  const [creditsOpen, setCreditsOpen] = useState(false);
   const layer = MAP_LAYERS[layerKey] || MAP_LAYERS.kaart;
 
   function kiesLaag(nextKey) {
@@ -284,14 +287,14 @@ export default function InstallationsMap({ markers = [], compact = false, loadin
         keyboard
         touchZoom
         zoomControl
-        // Beide tegelbronnen vragen om naamsvermelding; dat is een voorwaarde en geen
-        // voorkeur, dus die staat aan.
-        attributionControl
+        /* De vaste balk "Leaflet | (c) OpenStreetMap" staat rechtsonder permanent over de
+           kaart en is intern alleen ruis. De vermelding zelf blijft: die staat achter het
+           knopje naast de weergavekeuze, met de bron van de laag die je bekijkt. */
+        attributionControl={false}
       >
         <TileLayer
           key={layerKey}
           url={layer.url}
-          attribution={layer.attribution}
           maxNativeZoom={layer.maxNativeZoom}
           maxZoom={20}
           // Bij pannen niet elke tussenstand ophalen; dat scheelt verzoeken en het voelt
@@ -316,7 +319,41 @@ export default function InstallationsMap({ markers = [], compact = false, loadin
             {item.label}
           </button>
         ))}
+
+        <button
+          type="button"
+          className={`installation-map-layer-switch__info${creditsOpen ? " is-active" : ""}`}
+          aria-expanded={creditsOpen}
+          aria-label="Bron van het kaartbeeld"
+          title="Bron van het kaartbeeld"
+          onClick={() => setCreditsOpen((open) => !open)}
+        >
+          i
+        </button>
       </div>
+
+      {creditsOpen ? (
+        <div className="installation-map-credit" role="note">
+          <a href={layer.creditHref} target="_blank" rel="noreferrer noopener">
+            {layer.credit}
+          </a>
+        </div>
+      ) : null}
+
+      {/* De melding gaat over de kaart heen en niet erboven; erboven duwt hij de kaart weg
+          en verschuift alles waar je net naar keek. */}
+      {error ? (
+        <div className="installation-map-error" role="alert">
+          <span className="installation-map-error__pill">
+            <span>{error}</span>
+            {onRetry ? (
+              <button type="button" onClick={onRetry}>
+                Opnieuw proberen
+              </button>
+            ) : null}
+          </span>
+        </div>
+      ) : null}
 
       {loading ? (
         <div className="installation-map-loading" role="status" aria-live="polite">
@@ -330,7 +367,7 @@ export default function InstallationsMap({ markers = [], compact = false, loadin
           <span><i style={{ background: "#475569" }} />Gemengd cluster</span>
         </div>
       ) : null}
-      {!stableMarkers.length && !loading ? <div className="installation-map-empty-mark" role="img" aria-label="Geen installaties binnen deze kaart">×</div> : null}
+      {!stableMarkers.length && !loading && !error ? <div className="installation-map-empty-mark" role="img" aria-label="Geen installaties binnen deze kaart">×</div> : null}
     </div>
   );
 }

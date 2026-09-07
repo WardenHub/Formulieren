@@ -17,6 +17,21 @@ export class ApiError extends Error {
   }
 }
 
+/* Bij een tijdelijke storing stuurt de API een leesbare uitleg mee in "message"; dat is de
+   tekst die de gebruiker moet zien. Bij alle andere fouten blijft "error" leidend, want
+   daar wordt elders in de app op gematcht. */
+function pickErrorMessage(status, data, fallback) {
+  if (status === 503 && data?.message) return String(data.message);
+  return data?.error || fallback;
+}
+
+/* De boodschap blijft "unauthorized"; daar matchen meerdere schermen op. Wat erbij komt is
+   de status, zodat een scherm het verschil kan zien tussen "je mag dit niet" en "de API is
+   nog niet warm" en in het tweede geval gewoon opnieuw kan vragen. */
+function unauthorizedError() {
+  return new ApiError("unauthorized", { status: 401 });
+}
+
 function buildUrl(path) {
   if (/^https?:\/\//i.test(path)) return path;
   const p = path.startsWith("/") ? path : `/${path}`;
@@ -72,14 +87,14 @@ export async function httpJson(path, options = {}) {
   });
 
   if (res.status === 401) {
-    throw new Error("unauthorized");
+    throw unauthorizedError();
   }
 
   if (!res.ok) {
     const ct = res.headers.get("content-type") || "";
     if (ct.includes("application/json")) {
       const data = await res.json().catch(() => null);
-      throw new ApiError(data?.error || `Request failed (${res.status})`, {
+      throw new ApiError(pickErrorMessage(res.status, data, `Request failed (${res.status})`), {
         status: res.status,
         correlationId: data?.correlation_id || null,
         payload: data,
@@ -132,7 +147,7 @@ export async function httpUpload(path, formData, options = {}) {
   });
 
   if (res.status === 401) {
-    throw new Error("unauthorized");
+    throw unauthorizedError();
   }
 
   const ct = res.headers.get("content-type") || "";
@@ -141,11 +156,14 @@ export async function httpUpload(path, formData, options = {}) {
   if (!res.ok) {
     if (isJson) {
       const data = await res.json().catch(() => null);
-      throw new Error(data?.error || `Request failed (${res.status})`);
+      throw new ApiError(pickErrorMessage(res.status, data, `Request failed (${res.status})`), {
+        status: res.status,
+        payload: data,
+      });
     }
 
     const text = await res.text().catch(() => "");
-    throw new Error(text || `Request failed (${res.status})`);
+    throw new ApiError(text || `Request failed (${res.status})`, { status: res.status });
   }
 
   if (!isJson) {
@@ -172,18 +190,21 @@ export async function httpDownload(path, options = {}) {
   });
 
   if (res.status === 401) {
-    throw new Error("unauthorized");
+    throw unauthorizedError();
   }
 
   if (!res.ok) {
     const ct = res.headers.get("content-type") || "";
     if (ct.includes("application/json")) {
       const data = await res.json().catch(() => null);
-      throw new Error(data?.error || `Request failed (${res.status})`);
+      throw new ApiError(pickErrorMessage(res.status, data, `Request failed (${res.status})`), {
+        status: res.status,
+        payload: data,
+      });
     }
 
     const text = await res.text().catch(() => "");
-    throw new Error(text || `Request failed (${res.status})`);
+    throw new ApiError(text || `Request failed (${res.status})`, { status: res.status });
   }
 
   const blob = await res.blob();
