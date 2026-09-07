@@ -1,4 +1,11 @@
-# Ember
+# 🔥 Ember
+
+![Status: proof of concept](https://img.shields.io/badge/status-proof%20of%20concept-amber?style=flat-square)
+[![GitHub Actions: Verify](https://github.com/WardenHub/Formulieren/actions/workflows/verify.yml/badge.svg?branch=main)](https://github.com/WardenHub/Formulieren/actions/workflows/verify.yml)
+[![GitHub: Issues gemonitord](https://img.shields.io/badge/GitHub-Issues%20gemonitord-181717?style=flat-square&logo=github&logoColor=white)](https://github.com/WardenHub/Formulieren/issues)
+![Node.js 24](https://img.shields.io/badge/Node.js-24-339933?style=flat-square&logo=nodedotjs&logoColor=white)
+
+[🐛 Probleem melden](https://github.com/WardenHub/Formulieren/issues/new) · [💡 Idee delen](https://github.com/WardenHub/Formulieren/issues/new) · [📖 Runtimeconventies](docs/ember-form-runtime-conventions.md)
 
 **Ember is het formulierenplatform van Wardenburg voor het vastleggen, opvolgen en rapporteren van werkzaamheden aan beveiligingsinstallaties.** Het doel is om formulieren zo efficiënt mogelijk in te vullen, met de juiste informatie bij de hand en zo min mogelijk dubbel werk.
 
@@ -6,7 +13,7 @@ Het platform brengt formulieren, installatiegegevens, documenten, bevindingen en
 
 Ember is in ontwikkeling als proof of concept. Deze repository bevat de webapplicatie en de API. Toegang is ingericht voor interne gebruikers; een afzonderlijke omgeving voor klanten en andere externe partijen is nog niet uitgewerkt.
 
-## Wat je met Ember kunt doen
+## 📋 Wat je met Ember kunt doen
 
 - **Formulieren invullen en hervatten.** Werken met vooringevulde gegevens, berekeningen, veldvalidatie, conceptopslag en versiegebonden formulieren.
 - **Installaties raadplegen.** Installaties vinden via een overzicht of kaart en de bijbehorende gegevens, formulieren en documenten openen.
@@ -18,7 +25,7 @@ Ember is in ontwikkeling als proof of concept. Deze repository bevat de webappli
 
 Een gebruikelijke route is: installatie of formulier kiezen, een concept invullen, bevindingen aanvullen, indienen en beoordelen. Actiepunten kunnen al tijdens het opslaan van een concept ontstaan. Vanuit zo'n punt kan de gebruiker naar een installatietekening om een markering te plaatsen en daarna terugkeren naar het formulier.
 
-## Eén gedeelde formulierruntime
+## 🧩 Eén gedeelde formulierruntime
 
 Een nieuw formulier wordt beschreven als een declaratieve definitie in `survey_json`. Er komt geen aparte React-pagina per formulier. De gedeelde runtime verzorgt het invullen; formulierspecifiek gedrag wordt vastgelegd in `ember.*`-metadata, bijvoorbeeld voor voorinvulling, berekeningen, weergave en het ontstaan van actiepunten.
 
@@ -32,7 +39,7 @@ Belangrijke uitgangspunten:
 
 Zie [de conventies van de formulierruntime](docs/ember-form-runtime-conventions.md) voor de metadata, ondersteunde vraagtypen en werkwijze bij nieuwe formulieren. De repository bevat ook [formulierfixtures](docs/fixtures/forms/README.md), waaronder het onderhoudsrapport BMI.
 
-## Techniek en indeling
+## 🛠️ Techniek en indeling
 
 | Onderdeel | Invulling |
 | --- | --- |
@@ -59,7 +66,7 @@ tests/                Frontendtests en visuele testschermen
 
 In de volledige Ember-werkmap staat deze repository onder `codebase/Formulieren/`. De databasebronbestanden staan daarbuiten in `SQL DB/tabel-definities.sql` en `SQL DB/Eigenschappen.sql`; migraties staan in `SQL DB/alter/`. Een losse GitHub-checkout bevat deze externe bestanden niet.
 
-## Lokaal ontwikkelen
+## 💻 Lokaal ontwikkelen
 
 Gebruik **Node.js 24** en npm. Voor een werkende omgeving zijn daarnaast de lokaal ingerichte configuratie, toegang tot de benodigde diensten en de database nodig. Alleen de repository installeren levert geen zelfstandig ingerichte Ember-omgeving op. Bewaar geheimen buiten Git.
 
@@ -82,7 +89,7 @@ npm --prefix api run dev
 
 De API gebruikt standaard poort `8080`. De ontwikkelscripts verzorgen waar nodig aanvullende voorbereiding, waaronder de browser die de API voor PDF-rapportage gebruikt.
 
-## Wijzigingen controleren
+## ✅ Wijzigingen controleren
 
 Voer vanuit de repositoryroot de controles uit:
 
@@ -101,7 +108,7 @@ Een deel van de validators gebruikt bronnen buiten de repository:
 
 Een geslaagde controle met overgeslagen onderdelen bewijst die onderdelen niet. Controleer bij wijzigingen aan invullen, opslaan of beoordelen ook de echte gebruikersroute; statische controles alleen zijn daarvoor onvoldoende. Databasewijzigingen en publicatie worden afzonderlijk uitgevoerd volgens de projectafspraken.
 
-## Feedback en GitHub Issues
+## 💬 Feedback en GitHub Issues
 
 **De [GitHub Issues](https://github.com/WardenHub/Formulieren/issues) worden gemonitord.** Gebruik ze om reproduceerbare fouten, technische verbeteringen en voorstellen voor het platform vast te leggen. Controleer eerst of er al een passend issue bestaat en vul dat zo nodig aan.
 
