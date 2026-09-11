@@ -16,10 +16,11 @@
     "inspections:validate": "node ./scripts/validate-inspection-architecture.mjs",
     "schema:validate": "node ./scripts/validate-revamp-schema-contract.mjs",
     "realtime-context:validate": "node --test ./tests/formsHubContextState.test.mjs && node ./scripts/validate-realtime-context-architecture.mjs",
+    "offline:validate": "node ./scripts/validate-offline-release.mjs",
     "roles:validate": "node ./scripts/validate-role-mapping.mjs",
     "direct-bestek-copy:validate": "node --test ./tests/directBestekCopy.test.mjs && node ./scripts/validate-direct-bestek-copy.mjs",
     "test": "node --test ./tests/directBestekCopy.test.mjs ./tests/emberRadialActionMenu.test.mjs ./tests/formsHubContextState.test.mjs ./tests/apiWarmup.test.mjs ./tests/pointEvidence.test.mjs ./tests/runtimeInstanceFields.test.mjs",
-    "validate:all": "npm run fixtures:validate && npm run storage:validate && npm run followups:validate && npm run drawings:validate && npm run certification:validate && npm run inspections:validate && npm run schema:validate && npm run realtime-context:validate && npm run direct-bestek-copy:validate && npm run roles:validate",
+    "validate:all": "npm run fixtures:validate && npm run storage:validate && npm run followups:validate && npm run drawings:validate && npm run certification:validate && npm run inspections:validate && npm run schema:validate && npm run realtime-context:validate && npm run direct-bestek-copy:validate && npm run roles:validate && npm run offline:validate",
     "verify": "npm run lint && npm run test && npm run validate:all && npm run build"
   },
   "dependencies": {
