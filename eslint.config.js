@@ -80,7 +80,15 @@ export default defineConfig([
     // De validators, het dev-script en de node-tests draaien in Node en niet in een
     // browser. Zonder deze globals meldde elke process- en Buffer-verwijzing zich als
     // no-undef, en dat is precies het soort ruis waardoor niemand de validators lint.
-    files: ['scripts/**/*.{js,mjs}', 'api/scripts/**/*.{js,mjs}', 'tests/**/*.{js,mjs,jsx}', '*.{js,mjs}'],
+    files: [
+      'scripts/**/*.{js,mjs}',
+      'api/scripts/**/*.{js,mjs}',
+      'tests/**/*.{js,mjs,jsx}',
+      '*.{js,mjs}',
+      // De offline app heeft zijn eigen buildconfiguratie en startscript; ook Node.
+      'offline/vite.config.js',
+      'offline/scripts/**/*.{js,mjs}',
+    ],
     languageOptions: {
       globals: { ...globals.node },
     },

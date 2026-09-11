@@ -88,11 +88,6 @@ export default function OnlineFormPickupPanel({ onPackagePrepared, onOpenOffline
     [catalog, selectedFormCode]
   );
 
-  const selectedExisting = useMemo(
-    () => instances.find((item) => String(item.form_instance_id) === String(selectedExistingId)) || null,
-    [instances, selectedExistingId]
-  );
-
   async function signIn() {
     const attemptId = authAttemptRef.current + 1;
     authAttemptRef.current = attemptId;
@@ -461,7 +456,7 @@ export default function OnlineFormPickupPanel({ onPackagePrepared, onOpenOffline
               {documentTypes.length ? <div className="eo-document-options">{documentTypes.map((documentType) => { const key = String(documentType.document_type_key); return <label key={key}><input type="checkbox" checked={selectedDocumentTypeKeys.includes(key)} onChange={() => toggleDocumentType(key)} /><span>{documentType.document_type_name || key}</span>{documentType.is_required ? <em>kritiek</em> : null}</label>; })}</div> : <p className="eo-muted">Voor deze installatie zijn geen documenttypes beschikbaar.</p>}
             </div>
 
-            {message ? <p className="eo-message eo-message--success"><Check size={16} />{message}</p> : null}
+            {message ? <p className="eo-message eo-message--success"><CheckCircle2 size={16} />{message}</p> : null}
             <div className="eo-online-actions"><button type="button" className="eo-button eo-button--primary" disabled={preparing || (mode !== "existing" && !selectedForm)} onClick={preparePackage}>{preparing ? <LoaderCircle className="eo-spin" size={18} /> : <FolderSync size={18} />}{preparing ? "Lokaal klaarzetten" : "Lokaal klaarzetten"}</button><span>Dit pakket blijft op dit apparaat beschikbaar.</span></div>
           </> : null}
         </div>

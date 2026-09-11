@@ -4,6 +4,10 @@
 # aan het licht.
 #
 # Deze workflow publiceert niets. Hij faalt alleen, en dat is precies de bedoeling.
+#
+# De actieversies staan op de huidige hoofdversie. GitHub heeft Node 20 op de runners
+# afgeschaft; checkout@v4 en setup-node@v4 draaiden daardoor met een waarschuwing op een
+# afwijkende runtime. Dat is nu nog een waarschuwing en straks een fout.
 
 name: Verify
 
@@ -18,21 +22,23 @@ on:
 
 jobs:
   frontend:
-    name: Frontend; lint, tests, validators, build
+    name: Frontend en offline; lint, tests, validators, builds
     runs-on: ubuntu-22.04
     permissions:
       contents: read
 
     steps:
       - name: checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: setup node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: "24"
           cache: "npm"
-          cache-dependency-path: package-lock.json
+          cache-dependency-path: |
+            package-lock.json
+            offline/package-lock.json
 
       - name: install
         run: npm ci
@@ -52,6 +58,19 @@ jobs:
       - name: build
         run: npm run build
 
+      # Ember Offline rendert met de runtime uit src/, via de alias @ en met de survey-core
+      # van deze repository. Die koppeling breekt stil bij een refactor in de webapp, dus
+      # bouwt hij hier mee; de eigen bouwbewaker van de offline app valt om zodra er weer
+      # twee kopieën van survey-core in de bundel zitten. Dit hangt bewust aan dezelfde job,
+      # want hij heeft de node_modules uit de root nodig die hierboven al zijn geïnstalleerd.
+      - name: install offline
+        working-directory: offline
+        run: npm ci
+
+      - name: build offline
+        working-directory: offline
+        run: npm run build
+
   api:
     name: API; typecheck en tests
     runs-on: ubuntu-22.04
@@ -60,10 +79,10 @@ jobs:
 
     steps:
       - name: checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: setup node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: "24"
           cache: "npm"

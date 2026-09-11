@@ -44,6 +44,7 @@ Zie [de conventies van de formulierruntime](docs/ember-form-runtime-conventions.
 | Onderdeel | Invulling |
 | --- | --- |
 | Webapplicatie | React, Vite en SurveyJS met een eigen gedeelde Ember-renderer |
+| Offline client | Ember Offline, een Tauri-desktopapp die diezelfde renderer gebruikt |
 | API | Node.js, Express en TypeScript; entrypoint `api/src/server.ts` |
 | Identiteit en toegang | Microsoft Entra ID; authenticatie en rollen via de API-middleware |
 | Opslag | Azure SQL en Azure Blob Storage |
@@ -61,8 +62,15 @@ api/tests/            API-tests
 docs/                 Runtimeconventies, architectuur en formulierfixtures
 scripts/              Ontwikkelhulpmiddelen en architectuurvalidators
 tests/                Frontendtests en visuele testschermen
+offline/              Ember Offline; de Tauri-desktopapp voor invullen zonder netwerk
 .github/workflows/    Validatie en afzonderlijke deploymentworkflows
 ```
+
+`offline/` is een eigen npm-project met een eigen `node_modules`, maar het is geen tweede
+formulierengine: het laadt de runtime uit `src/` via de alias `@` en gebruikt de survey-core
+van deze repository. Een bouwbewaker in `offline/vite.config.js` laat de build vallen zodra
+er toch twee kopieën van survey-core in de bundel komen, want dan krijgen de expressies van
+Ember een ander register dan het model en rekent offline anders dan online.
 
 In de volledige Ember-werkmap staat deze repository onder `codebase/Formulieren/`. De databasebronbestanden staan daarbuiten in `SQL DB/tabel-definities.sql` en `SQL DB/Eigenschappen.sql`; migraties staan in `SQL DB/alter/`. Een losse GitHub-checkout bevat deze externe bestanden niet.
 

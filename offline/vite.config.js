@@ -13,8 +13,11 @@ import path from "node:path";
    model door de andere kopie werd gemaakt; offline vond een expressie die functie dus niet.
    Eén kopie voor de hele bundel, en bewust die van de webapp, zodat offline exact rendert
    en rekent zoals online. Zodra beide projecten in één repository staan lost dit zichzelf
-   op en kan deze alias eruit. */
-const SURVEY_CORE = path.resolve(__dirname, "../Formulieren/node_modules/survey-core");
+   op en kan deze alias eruit. Sinds de verhuizing naar deze repository staan beide
+   projecten bij elkaar, maar `offline/` houdt voorlopig zijn eigen node_modules; pas met npm
+   workspaces verdwijnt de tweede kopie vanzelf, en dat raakt de build van de Static Web App,
+   dus dat is een eigen stap. */
+const SURVEY_CORE = path.resolve(__dirname, "../node_modules/survey-core");
 
 /* Bewaakt wat hierboven is rechtgezet. Deze bundel moet precies één kopie van survey-core
    bevatten; twee kopieën betekent twee registers en dan rekent offline anders dan online.
@@ -59,7 +62,7 @@ export default defineConfig({
   resolve: {
     dedupe: ["survey-core", "react", "react-dom"],
     alias: {
-      "@": path.resolve(__dirname, "../Formulieren/src"),
+      "@": path.resolve(__dirname, "../src"),
       "survey-core": SURVEY_CORE,
     },
   },
@@ -68,7 +71,7 @@ export default defineConfig({
     port: 1430,
     strictPort: true,
     fs: {
-      allow: ["..", "../Formulieren"],
+      allow: [".."],
     },
   },
   preview: {

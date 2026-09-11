@@ -1,10 +1,10 @@
 import { Model } from "survey-core";
-import { registerEmberSurveyFunctions } from "../../../Formulieren/src/pages/Forms/shared/modelBuilders.jsx";
+import { registerEmberSurveyFunctions } from "@/pages/Forms/shared/modelBuilders.jsx";
 import {
   injectRuntimeMatrixEnhancements,
   stripHandledMatrixValidatorsFromSurveyJson,
-} from "../../../Formulieren/src/pages/Forms/shared/prefill.jsx";
-import { getAnswersObject, safeSurveyParse } from "../../../Formulieren/src/pages/Forms/shared/surveyCore.jsx";
+} from "@/pages/Forms/shared/prefill.jsx";
+import { getAnswersObject, safeSurveyParse } from "@/pages/Forms/shared/surveyCore.jsx";
 
 function deepClone(value) {
   if (value == null) return value;

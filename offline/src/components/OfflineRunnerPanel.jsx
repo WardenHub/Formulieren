@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import "../../../Formulieren/src/styles/surveyjs-overrides.css";
-import "../../../Formulieren/src/styles/ember-form-runtime.css";
-import EmberRuntimeSurvey from "../../../Formulieren/src/pages/Forms/shared/EmberRuntimeSurvey.jsx";
+import "@/styles/surveyjs-overrides.css";
+import "@/styles/ember-form-runtime.css";
+import EmberRuntimeSurvey from "@/pages/Forms/shared/EmberRuntimeSurvey.jsx";
 import { ArrowLeft, CheckCircle2, FileText, FolderOpen, Save } from "lucide-react";
 import { listOfflineDocuments } from "../lib/offlineStore.js";
 import { openDocumentFolder } from "../lib/offlineFiles.js";
@@ -20,6 +20,10 @@ function documentTitle(document) {
 
 export default function OfflineRunnerPanel({ item, onBack, onSaveAnswers, onSetStatus }) {
   const packageIdentity = `${item?.id || ""}:${item?.package_data?.generated_at || item?.imported_at || ""}`;
+  /* Het model wordt bewust alleen opnieuw opgebouwd wanneer het pakket verandert en niet
+     wanneer `item` verandert. `item` verandert bij elke lokale opslag, en een nieuw model zou
+     de survey midden in het invullen terugzetten. De compiler kan dat niet zien en vraagt om
+     `item` in de lijst; dat is hier precies wat niet moet. */
   const sessionResult = useMemo(() => {
     if (!item) return { model: null, error: null };
     try {
@@ -27,19 +31,37 @@ export default function OfflineRunnerPanel({ item, onBack, onSaveAnswers, onSetS
     } catch (error) {
       return { model: null, error: error?.message || "Het offline formulier kon niet worden opgebouwd." };
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [packageIdentity]);
 
   const model = sessionResult.model;
   const itemRef = useRef(item);
   const saveTimerRef = useRef(null);
   const [saveState, setSaveState] = useState("idle");
-  const [saveStamp, setSaveStamp] = useState(item?.local_runtime?.last_local_saved_at || null);
-  const [pageIndex, setPageIndex] = useState(0);
   const [documents, setDocuments] = useState([]);
+
+  /* De laatst bekende opslagtijd komt uit het item, en vlak na een opslag uit deze component
+     zelf; de nieuwste van de twee telt, en ISO-tijden sorteren op tekst gelijk aan op tijd.
+     Dit stond eerder in state die vanuit een effect opnieuw werd gezet bij elke wijziging van
+     het item, en dat gaf een extra renderronde per autosave; precies in het scherm waarin
+     getypt wordt. */
+  const [eigenSaveStamp, setEigenSaveStamp] = useState(null);
+  const saveStamp =
+    [item?.local_runtime?.last_local_saved_at, eigenSaveStamp].filter(Boolean).sort().at(-1) || null;
+
+  const [pageIndex, setPageIndex] = useState(() => Number(model?.currentPageNo || 0));
+  const [paginaModel, setPaginaModel] = useState(model);
+
+  /* Een ander pakket betekent een ander model en dus een andere paginateller. Dit is het
+     patroon "state aanpassen wanneer een prop verandert": tijdens de render en niet in een
+     effect, zodat er geen renderronde met een verouderde pagina tussen zit. */
+  if (model !== paginaModel) {
+    setPaginaModel(model);
+    setPageIndex(Number(model?.currentPageNo || 0));
+  }
 
   useEffect(() => {
     itemRef.current = item;
-    setSaveStamp(item?.local_runtime?.last_local_saved_at || null);
   }, [item]);
 
   useEffect(() => {
@@ -55,13 +77,12 @@ export default function OfflineRunnerPanel({ item, onBack, onSaveAnswers, onSetS
 
   useEffect(() => {
     if (!model || !item?.id) return undefined;
-    setPageIndex(Number(model.currentPageNo || 0));
     const persist = async () => {
       setSaveState("saving");
       try {
         const savedAt = new Date().toISOString();
         await onSaveAnswers(itemRef.current.id, model.data && typeof model.data === "object" ? model.data : {}, savedAt);
-        setSaveStamp(savedAt);
+        setEigenSaveStamp(savedAt);
         setSaveState("saved");
       } catch {
         setSaveState("error");
