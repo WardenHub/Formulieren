@@ -1,0 +1,38 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Ember Offline",
+  "version": "0.1.0",
+  "identifier": "nl.wardenburg.emberoffline",
+  "build": {
+    "beforeDevCommand": "scripts\\run-vite.cmd --host 127.0.0.1 --port 1430",
+    "beforeBuildCommand": "scripts\\run-vite.cmd build",
+    "frontendDist": "../dist",
+    "devUrl": "http://127.0.0.1:1430"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "Ember Offline",
+        "width": 1480,
+        "height": 940,
+        "minWidth": 1200,
+        "minHeight": 760,
+        "resizable": true
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ]
+  }
+}

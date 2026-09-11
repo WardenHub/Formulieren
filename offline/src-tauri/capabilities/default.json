@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "Standaardrechten voor Ember Offline",
+  "windows": ["main"],
+  "permissions": ["core:default", "opener:allow-open-url"]
+}
