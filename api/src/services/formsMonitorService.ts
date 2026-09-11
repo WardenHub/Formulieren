@@ -886,7 +886,9 @@ export async function getMonitorFollowUpReview(formInstanceIdRaw: any, context: 
         }))
       : [],
     gate,
-    permissions: { can_review: isManager(context.roles || []) },
+    // Dezelfde grens als createMonitorFollowUpReview afdwingt; anders zegt het scherm dat
+    // beoordelen niet mag terwijl de API het toestaat, of omgekeerd.
+    permissions: { can_review: resolveFormProcessor(detail, context.roles || []).allowed },
   };
 }
 

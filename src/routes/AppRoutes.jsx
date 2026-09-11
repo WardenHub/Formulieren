@@ -31,6 +31,7 @@ const FeedbackPage = lazy(() => import("../pages/Feedback/FeedbackPage.jsx"));
 const InspectionsPage = lazy(() => import("../pages/Inspections/InspectionsPage.jsx"));
 const InspectionCasePage = lazy(() => import("../pages/Inspections/InspectionCasePage.jsx"));
 const KamQueuePage = lazy(() => import("../pages/Kam/KamQueuePage.jsx"));
+const KamFormReviewPage = lazy(() => import("../pages/Kam/KamFormReviewPage.jsx"));
 
 const MONITOR_ROLES = [
   "admin",
@@ -81,6 +82,14 @@ export default function AppRoutes() {
           element={
             <Suspense fallback={<RouteFallback label="KAM-werklijst wordt geladen" />}>
               <KamQueuePage />
+            </Suspense>
+          }
+        />
+        <Route
+          path="/kam/formulier/:instanceId"
+          element={
+            <Suspense fallback={<RouteFallback label="Beoordeling wordt geladen" />}>
+              <KamFormReviewPage />
             </Suspense>
           }
         />

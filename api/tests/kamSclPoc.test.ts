@@ -68,9 +68,15 @@ test("KAM/SCL POC is een geldig invulbaar SurveyJS-formulier", async () => {
   assert.equal(model.pageCount, 5);
   assert.equal(model.getQuestionByName("projectnaam")?.isRequired, true);
   assert.equal(model.getQuestionByName("naam_inspecteur")?.isRequired, true);
-  assert.equal(
-    surveyJson.pages.find((page: any) => page.name === "situatieschets")?.ember?.report?.layout,
-    "single-column-fields"
+  /*  De situatieschets hoort in het rapport op één kolom. De renderer leidt dat zelf af
+      zodra een pagina alleen booleans bevat, dus de declaratie uit versie 1.0 is vervallen.
+      Wat blijft gelden is de voorwaarde; zet er een ander vraagtype tussen en de
+      eenkolomsweergave valt stil weg.  */
+  const situatieschets = surveyJson.pages.find((page: any) => page.name === "situatieschets");
+  assert.ok(situatieschets.elements.length > 0);
+  assert.ok(
+    situatieschets.elements.every((element: any) => element.type === "boolean"),
+    "situatieschets moet uitsluitend booleans bevatten voor de eenkolomsweergave"
   );
 });
 

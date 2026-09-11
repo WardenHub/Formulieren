@@ -85,10 +85,9 @@ export default function KamQueuePage() {
   );
 
   function openForm(form) {
-    // Het beoordelen en definitief maken gebeurt op het formulierdetail; die route kent de
-    // afrondrol, de beoordelingsronde en de afrondpoort al. Hier wordt niets van dat werk
-    // nagebouwd, alleen de weg erheen kort gehouden.
-    navigate(`/monitor/formulieren/${encodeURIComponent(form.form_instance_id)}`);
+    // Het eigen beoordelingsscherm; twee stappen op volgorde. Het gebruikt dezelfde routes
+    // als de Monitor, dus aan de afrondpoort en de afrondrol verandert niets.
+    navigate(`/kam/formulier/${encodeURIComponent(form.form_instance_id)}`);
   }
 
   return (

@@ -32,11 +32,14 @@ router.get("/pdf-jobs/:jobId/download", requireRole("admin", "gebruiker", "docum
 router.get("/:formInstanceId/pdf", requireRole("admin", "gebruiker", "documentbeheerder"), downloadFormsMonitorPdf);
 router.get("/:formInstanceId/follow-ups", requireRole("admin", "gebruiker", "documentbeheerder", "kam_coordinator"), getFormsMonitorFollowUps);
 router.get("/:formInstanceId/follow-up-review", requireRole("admin", "gebruiker", "documentbeheerder", "kam_coordinator"), getFormsMonitorFollowUpReview);
-router.post("/:formInstanceId/follow-up-review", requireRole("admin", "documentbeheerder"), postFormsMonitorFollowUpReview);
+// Ruimer dan de handeling zelf; resolveFormProcessor in de service bepaalt per formulier
+// wie mag beoordelen. Een KAM-coordinator op een gewoon formulier krijgt daar forbidden.
+router.post("/:formInstanceId/follow-up-review", requireRole("admin", "documentbeheerder", "kam_coordinator"), postFormsMonitorFollowUpReview);
 router.get("/:formInstanceId", requireRole("admin", "gebruiker", "documentbeheerder", "kam_coordinator"), getFormsMonitorDetail);
 
 
-router.post("/:formInstanceId/status-action", requireRole("admin", "documentbeheerder"), postFormsMonitorStatusAction);
+// Idem; het definitief maken zit achter FormDefinition.finalize_role_code in de service.
+router.post("/:formInstanceId/status-action", requireRole("admin", "documentbeheerder", "kam_coordinator"), postFormsMonitorStatusAction);
 router.put("/:formInstanceId/assignment", requireRole("admin", "documentbeheerder"), putFormsMonitorAssignment);
 router.put("/:formInstanceId/compliment-point", requireRole("admin", "documentbeheerder"), putFormsMonitorComplimentPoint);
 router.post("/:formInstanceId/follow-ups", requireRole("admin", "documentbeheerder"), postFormsMonitorManualFollowUp);

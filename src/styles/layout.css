@@ -9039,3 +9039,26 @@ html[data-appearance="dark"] .ember-radial-action-menu {
   .kam-form{grid-template-columns:1fr;gap:6px}
   .kam-form__points{justify-items:start;text-align:left}
 }
+
+/* KAM-beoordelingsscherm; twee stappen op volgorde, grote raakvlakken. */
+.kam-notice{padding:12px 14px;border-radius:11px;background:color-mix(in srgb,var(--accent,#ef5b2a) 10%,transparent);font-weight:700}
+.kam-review-list{display:grid;gap:12px;margin:0;padding:0;list-style:none}
+.kam-review{display:grid;gap:10px;padding:14px;border:1px solid var(--border-soft);border-radius:12px;background:var(--row-bg)}
+.kam-review__head{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
+.kam-review__description{margin:0;color:var(--muted)}
+.kam-review__decisions{display:flex;flex-wrap:wrap;gap:8px}
+.kam-choice{padding:10px 14px;border:1px solid var(--border);border-radius:999px;background:var(--control-bg);color:var(--text);font-weight:700;cursor:pointer}
+.kam-choice:hover{background:var(--row-hover)}
+.kam-choice--selected{border-color:var(--accent,#ef5b2a);background:color-mix(in srgb,var(--accent,#ef5b2a) 16%,transparent)}
+.kam-review__fields{display:flex;flex-wrap:wrap;gap:14px;align-items:end}
+.kam-review__fields label{display:grid;gap:5px;color:var(--muted);font-size:.82rem;font-weight:700}
+.kam-review__fields select{min-width:120px}
+.kam-review__note{display:grid;gap:5px;color:var(--muted);font-size:.82rem;font-weight:700}
+.kam-gate{padding:12px 14px;border-radius:11px;background:var(--row-bg)}
+.kam-gate p{margin:0}
+.kam-gate__blocked{color:var(--muted)}
+
+@media (max-width:680px){
+  .kam-review__decisions{display:grid;grid-template-columns:1fr 1fr}
+  .kam-choice{text-align:center}
+}
