@@ -74,6 +74,7 @@ import {
   startChildFormInstance,
   getFormInstance,
   postFormInstanceOfflinePackage,
+  postFormInstanceOfflineSync,
   withdrawFormInstance,
   addFormInstancePoint,
   recordFormInstanceSubmitRejection,
@@ -326,6 +327,12 @@ router.post(
   "/:code/forms/instances/:instanceId/offline-package",
   requireRole("admin", "gebruiker"),
   postFormInstanceOfflinePackage
+);
+// De terugweg van Ember Offline; zelfde revisiecontrole als de online runner.
+router.post(
+  "/:code/forms/instances/:instanceId/offline-sync",
+  requireRole("admin", "gebruiker"),
+  postFormInstanceOfflineSync
 );
 router.put("/:code/forms/instances/:instanceId/metadata", requireRole("admin", "gebruiker"), putFormInstanceMetadata);
 router.put("/:code/forms/instances/:instanceId/answers", requireRole("admin", "gebruiker"), putFormAnswers);

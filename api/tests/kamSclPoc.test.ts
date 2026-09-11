@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
+import { createHash } from "node:crypto";
 import { Model } from "survey-core";
 import { previewFormFollowUps } from "../src/services/followUpService.js";
 import { buildFormReportFileName } from "../src/services/formReportExportModelService.js";
@@ -151,4 +152,15 @@ test("algemeen KAM-rapport gebruikt projectnummer en inspectiedatum in de bestan
   });
 
   assert.equal(fileName, "KAM_SCL-inspectie_WB114329_2026-08-30.pdf");
+});
+
+/*  De leesbare bron en de gepubliceerde versie 3.0 moeten hetzelfde formulier zijn. De
+    database bewaart de compacte serialisatie; SQL Server hasht die als nvarchar, dus
+    UTF-16LE. Wijzigt de definitie zonder nieuwe publicatie, dan faalt deze test.  */
+test("de definitie is gelijk aan de gepubliceerde versie 3.0", async () => {
+  const surveyJson = await loadSurvey();
+  const compact = JSON.stringify(surveyJson);
+  const hash = createHash("sha256").update(Buffer.from(compact, "utf16le")).digest("hex").toUpperCase();
+
+  assert.equal(hash, "FAC7660F5C761106C5127751ED571FD8E3D96C3F9A36FC98DDEB0A61AF8C642D");
 });

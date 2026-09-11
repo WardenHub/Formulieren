@@ -1,0 +1,48 @@
+{
+  "schema": "ember.form.answerfile.v2",
+
+  "installation": {
+    "atrium_installation_code": "001065"
+  },
+
+  "form": {
+    "code": "MAINT_BMI_OAI_TYPE_B",
+    "version_label": "1.0",
+    "form_version_id": "00000000-0000-0000-0000-000000000000"
+  },
+
+  "instance": {
+    "form_instance_id": 42,
+    "expected_draft_rev": 7,
+    "status": "CONCEPT"
+  },
+
+  "payload": {
+    "answers_json": { "q1": "..." }
+  },
+
+  "sync": {
+    "client_sync_id": "eb0f4f6c-4f0f-4d1b-9b6f-6c6f1f2a77aa",
+    "local_saved_at": "2026-09-11T13:00:00Z"
+  },
+
+  "field_work": {
+    "manual_points": [
+      {
+        "local_id": "p1",
+        "title": "Accu in centrale vervangen",
+        "description": "Spanning gemeten op 11,2 V.",
+        "category": null,
+        "priority": "HIGH",
+        "source_question_name": null
+      }
+    ]
+  },
+
+  "meta": {
+    "exported_by": "user@company",
+    "client_id": "ember-offline",
+    "client_version": "0.1.0",
+    "notes": null
+  }
+}

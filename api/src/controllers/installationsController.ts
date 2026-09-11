@@ -3,6 +3,7 @@ import type { Request, Response } from "express";
 import * as service from "../services/installationsService.js";
 import { describeParentInstanceProblem } from "../db/queries/parentInstanceGuard.sql.js";
 import * as formsService from "../services/formsService.js";
+import * as offlineSyncService from "../services/offlineSyncService.js";
 import * as followUpService from "../services/followUpService.js";
 import * as submitRejectionService from "../services/formSubmitRejectionService.js";
 import * as formsOfflineService from "../services/formsOfflineService.js";
@@ -1230,6 +1231,34 @@ export async function putFormAnswers(req: any, res: any) {
     if (msg.includes("form instance not editable")) return res.status(409).json({ error: "form instance not editable" });
     console.error(err);
     return res.status(500).json({ error: "putFormAnswers failed" });
+  }
+}
+
+export async function postFormInstanceOfflineSync(req: any, res: any) {
+  try {
+    const result: any = await offlineSyncService.applyOfflineReturnDocument(
+      String(req.params.code || ""),
+      String(req.params.instanceId || ""),
+      req.body,
+      req.user
+    );
+
+    if (result?.ok) return res.json(result);
+
+    /* Een conflict is geen fout van de client maar een stand van zaken; 409 zegt dat, en de
+       app kan de gebruiker dan tonen wie er online iets gewijzigd heeft. */
+    if (result?.result === "conflict") return res.status(409).json(result);
+    if (result?.result === "not_editable") return res.status(409).json(result);
+    if (result?.result === "not_found") return res.status(404).json(result);
+
+    return res.status(400).json(result);
+  } catch (err: any) {
+    const msg = (err?.message || String(err)).toLowerCase();
+    if (isHistoricalReadOnlyMessage(msg)) {
+      return res.status(409).json({ ok: false, result: "not_editable", error: "historical installation read-only" });
+    }
+    console.error(err);
+    return res.status(500).json({ ok: false, error: "postFormInstanceOfflineSync failed" });
   }
 }
 

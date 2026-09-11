@@ -56,6 +56,35 @@ if not exists (
 
 declare @followUpActionId uniqueidentifier = newid();
 
+/* Een punt dat offline is gemaakt komt met een eigen sleutel binnen, zodat een herhaalde
+   sync niets dubbel aanmaakt. Zonder sleutel gedraagt dit zich als voorheen en is de
+   fingerprint het nieuwe actie-id.
+
+   UQ_FollowUpActionFormSource_fingerprint vangt een dubbele insert ook af, maar dan als
+   fout; hier is een herhaalde sync geen fout maar een bevestiging dat het punt er al is. */
+declare @fingerprint nvarchar(500) = concat(
+  N'manual|',
+  coalesce(nullif(ltrim(rtrim(@clientFingerprint)), N''), convert(nvarchar(36), @followUpActionId))
+);
+
+declare @bestaandId uniqueidentifier = (
+  select top (1) fs.follow_up_action_id
+  from dbo.FollowUpActionFormSource fs
+  join dbo.FollowUpAction a
+    on a.follow_up_action_id = fs.follow_up_action_id
+  where fs.form_instance_id = @formInstanceId
+    and fs.source_kind = N'workflow'
+    and fs.source_fingerprint = @fingerprint
+    and a.source_type = N'MANUAL'
+);
+
+if @bestaandId is not null
+begin
+  commit transaction;
+  select @bestaandId as follow_up_action_id, cast(0 as bit) as created;
+  return;
+end
+
 insert into dbo.FollowUpAction
 (
   follow_up_action_id, source_type, kind, workflow_title, workflow_description,
@@ -78,7 +107,7 @@ values
   -- beperkt tot workflow of report-only; de herkomst zit al in source_type MANUAL en in
   -- het fingerprintvoorvoegsel.
   @followUpActionId, @formInstanceId, N'workflow', @sourceQuestionName,
-  concat(N'manual|', convert(nvarchar(36), @followUpActionId)), @actor
+  @fingerprint, @actor
 );
 
 insert into dbo.FollowUpActionInstallationContext
@@ -133,7 +162,7 @@ values
 
 commit transaction;
 
-select @followUpActionId as follow_up_action_id;
+select @followUpActionId as follow_up_action_id, cast(1 as bit) as created;
 `;
 
 export const insertFormFollowUpSql = `

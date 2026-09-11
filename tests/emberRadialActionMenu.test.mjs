@@ -143,7 +143,16 @@ test("de bestaande DrawingPin-interactie en versiecontracten blijven aangesloten
   assert.match(source, /boundaryElement=\{boundaryElement\}/);
   assert.match(source, /setBoundaryElement\(element\)/);
   assert.match(source, /downloadInstallationDocumentFile\(code, selectedDocumentId\)/);
-  assert.match(source, /createDrawingPin\(code, selectedDocumentId, draft\)/);
+  /* Het opslaan van een pin liep hier eerst als createDrawingPin(code, selectedDocumentId,
+     draft) in dit bestand zelf. Sinds de driedelige beoordelingsronde gaat het via de
+     gedeelde savePointDrawing, die zijn afhankelijkheden meekrijgt; het gedrag zelf staat in
+     tests/pointEvidence.test.mjs. Wat hier vast moet liggen is dus alleen dat deze tab die
+     helper gebruikt en er de echte API-functies en de gekozen tekening in stopt, en niet
+     opnieuw zijn eigen schrijfpad krijgt. */
+  assert.match(source, /savePointDrawing\(\{/);
+  assert.match(source, /createPin: createDrawingPin/);
+  assert.match(source, /updatePin: updateDrawingPin/);
+  assert.match(source, /documentId: selectedDocumentId/);
   // De snelactie heette eerder quickActionKind en de opvolgactie newFollowUpPin. Beide zijn
   // hernoemd; de test controleerde daarmee namen in plaats van gedrag en viel stil om.
   // Wat werkelijk vast moet liggen is de afbeelding van snelactie naar pinsoort en het

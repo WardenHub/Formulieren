@@ -86,6 +86,21 @@ const TOEGESTANE_PRIORITEITEN = new Set(["LOW", "NORMAL", "HIGH", "CRITICAL"]);
 
 // Een punt dat de invuller zelf toevoegt tijdens het invullen. Titel is verplicht, want
 // dat is de "wat"-vraag; de rest is aanvulling die later aan het punt kan worden gehangen.
+/* dbo.FollowUpActionFormSource.source_question_name is NOT NULL en heeft geen default,
+   terwijl de punten-sheet in de runner alleen titel, omschrijving en prioriteit meestuurt.
+   Daardoor ging er een NULL naar een kolom die dat niet toestaat en eindigde het toevoegen
+   van een eigen punt in een 500.
+
+   Een punt van de invuller komt niet uit een vraag; die herkomst staat al in source_type
+   MANUAL en in het voorvoegsel van de fingerprint. Deze waarde vult de kolom eerlijk in
+   zonder een vraag te verzinnen die er niet is. */
+export const MANUAL_POINT_SOURCE_QUESTION = "manual";
+
+export function resolveSourceQuestionName(value: unknown) {
+  const schoon = value === null || value === undefined ? "" : String(value).trim();
+  return schoon.length ? schoon.slice(0, 200) : MANUAL_POINT_SOURCE_QUESTION;
+}
+
 export async function addRunnerFollowUpPoint(input: {
   formInstanceId: number | string;
   title: any;
@@ -93,6 +108,9 @@ export async function addRunnerFollowUpPoint(input: {
   category?: any;
   priority?: any;
   sourceQuestionName?: any;
+  // Een sleutel van de client. Offline gemaakte punten komen daarmee binnen, zodat een
+  // herhaalde sync hetzelfde punt niet twee keer aanmaakt; zie insertRunnerFollowUpPointSql.
+  clientFingerprint?: any;
   user: any;
 }) {
   const formInstanceId = parseFormInstanceId(input?.formInstanceId);
@@ -112,7 +130,8 @@ export async function addRunnerFollowUpPoint(input: {
     workflowDescription: normalizeNullable(input?.description),
     category: normalizeNullable(input?.category),
     priority,
-    sourceQuestionName: normalizeNullable(input?.sourceQuestionName),
+    sourceQuestionName: resolveSourceQuestionName(input?.sourceQuestionName),
+    clientFingerprint: normalizeNullable(input?.clientFingerprint),
     actor: getUserAuditActor(input?.user),
   });
 
@@ -121,6 +140,8 @@ export async function addRunnerFollowUpPoint(input: {
   return {
     ok: true,
     follow_up_action_id: first?.follow_up_action_id ?? null,
+    // false betekent: dit punt stond er al, dit was een herhaalde sync.
+    created: first?.created == null ? true : Boolean(first.created),
   };
 }
 

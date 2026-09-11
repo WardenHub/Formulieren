@@ -10,30 +10,6 @@
   "pageNextText": "Volgende",
   "completeText": "Indienen voor KAM-beoordeling",
   "checkErrorsMode": "onComplete",
-  "ember": {
-    "report": {
-      "coverMainTitle": "KAM / SCL-inspectie",
-      "activeDisciplines": [],
-      "signaturePage": {
-        "blocks": [
-          {
-            "key": "inspectie",
-            "title": "Ondertekening inspecteur",
-            "signerRole": "OPSTELLER",
-            "text": "De inspecteur verklaart dat de inspectie op locatie is uitgevoerd en dat de bevindingen in dit formulier zijn vastgelegd. Het indienen van dit formulier in Ember geldt als ondertekening.",
-            "footerText": ""
-          },
-          {
-            "key": "kam_beoordeling",
-            "title": "Ondertekening KAM-coördinator",
-            "signerRole": "AFRONDER",
-            "text": "De KAM-coördinator verklaart de inspectie te hebben beoordeeld, de opvolgpunten te hebben vastgesteld en het formulier definitief te hebben gemaakt. Het definitief maken in Ember geldt als ondertekening.",
-            "footerText": ""
-          }
-        ]
-      }
-    }
-  },
   "pages": [
     {
       "name": "gegevens",
@@ -44,26 +20,29 @@
           "name": "projectnaam",
           "title": "Projectnaam",
           "isRequired": true,
-          "placeholder": "Zoals het project in Atrium heet"
+          "width": "50%"
         },
         {
           "type": "text",
           "name": "datum_inspectie",
           "title": "Datum inspectie",
           "inputType": "date",
-          "isRequired": true
+          "isRequired": true,
+          "width": "25%"
         },
         {
           "type": "text",
           "name": "projectnummer",
           "title": "Projectnummer",
+          "width": "25%",
           "placeholder": "Bijvoorbeeld WB114329"
         },
         {
           "type": "text",
           "name": "naam_inspecteur",
           "title": "Naam inspecteur",
-          "isRequired": true
+          "isRequired": true,
+          "width": "50%"
         },
         {
           "type": "comment",
@@ -110,18 +89,8 @@
     {
       "name": "situatieschets",
       "title": "Situatieschets",
-      "description": "Kies wat van toepassing was op deze klus. Alleen de gekozen onderdelen worden daarna aan je gevraagd; de rest blijft buiten beeld.",
-      "ember": {
-        "report": {
-          "layout": "single-column-fields"
-        }
-      },
+      "description": "Vink aan wat van toepassing is. De bijbehorende controlecategorie wordt alleen getoond wanneer de situatie speelt.",
       "elements": [
-        {
-          "type": "html",
-          "name": "situatieschets_info",
-          "html": "<p>Deze keuze bepaalt welke VCA-categorieën je hierna invult. Twijfel je, of wil je alles langslopen, zet dan onderaan <em>Toon alle categorieën</em> aan.</p>"
-        },
         {
           "type": "boolean",
           "name": "situatie_verplaatsen",
@@ -155,7 +124,7 @@
         {
           "type": "boolean",
           "name": "toon_alle_categorieen",
-          "title": "Toon alle categorieën, ongeacht de situatieschets",
+          "title": "Toon alle categorieën; situatieschets negeren",
           "description": "Gebruik dit als je de volledige lijst wilt doorlopen."
         }
       ]
@@ -278,7 +247,6 @@
                 }
               ],
               "ember": {
-                "layout": "assessment",
                 "followUp": {
                   "kind": "workflow",
                   "mode": "on-condition",
@@ -293,7 +261,8 @@
                   "certificateImpact": {
                     "mode": "none"
                   }
-                }
+                },
+                "layout": "assessment"
               }
             }
           ]
@@ -381,7 +350,6 @@
                 }
               ],
               "ember": {
-                "layout": "assessment",
                 "followUp": {
                   "kind": "workflow",
                   "mode": "on-condition",
@@ -396,7 +364,8 @@
                   "certificateImpact": {
                     "mode": "none"
                   }
-                }
+                },
+                "layout": "assessment"
               }
             }
           ]
@@ -497,7 +466,6 @@
                 }
               ],
               "ember": {
-                "layout": "assessment",
                 "followUp": {
                   "kind": "workflow",
                   "mode": "on-condition",
@@ -512,7 +480,8 @@
                   "certificateImpact": {
                     "mode": "none"
                   }
-                }
+                },
+                "layout": "assessment"
               }
             }
           ]
@@ -607,7 +576,6 @@
                 }
               ],
               "ember": {
-                "layout": "assessment",
                 "followUp": {
                   "kind": "workflow",
                   "mode": "on-condition",
@@ -622,7 +590,8 @@
                   "certificateImpact": {
                     "mode": "none"
                   }
-                }
+                },
+                "layout": "assessment"
               }
             }
           ]
@@ -717,7 +686,6 @@
                 }
               ],
               "ember": {
-                "layout": "assessment",
                 "followUp": {
                   "kind": "workflow",
                   "mode": "on-condition",
@@ -732,7 +700,8 @@
                   "certificateImpact": {
                     "mode": "none"
                   }
-                }
+                },
+                "layout": "assessment"
               }
             }
           ]
@@ -827,7 +796,6 @@
                 }
               ],
               "ember": {
-                "layout": "assessment",
                 "followUp": {
                   "kind": "workflow",
                   "mode": "on-condition",
@@ -842,7 +810,8 @@
                   "certificateImpact": {
                     "mode": "none"
                   }
-                }
+                },
+                "layout": "assessment"
               }
             }
           ]
@@ -937,7 +906,6 @@
                 }
               ],
               "ember": {
-                "layout": "assessment",
                 "followUp": {
                   "kind": "workflow",
                   "mode": "on-condition",
@@ -952,7 +920,8 @@
                   "certificateImpact": {
                     "mode": "none"
                   }
-                }
+                },
+                "layout": "assessment"
               }
             }
           ]
@@ -1071,7 +1040,6 @@
                 }
               ],
               "ember": {
-                "layout": "assessment",
                 "followUp": {
                   "kind": "workflow",
                   "mode": "on-condition",
@@ -1086,7 +1054,8 @@
                   "certificateImpact": {
                     "mode": "none"
                   }
-                }
+                },
+                "layout": "assessment"
               }
             }
           ]
@@ -1096,7 +1065,7 @@
     {
       "name": "dialoog",
       "title": "SCL-gesprek",
-      "description": "Het SCL-gesprek gaat over veilig vakmanschap. Kies een vraag, noteer het antwoord en wat eruit volgt. Eén goed uitgewerkt gesprekspunt is meer waard dan vijf halve.",
+      "description": "Kies minimaal twee vragen en leg de antwoorden vast als ontwikkelpunt, niet als afwijking.",
       "elements": [
         {
           "type": "matrixdynamic",
@@ -1128,11 +1097,12 @@
               "title": "Antwoord en ontwikkelpunt",
               "cellType": "comment",
               "isRequired": true,
-              "width": "60%",
-              "placeholder": "Antwoord van de medewerker en de afspraak die volgt",
-              "rows": 3
+              "width": "60%"
             }
-          ]
+          ],
+          "ember": {
+            "layout": "default"
+          }
         },
         {
           "type": "text",
@@ -1173,27 +1143,49 @@
           "name": "signalering_kam",
           "title": "Signalering voor de KAM-coördinator",
           "description": "De KAM-coördinator beoordeelt of opname in het KAM-actieplan nodig is.",
-          "rows": 4,
-          "placeholder": "Wat moet de KAM-coördinator zeker weten"
+          "rows": 4
         },
         {
           "type": "comment",
           "name": "positieve_bevindingen",
           "title": "Algehele indruk en positieve bevindingen",
-          "rows": 4,
-          "placeholder": "Wat ging goed en verdient navolging"
+          "rows": 4
         },
         {
           "type": "html",
           "name": "ondertekening_info",
-          "html": "<p><strong>Ondertekenen gebeurt door in te dienen.</strong> Ember legt vast wie dit formulier indient en wanneer; dat is de eerste ondertekening. Je hoeft je naam hieronder dus niet nog een keer te typen. Staat er een handtekening in je profiel, dan komt die op het rapport te staan.</p>"
+          "html": "<p><strong>Ondertekenen gebeurt door in te dienen.</strong> Ember legt vast wie dit formulier indient en wanneer; dat is de eerste ondertekening. Je hoeft je naam dus niet zelf in te vullen. Staat er een handtekening in je profiel, dan komt die op het rapport.</p>"
         },
         {
           "type": "html",
           "name": "kam_beoordeling_info",
-          "html": "<p><strong>Na indienen.</strong> Er wordt automatisch een verplichte KAM-beoordeling aangemaakt. De KAM-coördinator beoordeelt de opvolgpunten en maakt het formulier definitief; dat is de tweede ondertekening. Tot dat moment blijft dit formulier in behandeling.</p>"
+          "html": "<p><strong>Na indienen.</strong> Er wordt automatisch een verplichte KAM-beoordeling aangemaakt. De KAM-coördinator behandelt die in de KAM-werklijst, stelt de opvolgpunten vast en maakt het formulier definitief; dat is de tweede ondertekening. Tot dat moment blijft dit formulier in behandeling.</p>"
         }
       ]
     }
-  ]
+  ],
+  "ember": {
+    "report": {
+      "coverMainTitle": "KAM / SCL-inspectie",
+      "activeDisciplines": [],
+      "signaturePage": {
+        "blocks": [
+          {
+            "key": "inspectie",
+            "title": "Ondertekening inspecteur",
+            "signerRole": "OPSTELLER",
+            "text": "De inspecteur verklaart dat de inspectie op locatie is uitgevoerd en dat de bevindingen in dit formulier zijn vastgelegd. Het indienen in Ember geldt als ondertekening.",
+            "footerText": ""
+          },
+          {
+            "key": "kam_beoordeling",
+            "title": "Ondertekening KAM-coördinator",
+            "signerRole": "AFRONDER",
+            "text": "De KAM-coördinator verklaart de inspectie te hebben beoordeeld, de opvolgpunten te hebben vastgesteld en het formulier definitief te hebben gemaakt. Het definitief maken in Ember geldt als ondertekening.",
+            "footerText": ""
+          }
+        ]
+      }
+    }
+  }
 }
