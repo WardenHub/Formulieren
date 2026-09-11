@@ -1,5 +1,16 @@
 # Docs for the Azure Web Apps Deploy action: https://github.com/Azure/webapps-deploy
 # More GitHub Actions for Azure: https://github.com/Azure/actions
+#
+# De actieversies staan op de huidige hoofdversie. GitHub heeft Node 20 op de runners
+# afgeschaft; de run meldde checkout, setup-node, upload-artifact, download-artifact en
+# azure/login als acties die daardoor op een afwijkende runtime draaiden. Nu nog een
+# waarschuwing, straks een fout.
+#
+# webapps-deploy blijft op v3; die stond niet in die melding en draait al op een
+# ondersteunde runtime.
+#
+# download-artifact brak in v5 alleen voor ophalen op artifact-id. Deze workflow haalt het
+# pakket op naam op en valt dus buiten die wijziging.
 
 name: Build and deploy Node.js app to Azure Web App - ember-api
 
@@ -20,10 +31,10 @@ jobs:
 
     steps:
       - name: checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: setup node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: "24"
           cache: "npm"
@@ -65,7 +76,7 @@ jobs:
         run: npm run test --if-present
 
       - name: upload artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: api-app
           path: api
@@ -79,13 +90,13 @@ jobs:
 
     steps:
       - name: download artifact
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: api-app
           path: api
 
       - name: login to azure
-        uses: azure/login@v2
+        uses: azure/login@v3
         with:
           client-id: ${{ secrets.AZUREAPPSERVICE_CLIENTID_298408D4FB304F60B9F4AEC3C47B750A }}
           tenant-id: ${{ secrets.AZUREAPPSERVICE_TENANTID_D3D77769A6BA4D048343E3649FDF9157 }}
