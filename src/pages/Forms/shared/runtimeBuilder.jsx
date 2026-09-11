@@ -199,8 +199,15 @@ export function buildRuntimeMergedData({
     ...(answersObj && typeof answersObj === "object" ? answersObj : {}),
   };
 
+  /*  Alleen vullen als de definitie die vraag ook kent. applyRuntimeInstanceFields
+      controleert dat wel, deze functie deed dat niet, en dus kreeg elk formulier zonder
+      documentnummer-vraag stil een antwoordsleutel die in geen enkele versie voorkomt.
+      Die sleutel werd bij elke volgende opslag weer meegeschreven en is in het rapport
+      nergens te zien; precies het soort antwoord zonder vraag dat niemand opmerkt.  */
   const documentnummer = getInstanceDocumentNumber(instance);
-  if (documentnummer !== null) {
+  const hasDocumentnummerQuestion = Boolean(model?.getQuestionByName?.("documentnummer"));
+
+  if (hasDocumentnummerQuestion && documentnummer !== null) {
     mergedData.documentnummer = documentnummer;
   }
 
