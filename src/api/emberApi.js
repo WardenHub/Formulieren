@@ -843,6 +843,10 @@ export async function getFormsMonitorList(params = {}) {
     qs.set("unassignedOnly", params.unassignedOnly ? "1" : "0");
   }
 
+  if (params.includeSafetyForms !== undefined && params.includeSafetyForms !== null) {
+    qs.set("includeSafetyForms", params.includeSafetyForms ? "1" : "0");
+  }
+
   if (params.take != null) qs.set("take", String(params.take));
   if (params.skip != null) qs.set("skip", String(params.skip));
 
@@ -1253,3 +1257,18 @@ export function createInspectionReinspection(caseId, payload) { return apiPost(`
 export function completeInspectionCase(caseId, payload) { return apiPost(`/inspections/cases/${encodeURIComponent(caseId)}/complete`, payload ?? {}); }
 export function signalInspectionCases() { return apiPost("/inspections/signal", {}); }
 export function getInspectionCaseEvents(caseId) { return apiGet(`/inspections/cases/${encodeURIComponent(caseId)}/events`); }
+
+// ---------------------------------------------------------------------------
+// KAM-werklijst
+// ---------------------------------------------------------------------------
+
+export function getKamQueue(params = {}) {
+  const qs = new URLSearchParams();
+
+  if (params.relationSourceKey) qs.set("relationSourceKey", String(params.relationSourceKey));
+  if (params.onlyOpen !== undefined && params.onlyOpen !== null) {
+    qs.set("onlyOpen", params.onlyOpen ? "1" : "0");
+  }
+
+  return apiGet(`/kam/queue${qs.toString() ? `?${qs.toString()}` : ""}`);
+}

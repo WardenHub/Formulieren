@@ -11,6 +11,7 @@ import { MessageSquareMoreIcon } from "@/components/ui/message-square-more.jsx";
 import { CircleHelpIcon } from "@/components/ui/circle-help.jsx";
 import { LoaderPinwheelIcon } from "@/components/ui/loader-pinwheel";
 import DateInput from "@/components/DateInput.jsx";
+import { savePointDrawing } from "../Forms/shared/pointEvidence.js";
 import { getResolvedAppearance, subscribeAppearance } from "@/theme/appearance.js";
 
 import {
@@ -768,38 +769,40 @@ function PinActions({ code, pin, actions, busy, onChanged }) {
   );
 }
 
-export default function DrawingPinsTab({ code, readOnly = false, navigationTarget = null, onOpenFollowUp }) {
+export default function DrawingPinsTab({ code, readOnly = false, navigationTarget = null, onOpenFollowUp, embedded = false, onLinked, onBusyChange }) {
   const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
 
   // Gezet wanneer de gebruiker vanuit een opvolgpunt hierheen is gestuurd om de locatie
   // te bepalen. De pin die hij plaatst wordt dan meteen aan dat punt gekoppeld, en
   // daarna keert hij terug naar waar hij vandaan kwam.
-  const linkActionId = String(navigationTarget?.linkActionId || searchParams.get("linkAction") || "").trim();
+  const linkActionId = String(navigationTarget?.linkActionId || (!embedded && searchParams.get("linkAction")) || "").trim();
   const returnTo = String(searchParams.get("returnTo") || "").trim();
 
   const [directory, setDirectory] = useState({ drawings: [], follow_up_actions: [] });
-  const [selectedDocumentId, setSelectedDocumentId] = useState(() => String(navigationTarget?.documentId || searchParams.get("drawing") || ""));
+  const [selectedDocumentId, setSelectedDocumentId] = useState(() => String(navigationTarget?.documentId || (!embedded && searchParams.get("drawing")) || ""));
   const [pins, setPins] = useState([]);
   const [pdfDocument, setPdfDocument] = useState(null);
-  const [pageNumber, setPageNumber] = useState(() => Math.max(1, Number(navigationTarget?.pageNumber || searchParams.get("page") || 1)));
-  const [selectedPinId, setSelectedPinId] = useState(() => String(navigationTarget?.pinId || searchParams.get("pin") || ""));
+  const [pageNumber, setPageNumber] = useState(() => Math.max(1, Number(navigationTarget?.pageNumber || (!embedded && searchParams.get("page")) || 1)));
+  const [selectedPinId, setSelectedPinId] = useState(() => String(navigationTarget?.pinId || (!embedded && searchParams.get("pin")) || ""));
   const [draft, setDraft] = useState(null);
-  const [placing, setPlacing] = useState(false);
+  const [placing, setPlacing] = useState(Boolean(navigationTarget?.startPlacing));
   const [directoryLoading, setDirectoryLoading] = useState(true);
   const [pdfLoading, setPdfLoading] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const [showHistory, setShowHistory] = useState(false);
+  const [showHistory, setShowHistory] = useState(Boolean(embedded && navigationTarget?.pinId));
   const [sidePanelOpen, setSidePanelOpen] = useState(true);
   const [editorOpen, setEditorOpen] = useState(false);
   const [editorFloating, setEditorFloating] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
   const helpIconRef = useRef(null);
 
+  useEffect(() => { onBusyChange?.(busy); }, [busy, onBusyChange]);
+
   const selectedDrawing = directory.drawings.find((item) => String(item.document_id) === selectedDocumentId) || null;
   const selectedPin = pins.find((item) => String(item.drawing_pin_id) === selectedPinId) || null;
-  const componentReview = Boolean(navigationTarget?.componentReview) || searchParams.get("componentReview") === "1";
+  const componentReview = Boolean(navigationTarget?.componentReview) || (!embedded && searchParams.get("componentReview") === "1");
   const componentReviewPins = (directory.pins || []).filter((pin) => pin.pin_kind === "COMPONENT_PLACED" && String(pin.pin_status || "").toUpperCase() === "ACTIVE");
   const componentReviewIndex = Math.max(0, componentReviewPins.findIndex((pin) => String(pin.drawing_pin_id) === selectedPinId));
 
@@ -847,6 +850,7 @@ export default function DrawingPinsTab({ code, readOnly = false, navigationTarge
   }
 
   function updateLocation(documentId, page, pinId = "") {
+    if (embedded) return;
     const next = new URLSearchParams(searchParams);
     if (documentId) next.set("drawing", documentId); else next.delete("drawing");
     if (page) next.set("page", String(page)); else next.delete("page");
@@ -948,33 +952,38 @@ export default function DrawingPinsTab({ code, readOnly = false, navigationTarge
     setBusy(true);
     setError("");
     try {
-      if (draft.drawing_pin_id) {
-        const response = await updateDrawingPin(code, draft.drawing_pin_id, draft);
-        setDraft(response?.pin || null);
-        setSelectedPinId(String(response?.pin?.drawing_pin_id || ""));
-      } else {
-        const response = await createDrawingPin(code, selectedDocumentId, draft);
-        const nieuwePinId = String(response?.pin?.drawing_pin_id || "");
-
-        setDraft(response?.pin || null);
-        setSelectedPinId(nieuwePinId);
-
-        // Wie hier vanuit een opvolgpunt naartoe is gestuurd, wil dat de zojuist
-        // geplaatste pin meteen aan dat punt hangt. Anders is het weer handmatig
-        // koppelen uit een lange lijst, en dat is precies de stap die eruit moest.
-        if (linkActionId && nieuwePinId) {
-          await linkDrawingPinAction(code, nieuwePinId, linkActionId);
-        }
+      const savedPin = await savePointDrawing({
+        draft, code, documentId: selectedDocumentId, actionId: linkActionId,
+        createPin: createDrawingPin, updatePin: updateDrawingPin, linkPin: linkDrawingPinAction,
+        onSaved: (pin) => { setDraft(pin); setSelectedPinId(String(pin.drawing_pin_id)); },
+      });
+      if (linkActionId && onLinked) {
+        onLinked(savedPin);
+        return;
       }
       setPlacing(false);
       await Promise.all([loadPins(), loadDirectory({ documentId: selectedDocumentId })]);
 
-      if (linkActionId && returnTo) {
+      if (!embedded && linkActionId && returnTo.startsWith("/") && !returnTo.startsWith("//")) {
         navigate(returnTo);
         return;
       }
     } catch (requestError) {
       setError(requestError?.message || String(requestError));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function linkSelectedPin() {
+    if (!selectedPin || !linkActionId || readOnly || busy) return;
+    setBusy(true);
+    setError("");
+    try {
+      await linkDrawingPinAction(code, selectedPin.drawing_pin_id, linkActionId);
+      onLinked?.(selectedPin);
+    } catch (requestError) {
+      setError(requestError?.message || "Koppelen is niet gelukt. Probeer opnieuw.");
     } finally {
       setBusy(false);
     }
@@ -1068,6 +1077,11 @@ export default function DrawingPinsTab({ code, readOnly = false, navigationTarge
 
   return (
     <div className="drawing-pins-tab">
+      {embedded && linkActionId ? <div className="ember-alert ember-alert--info">
+        <strong>{navigationTarget?.label || "Locatie bij opvolgactie"}</strong>
+        <div>Kies een tekening en plaats een pin, of klik een bestaande pin aan om die te koppelen.</div>
+        {selectedPin ? <button type="button" className="btn btn-primary" disabled={busy || readOnly} onClick={linkSelectedPin}>Deze pin koppelen</button> : null}
+      </div> : null}
       <div className="drawing-pins-toolbar">
         <label className="admin-field drawing-pins-toolbar__select">
           <span>PDF-tekening</span>
@@ -1140,7 +1154,7 @@ export default function DrawingPinsTab({ code, readOnly = false, navigationTarge
       </div>
 
       {error ? <div className="ember-alert ember-alert--danger">{error}</div> : null}
-      {readOnly ? <div className="ember-alert ember-alert--warning">Deze historische installatie is alleen-lezen.</div> : null}
+      {readOnly ? <div className="ember-alert ember-alert--warning">{embedded ? "Deze gekoppelde locatie is hier alleen te bekijken." : "Deze historische installatie is alleen-lezen."}</div> : null}
       {selectedDrawing?.is_current_version === false ? <div className="ember-alert ember-alert--info">Deze pinnen blijven gekoppeld aan de exacte historische PDF-versie. Nieuwe pins kunnen alleen op de actuele tekenversie worden geplaatst.</div> : null}
 
       {!directory.drawings.length ? (
@@ -1185,7 +1199,7 @@ export default function DrawingPinsTab({ code, readOnly = false, navigationTarge
                 setPlacing(false);
                 setEditorFloating(false);
                 setSidePanelOpen(true);
-                setDraft({ ...position, label: "", description: "" });
+                setDraft({ ...position, label: navigationTarget?.label || "", description: navigationTarget?.description || "", pin_kind: navigationTarget?.pinKind || "NOTE", pin_status: "ACTIVE" });
                 setEditorOpen(true);
               }}
               onSelect={(pin) => {
@@ -1218,7 +1232,7 @@ export default function DrawingPinsTab({ code, readOnly = false, navigationTarge
                 setDraft({
                   ...position,
                     label: kind === "defect" ? "Tekortkoming" : kind === "note" ? "Opmerking" : "Component geplaatst",
-                    description: "",
+                    description: navigationTarget?.description || "",
                   pin_kind: kind === "defect" ? "DEFICIENCY" : kind === "note" ? "NOTE" : "COMPONENT_PLACED",
                   pin_status: "ACTIVE",
                 });
@@ -1243,7 +1257,7 @@ export default function DrawingPinsTab({ code, readOnly = false, navigationTarge
             ) : null}
             {placing ? <div className="ember-alert ember-alert--info">Klik op de tekening om de locatie vast te leggen.</div> : null}
             {editorOpen && !editorFloating ? pinEditor : null}
-          {editorOpen && selectedPin ? (
+          {editorOpen && selectedPin && !embedded ? (
               <PinActions
                 code={code}
                 pin={selectedPin}

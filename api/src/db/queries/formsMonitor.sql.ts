@@ -27,7 +27,8 @@ export const getFormsMonitorListSql = `
     case when isnull(@mine, 0) = 1 then 1 else 0 end as mine_n,
     case when isnull(@includeWithdrawn, 0) = 1 then 1 else 0 end as include_withdrawn_n,
     case when isnull(@onlyActionable, 0) = 1 then 1 else 0 end as only_actionable_n,
-    case when isnull(@unassignedOnly, 0) = 1 then 1 else 0 end as unassigned_only_n
+    case when isnull(@unassignedOnly, 0) = 1 then 1 else 0 end as unassigned_only_n,
+    case when isnull(@includeSafetyForms, 0) = 1 then 1 else 0 end as include_safety_forms_n
 ),
 selected_statuses as (
   select distinct nullif(ltrim(rtrim(convert(nvarchar(30), [value]))), N'') as status_value
@@ -61,6 +62,8 @@ base as (
 
     fd.code as form_code,
     fd.name as form_name,
+    fd.review_scope,
+    fd.finalize_role_code,
     fv.version,
     fv.version_label,
 
@@ -123,6 +126,10 @@ base as (
       or fi.status in (select status_value from selected_statuses)
     )
     and (p.form_code_n is null or fd.code = p.form_code_n)
+    -- Veiligheidsformulieren worden in de KAM-werklijst afgehandeld, niet hier. Ze staan
+    -- standaard buiten de Monitor zodat het overzicht van de installatieformulieren
+    -- overzichtelijk blijft; met de schakelaar komen ze er ter inzage bij.
+    and (p.include_safety_forms_n = 1 or isnull(fd.review_scope, N'INSTALLATION') = N'INSTALLATION')
     and (
       p.mine_n = 0
       or (
@@ -399,6 +406,13 @@ select top 1
 
   fd.code as form_code,
   fd.name as form_name,
+  fd.review_scope,
+  fd.finalize_role_code,
+  (
+    select wr.display_name
+    from dbo.WorkflowRoleDefinition wr
+    where wr.role_code = fd.finalize_role_code
+  ) as finalize_role_display_name,
   fv.version,
   fv.version_label,
   fv.survey_json,
@@ -550,14 +564,25 @@ update dbo.FormInstance
 set
   status = @nextStatus,
   updated_at = sysutcdatetime(),
-  updated_by = @updatedBy
+  updated_by = @updatedBy,
+  /*  Definitief maken is de tweede ondertekening. Dat moment krijgt eigen kolommen,
+      want updated_by wordt bij elke latere wijziging overschreven en dan verdwijnt de
+      ondertekenaar uit het rapport.
+
+      Wordt een definitief formulier heropend, dan vervalt die ondertekening ook; de
+      beoordeling geldt niet meer voor wat er daarna nog verandert. Een achtergebleven
+      naam onder een gewijzigd rapport is erger dan een leeg vak.  */
+  finalized_at = case when @nextStatus = N'AFGEHANDELD' then sysutcdatetime() end,
+  finalized_by = case when @nextStatus = N'AFGEHANDELD' then @updatedBy end
 where form_instance_id = @formInstanceId;
 
 select top 1
   form_instance_id,
   status,
   updated_at,
-  updated_by
+  updated_by,
+  finalized_at,
+  finalized_by
 from dbo.FormInstance
 where form_instance_id = @formInstanceId;
 `;

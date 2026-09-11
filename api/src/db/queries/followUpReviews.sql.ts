@@ -1,16 +1,50 @@
-// Installation-wide immutable review batches and server-side finalization gate.
+// Immutable review batches and the server-side finalization gate.
+//
+// De ronde liep altijd per installatie. Een projectgebonden of organisatiebreed
+// formulier heeft geen installatie; die punten vielen buiten relevant_actions en
+// blokkeerden het afronden met een melding die suggereerde dat er iets mis was
+// met de data. De scope is nu drieledig en staat op de formulierdefinitie:
+//   INSTALLATION  de ronde loopt per installatie
+//   RELATION      de ronde loopt per Atrium-relatie, over projecten heen
+//   FORM          alleen de punten van dit formulier; geen bredere ronde
 
 const reviewContextCte = `
 ;with form_context as (
-  select top 1 fi.form_instance_id, fi.installation_id, fi.atrium_installation_code
+  select top 1
+    fi.form_instance_id,
+    fi.installation_id,
+    fi.atrium_installation_code,
+    fd.review_scope,
+    relation_source_system = rel.source_system,
+    relation_source_key = rel.source_key,
+    relation_display_snapshot = rel.display_label_snapshot
   from dbo.FormInstance fi
+  join dbo.FormDefinitionVersion fv on fv.form_version_id = fi.form_version_id
+  join dbo.FormDefinition fd on fd.form_id = fv.form_id
+  outer apply (
+    select top 1 fic.source_system, fic.source_key, fic.display_label_snapshot
+    from dbo.FormInstanceContext fic
+    where fic.form_instance_id = fi.form_instance_id
+      and fic.context_type = N'RELATION'
+    order by fic.is_primary desc, fic.selected_at asc
+  ) rel
   where fi.form_instance_id = @formInstanceId
 ),
 latest_batch as (
   select top 1 b.follow_up_review_batch_id, b.completed_at
   from dbo.FollowUpReviewBatch b
-  join form_context fc on fc.atrium_installation_code = b.atrium_installation_code
+  cross join form_context fc
   where b.status = N'COMPLETED'
+    and b.review_scope = fc.review_scope
+    and (
+      (fc.review_scope = N'INSTALLATION'
+        and b.atrium_installation_code = fc.atrium_installation_code)
+      or (fc.review_scope = N'RELATION'
+        and b.relation_source_system = fc.relation_source_system
+        and b.relation_source_key = fc.relation_source_key)
+      or (fc.review_scope = N'FORM'
+        and b.form_instance_id = fc.form_instance_id)
+    )
   order by b.completed_at desc, b.opened_at desc, b.follow_up_review_batch_id desc
 ),
 relevant_actions as (
@@ -19,14 +53,32 @@ relevant_actions as (
     a.assigned_user_object_id, a.assigned_role_code, a.due_date,
     a.created_at, a.updated_at
   from dbo.FollowUpAction a
-  join dbo.FollowUpActionInstallationContext ic
-    on ic.follow_up_action_id = a.follow_up_action_id
-  join form_context fc
-    on fc.atrium_installation_code = ic.atrium_installation_code
   join dbo.FollowUpStatusDefinition sd
     on sd.status_code = a.status
+  cross join form_context fc
   where a.kind = N'workflow'
     and sd.requires_review = 1
+    and (
+      (fc.review_scope = N'INSTALLATION' and exists (
+        select 1
+        from dbo.FollowUpActionInstallationContext ic
+        where ic.follow_up_action_id = a.follow_up_action_id
+          and ic.atrium_installation_code = fc.atrium_installation_code
+      ))
+      or (fc.review_scope = N'RELATION' and exists (
+        select 1
+        from dbo.FollowUpActionAtriumContext ac
+        where ac.follow_up_action_id = a.follow_up_action_id
+          and ac.context_type = N'RELATION'
+          and ac.context_key = fc.relation_source_key
+      ))
+      or (fc.review_scope = N'FORM' and exists (
+        select 1
+        from dbo.FollowUpActionFormSource fs
+        where fs.follow_up_action_id = a.follow_up_action_id
+          and fs.form_instance_id = fc.form_instance_id
+      ))
+    )
 ),
 evaluated as (
   select
@@ -51,10 +103,11 @@ evaluated as (
     on category_rule.category = ra.category
    and category_rule.is_active = 1
 ),
-/* Punten die aan dit formulier hangen maar geen installatiecontext hebben. Die vallen buiten
-   relevant_actions, en dus buiten de poort. De reviewbatch is per installatie, dus zulke
-   punten zijn met de huidige mechaniek niet te beoordelen; afronden hoort dan te blokkeren
-   met een reden in plaats van stil door te laten. */
+/* Punten die aan dit formulier hangen maar in de geldende scope niet bereikbaar zijn.
+   Die vallen buiten relevant_actions, en dus buiten de poort; ze zijn met de huidige
+   ronde niet te beoordelen. Afronden hoort dan te blokkeren met een reden in plaats van
+   stil door te laten. Bij scope FORM is dit per definitie nul, omdat elk punt van dit
+   formulier dan meedoet. */
 unreachable_review as (
   select count(*) as unreachable_count
   from dbo.FollowUpAction a
@@ -67,16 +120,21 @@ unreachable_review as (
     and sd.requires_review = 1
     and not exists (
       select 1
-      from dbo.FollowUpActionInstallationContext ic
-      where ic.follow_up_action_id = a.follow_up_action_id
+      from relevant_actions ra
+      where ra.follow_up_action_id = a.follow_up_action_id
     )
 ),
+/* Bestaat er een ronde waarin deze punten mee kunnen? Bij een installatieronde vereist
+   dat een installatie, bij een relatieronde een relatie. Een formulierronde staat altijd
+   open, want het formulier is er per definitie. */
 review_context as (
   select
-    case
-      when (select atrium_installation_code from form_context) is null then 0
+    case fc.review_scope
+      when N'INSTALLATION' then case when fc.atrium_installation_code is null then 0 else 1 end
+      when N'RELATION' then case when fc.relation_source_key is null then 0 else 1 end
       else 1
     end as context_available
+  from form_context fc
 )
 `;
 
@@ -99,6 +157,7 @@ select
                                                and attachment_count = 0 then 1 else 0 end), 0),
   unreachable_review_count = (select unreachable_count from unreachable_review),
   review_context_available = (select context_available from review_context),
+  review_scope = (select review_scope from form_context),
   -- Drieledig in plaats van impliciet; voldoende gereviewd, niets te reviewen, of er is een
   -- punt dat niet te reviewen valt. Dat laatste gaf eerder stil "mag afronden", omdat een
   -- lege set elke som op nul zette.
@@ -170,17 +229,48 @@ set xact_abort on;
 
 declare @installationId uniqueidentifier;
 declare @atriumCode nvarchar(450);
+declare @reviewScope nvarchar(30);
+declare @relationSourceSystem nvarchar(30);
+declare @relationSourceKey nvarchar(450);
+declare @relationDisplay nvarchar(500);
 declare @reviewBatchId uniqueidentifier = newid();
 declare @now datetime2(3) = sysutcdatetime();
 
 select top 1
   @installationId = fi.installation_id,
-  @atriumCode = fi.atrium_installation_code
+  @atriumCode = fi.atrium_installation_code,
+  @reviewScope = fd.review_scope,
+  @relationSourceSystem = rel.source_system,
+  @relationSourceKey = rel.source_key,
+  @relationDisplay = rel.display_label_snapshot
 from dbo.FormInstance fi
+join dbo.FormDefinitionVersion fv on fv.form_version_id = fi.form_version_id
+join dbo.FormDefinition fd on fd.form_id = fv.form_id
+outer apply (
+  select top 1 fic.source_system, fic.source_key, fic.display_label_snapshot
+  from dbo.FormInstanceContext fic
+  where fic.form_instance_id = fi.form_instance_id
+    and fic.context_type = N'RELATION'
+  order by fic.is_primary desc, fic.selected_at asc
+) rel
 where fi.form_instance_id = @formInstanceId;
 
-if @installationId is null or @atriumCode is null
+if @reviewScope is null
   throw 50000, 'form instance not found', 1;
+
+-- De ronde kan alleen bestaan als de scope ook echt een anker heeft.
+if @reviewScope = N'INSTALLATION' and (@installationId is null or @atriumCode is null)
+  throw 50000, 'form instance not found', 1;
+
+if @reviewScope = N'RELATION' and (@relationSourceSystem is null or @relationSourceKey is null)
+  throw 50000, 'review relation context missing', 1;
+
+-- Buiten de installatieronde hoort geen installatie in de batch te staan.
+if @reviewScope <> N'INSTALLATION'
+begin
+  set @installationId = null;
+  set @atriumCode = null;
+end;
 
 declare @reviewItems table (
   follow_up_action_id uniqueidentifier primary key,
@@ -207,16 +297,36 @@ declare @required table (
   status nvarchar(30) not null
 );
 
+-- Dezelfde afbakening als relevant_actions in reviewContextCte; wat de poort telt,
+-- is precies wat de ronde moet afdekken.
 insert into @required (follow_up_action_id, status)
 select distinct a.follow_up_action_id, a.status
 from dbo.FollowUpAction a
-join dbo.FollowUpActionInstallationContext ic
-  on ic.follow_up_action_id = a.follow_up_action_id
 join dbo.FollowUpStatusDefinition sd
   on sd.status_code = a.status
-where ic.atrium_installation_code = @atriumCode
-  and a.kind = N'workflow'
-  and sd.requires_review = 1;
+where a.kind = N'workflow'
+  and sd.requires_review = 1
+  and (
+    (@reviewScope = N'INSTALLATION' and exists (
+      select 1
+      from dbo.FollowUpActionInstallationContext ic
+      where ic.follow_up_action_id = a.follow_up_action_id
+        and ic.atrium_installation_code = @atriumCode
+    ))
+    or (@reviewScope = N'RELATION' and exists (
+      select 1
+      from dbo.FollowUpActionAtriumContext ac
+      where ac.follow_up_action_id = a.follow_up_action_id
+        and ac.context_type = N'RELATION'
+        and ac.context_key = @relationSourceKey
+    ))
+    or (@reviewScope = N'FORM' and exists (
+      select 1
+      from dbo.FollowUpActionFormSource fs
+      where fs.follow_up_action_id = a.follow_up_action_id
+        and fs.form_instance_id = @formInstanceId
+    ))
+  );
 
 if exists (select 1 from @required r where not exists (select 1 from @reviewItems i where i.follow_up_action_id = r.follow_up_action_id))
   throw 50000, 'follow-up review incomplete', 1;
@@ -236,12 +346,16 @@ begin transaction;
 insert into dbo.FollowUpReviewBatch
 (
   follow_up_review_batch_id, installation_id, atrium_installation_code,
+  relation_source_system, relation_source_key, relation_display_snapshot,
   form_instance_id, status, review_scope, opened_at, opened_by
 )
 values
 (
   @reviewBatchId, @installationId, @atriumCode,
-  @formInstanceId, N'OPEN', N'INSTALLATION', @now, @actor
+  case when @reviewScope = N'RELATION' then @relationSourceSystem end,
+  case when @reviewScope = N'RELATION' then @relationSourceKey end,
+  case when @reviewScope = N'RELATION' then @relationDisplay end,
+  @formInstanceId, N'OPEN', @reviewScope, @now, @actor
 );
 
 insert into dbo.FollowUpActionReview
@@ -285,5 +399,10 @@ where follow_up_review_batch_id = @reviewBatchId;
 
 commit transaction;
 
-select @reviewBatchId as follow_up_review_batch_id, @atriumCode as atrium_installation_code;
+select
+  @reviewBatchId as follow_up_review_batch_id,
+  @reviewScope as review_scope,
+  @atriumCode as atrium_installation_code,
+  @relationSourceKey as relation_source_key,
+  @relationDisplay as relation_display_snapshot;
 `;

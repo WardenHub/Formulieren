@@ -285,6 +285,80 @@ async function getProfileName(user: any) {
   return profileDisplayName(profile) || user?.name || user?.email || "Gebruiker";
 }
 
+/*  Een ondertekenaar uit een audit-actor. De handtekening komt altijd live uit het profiel;
+    er wordt niets gesnapshot. Heeft iemand geen handtekening in zijn profiel, dan blijft
+    signatureDataUrl leeg en laat het rapport een leeg vak zien om met de hand te
+    ondertekenen.  */
+async function resolveSignerFromActor(actorValue: any) {
+  const actor = normalizeText(actorValue);
+  if (!actor) return null;
+
+  const profile = await findUserProfileByActor(String(actor));
+  const userObjectId = normalizeText(profile?.user_object_id);
+  if (!userObjectId) {
+    // Zonder profiel is er geen handtekening, maar de actor is nog steeds de persoon die
+    // ondertekende; die naam hoort in het rapport te staan.
+    return {
+      profileName: actor,
+      signatureDataUrl: null,
+      sourceActor: actor,
+      userObjectId: null,
+    };
+  }
+
+  const signatureDataUrl =
+    String(profile?.signature_source_preference || "").toLowerCase() === "none"
+      ? null
+      : await getSignatureDataUrl(userObjectId);
+
+  return {
+    profileName: profileDisplayName(profile) || actor,
+    signatureDataUrl,
+    sourceActor: actor,
+    userObjectId,
+  };
+}
+
+/*  De twee ondertekenmomenten van een formulier.
+
+    OPSTELLER      het indienen; submitted_by
+    AFRONDER       het definitief maken door de rol uit finalize_role_code; finalized_by
+
+    Een formulier zonder afrondrol heeft alleen de eerste. Een formulier dat nog niet
+    definitief is heeft de tweede nog niet, en dan hoort het vak leeg te blijven met de
+    uitleg dat de ondertekening nog volgt.  */
+async function resolveReportSigners(item: any, answers: any, user: any) {
+  const [opsteller, afronder] = await Promise.all([
+    resolveSignerFromActor(item?.submitted_by ?? item?.created_by),
+    resolveSignerFromActor(item?.finalized_by),
+  ]);
+
+  const fallback = {
+    profileName:
+      firstText(
+        answers?.onderhouder_naam,
+        answers?.Naamonderhouder,
+        answers?.["Naam onderhouder"],
+        item?.submitted_by,
+        item?.created_by
+      ) || (await getProfileName(user)),
+    signatureDataUrl: null,
+    sourceActor: null,
+    userObjectId: null,
+  };
+
+  return {
+    OPSTELLER: opsteller || fallback,
+    AFRONDER: afronder,
+    finalizeRoleCode: normalizeText(item?.finalize_role_code) || null,
+    finalizeRoleLabel:
+      normalizeText(item?.finalize_role_display_name) ||
+      normalizeText(item?.finalize_role_code) ||
+      null,
+    finalizedAt: item?.finalized_at ?? null,
+  };
+}
+
 async function resolveReportSigner(item: any, answers: any, user: any) {
   const actorCandidates = [item?.submitted_by, item?.created_by]
     .map((value) => normalizeText(value))
@@ -450,13 +524,14 @@ export async function buildFormReportExportModel(formInstanceIdRaw: any, user: a
   const surveyJson = parseJson(item.survey_json, {});
   const answers = parseJson(item.answers_json, {});
 
-  const [parentRows, childrenRows, followUpRows, followUpSummary, signer, installationDocuments, formInstanceDocuments] =
+  const [parentRows, childrenRows, followUpRows, followUpSummary, signer, signers, installationDocuments, formInstanceDocuments] =
     await Promise.all([
     sqlQuery(getFormsMonitorParentSql, { formInstanceId }),
     sqlQuery(getFormsMonitorChildrenSql, { formInstanceId }),
     sqlQuery(getFormFollowUpsMonitorByInstanceSql, { formInstanceId }),
     getFollowUpSummary(formInstanceId),
     resolveReportSigner(item, answers, user),
+    resolveReportSigners(item, answers, user),
     getInstallationDocuments(item.atrium_installation_code),
     getFormInstanceDocuments(item.atrium_installation_code, formInstanceId),
   ]);
@@ -510,7 +585,10 @@ export async function buildFormReportExportModel(formInstanceIdRaw: any, user: a
       },
       installationDocuments,
       formInstanceDocuments,
+      // signer blijft de enkele ondertekenaar voor rapporten met één ondertekenblok, zoals
+      // het BMI-onderhoudsrapport. signers houdt de twee momenten apart.
       signer,
+      signers,
       viewer: {
         profile_name: await getProfileName(user),
         user_object_id: actorObjectId(user),

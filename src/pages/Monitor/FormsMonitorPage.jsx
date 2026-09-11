@@ -59,6 +59,10 @@ function buildDefaultFilters() {
     unassignedOnly: false,
     onlyActionable: false,
     noRemainingOpenActionPoints: false,
+    // Veiligheidsformulieren hangen niet aan een installatie en worden in de KAM-werklijst
+    // afgehandeld. Ze staan hier standaard uit zodat de Monitor over de
+    // installatieformulieren blijft gaan.
+    includeSafetyForms: false,
     selectedStatusGroups: DEFAULT_SELECTED_STATUS_GROUPS,
     actionStatusFilter: "ALL",
     take: 25,
@@ -80,6 +84,7 @@ function buildInitialFilters(storedState) {
     onlyActionable: storedFilters.onlyActionable ?? defaults.onlyActionable,
     noRemainingOpenActionPoints:
       storedFilters.noRemainingOpenActionPoints ?? defaults.noRemainingOpenActionPoints,
+    includeSafetyForms: storedFilters.includeSafetyForms ?? defaults.includeSafetyForms,
     selectedStatusGroups: Array.isArray(storedFilters.selectedStatusGroups)
       ? storedFilters.selectedStatusGroups
       : Array.isArray(storedFilters.selectedStatuses) && storedFilters.selectedStatuses.length > 0
@@ -347,6 +352,7 @@ export default function FormsMonitorPage() {
       filters.unassignedOnly !== defaults.unassignedOnly ||
       filters.onlyActionable !== defaults.onlyActionable ||
       filters.noRemainingOpenActionPoints !== defaults.noRemainingOpenActionPoints ||
+      filters.includeSafetyForms !== defaults.includeSafetyForms ||
       JSON.stringify(filters.selectedStatusGroups || []) !== JSON.stringify(defaults.selectedStatusGroups || []) ||
       filters.actionStatusFilter !== defaults.actionStatusFilter
     );
@@ -476,6 +482,7 @@ export default function FormsMonitorPage() {
           selectedStatuses: buildEffectiveStatuses(nextFilters.selectedStatusGroups),
           actionStatusFilter: nextFilters.actionStatusFilter,
           noRemainingOpenActionPoints: nextFilters.noRemainingOpenActionPoints,
+          includeSafetyForms: nextFilters.includeSafetyForms,
           take: nextFilters.take,
           skip: nextFilters.skip,
         });
@@ -541,6 +548,7 @@ export default function FormsMonitorPage() {
     filters.unassignedOnly,
     filters.onlyActionable,
     filters.noRemainingOpenActionPoints,
+    filters.includeSafetyForms,
     filters.selectedStatusGroups,
     filters.actionStatusFilter,
     autoRefreshEnabled,
@@ -606,6 +614,13 @@ export default function FormsMonitorPage() {
       onlyActionable: false,
     };
     await applyFilters(next);
+  }
+
+  async function toggleIncludeSafetyForms() {
+    await applyFilters({
+      ...filters,
+      includeSafetyForms: !filters.includeSafetyForms,
+    });
   }
 
   async function setActionStatusFilter(nextKey) {
@@ -926,6 +941,13 @@ export default function FormsMonitorPage() {
             </FilterGroup>
 
             <FilterGroup label="Slimme filters">
+              <FilterChip
+                active={Boolean(filters.includeSafetyForms)}
+                label="Inclusief veiligheidsformulieren"
+                title="Veiligheidsformulieren hangen aan een project of relatie en worden door de KAM-coördinator afgehandeld; zet dit aan om ze hier ter inzage mee te tonen"
+                onClick={toggleIncludeSafetyForms}
+              />
+
               <FilterChip
                 active={Boolean(filters.onlyActionable)}
                 label="Open actiepunten"

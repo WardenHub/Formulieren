@@ -56,6 +56,7 @@ function isPlainObject(value: any) {
 
 const CONTEXT_TYPES = new Set(["RELATION", "PROJECT", "WORK_ORDER", "INSTALLATION", "EMPLOYEE"]);
 const FOLLOW_UP_TRIGGERS = new Set(["ON_SUBMIT", "ON_FINALIZE", "CONDITIONAL"]);
+const FORM_REVIEW_SCOPES = new Set(["INSTALLATION", "RELATION", "FORM"]);
 const FOLLOW_UP_PRIORITIES = new Set(["LOW", "NORMAL", "HIGH", "CRITICAL"]);
 const RESPONSIBILITY_TYPES = new Set(["INTERN", "KLANT", "DERDE", "ONBEPAALD"]);
 const FOLLOW_UP_VISIBILITIES = new Set(["INTERNAL_ONLY", "CUSTOMER_VISIBLE"]);
@@ -463,6 +464,8 @@ export async function getAdminFormDetail(formId: string) {
     owner_display_name: normalizeNullableString(formRow.owner_display_name),
     knowledge_base_reference: normalizeNullableString(formRow.knowledge_base_reference),
     requires_installation_review: formRow.requires_installation_review === true,
+    review_scope: normalizeNullableString(formRow.review_scope) || "INSTALLATION",
+    finalize_role_code: normalizeNullableString(formRow.finalize_role_code),
     status: formRow.status ?? null,
     sort_order: formRow.sort_order == null ? null : Number(formRow.sort_order),
     active_survey_json: parseJsonObject(formRow.active_survey_json, null),
@@ -599,6 +602,15 @@ export async function saveAdminFormConfig(formId: string, payload: any, user: an
   const ownerDisplayName = normalizeNullableString(payload?.owner_display_name);
   const knowledgeBaseReference = normalizeNullableString(payload?.knowledge_base_reference);
   const requiresInstallationReview = payload?.requires_installation_review === true;
+
+  // De beoordelingsronde van dit formulier; per installatie, per relatie, of alleen de
+  // punten van het formulier zelf. Een onbekende waarde valt terug op het bestaande gedrag
+  // in plaats van de definitie in een onbruikbare stand te zetten.
+  const reviewScopeRaw = String(payload?.review_scope || "").trim().toUpperCase();
+  const reviewScope = FORM_REVIEW_SCOPES.has(reviewScopeRaw) ? reviewScopeRaw : "INSTALLATION";
+
+  // Leeg betekent het bestaande gedrag; de formulierbeheerders ronden af.
+  const finalizeRoleCode = normalizeNullableString(payload?.finalize_role_code);
   const status = String(payload?.status || "").trim().toUpperCase();
 
   if (!name) return { ok: false, error: "name is verplicht" };
@@ -634,6 +646,8 @@ export async function saveAdminFormConfig(formId: string, payload: any, user: an
     ownerDisplayName,
     knowledgeBaseReference,
     requiresInstallationReview,
+    reviewScope,
+    finalizeRoleCode,
     status,
     applicabilityJson: JSON.stringify(applicability_type_keys),
     requiresType: preflight?.requires_type === false ? false : true,

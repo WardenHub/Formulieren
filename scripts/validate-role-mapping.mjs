@@ -68,12 +68,37 @@ function leesSeed() {
   return rijen;
 }
 
+function valideerInspectiePermissies(problemen) {
+  const tekst = sqlTruth.readText("Eigenschappen.sql");
+
+  if (!/VALUES\s*\(N'kam_coordinator',\s*N'inspection\.view',\s*N'seed'\)/is.test(tekst)) {
+    problemen.push("kam_coordinator mist de alleen-lezen inspectiepermissie");
+  }
+
+  if (!/SELECT\s+N'certificering_coordinator',\s*permission_code,\s*N'seed'[\s\S]*?WHERE\s+permission_code\s+LIKE\s+N'inspection\.%'/i.test(tekst)) {
+    problemen.push(
+      "certificering_coordinator krijgt niet de volledige actieve inspection.*-permissieset"
+    );
+  }
+
+  for (const bestand of [
+    "alter/alter-certificering-coordinator-inspection-permissions.sql",
+    "alter/verify-certificering-coordinator-inspection-permissions.sql",
+  ]) {
+    if (!sqlTruth.exists(bestand)) {
+      problemen.push(`databasebestand ontbreekt: ${bestand}`);
+    }
+  }
+}
+
 const middleware = fs.readFileSync(middlewarePad, "utf8");
 const roleGroups = leesPaar(leesBlok(middleware, "ROLE_GROUPS"));
 const appRoleMap = leesPaar(leesBlok(middleware, "APP_ROLE_MAP"));
 const seed = leesSeed();
 
 const problemen = [];
+
+valideerInspectiePermissies(problemen);
 
 const seedRollen = new Set(seed.map((rij) => rij.rol));
 for (const rol of roleGroups.keys()) {

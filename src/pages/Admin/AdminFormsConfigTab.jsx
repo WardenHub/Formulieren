@@ -76,6 +76,8 @@ function normalizeDraftFromForm(selectedForm) {
     owner_display_name: selectedForm.owner_display_name ?? "",
     knowledge_base_reference: selectedForm.knowledge_base_reference ?? "",
     requires_installation_review: Boolean(selectedForm.requires_installation_review),
+    review_scope: selectedForm.review_scope ?? "INSTALLATION",
+    finalize_role_code: selectedForm.finalize_role_code ?? "",
     status: selectedForm.status ?? "A",
     applicability_type_keys: [...(selectedForm.applicability_type_keys || [])],
     preflight: {
@@ -469,6 +471,35 @@ const AdminFormsConfigTab = forwardRef(function AdminFormsConfigTab(
                     <select className="input" value={draft.requires_installation_review ? "1" : "0"} onChange={(e) => setField("requires_installation_review", e.target.value === "1")}>
                       <option value="0">Nee</option>
                       <option value="1">Ja</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div className="cf-row">
+                  <div className="cf-label">
+                    <div className="cf-label-text">Beoordelingsronde</div>
+                    <div className="cf-label-sub">Bepaalt waar de opvolgpunten van dit formulier worden beoordeeld voordat het definitief mag worden.</div>
+                  </div>
+                  <div className="cf-control">
+                    <select className="input" value={draft.review_scope || "INSTALLATION"} onChange={(e) => setField("review_scope", e.target.value)}>
+                      <option value="INSTALLATION">Per installatie</option>
+                      <option value="RELATION">Per relatie, over projecten heen</option>
+                      <option value="FORM">Alleen de punten van dit formulier</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div className="cf-row">
+                  <div className="cf-label">
+                    <div className="cf-label-text">Afronden door</div>
+                    <div className="cf-label-sub">Leeg betekent de formulierbeheerders. Kies een rol om het definitief maken uitsluitend aan die rol voor te behouden.</div>
+                  </div>
+                  <div className="cf-control">
+                    <select className="input" value={draft.finalize_role_code || ""} onChange={(e) => setField("finalize_role_code", e.target.value)}>
+                      <option value="">Formulierbeheerders</option>
+                      {(draft.workflow_roles || []).map((role) => (
+                        <option key={role.role_code} value={role.role_code}>{role.display_name}</option>
+                      ))}
                     </select>
                   </div>
                 </div>

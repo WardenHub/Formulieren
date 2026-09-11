@@ -34,6 +34,8 @@ select
   fd.owner_display_name,
   fd.knowledge_base_reference,
   fd.requires_installation_review,
+  fd.review_scope,
+  fd.finalize_role_code,
   fd.status,
   fd.sort_order,
   isnull(vs.latest_version, 0) as latest_version,
@@ -62,6 +64,8 @@ select top 1
   fd.owner_display_name,
   fd.knowledge_base_reference,
   fd.requires_installation_review,
+  fd.review_scope,
+  fd.finalize_role_code,
   fd.status,
   fd.sort_order,
   lvr.survey_json as active_survey_json
@@ -466,6 +470,8 @@ set
   owner_display_name = @ownerDisplayName,
   knowledge_base_reference = @knowledgeBaseReference,
   requires_installation_review = @requiresInstallationReview,
+  review_scope = @reviewScope,
+  finalize_role_code = @finalizeRoleCode,
   status = @status,
   updated_at = sysutcdatetime(),
   updated_by = @updatedBy

@@ -132,6 +132,53 @@ function isKamOnly(roles: string[]) {
   return isKamCoordinator(roles) && !isManager(roles);
 }
 
+/*  Een workflowrol is een functionele rol en geeft uit zichzelf geen autorisatie; de
+    platformrol doet dat. Voor het afronden van een formulier moeten die twee aan elkaar
+    geknoopt worden. Dat gebeurt hier expliciet en niet met een naamtruc, want lang niet
+    elke workflowrol heeft een gelijknamige platformrol; INSPECTION_COORDINATOR hoort
+    bijvoorbeeld bij certificering_coordinator. Staat een rol hier niet in, dan is dat een
+    configuratiefout en mag niemand afronden. */
+const FINALIZE_ROLE_TO_APPLICATION_ROLE: Record<string, string> = {
+  KAM_COORDINATOR: "kam_coordinator",
+};
+
+/*  Wie dit formulier inhoudelijk afhandelt; de beoordelingsronde vastleggen en het
+    formulier definitief maken. Zonder afrondrol op de definitie is dat de
+    formulierbeheerder, zoals het altijd was. Noemt de definitie wel een rol, dan is die rol
+    de enige die mag afronden; ook een beheerder niet. Dat is bewust, want bij een
+    veiligheidsformulier is het afronden de tweede handtekening. */
+function resolveFormProcessor(item: any, roles: string[]) {
+  const finalizeRoleCode = normalizeOptionalString(item?.finalize_role_code);
+
+  if (!finalizeRoleCode) {
+    return { allowed: isManager(roles), roleCode: null, reason: null as string | null };
+  }
+
+  const applicationRole = FINALIZE_ROLE_TO_APPLICATION_ROLE[finalizeRoleCode];
+  if (!applicationRole) {
+    return {
+      allowed: false,
+      roleCode: finalizeRoleCode,
+      reason:
+        `Dit formulier verwijst naar de afrondrol ${finalizeRoleCode}, maar die rol is niet ` +
+        "aan een platformrol gekoppeld. Een beheerder moet dit in het formulierbeheer herstellen.",
+    };
+  }
+
+  if (roles.includes(applicationRole)) {
+    return { allowed: true, roleCode: finalizeRoleCode, reason: null as string | null };
+  }
+
+  const roleLabel =
+    normalizeOptionalString(item?.finalize_role_display_name) || finalizeRoleCode;
+
+  return {
+    allowed: false,
+    roleCode: finalizeRoleCode,
+    reason: `Dit formulier wordt afgerond door de rol ${roleLabel}.`,
+  };
+}
+
 async function assertWorkflowRoleCanAccessFormInstance(
   formInstanceId: number,
   roles: string[]
@@ -205,30 +252,44 @@ function buildAllowedActions(item: any, followUpSummary: any, roles: string[]) {
   const historical = isHistoricalInstallationStatus(item?.installation_status);
   const manager = isManager(roles);
   const canMarkDone = Boolean(followUpSummary?.can_mark_form_done);
+  // Beoordelen en afronden volgen de afrondrol van de definitie; de overige
+  // statusovergangen blijven administratief werk van de formulierbeheerder.
+  const processor = resolveFormProcessor(item, roles);
 
   if (historical) {
     hints.historical = "Deze installatie is historisch en alleen als dossier beschikbaar.";
     return { allowed, hints };
   }
 
-  if (manager && status === "INGEDIEND") {
+  if (status === "INGEDIEND" && (manager || processor.allowed)) {
     allowed.set_in_behandeling = true;
+  }
+
+  if (manager && status === "INGEDIEND") {
     allowed.set_concept = true;
   }
 
   if (manager && status === "IN_BEHANDELING") {
     allowed.set_ingediend = true;
     allowed.set_concept = true;
-    allowed.set_afgehandeld = canMarkDone;
-    // Beoordelen aanbieden heeft alleen zin als er een beoordelingsronde bestaat waarin de
-    // punten meekunnen. Is die er niet, dan opent het scherm een lege lijst en lijkt het alsof
-    // er niets aan de hand is.
-    const reviewCanHelp = Boolean(followUpSummary?.review_can_help);
-    allowed.review_followups = !canMarkDone && reviewCanHelp;
-    if (!canMarkDone) {
-      hints.set_afgehandeld =
-        followUpSummary?.finalize_blocked_reason ||
-        "Leg eerst de installatiebrede opvolgingsreview vast.";
+  }
+
+  if (status === "IN_BEHANDELING") {
+    if (processor.allowed) {
+      allowed.set_afgehandeld = canMarkDone;
+      // Beoordelen aanbieden heeft alleen zin als er een beoordelingsronde bestaat waarin de
+      // punten meekunnen. Is die er niet, dan opent het scherm een lege lijst en lijkt het alsof
+      // er niets aan de hand is.
+      const reviewCanHelp = Boolean(followUpSummary?.review_can_help);
+      allowed.review_followups = !canMarkDone && reviewCanHelp;
+      if (!canMarkDone) {
+        hints.set_afgehandeld =
+          followUpSummary?.finalize_blocked_reason ||
+          "Leg eerst de opvolgingsreview vast.";
+      }
+    } else if (processor.reason) {
+      // Zonder uitleg lijkt een ontbrekende knop op een storing.
+      hints.set_afgehandeld = processor.reason;
     }
   }
 
@@ -279,10 +340,23 @@ function buildFinalizeBlockedReason(row: any): string | null {
 
   const unreachable = Number(row?.unreachable_review_count ?? 0);
   if (unreachable > 0) {
+    const scope = String(row?.review_scope || "INSTALLATION").trim().toUpperCase();
+    const telwoord = `${unreachable} actiepunt${unreachable === 1 ? "" : "en"} van dit formulier`;
+
+    // De reden noemt het anker dat ontbreekt. Bij een relatieronde is dat de relatie en
+    // niet de installatie; die oude tekst las bij een projectformulier als een datafout.
+    if (scope === "RELATION") {
+      return (
+        `${telwoord} hangt niet aan een relatie en kan daardoor niet worden beoordeeld. ` +
+        "De beoordeling loopt voor dit formulier per relatie; zonder relatie is er geen " +
+        "beoordelingsronde om het punt in mee te nemen."
+      );
+    }
+
     return (
-      `${unreachable} actiepunt${unreachable === 1 ? "" : "en"} van dit formulier hangt niet aan ` +
-      "een installatie en kan daardoor niet worden beoordeeld. De beoordeling loopt nu per " +
-      "installatie; zonder installatie is er geen beoordelingsronde om het punt in mee te nemen."
+      `${telwoord} hangt niet aan een installatie en kan daardoor niet worden beoordeeld. ` +
+      "De beoordeling loopt voor dit formulier per installatie; zonder installatie is er geen " +
+      "beoordelingsronde om het punt in mee te nemen."
     );
   }
 
@@ -316,6 +390,7 @@ async function getFinalizeGate(formInstanceId: number) {
     missing_attachment_count: Number(row?.missing_attachment_count ?? 0),
     unreachable_review_count: Number(row?.unreachable_review_count ?? 0),
     review_context_available: Boolean(row?.review_context_available),
+    review_scope: String(row?.review_scope || "INSTALLATION").trim().toUpperCase(),
     can_finalize: Boolean(row?.can_finalize),
     // Waarom het niet kan, in gewone taal, zodat het scherm het kan zeggen in plaats van
     // een knop uit te zetten zonder uitleg.
@@ -331,7 +406,7 @@ async function maybeAutoClaim(
   autoClaim: boolean
 ) {
   if (!autoClaim) return false;
-  if (!isManager(roles)) return false;
+  if (!isManager(roles) && !resolveFormProcessor(item, roles).allowed) return false;
   if (isHistoricalInstallationStatus(item?.installation_status)) return false;
   if (String(item?.status || "").trim() !== "INGEDIEND") return false;
 
@@ -351,9 +426,13 @@ function assertFormStatusActionAllowed(item: any, action: string, roles: string[
     throw new Error("invalid action");
   }
 
+  const processor = resolveFormProcessor(item, roles);
+
   if (action === "set_in_behandeling") {
+    // Oppakken mag ook de rol die het formulier afrondt; anders kan die er niet aan
+    // beginnen zonder een beheerder erbij te halen.
+    if (status === "INGEDIEND" && (manager || processor.allowed)) return;
     if (!manager) throw new Error("forbidden");
-    if (status === "INGEDIEND") return;
     if (status === "AFGEHANDELD" && roles.includes("admin")) return;
     throw new Error("invalid status transition");
   }
@@ -373,7 +452,9 @@ function assertFormStatusActionAllowed(item: any, action: string, roles: string[
   }
 
   if (action === "set_afgehandeld") {
-    if (!manager) throw new Error("forbidden");
+    // Definitief maken is de laatste inhoudelijke handeling en volgt de afrondrol van de
+    // definitie. Noemt die een rol, dan mag alleen die rol afronden; ook een beheerder niet.
+    if (!processor.allowed) throw new Error("forbidden");
     if (status !== "IN_BEHANDELING") throw new Error("invalid status transition");
     if (!followUpSummary?.can_mark_form_done) {
       throw new Error("cannot mark form done");
@@ -488,7 +569,16 @@ export async function getMonitorList(input: {
   const assignedSearch = normalizeOptionalString(input?.query?.assignedSearch);
   const unassignedOnly = normalizeBoolean(input?.query?.unassignedOnly, false);
   const viewerUserObjectId = getUserObjectId(input.user);
-  const workflowRoleCode = isKamOnly(input.roles || []) ? "KAM_COORDINATOR" : null;
+  const kamOnly = isKamOnly(input.roles || []);
+  const workflowRoleCode = kamOnly ? "KAM_COORDINATOR" : null;
+
+  // Veiligheidsformulieren hangen niet aan een installatie en worden in de KAM-werklijst
+  // afgehandeld. Ze staan daarom standaard buiten de Monitor; die blijft over de
+  // installatieformulieren gaan. Wie alleen de KAM-rol heeft ziet verder niets, dus voor
+  // die gebruiker staat de schakelaar altijd aan.
+  const includeSafetyForms = kamOnly
+    ? true
+    : normalizeBoolean(input?.query?.includeSafetyForms, false);
 
   // De statuschips en de actiechips filterden tot nu toe in de browser, binnen de opgehaalde
   // pagina. Met paginering klopt dat niet meer; daarom komen ze nu mee naar de server.
@@ -547,6 +637,7 @@ export async function getMonitorList(input: {
     selectedStatusesJson: JSON.stringify(cleanSelectedStatuses),
     actionStatusFilter,
     noRemainingOpenActionPoints,
+    includeSafetyForms,
   });
 
   const items = (rows || []).map((r: any) => ({
@@ -569,6 +660,8 @@ export async function getMonitorList(input: {
     assigned_by: r.assigned_by ?? null,
     form_code: r.form_code,
     form_name: r.form_name,
+    review_scope: r.review_scope ?? "INSTALLATION",
+    finalize_role_code: r.finalize_role_code ?? null,
     version: r.version == null ? null : Number(r.version),
     version_label: r.version_label,
 
@@ -804,10 +897,19 @@ export async function createMonitorFollowUpReview(
 ) {
   const formInstanceId = parsePositiveInt(formInstanceIdRaw);
   if (formInstanceId == null) return { error: "not found" };
-  if (!isManager(context.roles || [])) throw new Error("forbidden");
 
   const detail = await getMonitorDetailRow(formInstanceId);
   if (!detail) return { error: "not found" };
+
+  // De beoordelingsronde hoort bij dezelfde persoon die afrondt; bij een formulier met een
+  // eigen afrondrol is dat dus die rol en niet de formulierbeheerder. resolveFormProcessor
+  // valt zonder afrondrol terug op de beheerder, dus dit is dezelfde grens als het scherm
+  // toont. Twee verschillende grenzen zou betekenen dat de knop weg is maar de API het
+  // alsnog doet.
+  if (!resolveFormProcessor(detail, context.roles || []).allowed) {
+    throw new Error("forbidden");
+  }
+
   if (isHistoricalInstallationStatus(detail.installation_status)) {
     throw new Error("historical installation read-only");
   }

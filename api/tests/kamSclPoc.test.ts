@@ -55,8 +55,6 @@ function buildValidAnswers(surveyJson: any) {
       },
     ],
     signalering_kam: "Controleer de ontbrekende locatie-informatie.",
-    ondertekening_inspecteur: "Projectleider POC",
-    datum_ondertekening_inspecteur: "2026-08-30",
   };
 }
 
@@ -68,11 +66,68 @@ test("KAM/SCL POC is een geldig invulbaar SurveyJS-formulier", async () => {
   assert.equal(model.validate(true, false), true);
   assert.equal(model.pageCount, 5);
   assert.equal(model.getQuestionByName("projectnaam")?.isRequired, true);
-  assert.equal(model.getQuestionByName("ondertekening_inspecteur")?.isRequired, true);
+  assert.equal(model.getQuestionByName("naam_inspecteur")?.isRequired, true);
   assert.equal(
     surveyJson.pages.find((page: any) => page.name === "situatieschets")?.ember?.report?.layout,
     "single-column-fields"
   );
+});
+
+/*  Ondertekenen gebeurt door in te dienen en door definitief te maken; het formulier laat
+    de gebruiker die naam en datum dus niet meer zelf typen. Deze test houdt die velden weg,
+    want ze terugzetten betekent twee bronnen voor dezelfde waarheid.  */
+test("het formulier vraagt de ondertekening niet meer als invulveld", async () => {
+  const surveyJson = await loadSurvey();
+  const model = new Model(surveyJson);
+
+  assert.equal(model.getQuestionByName("ondertekening_inspecteur"), null);
+  assert.equal(model.getQuestionByName("datum_ondertekening_inspecteur"), null);
+  assert.equal(model.getQuestionByName("datum_ontvangst_kam"), null);
+});
+
+test("het rapport kent twee ondertekenblokken, in volgorde", async () => {
+  const surveyJson = await loadSurvey();
+  const blocks = surveyJson?.ember?.report?.signaturePage?.blocks;
+
+  assert.ok(Array.isArray(blocks), "signaturePage.blocks ontbreekt");
+  assert.equal(blocks.length, 2);
+  assert.equal(blocks[0].signerRole, "OPSTELLER");
+  assert.equal(blocks[1].signerRole, "AFRONDER");
+});
+
+/*  Een antwoord dat om doorvragen vraagt, moet doorvragen. Geen LMRA is een afwijking en
+    hoort niet onbesproken door te kunnen.  */
+test("geen LMRA vraagt om een reden, en anders blijft de vraag weg", async () => {
+  const surveyJson = await loadSurvey();
+  const model = new Model(surveyJson);
+  model.data = { ...buildValidAnswers(surveyJson), lmra_toegepast: "Ja" };
+  assert.equal(model.getQuestionByName("lmra_reden_geen")?.isVisible, false);
+
+  model.data = { ...buildValidAnswers(surveyJson), lmra_toegepast: "Nee" };
+  const reden = model.getQuestionByName("lmra_reden_geen");
+  assert.equal(reden?.isVisible, true);
+  assert.equal(reden?.isRequired, true);
+  assert.equal(model.validate(true, false), false);
+});
+
+/*  De beoordelingsregels gebruiken de assessment-weergave van de runtime. Zonder die
+    declaratie vallen tien regels terug op losse kaarten; dat is op een telefoon niet te
+    doen.  */
+test("elke beoordelingsmatrix declareert de assessment-weergave", async () => {
+  const surveyJson = await loadSurvey();
+
+  const matrices = surveyJson.pages
+    .flatMap((page: any) => page.elements || [])
+    .flatMap((element: any) => (element.type === "matrixdynamic" ? [element] : element.elements || []))
+    .filter((element: any) => element?.type === "matrixdynamic")
+    .filter((element: any) => (element.columns || []).some((column: any) => column?.name === "voldoet"));
+
+  assert.equal(matrices.length, 8);
+  for (const matrix of matrices) {
+    assert.equal(matrix?.ember?.layout, "assessment", `${matrix.name} mist de assessment-weergave`);
+    const opmerking = (matrix.columns || []).find((column: any) => column?.name === "opmerking");
+    assert.equal(opmerking?.enableIf, "{row.voldoet} = 'Nee'");
+  }
 });
 
 test("één Nee-regel levert precies één generieke workflowactie op", async () => {

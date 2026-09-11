@@ -30,6 +30,7 @@ const DirectoryPage = lazy(() => import("../pages/Profile/DirectoryPage.jsx"));
 const FeedbackPage = lazy(() => import("../pages/Feedback/FeedbackPage.jsx"));
 const InspectionsPage = lazy(() => import("../pages/Inspections/InspectionsPage.jsx"));
 const InspectionCasePage = lazy(() => import("../pages/Inspections/InspectionCasePage.jsx"));
+const KamQueuePage = lazy(() => import("../pages/Kam/KamQueuePage.jsx"));
 
 const MONITOR_ROLES = [
   "admin",
@@ -70,6 +71,16 @@ export default function AppRoutes() {
           element={
             <Suspense fallback={<RouteFallback label="Inspecties worden geladen" />}>
               <InspectionsPage />
+            </Suspense>
+          }
+        />
+        {/* De werklijst van de KAM-coordinator. Beheerders mogen meekijken; het definitief
+            maken zit achter de afrondrol van de formulierdefinitie. */}
+        <Route
+          path="/kam"
+          element={
+            <Suspense fallback={<RouteFallback label="KAM-werklijst wordt geladen" />}>
+              <KamQueuePage />
             </Suspense>
           }
         />

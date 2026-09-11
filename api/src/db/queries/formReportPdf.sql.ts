@@ -13,12 +13,20 @@ select top 1
   fi.updated_by,
   fi.submitted_at,
   fi.submitted_by,
+  fi.finalized_at,
+  fi.finalized_by,
 
   fd.name as form_name,
   fd.code as form_code,
   fd.document_profile_key,
   fd.workflow_profile_key,
   fd.official_document_number,
+  fd.finalize_role_code,
+  (
+    select wr.display_name
+    from dbo.WorkflowRoleDefinition wr
+    where wr.role_code = fd.finalize_role_code
+  ) as finalize_role_display_name,
 
   fv.version_label,
   fv.certification_mark_key,

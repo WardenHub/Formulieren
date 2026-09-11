@@ -16,6 +16,7 @@ import { HomeIcon } from "@/components/ui/home";
 import { SearchIcon } from "@/components/ui/search";
 import { BrainIcon } from "@/components/ui/brain";
 import { MonitorCheckIcon } from "@/components/ui/monitor-check";
+import { ShieldCheckIcon } from "@/components/ui/shield-check";
 import { FileCheckIcon } from "@/components/ui/file-check";
 import { IdCardIcon } from "@/components/ui/id-card";
 import { MenuIcon } from "@/components/ui/menu";
@@ -579,6 +580,12 @@ export default function Layout() {
           {roles.some((role) => ["admin", "documentbeheerder", "gebruiker", "kam_coordinator", "certificering_coordinator"].includes(role)) && (
             <AnimatedNavButton to="/monitor/formulieren" Icon={MonitorCheckIcon}>
               Monitor
+            </AnimatedNavButton>
+          )}
+
+          {roles.some((role) => ["kam_coordinator", "admin", "documentbeheerder"].includes(role)) && (
+            <AnimatedNavButton to="/kam" Icon={ShieldCheckIcon}>
+              KAM
             </AnimatedNavButton>
           )}
 

@@ -2103,10 +2103,10 @@ html[data-appearance="dark"] .ember-runtime-select option {
   right: 0;
   bottom: 0;
   width: min(560px, 100vw);
-  z-index: 70;
+  z-index: 80;
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
-  background: var(--card-bg, var(--surface));
+  background: var(--surface);
   border-left: 1px solid var(--border);
   box-shadow: var(--shadow-soft);
   color: var(--text);
@@ -2357,3 +2357,38 @@ html[data-appearance="dark"] .ember-runtime-select option {
   padding: 6px 0 0;
   max-height: min(46vh, 460px);
 }
+
+.form-evidence-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 120;
+  display: grid;
+  place-items: center;
+  padding: 12px;
+  background: var(--backdrop-bg);
+}
+
+.form-evidence-dialog {
+  width: min(680px, 100%);
+  max-height: calc(100dvh - 24px);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: var(--radius, 16px);
+  box-shadow: var(--shadow-panel);
+}
+
+.form-evidence-dialog--wide { width: min(1600px, 100%); }
+.form-evidence-dialog__head { display: flex; justify-content: space-between; gap: 16px; padding: 16px; border-bottom: 1px solid var(--border); }
+.form-evidence-dialog__head h2 { margin: 0; font-size: 1.2rem; }
+.form-evidence-dialog__head p { margin: 6px 0 0; }
+.form-evidence-dialog__body { padding: 16px; overflow: auto; min-height: 0; }
+.form-evidence-dialog .drawing-pdf-viewport { max-height: 65dvh; }
+.form-submit-result { display: grid; gap: 12px; justify-items: center; padding: 20px; text-align: center; }
+.ember-point__attachments, .ember-point__existing-file { display: grid; gap: 8px; }
+.ember-points-sheet select, .ember-points-inline select { background-color: var(--surface-2); color: var(--text); }
+.ember-points-sheet select option, .ember-points-inline select option { background-color: var(--surface); color: var(--text); }
+.ember-points-sheet .ember-point, .ember-points-inline .ember-point { background: var(--surface-2); }

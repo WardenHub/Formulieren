@@ -2315,13 +2315,26 @@ function resolvedWorkflowCount(model: any) {
   return workflowItems(model).filter((item: any) => isResolvedWorkflow(item)).length;
 }
 
-function canShowSignatureForBlock(model: any, blockKey: string) {
+function canShowSignatureForBlock(
+  model: any,
+  blockKey: string,
+  signerRole: string = "OPSTELLER",
+  blockSigner: any = null
+) {
   const isFinal = normalizeToken(model?.form?.status) === "AFGEHANDELD";
   if (!isFinal) {
     return {
       allowed: false,
       reason: "Ondertekening volgt nadat het formulier definitief is afgehandeld.",
     };
+  }
+
+  /*  Het tweede ondertekenblok hoort bij het definitief maken. Staat dat moment niet
+      vastgelegd, dan is er niemand om onder dit blok te zetten; dat is het geval bij
+      formulieren die definitief werden voordat het afrondmoment werd bijgehouden. Dan
+      liever een leeg vak dan de naam van de opsteller onder de beoordeling.  */
+  if (signerRole === "AFRONDER" && !blockSigner?.present) {
+    return { allowed: false, reason: "" };
   }
 
   if (blockKey === "verklaring") {
@@ -2391,6 +2404,53 @@ function signatureClosingText(model: any) {
     : [];
 }
 
+/*  Welke van de twee ondertekenmomenten bij dit blok hoort. Zegt het blok niets, dan is het
+    de opsteller; dat houdt het BMI-onderhoudsrapport en elk ander bestaand rapport precies
+    zoals het was.  */
+function blockSignerRole(block: any) {
+  const declared = normalizeToken(block?.signerRole);
+  return declared === "AFRONDER" ? "AFRONDER" : "OPSTELLER";
+}
+
+/*  De ondertekenaar van een blok, met de naam en de datum van dat moment.
+
+    De handtekening komt altijd live uit het profiel van die persoon; er wordt niets
+    gesnapshot. Heeft iemand geen handtekening in zijn profiel, dan blijft het vak leeg en
+    wordt er met de hand ondertekend.  */
+function resolveBlockSigner(model: any, role: string) {
+  if (role === "AFRONDER") {
+    const afronder = model?.signers?.AFRONDER || null;
+    return {
+      name: normalizeText(afronder?.profileName),
+      signatureDataUrl: normalizeText(afronder?.signatureDataUrl),
+      dateText: formatExportDate(model?.signers?.finalizedAt),
+      present: Boolean(afronder),
+    };
+  }
+
+  const opsteller = model?.signers?.OPSTELLER || model?.signer || null;
+  const name = firstText(
+    answerText(model?.answers, "onderhouder_naam", "Naamonderhouder", "Naam onderhouder_2"),
+    answerText(model?.answers, "ondertekening_inspecteur", "naam_inspecteur"),
+    opsteller?.profileName,
+    model?.viewer?.profile_name
+  );
+
+  return {
+    name,
+    signatureDataUrl: normalizeText(opsteller?.signatureDataUrl),
+    dateText: answerDateText(
+      model?.answers,
+      "datum_onderhoud",
+      "Datum_onderhoud_af_date",
+      "datum onderhoud_2",
+      "datum_ondertekening_inspecteur",
+      "datum_inspectie"
+    ),
+    present: Boolean(opsteller),
+  };
+}
+
 function renderSignaturePage(model: any) {
   const blocks = signatureBlocks(model);
   const closing = signatureClosingText(model);
@@ -2416,8 +2476,15 @@ function renderSignaturePage(model: any) {
         ${blocks
           .map((block: any) => {
             const blockKey = normalizeToken(block?.key || block?.title);
-            const signatureState = canShowSignatureForBlock(model, blockKey === "AANVULLENDEWERKZAAMHEDEN" ? "aanvullende_werkzaamheden" : blockKey.toLowerCase());
-            const signatureDataUrl = normalizeText(model?.signer?.signatureDataUrl);
+            const signerRole = blockSignerRole(block);
+            const blockSigner = resolveBlockSigner(model, signerRole);
+            const signatureState = canShowSignatureForBlock(
+              model,
+              blockKey === "AANVULLENDEWERKZAAMHEDEN" ? "aanvullende_werkzaamheden" : blockKey.toLowerCase(),
+              signerRole,
+              blockSigner
+            );
+            const signatureDataUrl = blockSigner.signatureDataUrl;
             const signatureNotice = normalizeText(signatureState.reason);
 
             /* Definitief is definitief. Staat het formulier vast en heeft de indiener geen
@@ -2446,11 +2513,11 @@ function renderSignaturePage(model: any) {
                   <div class="signature-meta">
                     <div class="signature-field">
                       <div class="signature-field-label">Naam</div>
-                      <div class="signature-field-value">${escapeHtml(displayText(signerName))}</div>
+                      <div class="signature-field-value">${escapeHtml(displayText(blockSigner.name || signerName))}</div>
                     </div>
                     <div class="signature-field">
                       <div class="signature-field-label">Datum</div>
-                      <div class="signature-field-value">${escapeHtml(displayText(onderhoudDatum))}</div>
+                      <div class="signature-field-value">${escapeHtml(displayText(blockSigner.dateText || onderhoudDatum))}</div>
                     </div>
                     ${
                       toonHandtekening

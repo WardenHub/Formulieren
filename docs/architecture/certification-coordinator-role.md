@@ -14,7 +14,7 @@ De rolnaam beschrijft de verantwoordelijkheid voor certificaten en inspecties; d
 
 Iedere geauthenticeerde Ember-gebruiker die installaties mag lezen, ziet de certificeringssamenvatting, certificaatstatus en inspectiestatus. Alleen `admin` en `certificering_coordinator` mogen de certificeringsplicht, certificaten en verzendhistorie wijzigen.
 
-De bestaande inspectiepermissies blijven leidend voor inspectiecases. Bij de vervolgstap worden de inspectiemutaties aan dezelfde coördinatorrol gekoppeld, zonder de bestaande fijnmazige audit- en checklistpermissies te vervangen.
+De bestaande fijnmazige `inspection.*`-permissies blijven leidend voor inspectiecases. De rol `certificering_coordinator` krijgt de volledige actieve inspectiepermissieset via `dbo.ApplicationRolePermission`; certificaatmutaties blijven daarnaast rechtstreeks door de API beperkt tot `admin` en `certificering_coordinator`. De KAM-coordinator houdt alleen `inspection.view`.
 
 ## Schermstructuur
 

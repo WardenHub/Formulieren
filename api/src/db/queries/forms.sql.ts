@@ -2177,6 +2177,9 @@ order by lm.is_primary desc, l.sort_order asc, l.display_name asc;
 // =========================================================
 
 export const replaceFormInstanceDocumentFollowUpsSql = `
+set nocount on;
+set xact_abort on;
+
 -- expects:
 --   @code nvarchar(...)
 --   @instanceId bigint
@@ -2210,6 +2213,39 @@ begin
 end;
 
 declare @affectedActions table (follow_up_action_id uniqueidentifier primary key);
+
+-- Valideer alle gekozen punten voordat bestaande koppelingen worden vervangen.
+if exists (
+  select 1 from openjson(@itemsJson) j
+  where not exists (
+    select 1 from dbo.FollowUpActionFormSource fs
+    where fs.follow_up_action_id = try_convert(uniqueidentifier, json_value(j.value, '$.follow_up_action_id'))
+      and fs.form_instance_id = @instanceId
+  )
+)
+  throw 50000, 'follow-up action not found for form', 1;
+
+if exists (
+  select json_value(j.value, '$.follow_up_action_id')
+  from openjson(@itemsJson) j
+  group by json_value(j.value, '$.follow_up_action_id')
+  having count(*) > 1
+)
+  throw 50000, 'duplicate follow-up action', 1;
+
+begin transaction;
+
+declare @previousLinks table (
+  follow_up_action_id uniqueidentifier primary key,
+  attachment_role nvarchar(30),
+  customer_visible bit,
+  created_at datetime2(3),
+  created_by nvarchar(200)
+);
+insert into @previousLinks
+select follow_up_action_id, attachment_role, customer_visible, created_at, created_by
+from dbo.FollowUpActionAttachmentMap with (updlock, holdlock)
+where stored_file_id = @storedFileId;
 
 insert into @affectedActions (follow_up_action_id)
 select follow_up_action_id
@@ -2249,12 +2285,14 @@ insert into dbo.FollowUpActionAttachmentMap (
 select
   try_convert(uniqueidentifier, json_value(j.value, '$.follow_up_action_id')),
   @storedFileId,
-  N'EVIDENCE',
+  coalesce(previous.attachment_role, N'EVIDENCE'),
   isnull(try_convert(bit, json_value(j.value, '$.is_primary')), 0),
-  0,
-  sysutcdatetime(),
-  @updatedBy
+  coalesce(previous.customer_visible, 0),
+  coalesce(previous.created_at, sysutcdatetime()),
+  case when previous.follow_up_action_id is not null then previous.created_by else @updatedBy end
 from openjson(@itemsJson) j
+left join @previousLinks previous
+  on previous.follow_up_action_id = try_convert(uniqueidentifier, json_value(j.value, '$.follow_up_action_id'))
 where try_convert(uniqueidentifier, json_value(j.value, '$.follow_up_action_id')) is not null
   and exists (
     select 1
@@ -2279,6 +2317,8 @@ select
   ),
   @updatedBy
 from @affectedActions affected;
+
+commit transaction;
 
 select
   @documentId as form_instance_document_id,

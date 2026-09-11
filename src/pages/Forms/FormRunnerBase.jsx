@@ -1,6 +1,6 @@
 //src/pages/Forms/FormRunnerBase.jsx
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 
 import { Survey } from "survey-react-ui";
@@ -35,6 +35,7 @@ import {
   getFormInstanceDocuments,
   startFormInstance,
   getFormsMonitorFollowUps,
+  getFormsMonitorFollowUpAttachmentUrl,
   addFormInstancePoint,
   addFormInstancePointFromHub,
   recordFormSubmitRejection,
@@ -91,7 +92,11 @@ import {
 
 import { FormPageStepper } from "./shared/FormPageStepper.jsx";
 import FollowUpPointsSheet from "./shared/FollowUpPointsSheet.jsx";
+import FormEvidenceDialog from "./shared/FormEvidenceDialog.jsx";
 import { countOpenPoints } from "./shared/followUpPoints.js";
+import { addPointToDocumentLinks, findCreatedPointDocument } from "./shared/pointEvidence.js";
+
+const DrawingPinsTab = lazy(() => import("../Installations/DrawingPinsTab.jsx"));
 
 import {
   answersDiffer,
@@ -195,6 +200,7 @@ function normalizeFollowUpPoints(data) {
   return items
     .map((item) => ({
       follow_up_action_id: String(item?.follow_up_action_id || "").trim(),
+      form_instance_id: item?.form_instance_id,
       workflow_title: String(item?.workflow_title || "Actiepunt").trim(),
       workflow_description: String(item?.workflow_description || "").trim(),
       source_item_code: String(item?.source_item_code || "").trim(),
@@ -202,6 +208,7 @@ function normalizeFollowUpPoints(data) {
       status: String(item?.status || "").trim(),
       category: String(item?.category || "").trim(),
       drawing_pins: Array.isArray(item?.drawing_pins) ? item.drawing_pins : [],
+      attachments: Array.isArray(item?.attachments) ? item.attachments : [],
     }))
     .filter((item) => item.follow_up_action_id);
 }
@@ -618,6 +625,11 @@ export default function FormRunnerBase({ mode }) {
   const [points, setPoints] = useState([]);
   const [pointsLoading, setPointsLoading] = useState(false);
   const [pointsError, setPointsError] = useState("");
+  const [pointDocuments, setPointDocuments] = useState([]);
+  const [pointDrawing, setPointDrawing] = useState(null);
+  const [evidenceBusy, setEvidenceBusy] = useState(false);
+  const [drawingBusy, setDrawingBusy] = useState(false);
+  const [evidenceNotice, setEvidenceNotice] = useState("");
   const [pointsDelta, setPointsDelta] = useState(null);
   // Paginas die na verlaten zijn gecontroleerd; voedt de status in de paginabalk.
   const [checkedPages, setCheckedPages] = useState([]);
@@ -703,10 +715,8 @@ export default function FormRunnerBase({ mode }) {
   const validateOkTimerRef = useRef(null);
   const saveOkTimerRef = useRef(null);
   const submitOkTimerRef = useRef(null);
-  const submitCelebrationTimerRef = useRef(null);
   const validateCelebrationTimerRef = useRef(null);
   const prefillRefreshOkTimerRef = useRef(null);
-  const postSubmitReloadTimerRef = useRef(null);
   const autosaveTimerRef = useRef(null);
   const autosaveIdleTimerRef = useRef(null);
   const autosaveRunningRef = useRef(false);
@@ -1004,36 +1014,38 @@ export default function FormRunnerBase({ mode }) {
 
   useEffect(() => {
     if (!showSubmitCelebration) return;
+    const icon = partyPopperRef.current;
 
     const t = window.setTimeout(() => {
-      partyPopperRef.current?.startAnimation?.();
+      icon?.startAnimation?.();
     }, 40);
 
     return () => {
       clearTimeout(t);
-      partyPopperRef.current?.stopAnimation?.();
+      icon?.stopAnimation?.();
     };
   }, [showSubmitCelebration]);
 
   useEffect(() => {
     if (!showValidateCelebration) return;
+    const icon = validateCelebrationIconRef.current;
 
     const t = window.setTimeout(() => {
-      validateCelebrationIconRef.current?.startAnimation?.();
+      icon?.startAnimation?.();
     }, 40);
 
     return () => {
       clearTimeout(t);
-      validateCelebrationIconRef.current?.stopAnimation?.();
+      icon?.stopAnimation?.();
     };
   }, [showValidateCelebration]);
 
   // Zolang een dialoog open staat blijft de focus erbinnen; bij sluiten gaat hij terug naar
   // de knop die hem opende. Zonder dit liep Tab achter de dialoog langs door het formulier.
   useEffect(() => {
-    if (!submitDialog) return undefined;
+    if (!submitDialog || pointDrawing) return undefined;
     return trapFocus(submitDialogRef.current);
-  }, [submitDialog]);
+  }, [submitDialog, pointDrawing]);
 
   useEffect(() => {
     if (!guidanceDialog) return undefined;
@@ -1480,6 +1492,7 @@ export default function FormRunnerBase({ mode }) {
   ) {
     let workingDraftRev = getDraftRev(instance);
     let didSaveSomething = false;
+    let followUpSyncFailed = false;
 
     if (hasMetadataChanges) {
       const metadataPayload = {
@@ -1514,7 +1527,7 @@ export default function FormRunnerBase({ mode }) {
     }
 
     if (dirty || forceAnswerSave) {
-      await saveCurrentAnswers({
+      const answerResponse = await saveCurrentAnswers({
         answers_json: curValue,
         expected_draft_rev: workingDraftRev,
       });
@@ -1523,6 +1536,10 @@ export default function FormRunnerBase({ mode }) {
       workingDraftRev += 1;
       applyAnswersSaveLocally(workingDraftRev);
       setDirty(false);
+      if (answerResponse?.follow_up_sync?.ok === false) {
+        followUpSyncFailed = true;
+        setPointsError("Antwoorden zijn opgeslagen, maar de opvolgacties konden niet worden bijgewerkt. Ververs de opvolgacties om opnieuw te proberen.");
+      }
     }
 
     if (didSaveSomething) {
@@ -1550,6 +1567,7 @@ export default function FormRunnerBase({ mode }) {
     return {
       didSaveSomething,
       nextDraftRev: workingDraftRev,
+      followUpSyncFailed,
     };
   }
 
@@ -1916,10 +1934,8 @@ export default function FormRunnerBase({ mode }) {
       if (validateOkTimerRef.current) clearTimeout(validateOkTimerRef.current);
       if (saveOkTimerRef.current) clearTimeout(saveOkTimerRef.current);
       if (submitOkTimerRef.current) clearTimeout(submitOkTimerRef.current);
-      if (submitCelebrationTimerRef.current) clearTimeout(submitCelebrationTimerRef.current);
       if (validateCelebrationTimerRef.current) clearTimeout(validateCelebrationTimerRef.current);
       if (prefillRefreshOkTimerRef.current) clearTimeout(prefillRefreshOkTimerRef.current);
-      if (postSubmitReloadTimerRef.current) clearTimeout(postSubmitReloadTimerRef.current);
       if (autosaveIdleTimerRef.current) clearTimeout(autosaveIdleTimerRef.current);
       if (autosaveTimerRef.current) clearInterval(autosaveTimerRef.current);
     };
@@ -2075,11 +2091,42 @@ export default function FormRunnerBase({ mode }) {
     setPointsError("");
 
     try {
-      const res = await getFormsMonitorFollowUps(instanceId);
+      const [res, documentsRes] = await Promise.all([
+        getFormsMonitorFollowUps(instanceId),
+        !isGeneric && code ? getFormInstanceDocuments(code, instanceId) : Promise.resolve({ items: [] }),
+      ]);
       setPoints(normalizeFollowUpPoints(res));
+      setPointDocuments(normalizeFormDocumentsResponse(documentsRes).filter(hasStoredFormDocumentFile));
     } catch (e) {
       setPointsError(translateApiError(e, status));
     } finally {
+      setPointsLoading(false);
+    }
+  }
+
+  async function refreshPointEvidence() {
+    if (busy || evidenceBusy) return;
+    setPointsLoading(true);
+    setPointsError("");
+    try {
+      let syncFailed = false;
+      if (canEditAnswers) {
+        if (autosaveRunningRef.current) {
+          setPointsError("Het formulier wordt opgeslagen. De opvolgacties worden daarna automatisch bijgewerkt.");
+          return;
+        }
+        const cur = getCurrentAnswersObject();
+        if (!cur.ok) throw new Error(cur.error);
+        setBusy(true);
+        const saved = await persistPendingChanges(cur.value, { reloadAfter: false, animateSave: false, forceAnswerSave: true });
+        syncFailed = saved.followUpSyncFailed;
+      }
+      await loadFollowUpPoints();
+      if (syncFailed) setPointsError("Je antwoorden zijn opgeslagen, maar de opvolgacties zijn nog niet bijgewerkt. Klik op Verversen om opnieuw te proberen.");
+    } catch (e) {
+      setPointsError(translateApiError(e, status));
+    } finally {
+      setBusy(false);
       setPointsLoading(false);
     }
   }
@@ -2094,21 +2141,38 @@ export default function FormRunnerBase({ mode }) {
     await loadFollowUpPoints();
   }
 
-  // De "waar"-vraag. Pins horen bij de installatietekening, dus we sturen de gebruiker
-  // daarheen met het punt in de hand; de pin die hij plaatst wordt automatisch gekoppeld
-  // en daarna komt hij terug in het formulier op dezelfde plek. Dat vervangt de oude
-  // route van indienen, wegnavigeren, pin plaatsen en handmatig koppelen.
-  function handleSetPointLocation(point) {
+  // Het formulier blijft gemount; antwoorden, scrollpositie en de indien-dialoog blijven behouden.
+  function handleSetPointLocation(point, pin = null) {
     const actionId = String(point?.follow_up_action_id || "").trim();
     if (!actionId || isGeneric || !code) return;
+    setPointDrawing({
+      linkActionId: pin ? "" : actionId,
+      documentId: pin?.installation_document_id || "",
+      pinId: pin?.drawing_pin_id || "",
+      pageNumber: pin?.page_number || 1,
+      label: point.workflow_title?.slice(0, 200) || "Tekortkoming",
+      description: point.workflow_description?.slice(0, 2000) || "",
+      pinKind: point.kind === "report-only" ? "NOTE" : "DEFICIENCY",
+      startPlacing: !pin,
+      readOnly: Boolean(pin && String(point.form_instance_id) !== String(instanceId)),
+    });
+  }
 
-    const returnTo = `${routerLocation.pathname}${routerLocation.search || ""}`;
+  async function handleLinkDocumentToPoint(point, documentId) {
+    const response = await getFormInstanceDocuments(code, instanceId);
+    const doc = normalizeFormDocumentsResponse(response).find((item) => String(item.form_instance_document_id) === String(documentId));
+    if (!doc || !hasStoredFormDocumentFile(doc)) throw new Error("Dit bestand is niet meer beschikbaar. Ververs de bijlagen.");
+    const links = addPointToDocumentLinks(doc.follow_ups, point.follow_up_action_id);
+    await putFormInstanceDocumentFollowUps(code, instanceId, documentId, links);
+    setEvidenceNotice("Bestand gekoppeld aan de opvolgactie.");
+    await loadFollowUpPoints();
+  }
 
-    navigate(
-      `/installaties/${encodeURIComponent(code)}?tab=drawings` +
-        `&linkAction=${encodeURIComponent(actionId)}` +
-        `&returnTo=${encodeURIComponent(returnTo)}`
-    );
+  async function handleOpenPointAttachment(point, attachment) {
+    const response = await getFormsMonitorFollowUpAttachmentUrl(point.follow_up_action_id, attachment.stored_file_id);
+    const url = response?.url || response?.download_url;
+    if (!url) throw new Error("Het bestand kon niet worden geopend.");
+    window.open(url, "_blank", "noopener,noreferrer");
   }
 
   // Een foto of bestand bij een punt. Loopt via dezelfde formulierbijlagen als het
@@ -2121,6 +2185,7 @@ export default function FormRunnerBase({ mode }) {
       throw new Error("Bijlagen bij een punt kunnen alleen op een installatiegebonden formulier.");
     }
 
+    const before = normalizeFormDocumentsResponse(await getFormInstanceDocuments(code, instanceId));
     const createRes = await putFormInstanceDocuments(code, instanceId, [
       {
         title: point?.workflow_title || "Bewijs bij opvolgpunt",
@@ -2132,10 +2197,7 @@ export default function FormRunnerBase({ mode }) {
     ]);
 
     const createdItems = Array.isArray(createRes?.items) ? createRes.items : [];
-    const created =
-      createdItems.find((x) => x?.file_name == null && x?.uploaded_at == null) ||
-      createdItems[0] ||
-      null;
+    const created = findCreatedPointDocument(before, createdItems);
 
     const documentId =
       created?.form_instance_document_id || created?.document_id || created?.id;
@@ -2143,10 +2205,15 @@ export default function FormRunnerBase({ mode }) {
     if (!documentId) throw new Error("Documentregel kon niet worden aangemaakt.");
 
     await uploadFormInstanceDocumentFile(code, instanceId, documentId, file);
-    await putFormInstanceDocumentFollowUps(code, instanceId, documentId, [
-      { follow_up_action_id: actionId, is_primary: true },
-    ]);
-
+    try {
+      await putFormInstanceDocumentFollowUps(code, instanceId, documentId, [
+        { follow_up_action_id: actionId, is_primary: !(point.attachments || []).some((item) => item.is_primary) },
+      ]);
+    } catch {
+      await loadFollowUpPoints();
+      throw new Error("Het bestand is geüpload, maar nog niet gekoppeld. Kies het bij Bestaande formulierbijlage koppelen; opnieuw uploaden is niet nodig.");
+    }
+    setEvidenceNotice(`${file.name} toegevoegd en gekoppeld.`);
     await loadFollowUpPoints();
   }
 
@@ -2310,6 +2377,7 @@ export default function FormRunnerBase({ mode }) {
   }
 
   async function submit() {
+    if (busy || evidenceBusy || autosaveRunningRef.current) return;
     if (!showSubmit) {
       setError(`Indienen is niet toegestaan in status (${statusLbl}).`);
       return;
@@ -2354,6 +2422,10 @@ export default function FormRunnerBase({ mode }) {
         return;
       }
 
+      // Synchroniseer conceptpunten voordat ze in het indienvenster kunnen worden verrijkt.
+      const saved = await persistPendingChanges(cur.value, { reloadAfter: false, animateSave: false, forceAnswerSave: true });
+      if (saved.followUpSyncFailed) throw new Error("Je antwoorden zijn opgeslagen, maar de opvolgacties konden niet worden bijgewerkt. Probeer Indienen opnieuw.");
+      await loadFollowUpPoints();
       const preview = await previewCurrentSubmit({
         answers_json: cur.value,
       });
@@ -2408,7 +2480,7 @@ export default function FormRunnerBase({ mode }) {
   }
 
   async function confirmSubmitDialog() {
-    if (!submitDialog) return;
+    if (!submitDialog || submitDialog.submitting || evidenceBusy || pointDrawing) return;
 
     setBusy(true);
     setError(null);
@@ -2422,7 +2494,8 @@ export default function FormRunnerBase({ mode }) {
       }
 
       if (hasUnsavedChanges) {
-        await persistPendingChanges(cur.value, { reloadAfter: false, animateSave: false });
+        const saved = await persistPendingChanges(cur.value, { reloadAfter: false, animateSave: false });
+        if (saved.followUpSyncFailed) throw new Error("Je antwoorden zijn opgeslagen, maar de opvolgacties zijn nog niet bijgewerkt. Probeer opnieuw voordat je indient.");
       }
 
       const submitRes = await submitCurrentInstance();
@@ -2458,23 +2531,13 @@ export default function FormRunnerBase({ mode }) {
       }));
 
       setSubmitDialog(null);
+      setPointsOpen(false);
+      setContextPanelOpen(false);
+      setAssistantPanelOpen(false);
       setShowSubmitCelebration(true);
 
-      if (submitCelebrationTimerRef.current) {
-        clearTimeout(submitCelebrationTimerRef.current);
-      }
-
-      submitCelebrationTimerRef.current = setTimeout(() => {
-        setShowSubmitCelebration(false);
-      }, 2400);
-
-      if (postSubmitReloadTimerRef.current) {
-        clearTimeout(postSubmitReloadTimerRef.current);
-      }
-
-      postSubmitReloadTimerRef.current = setTimeout(() => {
-        reload({ forceEditor: false });
-      }, 2600);
+      clearFormDraft(instanceId);
+      void loadFollowUpPoints();
 
       setSubmitOk(true);
       submitOkIconRef.current?.startAnimation?.();
@@ -2581,58 +2644,16 @@ export default function FormRunnerBase({ mode }) {
       }}
     >
       {showSubmitCelebration && !isDebug && (
-        <div
-          style={{
-            position: "fixed",
-            inset: 0,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            pointerEvents: "none",
-            zIndex: 60,
-            background: "color-mix(in srgb, var(--bg) 14%, transparent)",
-            backdropFilter: "blur(1px)",
-          }}
-        >
-          <div
-            className="card"
-            style={{
-              minWidth: 280,
-              maxWidth: 440,
-              padding: 24,
-              display: "grid",
-              gap: 10,
-              justifyItems: "center",
-              textAlign: "center",
-              ...themedPanel({
-                boxShadow: "0 20px 60px color-mix(in srgb, var(--shadow-color, #000) 28%, transparent)",
-              }),
-            }}
-          >
-            <div
-              style={{
-                width: 72,
-                height: 72,
-                borderRadius: 999,
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                background: "color-mix(in srgb, var(--text) 8%, transparent)",
-                boxShadow: "0 0 0 8px color-mix(in srgb, var(--text) 4%, transparent)",
-              }}
-            >
-              <PartyPopperIcon ref={partyPopperRef} size={36} />
-            </div>
-
-            <div style={{ fontWeight: 900, fontSize: 22, lineHeight: 1.1 }}>
-              Super; ingediend
-            </div>
-
-            <div className="muted" style={{ fontSize: 13 }}>
-              Het formulier is succesvol verwerkt.
-            </div>
+        <FormEvidenceDialog title="Formulier succesvol ingediend" closeLabel="Gereed" description="Je antwoorden zijn ingediend. Gekoppelde pins en bestanden blijven bij de opvolgacties beschikbaar." onClose={() => { setShowSubmitCelebration(false); void reload({ forceEditor: false }); }}>
+          <div className="form-submit-result" role="status">
+            <PartyPopperIcon ref={partyPopperRef} size={36} />
+            <p>{countOpenPoints(points)} open opvolgactie(s). Je kunt de locaties en het bewijs nu bekijken of later aanvullen.</p>
           </div>
-        </div>
+          <div className="ember-point__actions">
+            <button type="button" className="btn btn-primary" onClick={() => { setShowSubmitCelebration(false); setPointsOpen(true); }}>Opvolgacties, pins en bestanden bekijken</button>
+            <button type="button" className="btn btn-secondary" onClick={() => { setShowSubmitCelebration(false); void reload({ forceEditor: false }); }}>Formulier bekijken</button>
+          </div>
+        </FormEvidenceDialog>
       )}
 
       {showValidateCelebration && !isDebug && (
@@ -3396,10 +3417,11 @@ export default function FormRunnerBase({ mode }) {
                 type="button"
                 className="icon-btn form-runner-floating-btn ember-points-btn"
                 title="Opvolgacties van dit formulier"
+                disabled={busy || evidenceBusy}
                 onClick={() => {
                   setPointsOpen(true);
                   setPointsDelta(null);
-                  loadFollowUpPoints();
+                  void refreshPointEvidence();
                 }}
               >
                 <ClipboardCheckIcon size={20} />
@@ -3767,28 +3789,47 @@ export default function FormRunnerBase({ mode }) {
       )}
 
       <FollowUpPointsSheet
-        open={pointsOpen}
+        open={pointsOpen && !pointDrawing && !submitDialog && !showSubmitCelebration}
         onClose={() => setPointsOpen(false)}
         points={points}
+        currentFormInstanceId={instanceId}
         loading={pointsLoading}
         error={pointsError}
-        onRefresh={loadFollowUpPoints}
+        notice={evidenceNotice}
+        onRefresh={refreshPointEvidence}
         installationCode={code}
         canAdd={canEditAnswers && !isDebug}
         onAddPoint={handleAddPoint}
         canSetLocation={!isGeneric && Boolean(code)}
         onSetLocation={handleSetPointLocation}
-        onAttachFile={handleAttachFileToPoint}
+        onAttachFile={!isGeneric && code ? handleAttachFileToPoint : undefined}
+        documents={pointDocuments}
+        onLinkDocument={!isGeneric && code ? handleLinkDocumentToPoint : undefined}
+        onViewPin={!isGeneric && code ? handleSetPointLocation : undefined}
+        onOpenAttachment={handleOpenPointAttachment}
+        actionBusy={evidenceBusy || busy}
+        onBusyChange={setEvidenceBusy}
       />
 
-      {submitDialog ? (
+      {pointDrawing ? <FormEvidenceDialog title={pointDrawing.linkActionId ? "Locatie bij opvolgactie" : "Gekoppelde pin bekijken"} description="Je formulier blijft op dezelfde plek geopend. Een opgeslagen locatie wordt direct aan deze opvolgactie gekoppeld." wide busy={drawingBusy} onClose={() => { setPointDrawing(null); void loadFollowUpPoints(); }}>
+        <Suspense fallback={<div role="status" className="ui-empty">Tekening wordt geladen...</div>}>
+          <DrawingPinsTab code={code} embedded readOnly={pointDrawing.readOnly} navigationTarget={pointDrawing} onBusyChange={setDrawingBusy} onLinked={() => {
+            setPointDrawing(null);
+            setDrawingBusy(false);
+            setEvidenceNotice("Pin opgeslagen en gekoppeld aan de opvolgactie.");
+            void loadFollowUpPoints();
+          }} />
+        </Suspense>
+      </FormEvidenceDialog> : null}
+
+      {submitDialog && !pointDrawing ? (
         <>
           <button
             type="button"
             aria-label="Sluit submitvenster"
             className="form-guidance-modal-backdrop"
             onClick={() => {
-              if (!submitDialog.submitting) setSubmitDialog(null);
+              if (!submitDialog.submitting && !evidenceBusy) setSubmitDialog(null);
             }}
           />
 
@@ -3815,7 +3856,7 @@ export default function FormRunnerBase({ mode }) {
                 <button
                   type="button"
                   className="btn btn-secondary form-submit-dialog__cancel"
-                  disabled={submitDialog.submitting}
+                  disabled={submitDialog.submitting || evidenceBusy}
                   onClick={() => setSubmitDialog(null)}
                 >
                   Annuleren
@@ -3824,7 +3865,7 @@ export default function FormRunnerBase({ mode }) {
                 <button
                   type="button"
                   className="btn form-submit-dialog__confirm"
-                  disabled={submitDialog.submitting}
+                  disabled={submitDialog.submitting || evidenceBusy || pointsLoading}
                   onClick={confirmSubmitDialog}
                 >
                   {submitDialog.submitting ? "Indienen..." : "Definitief indienen"}
@@ -3833,15 +3874,17 @@ export default function FormRunnerBase({ mode }) {
             </div>
 
             <div className="form-guidance-modal__body" style={{ display: "grid", gap: 16 }}>
+              {error ? <div role="alert" className="ember-alert ember-alert--danger">{error}</div> : null}
+              {evidenceNotice ? <div role="status" className="ember-alert ember-alert--info">{evidenceNotice}</div> : null}
               <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                 <span style={themedChip({ fontSize: 12 })}>
-                  Actiepunten: {submitDialog.previewSummary.workflowCount}
+                  Actiepunten in dit formulier: {points.filter((point) => String(point.form_instance_id) === String(instanceId) && point.kind !== "report-only").length}
                 </span>
                 <span style={themedChip({ fontSize: 12 })}>
-                  Rapportopmerkingen: {submitDialog.previewSummary.reportOnlyCount}
+                  Rapportopmerkingen in dit formulier: {points.filter((point) => String(point.form_instance_id) === String(instanceId) && point.kind === "report-only").length}
                 </span>
                 <span style={themedChip({ fontSize: 12 })}>
-                  Formulierbijlagen: {submitDialog.formAttachmentCount ?? 0}
+                  Formulierbijlagen: {pointDocuments.length}
                 </span>
               </div>
 
@@ -3860,6 +3903,7 @@ export default function FormRunnerBase({ mode }) {
                   open
                   variant="inline"
                   points={points}
+                  currentFormInstanceId={instanceId}
                   loading={pointsLoading}
                   error={pointsError}
                   onRefresh={loadFollowUpPoints}
@@ -3868,7 +3912,13 @@ export default function FormRunnerBase({ mode }) {
                   onAddPoint={handleAddPoint}
                   canSetLocation={!isGeneric && Boolean(code)}
                   onSetLocation={handleSetPointLocation}
-                  onAttachFile={handleAttachFileToPoint}
+                  onAttachFile={!isGeneric && code ? handleAttachFileToPoint : undefined}
+                  documents={pointDocuments}
+                  onLinkDocument={!isGeneric && code ? handleLinkDocumentToPoint : undefined}
+                  onViewPin={!isGeneric && code ? handleSetPointLocation : undefined}
+                  onOpenAttachment={handleOpenPointAttachment}
+                  actionBusy={evidenceBusy || submitDialog.submitting}
+                  onBusyChange={setEvidenceBusy}
                 />
               </div>
             </div>
