@@ -50,6 +50,13 @@ function getContainerName() {
   return getRequiredEnv("AZURE_STORAGE_CONTAINER_NAME");
 }
 
+/* De installers van Ember Offline staan bewust in een eigen container, gescheiden van de
+   installatiebestanden. De releaseworkflow heeft daar schrijfrecht op en nergens anders op;
+   zie de roltoewijzing op scope .../containers/ember-offline. */
+function getOfflineClientContainerName() {
+  return process.env.AZURE_STORAGE_OFFLINE_CONTAINER_NAME?.trim() || "ember-offline";
+}
+
 function getConnectionString() {
   return process.env.AZURE_STORAGE_CONNECTION_STRING?.trim() || "";
 }
@@ -90,10 +97,14 @@ function getBlobServiceClient() {
   );
 }
 
-async function getContainerClient() {
+async function getContainerClient(containerName?: string, ensure = true) {
   const client = getBlobServiceClient();
-  const container = client.getContainerClient(getContainerName());
-  await container.createIfNotExists();
+  const container = client.getContainerClient(containerName || getContainerName());
+
+  // Alleen aanmaken waar dat de bedoeling is. De releasecontainer bestaat al en wordt door
+  // de workflow gevuld; de API hoort daar te lezen en niet te scheppen.
+  if (ensure) await container.createIfNotExists();
+
   return container;
 }
 
@@ -133,10 +144,11 @@ async function createDownloadUrl(args: {
   storageKey: string;
   expiresInSeconds?: number;
   downloadFileName?: string | null;
+  containerName?: string;
 }) {
   const { storageKey, expiresInSeconds = 300, downloadFileName } = args;
 
-  const containerName = getContainerName();
+  const containerName = args.containerName || getContainerName();
   const blobServiceClient = getBlobServiceClient();
   const container = blobServiceClient.getContainerClient(containerName);
   const blob = container.getBlobClient(storageKey);
@@ -193,12 +205,12 @@ async function createDownloadUrl(args: {
   return `${blob.url}?${sas}`;
 }
 
-async function downloadBlob(storageKey: string) {
+async function downloadBlob(storageKey: string, containerName?: string) {
   if (!storageKey) {
     throw new Error("missing storageKey");
   }
 
-  const container = await getContainerClient();
+  const container = await getContainerClient(containerName, false);
   const blob = container.getBlobClient(storageKey);
 
   const exists = await blob.exists();
@@ -572,4 +584,43 @@ export async function deleteUserProfileSignatureBlob(storageKey: string) {
 
 export async function downloadUserProfileSignatureBlob(storageKey: string) {
   return downloadBlob(storageKey);
+}
+
+/* =========================================================
+   Ember Offline; installers en het manifest
+   ========================================================= */
+
+// De enige veranderlijke wijzer in de container. Installers krijgen een naam met de versie
+// erin en worden nooit overschreven; alleen dit bestand wijst naar de actuele release, zodat
+// terugrollen neerkomt op dit bestand terugzetten.
+export const OFFLINE_CLIENT_MANIFEST_KEY = "latest.json";
+
+export async function downloadOfflineClientManifest() {
+  try {
+    const { buffer } = await downloadBlob(
+      OFFLINE_CLIENT_MANIFEST_KEY,
+      getOfflineClientContainerName()
+    );
+    return buffer.toString("utf8");
+  } catch (err: any) {
+    // Zolang er nog geen release is gepubliceerd bestaat het manifest niet; dat is een
+    // stand van zaken en geen storing.
+    if (String(err?.message || "").includes("blob not found")) return null;
+    throw err;
+  }
+}
+
+export async function createOfflineClientDownloadUrl(args: {
+  storageKey: string;
+  downloadFileName?: string | null;
+  expiresInSeconds?: number;
+}) {
+  return createDownloadUrl({
+    storageKey: args.storageKey,
+    downloadFileName: args.downloadFileName ?? null,
+    // Kort genoeg om niet rond te slingeren, lang genoeg om een installer van tientallen
+    // megabytes over een matige verbinding binnen te halen.
+    expiresInSeconds: args.expiresInSeconds ?? 900,
+    containerName: getOfflineClientContainerName(),
+  });
 }

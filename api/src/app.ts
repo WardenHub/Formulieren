@@ -8,6 +8,7 @@ import installationTypesRouter from "./routes/installationTypes.js";
 import formsMonitorRouter from "./routes/formsMonitor.js";
 import formsHubRouter from "./routes/formsHub.js";
 import inspectionsRouter from "./routes/inspections.js";
+import offlineClientRouter from "./routes/offlineClient.js";
 import kamRouter from "./routes/kam.js";
 import adminFormsRouter from "./routes/adminForms.js";
 import adminInstallationsRouter from "./routes/adminInstallations.js";
@@ -202,6 +203,7 @@ app.use("/admin/ai", adminAssistantRouter);
 app.use("/forms-monitor", formsMonitorRouter);
 app.use("/forms", formsHubRouter);
 app.use("/inspections", inspectionsRouter);
+app.use("/offline-client", offlineClientRouter);
 app.use("/kam", kamRouter);
 
 app.get("/me", async (req: any, res) => {

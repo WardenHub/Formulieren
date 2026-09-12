@@ -1,0 +1,12 @@
+{
+  "schema": "ember.offline.client.manifest.v1",
+
+  "version": "0.1.0",
+  "released_at": "2026-09-11T14:00:00Z",
+  "notes": "Eerste uitgave van Ember Offline.",
+
+  "file_name": "Ember-Offline-0.1.0-x64.msi",
+  "storage_key": "0.1.0/Ember-Offline-0.1.0-x64.msi",
+  "size_bytes": 18874368,
+  "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+}

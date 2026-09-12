@@ -1,0 +1,186 @@
+# Een release van Ember Offline.
+#
+# Dit is de enige schrijver van de container ember-offline; niemand heeft er een sleutel op.
+# Daarmee kan de downloadlink niet verouderen door een vergeten upload van een laptop.
+#
+# De volgorde is de hele borging:
+#
+#   1. versies controleren, voordat er iets gebouwd wordt;
+#   2. bouwen;
+#   3. de installer uploaden onder een naam met de versie erin, die nooit wordt overschreven;
+#   4. teruglezen dat hij er echt staat en even groot is;
+#   5. pas daarna latest.json schrijven, het enige veranderlijke bestand.
+#
+# Terugrollen is dus stap 5 opnieuw doen met de vorige versie; de installers blijven staan.
+#
+# De trigger is een tag en geen push naar main. Een desktoprelease is een besluit, het
+# versienummer moet per release veranderen omdat de app zichzelf ermee vergelijkt, en een
+# Windows-runner met een Rust-build is de duurste job in deze repository.
+
+name: Ember Offline release
+
+on:
+  push:
+    tags:
+      - "offline-v*"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  AZURE_STORAGE_ACCOUNT: emberfilestorage
+  AZURE_STORAGE_CONTAINER: ember-offline
+
+jobs:
+  release:
+    name: Bouwen, uploaden en het manifest schrijven
+    runs-on: windows-2022
+
+    # Het subject van de federated credential hangt aan deze omgeving en niet aan een branch;
+    # een tag heeft nu eenmaal geen branch-subject. Zie github-offline-release op de identity
+    # ember-api-id-8651.
+    environment: offline-release
+
+    permissions:
+      id-token: write
+      contents: read
+
+    defaults:
+      run:
+        shell: pwsh
+
+    steps:
+      - name: checkout
+        uses: actions/checkout@v7
+        with:
+          # De validator vergelijkt met de vorige offline-v-tag; zonder tags kan dat niet.
+          fetch-depth: 0
+
+      - name: setup node
+        uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+          cache: "npm"
+          cache-dependency-path: |
+            package-lock.json
+            offline/package-lock.json
+
+      - name: toolchain tonen
+        run: |
+          node --version
+          rustc --version
+          cargo --version
+
+      - name: install
+        run: npm ci
+
+      - name: install offline
+        working-directory: offline
+        run: npm ci
+
+      # Valt om bij uiteenlopende versies, een bundeldoel dat niet msi is, of een tag die
+      # niet bij de versie hoort. Bewust voor de build; dan is er nog niets geupload.
+      - name: versies en tag controleren
+        env:
+          EMBER_RELEASE_TAG: ${{ github.ref_name }}
+        run: npm run offline:validate
+
+      - name: bouwen
+        working-directory: offline
+        env:
+          # run-tauri.mjs zet dit anders naar LOCALAPPDATA; dan ligt de installer niet op de
+          # plek waar de volgende stap hem zoekt.
+          CARGO_TARGET_DIR: ${{ github.workspace }}\offline\src-tauri\target
+        run: npm run tauri build
+
+      - name: installer zoeken en meten
+        id: installer
+        run: |
+          $version = "${{ github.ref_name }}" -replace '^offline-v', ''
+          $bundle = Join-Path $env:GITHUB_WORKSPACE 'offline\src-tauri\target\release\bundle\msi'
+          $msi = Get-ChildItem -Path $bundle -Filter *.msi -File | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+
+          if (-not $msi) { throw "geen msi gevonden in $bundle" }
+
+          # Tauri levert een naam met spaties en een taalcode, zoals "Ember Offline_0.1.0_x64_en-US.msi".
+          # Die staat straks in een downloadlink en in Intune; een voorspelbare naam zonder
+          # spaties is daar prettiger, en de sha256 wordt over het hernoemde bestand gerekend.
+          $doelNaam = "Ember-Offline-$version-x64.msi"
+          $doelPad = Join-Path $msi.DirectoryName $doelNaam
+          if ($msi.FullName -ne $doelPad) { Move-Item -Path $msi.FullName -Destination $doelPad -Force }
+
+          $klaar = Get-Item -Path $doelPad
+          $hash = (Get-FileHash -Path $klaar.FullName -Algorithm SHA256).Hash.ToLower()
+
+          "version=$version"                      >> $env:GITHUB_OUTPUT
+          "path=$($klaar.FullName)"               >> $env:GITHUB_OUTPUT
+          "file_name=$($klaar.Name)"              >> $env:GITHUB_OUTPUT
+          "size=$($klaar.Length)"                 >> $env:GITHUB_OUTPUT
+          "sha256=$hash"                          >> $env:GITHUB_OUTPUT
+          "storage_key=$version/$($klaar.Name)"   >> $env:GITHUB_OUTPUT
+
+          Write-Host "installer: $($klaar.Name), $($klaar.Length) bytes, sha256 $hash"
+
+      - name: aanmelden bij azure
+        uses: azure/login@v3
+        with:
+          client-id: ${{ secrets.AZUREAPPSERVICE_CLIENTID_298408D4FB304F60B9F4AEC3C47B750A }}
+          tenant-id: ${{ secrets.AZUREAPPSERVICE_TENANTID_D3D77769A6BA4D048343E3649FDF9157 }}
+          subscription-id: ${{ secrets.AZUREAPPSERVICE_SUBSCRIPTIONID_92204967630B4F8DBB48662DA954AF63 }}
+
+      # Nooit overschrijven. Bestaat deze sleutel al, dan is de tag eerder gedraaid en hoort
+      # er een nieuwe versie te komen in plaats van stilletjes andere bytes onder dezelfde
+      # naam.
+      - name: controleren dat deze versie nog niet bestaat
+        run: |
+          $bestaat = az storage blob exists --account-name $env:AZURE_STORAGE_ACCOUNT --container-name $env:AZURE_STORAGE_CONTAINER --name "${{ steps.installer.outputs.storage_key }}" --auth-mode login --query exists -o tsv
+          if ($bestaat -eq 'true') { throw "${{ steps.installer.outputs.storage_key }} bestaat al; kies een nieuw versienummer" }
+
+      - name: installer uploaden
+        run: |
+          az storage blob upload --account-name $env:AZURE_STORAGE_ACCOUNT --container-name $env:AZURE_STORAGE_CONTAINER --name "${{ steps.installer.outputs.storage_key }}" --file "${{ steps.installer.outputs.path }}" --auth-mode login --content-type "application/x-msi" --only-show-errors
+
+      # Teruglezen voordat het manifest ernaar wijst; anders kan latest.json een bestand
+      # aanwijzen dat er niet of maar half staat.
+      - name: upload teruglezen
+        run: |
+          $grootte = az storage blob show --account-name $env:AZURE_STORAGE_ACCOUNT --container-name $env:AZURE_STORAGE_CONTAINER --name "${{ steps.installer.outputs.storage_key }}" --auth-mode login --query properties.contentLength -o tsv
+          if ("$grootte" -ne "${{ steps.installer.outputs.size }}") { throw "de geuploade installer is $grootte bytes en niet ${{ steps.installer.outputs.size }}" }
+          Write-Host "teruggelezen: $grootte bytes"
+
+      - name: manifest schrijven
+        run: |
+          $notities = git tag -l --format='%(contents:subject)' "${{ github.ref_name }}"
+          if (-not $notities) { $notities = "Ember Offline ${{ steps.installer.outputs.version }}" }
+
+          $manifest = [ordered]@{
+            schema      = 'ember.offline.client.manifest.v1'
+            version     = '${{ steps.installer.outputs.version }}'
+            released_at = (Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ')
+            notes       = $notities
+            file_name   = '${{ steps.installer.outputs.file_name }}'
+            storage_key = '${{ steps.installer.outputs.storage_key }}'
+            size_bytes  = [int64]'${{ steps.installer.outputs.size }}'
+            sha256      = '${{ steps.installer.outputs.sha256 }}'
+          }
+
+          $pad = Join-Path $env:RUNNER_TEMP 'latest.json'
+          $manifest | ConvertTo-Json -Depth 3 | Set-Content -Path $pad -Encoding utf8
+
+          # Het enige bestand dat overschreven wordt, en het enige dat niet gecachet mag
+          # worden; anders blijft een browser of proxy de vorige versie aanbieden.
+          az storage blob upload --account-name $env:AZURE_STORAGE_ACCOUNT --container-name $env:AZURE_STORAGE_CONTAINER --name latest.json --file $pad --auth-mode login --overwrite --content-type "application/json" --content-cache-control "no-cache, max-age=0" --only-show-errors
+
+      - name: manifest teruglezen
+        run: |
+          $pad = Join-Path $env:RUNNER_TEMP 'latest-terug.json'
+          az storage blob download --account-name $env:AZURE_STORAGE_ACCOUNT --container-name $env:AZURE_STORAGE_CONTAINER --name latest.json --file $pad --auth-mode login --only-show-errors | Out-Null
+
+          $terug = Get-Content -Path $pad -Raw | ConvertFrom-Json
+
+          if ($terug.version -ne '${{ steps.installer.outputs.version }}') { throw "het manifest noemt versie $($terug.version)" }
+          if ($terug.storage_key -ne '${{ steps.installer.outputs.storage_key }}') { throw "het manifest wijst naar $($terug.storage_key)" }
+          if ($terug.sha256 -ne '${{ steps.installer.outputs.sha256 }}') { throw "de sha256 in het manifest klopt niet" }
+
+          Write-Host "release ${{ steps.installer.outputs.version }} staat live; $($terug.file_name)"
