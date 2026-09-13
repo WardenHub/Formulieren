@@ -225,15 +225,18 @@ export async function createInspectionCase(payload: any, user: any) {
 
 export async function updateInspectionCase(caseId: string, payload: any, user: any) {
   const detail = await getInspectionCase(caseId);
+  // Omission preserves persisted data; explicit null/false remain deliberate edits.
+  const field = (key: string) => payload?.[key] === undefined ? detail.case[key] : payload[key];
+  const optionalBool = (key: string) => field(key) == null ? null : bool(field(key));
   const rows = await sqlQuery(updateInspectionCaseSql, {
     caseId: uuid(caseId), rowVersion: rowVersion(payload?.row_version),
-    dueDate: date(payload?.due_date), status: enumValue(payload?.status, STATUS_SET),
-    inspectionBody: text(payload?.inspection_body, 200),
+    dueDate: payload?.due_date === undefined ? detail.case.due_date : date(payload.due_date), status: enumValue(field("status"), STATUS_SET),
+    inspectionBody: text(field("inspection_body"), 200),
     plannedDate: payload?.planned_date === undefined ? detail.case.planned_date : date(payload.planned_date),
-    logbookLinked: payload?.logbook_linked == null ? null : bool(payload.logbook_linked),
-    inspectionBodyHasLogbookAccess: payload?.inspection_body_has_logbook_access == null ? null : bool(payload.inspection_body_has_logbook_access),
-    packageAvailableInLogbook: payload?.document_package_available_in_logbook == null ? null : bool(payload.document_package_available_in_logbook),
-    reportUploadedToLogbook: payload?.report_uploaded_to_logbook == null ? null : bool(payload.report_uploaded_to_logbook),
+    logbookLinked: optionalBool("logbook_linked"),
+    inspectionBodyHasLogbookAccess: optionalBool("inspection_body_has_logbook_access"),
+    packageAvailableInLogbook: optionalBool("document_package_available_in_logbook"),
+    reportUploadedToLogbook: optionalBool("report_uploaded_to_logbook"),
     actor: getUserAuditActor(user),
   });
   return { ok: true, row_version: rows?.[0]?.row_version };

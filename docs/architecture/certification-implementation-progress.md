@@ -13,6 +13,17 @@
 
 ## Voortgang
 
+### UX-controle op verzoek van product owner
+
+- Actueel dossier in browser beoordeeld vanuit een niet-technische gebruiker. Nog te veel technische uitleg en latere, uitgeschakelde acties; algemene gebruiksvriendelijkheid is nog niet volledig geaccepteerd.
+- Opslaan toont nu een zichtbare, gefocuste bevestiging; fouten krijgen een alert. Geen succesmelding wanneer de opvolgende verversing faalt.
+- Voor plannen/uitvoeren controleert de UI ontbrekende datum, keuringsinstantie en werkbon vóór de aanvraag. API-controles blijven intact.
+- Browserproef op 01: Uitgevoerd kiezen en opslaan zonder werkbon geeft concrete Nederlandse aanwijzing. Teruggezet naar Gepland; bevestigd en opgeslagen; Dossier opgeslagen zichtbaar. Geen inspectie als uitgevoerd gemarkeerd.
+- Rapportvelden zijn gezamenlijk niet-bewerkbaar buiten de rapportfase, met zichtbare uitleg wanneer registratie beschikbaar wordt. Browser bevestigt dit. Registratie controleert ook de inspectiedatum vóór verzending.
+- Technische StoredFile/Reader-teksten vervangen door gewone uitleg. Atrium-werkbonstatus en Ember-inspectiedatum in dossier apart benoemd.
+- 33 gerichte tests, gerichte lint/diffcontrole en frontendbuild groen (4132 modules, 30,44 seconden). Donkere smalle weergave bekeken. Geen publicatie.
+- Open: volledige knopacceptatie bij rapport/conclusie/herinspectie/afronding, vereenvoudigen toewijzing (nu rolcode-invoer), dubbele keuringsinstantie-invoer en verdere vermindering van tegelijk zichtbare vervolgstappen. Geen claim dat een niet-technische gebruiker het volledige traject al zelfstandig kan afronden.
+
 - [x] Brononderzoek: AT_BBEWIJS bevat 1745 actuele en 3292 historische regels; alle installatiekeys sluiten aan.
 - [x] Contractsoorten 000/002 onderhoud, 200/201 inspectie live bevestigd; 001 is historische soortdefinitie.
 - [x] Eisen/statuslogica lokaal geïmplementeerd; 12 beleidstests en 6 structurele regressietests groen.
@@ -114,6 +125,14 @@ Normale installatiekaart: certificaattypefilter toegevoegd aan Meer filters, doo
 - Dit bewijst de lichte monitorweergave op deze breedte, niet alle schermen of alle breakpoints. Open harde acceptatieafhankelijkheden: echte testwerkbon voor 01 en tests met echte gewone gebruiker/coördinatoridentiteiten. Laatste volledige frontendbuild moet na alle vervolgwijzigingen nog worden herhaald.
 
 ## Checkpoint 13 september 2026
+
+### Hervatting: gedeeltelijke dossieropslag gevalideerd
+
+- Na hervatting door de product owner slaagde de lokale wijziging weer. API-health healthy, database bereikbaar.
+- updateInspectionCase bewaart nu bestaande status, termijn, keuringsinstantie en logboekvelden wanneer deze ontbreken in de aanvraag. Expliciete null en false blijven bewuste wijzigingen. Bestaande datumvalidatie, rollen en rowversion-predicaat behouden.
+- Gewone lokale API-ketentest op uitsluitend dossier 3179AD6D-0DE7-484D-874C-4370FB11ABE1, installatie 01: logbook_linked expliciet false opgeslagen; vervolgens alleen due_date en row_version aangeleverd. Status, geplande datum, keuringsinstantie en alle vier logboekvelden ongewijzigd teruggelezen. Herhaalde aanvraag met oude rowversion correct HTTP 409.
+- Oorspronkelijke logbook_linked-waarde daarna expliciet hersteld en teruggelezen. Dossier blijft PLANNED_CONFIRMED. Geen echte logboekkoppeling of externe verzending uitgevoerd. API-typecheck geslaagd.
+- De aparte POC-werkbonvoorziening is nog niet gebouwd; hierover staat de voorgelegde keuze open. Uitvoering, rapportregistratie, herinspectie en afronding zijn daarom nog niet als volledige keten geaccepteerd. Geen push, publicatie of database-DDL.
 
 ### Vervolg na bevestigde API-health
 

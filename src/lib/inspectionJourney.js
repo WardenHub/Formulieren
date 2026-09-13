@@ -27,6 +27,17 @@ export const INSPECTION_APPOINTMENT_LABELS = {
 };
 
 // Navigation guidance only; the API/database remain authoritative for transitions.
+export function inspectionSaveProblem(editor, workOrderKey) {
+  if (['PLANNED_UNCONFIRMED', 'PLANNED_CONFIRMED', 'EXECUTED_AWAITING_REPORT'].includes(editor.status)) {
+    if (!editor.planned_date) return 'Vul eerst de inspectiedatum in bij Dossiergegevens.';
+    if (!String(editor.inspection_body || '').trim()) return 'Kies of vul eerst de keuringsinstantie in.';
+  }
+  if (editor.status === 'EXECUTED_AWAITING_REPORT' && !workOrderKey) {
+    return 'Koppel eerst de werkbon bij Werkbon en planning. Daarna kun je de inspectie als uitgevoerd vastleggen.';
+  }
+  return null;
+}
+
 export function inspectionNextStep(status) {
   if (['COMPLETED', 'CANCELLED'].includes(status)) return { title: 'Dossier alleen-lezen', text: 'Bekijk de rapporten, certificaten en vastgelegde historie.', target: 'inspection-history' };
   if (status === 'REPORT_RECEIVED') return { title: 'Beoordeel het rapport', text: 'Leg bij tekortkomingen herstel vast. Bij goedkeuring koppel je de inspectiecertificaten die alle onderdelen dekken.', target: 'inspection-conclusion' };

@@ -9086,3 +9086,13 @@ html[data-appearance="dark"] .ember-radial-action-menu {
   .kam-review__decisions{display:grid;grid-template-columns:1fr 1fr}
   .kam-choice{text-align:center}
 }
+.inspection-page [hidden]{display:none!important}
+.inspection-process-track{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:12px;list-style:none;padding:0;margin:0}
+.inspection-process-track li{display:grid;justify-items:center;align-content:start;gap:6px;text-align:center;padding:12px 6px;border-top:2px solid var(--border-soft);color:var(--muted)}
+.inspection-process-track li[aria-current=step]{border-color:var(--accent);color:var(--text)}
+.inspection-process-dot{display:grid;place-items:center;width:34px;height:34px;border:2px solid var(--border-soft);border-radius:50%;font-weight:700;background:var(--surface)}
+.inspection-process-track [data-state=done] .inspection-process-dot{border-color:var(--success-border);background:var(--success-bg);color:var(--success-text)}
+.inspection-process-track [data-state=current] .inspection-process-dot{border-color:var(--accent);box-shadow:0 0 0 4px color-mix(in srgb,var(--accent) 15%,transparent)}
+.inspection-detail-grid:has(>[hidden]):not(:has(>:not([hidden]))){display:none}
+.inspection-detail-grid:has(>[hidden]){grid-template-columns:1fr}
+@media(max-width:700px){.inspection-process-track{grid-template-columns:1fr}.inspection-process-track li{grid-template-columns:auto 1fr;justify-items:start;text-align:left;padding:7px 0}.inspection-process-dot{grid-row:span 2}.inspection-process-track small{grid-column:2}}
