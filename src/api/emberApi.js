@@ -359,6 +359,11 @@ export function getInstallationsMap(filters = {}) {
     businessUnits: Array.isArray(filters.businessUnits)
       ? filters.businessUnits.join(",")
       : filters.businessUnits,
+    // Relatiegroepen uit Atrium; een groep bundelt de relaties van een concern, en daarmee
+    // alle installaties van dat concern.
+    relationGroups: Array.isArray(filters.relationGroups)
+      ? filters.relationGroups.join(",")
+      : filters.relationGroups,
     coordinateMode: filters.coordinateMode,
     followUpMode: filters.followUpMode,
     openFormsOnly: filters.openFormsOnly,
@@ -368,6 +373,7 @@ export function getInstallationsMap(filters = {}) {
     monitoringServiceStatus: filters.monitoringServiceStatus,
     certificationRequiredOnly: filters.certificationRequiredOnly,
     certificateStatus: filters.certificateStatus,
+    certificateType: filters.certificateType,
     activeInspectionOnly: filters.activeInspectionOnly,
   };
 
@@ -386,6 +392,20 @@ export function getInstallationsMapViewport(filters = {}, options = {}) {
     qs.set(key, String(value));
   });
   return httpJson(`/installations/map/viewport?${qs.toString()}`, options);
+}
+
+export function getInstallationRelationGroups(options = {}) {
+  const qs = new URLSearchParams();
+  if (options.businessUnits?.length) {
+    qs.set(
+      "businessUnits",
+      Array.isArray(options.businessUnits) ? options.businessUnits.join(",") : options.businessUnits
+    );
+  }
+  if (options.onlyCurrent != null) qs.set("onlyCurrent", String(options.onlyCurrent));
+
+  const query = qs.toString();
+  return apiGet(`/installations/relation-groups${query ? `?${query}` : ""}`);
 }
 
 export function getInstallationOperationalSummary(code) {
@@ -1198,6 +1218,13 @@ export function markAllMyNotificationsRead() {
   return apiPost("/me/profile/notifications/read-all", {});
 }
 
+/* De downloadgegevens van Ember Offline. Bewust elke keer opnieuw ophalen; de API leest het
+   manifest en maakt er een kortlevende link bij, zodat hier nooit een oudere versie of een
+   verlopen link blijft hangen. */
+export function getOfflineClientLatest() {
+  return apiGet("/offline-client/latest");
+}
+
 export function getRuntimeStatus() {
   return apiGet("/runtime/status");
 }
@@ -1247,7 +1274,7 @@ export function getInspectionCase(caseId) { return apiGet(`/inspections/cases/${
 export function createInspectionCase(payload) { return apiPost("/inspections/cases", payload ?? {}); }
 export function updateInspectionCase(caseId, payload) { return apiPut(`/inspections/cases/${encodeURIComponent(caseId)}`, payload ?? {}); }
 export function updateInspectionAssignment(caseId, payload) { return apiPut(`/inspections/cases/${encodeURIComponent(caseId)}/assignment`, payload ?? {}); }
-export function refreshInspectionWorkOrders(caseId) { return apiPost(`/inspections/cases/${encodeURIComponent(caseId)}/workorders/refresh`, {}); }
+export function refreshInspectionWorkOrders(caseId, payload = {}) { return apiPost(`/inspections/cases/${encodeURIComponent(caseId)}/workorders/refresh`, payload); }
 export function updateInspectionChecklistItem(caseId, requirementId, payload) { return apiPut(`/inspections/cases/${encodeURIComponent(caseId)}/checklist/${encodeURIComponent(requirementId)}`, payload ?? {}); }
 export function prepareInspectionPackage(caseId, payload) { return apiPost(`/inspections/cases/${encodeURIComponent(caseId)}/packages`, payload ?? {}); }
 export function sendInspectionPackage(caseId, packageId, payload) { return apiPost(`/inspections/cases/${encodeURIComponent(caseId)}/packages/${encodeURIComponent(packageId)}/send`, payload ?? {}); }

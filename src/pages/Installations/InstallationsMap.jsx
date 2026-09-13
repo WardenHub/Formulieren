@@ -6,6 +6,7 @@ import "leaflet/dist/leaflet.css";
 
 import { getInstallationTypeAppearance, getInstallationTypeLegend } from "@/lib/installationTypeAppearance.js";
 import { getProfileAvatarSnapshot, subscribeProfileAvatar } from "@/lib/profileAvatarStore.js";
+import { CERTIFICATION_APPEARANCE, certificationAppearance } from "@/lib/certificationAppearance.js";
 
 const NETHERLANDS_CENTER = [52.15, 5.3];
 
@@ -181,12 +182,12 @@ function UserLocationControl({ avatar }) {
   );
 }
 
-function markerIcon(marker) {
+function markerIcon(marker, certificationMode) {
   const count = Number(marker.installation_count || marker.installations?.length || 1);
   const types = [...new Set((marker.installations || []).map((item) => String(item.installation_type_key || "").trim().toUpperCase()).filter(Boolean))];
   const typeKey = String(marker.installation_type_key || types[0] || "").trim().toUpperCase();
   const mixed = count > 1 && types.length > 1;
-  const appearance = mixed ? { color: "#475569" } : getInstallationTypeAppearance(typeKey);
+  const appearance = certificationMode ? certificationAppearance(marker.certificate_status) : mixed ? { color: "#475569" } : getInstallationTypeAppearance(typeKey);
   return L.divIcon({
     className: "installation-map-marker-wrap",
     html: `<span class="installation-map-marker${count > 1 ? " installation-map-marker--cluster" : ""}" style="--marker-color:${appearance.color}">${count}</span>`,
@@ -196,7 +197,7 @@ function markerIcon(marker) {
   });
 }
 
-function InstallationPopup({ marker }) {
+function InstallationPopup({ marker, certificationMode }) {
   const items = marker.installations || [];
   const total = Number(marker.installation_count || items.length || 0);
   const remaining = Math.max(0, total - items.length);
@@ -214,6 +215,7 @@ function InstallationPopup({ marker }) {
               <div className="installation-map-popup__installation-top">
                 <span className="installation-map-popup__installation-code">{installation.atrium_installation_code}</span>
                 <span>{installation.installation_name || "Geen naam"}</span>
+                {certificationMode ? <span>{certificationAppearance(installation.certificate_status).label}</span> : null}
               </div>
             </Link>
           ))}
@@ -234,9 +236,9 @@ function InstallationPopup({ marker }) {
   );
 }
 
-export default function InstallationsMap({ markers = [], compact = false, loading = false, error = null, onRetry, onViewportChange, fitRequestKey = "", showLegend = false, showUserLocation = true }) {
+export default function InstallationsMap({ markers = [], compact = false, loading = false, error = null, onRetry, onViewportChange, fitRequestKey = "", showLegend = false, showUserLocation = true, certificationMode = false }) {
   const stableMarkers = useMemo(() => markers.filter((marker) => Number.isFinite(Number(marker.latitude)) && Number.isFinite(Number(marker.longitude))), [markers]);
-  const legend = useMemo(() => getInstallationTypeLegend(), []);
+  const legend = useMemo(() => certificationMode ? Object.entries(CERTIFICATION_APPEARANCE).map(([typeKey, appearance]) => ({ typeKey, ...appearance })) : getInstallationTypeLegend(), [certificationMode]);
   const avatar = useProfileAvatar();
   const [layerKey, setLayerKey] = useState(readLayerPreference);
   const [creditsOpen, setCreditsOpen] = useState(false);
@@ -260,17 +262,17 @@ export default function InstallationsMap({ markers = [], compact = false, loadin
         <Marker
           key={marker.marker_group_key}
           position={[Number(marker.latitude), Number(marker.longitude)]}
-          icon={markerIcon(marker)}
+          icon={markerIcon(marker, certificationMode)}
           title={`${marker.object_name || "Installatie"}; ${marker.installation_count || 1} installatie(s)`}
           alt={marker.object_name || "Installatie"}
           keyboard
         >
           <Popup minWidth={260} maxWidth={380}>
-            <InstallationPopup marker={marker} />
+            <InstallationPopup marker={marker} certificationMode={certificationMode}/>
           </Popup>
         </Marker>
       )),
-    [stableMarkers]
+    [stableMarkers, certificationMode]
   );
 
   return (
@@ -362,9 +364,9 @@ export default function InstallationsMap({ markers = [], compact = false, loadin
         </div>
       ) : null}
       {showLegend ? (
-        <div className="installation-map-legend" aria-label="Legenda installatiesoorten">
+        <div className="installation-map-legend" aria-label={certificationMode ? "Legenda certificaatstatus" : "Legenda installatiesoorten"}>
           {legend.map((item) => <span key={item.typeKey}><i style={{ background: item.color }} />{item.label}</span>)}
-          <span><i style={{ background: "#475569" }} />Gemengd cluster</span>
+          {!certificationMode ? <span><i style={{ background: "#475569" }} />Gemengd cluster</span> : null}
         </div>
       ) : null}
       {!stableMarkers.length && !loading && !error ? <div className="installation-map-empty-mark" role="img" aria-label="Geen installaties binnen deze kaart">×</div> : null}

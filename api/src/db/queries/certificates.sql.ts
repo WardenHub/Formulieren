@@ -538,6 +538,22 @@ where c.installation_certificate_id = @certificateId
 if @beforeJson is null
   throw 50000, 'certificate not found', 1;
 
+-- A case keeps the exact reviewed evidence. Corrections require a replacement
+-- registration; record/verification status and audit reason may still change.
+if exists(select 1 from dbo.InstallationCertificate c where c.installation_certificate_id=@certificateId
+  and c.source_inspection_case_id is not null and (
+    isnull(convert(nvarchar(36),c.installation_document_id),N'')<>isnull(convert(nvarchar(36),@documentId),N'')
+    or c.certificate_type<>@certificateType
+    or isnull(c.certificate_number,N'')<>isnull(@certificateNumber,N'')
+    or isnull(c.issuer_name,N'')<>isnull(@issuerName,N'')
+    or isnull(convert(nvarchar(10),c.issue_date,23),N'')<>isnull(convert(nvarchar(10),@issueDate,23),N'')
+    or isnull(convert(nvarchar(10),c.valid_until,23),N'')<>isnull(convert(nvarchar(10),@validUntil,23),N'')
+    or exists(select scope from dbo.InstallationCertificateScope where installation_certificate_id=@certificateId
+      except select [value] from openjson(@scopesJson))
+    or exists(select [value] from openjson(@scopesJson)
+      except select scope from dbo.InstallationCertificateScope where installation_certificate_id=@certificateId)
+  )) throw 50000,'invalid change: registreer een vervangend certificaat voor gewijzigde dossierbewijzen',1;
+
 declare @storedFileId uniqueidentifier;
 
 if @documentId is not null
@@ -583,7 +599,7 @@ set
   record_status = @recordStatus,
   supersedes_certificate_id = @supersedesCertificateId,
   installation_document_id = @documentId,
-  stored_file_id = @storedFileId,
+  stored_file_id = case when source_inspection_case_id is not null then stored_file_id else @storedFileId end,
   verification_status = @verificationStatus,
   updated_at = sysutcdatetime(),
   updated_by = @actor

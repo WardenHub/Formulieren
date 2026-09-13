@@ -1,0 +1,16 @@
+import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
+import { writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+const pdf = await PDFDocument.create();
+const font = await pdf.embedFont(StandardFonts.HelveticaBold);
+const page = pdf.addPage([595,842]);
+page.drawText('POC TEST', { x:45, y:740, size:38, font, color:rgb(.8,0,0) });
+page.drawText('GEEN GELDIG CERTIFICAAT', {x:45,y:685,size:24,font});
+page.drawText('Uitsluitend Ember testinstallatie 01', {x:45,y:630,size:18,font});
+page.drawText('Ketentest upload en certificaatregistratie', {x:45,y:590,size:16,font});
+page.drawText('Testdatum: 12 september 2026', {x:45,y:550,size:16,font});
+pdf.setTitle('POC TEST - GEEN GELDIG CERTIFICAAT - installatie 01');
+const path = join(tmpdir(),'ember-poc-test-01-20260912.pdf');
+await writeFile(path,await pdf.save());
+console.log(path);

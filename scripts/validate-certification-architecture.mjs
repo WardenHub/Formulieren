@@ -73,9 +73,9 @@ assertIncludes(queries, [
 ], "queries");
 
 assertIncludes(service, [
-  "CERTIFICATE_EXPIRY_WARNING_DAYS",
-  "buildScopeSummary",
-  'certificateStatus = relevant.length ? "UNKNOWN" : "MISSING"',
+  "certificateWarningDays",
+  "context?.summary_json",
+  "validateCertificateCoverage",
   "assertInstallationWritable",
 ], "service");
 
@@ -87,8 +87,9 @@ assertIncludes(routes, [
 ], "routes");
 
 assertIncludes(tab, [
-  "Certificeringsplicht wordt handmatig vastgesteld",
-  "niet afgeleid uit Atrium-contracten",
+  "Onderhoudseisen volgen uit actieve onderhoudscontracten",
+  "certificate_summary",
+  "Combinatiecertificaat uploaden",
   "Certificaat registreren",
   "Verzending registreren",
   "Dossierhistorie",

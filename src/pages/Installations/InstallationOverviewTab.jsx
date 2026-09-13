@@ -22,6 +22,8 @@ function label(value) {
     EXPIRED: "verlopen",
     MISSING: "ontbreekt",
     REVOKED: "ingetrokken",
+    CONTRACT_ENDED: "contract beëindigd",
+    NOT_REQUIRED: "geen certificaateis",
   };
   return labels[String(value || "").toUpperCase()] || String(value || "onbekend").toLowerCase();
 }

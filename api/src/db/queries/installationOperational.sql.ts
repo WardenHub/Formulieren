@@ -1,3 +1,49 @@
+/* Het relatiegroepfilter. Eén tekst, twee gebruikers; de lijstquery en de kaartquery.
+
+   @relationGroupsJson is een JSON-array met relatiegroepsleutels. Leeg of null betekent geen
+   filter. @relationGroupRolesJson zegt via welke objectrollen een installatie bij de groep
+   hoort; intern staan alle vier aan, zodat "toon alles van RUG" ook echt alles toont. Voor
+   externe toegang hoort die lijst smaller te zijn, en dat is precies waarom het een parameter
+   is en geen vaste regel in de query.
+
+   De resolver is bewust een exists en geen join; een installatie kan via meerdere rollen aan
+   dezelfde groep hangen en mag daardoor niet dubbel in de lijst komen. */
+/* De queries dragen een plaatshouder in plaats van het filter zelf. Reden: SQL Server bindt
+   tabelnamen bij het compileren, ook in een tak die door @relationGroupsJson is null nooit
+   wordt uitgevoerd. Zolang dbo.AtriumRelationGroupMember nog niet bestaat, zou de hele
+   installatiekaart daarmee omvallen op een naam die niemand nodig had.
+
+   Staat er geen groep in het filter, dan komt er (1 = 1) te staan en noemt de query de
+   relatiegroeptabellen niet. Dat maakt de volgorde van uitrollen ongevaarlijk. */
+import { certificationPolicyCtes } from "./certificationPolicy.sql.js";
+
+export const RELATION_GROUP_FILTER_PLACEHOLDER = "@@relationGroupFilter@@";
+
+export function withRelationGroupFilter(sql: string, alias: string, active: boolean) {
+  const fragment = active ? buildRelationGroupFilterSql(alias) : "(1 = 1)";
+  return sql.split(RELATION_GROUP_FILTER_PLACEHOLDER).join(fragment);
+}
+
+export function buildRelationGroupFilterSql(alias: string) {
+  return `(
+    @relationGroupsJson is null
+    or exists (
+      select 1
+      from dbo.AtriumRelationGroupMember m
+      cross apply (values
+        (N'GEBRUIKER', ${alias}.object_gebruiker_gcid),
+        (N'EIGENAAR', ${alias}.object_eigenaar_gcid),
+        (N'BEHEERDER', ${alias}.object_beheerder_gcid),
+        (N'DEBITEUR', ${alias}.object_debiteur_gcid)
+      ) as rol(rol_code, relation_key)
+      where m.business_unit = ${alias}.BedrijfUnit
+        and m.relation_group_key in (select value from openjson(@relationGroupsJson))
+        and m.relation_key = rol.relation_key
+        and rol.rol_code in (select value from openjson(@relationGroupRolesJson))
+    )
+  )`;
+}
+
 export const operationalCtes = `
 with
 follow_up_summary as (
@@ -161,56 +207,7 @@ service_summary as (
   where service_category is not null
   group by installation_code
 ),
-certificate_scope_status as (
-  select
-    r.atrium_installation_code,
-    r.scope,
-    case
-      when c.installation_certificate_id is null then N'MISSING'
-      when c.record_status = N'REVOKED' then N'REVOKED'
-      when c.valid_until is null then N'UNKNOWN'
-      when c.valid_until < cast(sysutcdatetime() as date) then N'EXPIRED'
-      when c.valid_until <= dateadd(day, @certificateExpiringDays, cast(sysutcdatetime() as date)) then N'EXPIRING'
-      else N'VALID'
-    end as certificate_status,
-    c.valid_until
-  from dbo.InstallationCertificationRequirement r
-  outer apply (
-    select top (1)
-      c0.installation_certificate_id,
-      c0.record_status,
-      c0.valid_until,
-      c0.issue_date,
-      c0.created_at
-    from dbo.InstallationCertificateScope cs
-    join dbo.InstallationCertificate c0
-      on c0.installation_certificate_id = cs.installation_certificate_id
-    where cs.scope = r.scope
-      and c0.atrium_installation_code = r.atrium_installation_code
-      and c0.verification_status <> N'REJECTED'
-    order by
-      case c0.record_status when N'CURRENT' then 0 when N'REVOKED' then 1 else 2 end,
-      coalesce(c0.valid_until, c0.issue_date, cast(c0.created_at as date)) desc,
-      c0.created_at desc
-  ) c
-  where r.requirement_status = N'REQUIRED'
-),
-certificate_summary as (
-  select
-    atrium_installation_code,
-    count_big(*) as required_certificate_scope_count,
-    max(case certificate_status
-      when N'MISSING' then 6
-      when N'REVOKED' then 5
-      when N'EXPIRED' then 4
-      when N'EXPIRING' then 3
-      when N'UNKNOWN' then 2
-      else 1
-    end) as certificate_rank,
-    min(valid_until) as nearest_certificate_valid_until
-  from certificate_scope_status
-  group by atrium_installation_code
-),
+${certificationPolicyCtes},
 inspection_ranked as (
   select
     c.*,
@@ -265,6 +262,13 @@ operational as (
     a.eigenaar_naam,
     a.debiteur_code,
     a.debiteur_naam,
+    /* De relatiesleutels van de vier objectrollen. Ze hebben dezelfde vorm als
+       relation_key in dbo.AtriumRelationGroupMember ("Wardenburg|119173"), en dat is de
+       enige brug tussen een installatie en een relatiegroep. */
+    a.object_gebruiker_gcid,
+    a.object_eigenaar_gcid,
+    a.object_beheerder_gcid,
+    a.object_debiteur_gcid,
     cast(case
       when a.obj_adr_latitude between -90 and 90
        and a.obj_adr_longitude between -180 and 180
@@ -292,12 +296,11 @@ operational as (
     cast(case when coalesce(cert.required_certificate_scope_count, 0) > 0 then 1 else 0 end as bit) as certification_required,
     case cert.certificate_rank
       when 6 then N'MISSING'
-      when 5 then N'REVOKED'
-      when 4 then N'EXPIRED'
+      when 5 then N'EXPIRED'
+      when 4 then N'UNKNOWN'
       when 3 then N'EXPIRING'
-      when 2 then N'UNKNOWN'
-      when 1 then N'VALID'
-      else N'UNKNOWN'
+      when 2 then N'VALID'
+      else case when cert.has_ended_requirement=1 then N'CONTRACT_ENDED' else N'NOT_REQUIRED' end
     end as certificate_status,
     cert.nearest_certificate_valid_until,
     coalesce(ins.active_inspection_case_count, 0) as active_inspection_case_count,
@@ -308,12 +311,12 @@ operational as (
     case
       when coalesce(f.certificate_blocking_follow_up_count, 0) > 0 then N'CRITICAL'
       when coalesce(f.overdue_follow_up_count, 0) > 0 then N'CRITICAL'
-      when cert.certificate_rank in (4, 5, 6) then N'CRITICAL'
+      when cert.certificate_rank in (5, 6) then N'CRITICAL'
       when ins.active_inspection_case_status in (N'REPAIR_REQUIRED', N'REINSPECTION_REQUIRED') then N'CRITICAL'
       when coalesce(f.open_follow_up_count, 0) > 0 then N'ATTENTION'
       when coalesce(frm.open_form_count, 0) > 0 then N'ATTENTION'
       when coalesce(d.missing_required_document_count, 0) > 0 then N'ATTENTION'
-      when cert.certificate_rank = 3 then N'ATTENTION'
+      when cert.certificate_rank in (3, 4) then N'ATTENTION'
       when coalesce(ins.active_inspection_case_count, 0) > 0 then N'ATTENTION'
       else N'OK'
     end as attention_status,
@@ -321,8 +324,8 @@ operational as (
       when coalesce(f.certificate_blocking_follow_up_count, 0) > 0 then N'Certificaatblokkerende opvolging'
       when coalesce(f.overdue_follow_up_count, 0) > 0 then N'Verlopen opvolging'
       when cert.certificate_rank = 6 then N'Verplicht certificaat ontbreekt'
-      when cert.certificate_rank = 5 then N'Certificaat ingetrokken'
-      when cert.certificate_rank = 4 then N'Certificaat verlopen'
+      when cert.certificate_rank = 5 then N'Certificaat verlopen'
+      when cert.certificate_rank = 4 then N'Certificaatbeoordeling nodig'
       when ins.active_inspection_case_status = N'REPAIR_REQUIRED' then N'Herstel na inspectie nodig'
       when ins.active_inspection_case_status = N'REINSPECTION_REQUIRED' then N'Herinspectie nodig'
       when coalesce(f.open_follow_up_count, 0) > 0 then N'Open opvolging'
@@ -392,6 +395,14 @@ select top (@take)
     for json path
   ) as service_badges_json
 from operational o
+outer apply (
+  select count(*) as scope_count,
+    sum(case when requirement_status=N'REQUIRED' then 1 else 0 end) as required_count,
+    case max(case certificate_status when N'MISSING' then 6 when N'EXPIRED' then 5 when N'UNKNOWN' then 4 when N'EXPIRING' then 3 when N'VALID' then 2 when N'CONTRACT_ENDED' then 1 else 0 end)
+      when 6 then N'MISSING' when 5 then N'EXPIRED' when 4 then N'UNKNOWN' when 3 then N'EXPIRING' when 2 then N'VALID' when 1 then N'CONTRACT_ENDED' else N'NOT_REQUIRED' end as status
+  from certificate_scope_status
+  where atrium_installation_code=o.atrium_installation_code and certificate_type=@certificateType
+) selected_certificate
 where (@installationCode is null or o.atrium_installation_code = @installationCode)
   and (@onlyCurrent = 0 or upper(coalesce(o.installation_status, N'')) <> N'J')
   and (
@@ -413,6 +424,7 @@ where (@installationCode is null or o.atrium_installation_code = @installationCo
     @businessUnitsJson is null
     or o.BedrijfUnit in (select value from openjson(@businessUnitsJson))
   )
+  and ${RELATION_GROUP_FILTER_PLACEHOLDER}
   and (
     @coordinateMode = N'ALL'
     or (@coordinateMode = N'WITH' and o.has_valid_coordinates = 1)
@@ -429,8 +441,9 @@ where (@installationCode is null or o.atrium_installation_code = @installationCo
   and (@maintenanceStatus is null or o.maintenance_contract_status = @maintenanceStatus)
   and (@inspectionServiceStatus is null or o.inspection_service_status = @inspectionServiceStatus)
   and (@monitoringServiceStatus is null or o.monitoring_service_status = @monitoringServiceStatus)
-  and (@certificationRequiredOnly = 0 or o.certification_required = 1)
-  and (@certificateStatus is null or o.certificate_status = @certificateStatus)
+  and (@certificateType is null or selected_certificate.scope_count>0)
+  and (@certificationRequiredOnly = 0 or (@certificateType is null and o.certification_required=1) or (@certificateType is not null and selected_certificate.required_count>0))
+  and (@certificateStatus is null or (@certificateType is null and o.certificate_status=@certificateStatus) or (@certificateType is not null and selected_certificate.status=@certificateStatus))
   and (@activeInspectionOnly = 0 or o.active_inspection_case_count > 0)
 order by
   case o.attention_status when N'CRITICAL' then 0 when N'ATTENTION' then 1 else 2 end,
@@ -485,6 +498,7 @@ points as (
       @businessUnitsJson is null
       or a.BedrijfUnit in (select value from openjson(@businessUnitsJson))
     )
+    and ${RELATION_GROUP_FILTER_PLACEHOLDER}
     and (
       @followUpMode = N'ALL'
       or (@followUpMode = N'OPEN' and coalesce(actions.open_follow_up_count, 0) > 0)
@@ -579,4 +593,62 @@ select top (@take)
   g.representative_installation_name
 from groups g
 order by g.installation_count desc, g.grid_latitude, g.grid_longitude;
+`;
+
+/* De relatiegroepen zoals het filter ze aanbiedt; alleen groepen die daadwerkelijk
+   installaties opleveren, met het aantal erbij.
+
+   Het aantal telt distinct op installatiecode: een installatie die via zowel de gebruiker als
+   de debiteur aan dezelfde groep hangt, is één installatie en geen twee. De rolmaskering is
+   dezelfde als in het filter, zodat het getal in de lijst klopt met wat je krijgt als je erop
+   klikt.
+
+   fabric_loaded_at komt mee zodat het scherm kan laten zien hoe oud deze gegevens zijn; de
+   groepen komen uit Atrium via Fabric en niet uit Ember zelf. */
+/* Bestaan de spiegels al? Zo niet, dan is er nog geen sync geweest en heeft het geen zin de
+   lijst op te halen; het scherm laat het filter dan gewoon weg. */
+export const getRelationGroupTablesAvailableSql = `
+select cast(case
+  when object_id(N'dbo.AtriumRelationGroup', N'U') is null then 0
+  when object_id(N'dbo.AtriumRelationGroupMember', N'U') is null then 0
+  else 1
+end as bit) as available;
+`;
+
+export const getInstallationRelationGroupsSql = `
+select
+  g.business_unit,
+  g.relation_group_key,
+  g.relation_group_code,
+  g.relation_group_name,
+  g.relation_group_kind,
+  max(g.fabric_loaded_at) as fabric_loaded_at,
+  count(distinct a.installatie_code) as installation_count
+from dbo.AtriumRelationGroup g
+join dbo.AtriumRelationGroupMember m
+  on m.business_unit = g.business_unit
+ and m.relation_group_key = g.relation_group_key
+join dbo.AtriumInstallationBase a
+  on a.BedrijfUnit = m.business_unit
+cross apply (values
+  (N'GEBRUIKER', a.object_gebruiker_gcid),
+  (N'EIGENAAR', a.object_eigenaar_gcid),
+  (N'BEHEERDER', a.object_beheerder_gcid),
+  (N'DEBITEUR', a.object_debiteur_gcid)
+) as rol(rol_code, relation_key)
+where m.relation_key = rol.relation_key
+  and rol.rol_code in (select value from openjson(@relationGroupRolesJson))
+  and (@onlyCurrent = 0 or upper(coalesce(a.installation_status, N'')) <> N'J')
+  and (
+    @businessUnitsJson is null
+    or a.BedrijfUnit in (select value from openjson(@businessUnitsJson))
+  )
+group by
+  g.business_unit,
+  g.relation_group_key,
+  g.relation_group_code,
+  g.relation_group_name,
+  g.relation_group_kind
+having count(distinct a.installatie_code) > 0
+order by g.relation_group_name, g.relation_group_code;
 `;

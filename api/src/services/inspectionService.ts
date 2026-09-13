@@ -1,4 +1,5 @@
 import { sqlQuery, sqlQueryRaw } from "../db/index.js";
+import { certificationDate, certificationIdentifier, CertificationValidationError } from "../utils/certificationValidation.js";
 import {
   completeInspectionCaseSql,
   createInspectionCaseSql,
@@ -19,6 +20,9 @@ import {
 } from "../db/queries/inspections.sql.js";
 import { atriumReaderClient } from "./atriumReaderClient.js";
 import { getUserAuditActor } from "../utils/userIdentity.js";
+import { assertInstallationWritable } from "./installationsService.js";
+import { getCertificationOverview } from "./certificationService.js";
+import { certificateWarningDays } from "./certificationPolicy.js";
 
 export const INSPECTION_STATUSES = [
   "ATTENTION_REQUIRED", "OFFER_REQUIRED", "ORDERED", "PLANNING_REQUIRED",
@@ -43,10 +47,7 @@ function text(value: unknown, max: number, required = false) {
   return clean || null;
 }
 function uuid(value: unknown, required = true) {
-  const clean = String(value ?? "").trim();
-  if (!clean && !required) return null;
-  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(clean)) throw new Error("identifier invalid");
-  return clean;
+  return certificationIdentifier(value, required);
 }
 function rowVersion(value: unknown) {
   const clean = String(value ?? "").trim();
@@ -54,10 +55,7 @@ function rowVersion(value: unknown) {
   return clean;
 }
 function date(value: unknown) {
-  const clean = String(value ?? "").trim();
-  if (!clean) return null;
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(clean) || Number.isNaN(Date.parse(`${clean}T00:00:00Z`))) throw new Error("date invalid");
-  return clean;
+  return certificationDate(value);
 }
 function dateTime(value: unknown) {
   const clean = String(value ?? "").trim();
@@ -144,11 +142,12 @@ export async function listInspectionCases(filters: any = {}) {
 export async function listInspectionOverview(filters: any = {}) {
   const take = Math.max(1, Math.min(25000, Math.trunc(Number(filters.take || 5000))));
   const q = String(filters.q || "").trim();
-  const horizonRows = await sqlQuery<{ value_text: string }>("select value_text from dbo.ApplicationConfiguration where configuration_key=N'inspection.signal_horizon_days' and is_active=1;", {});
-  const configuredHorizon = Number(horizonRows?.[0]?.value_text || 90);
-  const certificateExpiringDays = Number.isFinite(configuredHorizon) ? Math.max(1, Math.min(730, Math.trunc(configuredHorizon))) : 90;
+  const certificateExpiringDays = certificateWarningDays();
   const rows = await sqlQuery(listInspectionOverviewSql, {
     take,
+    certificateType: enumValue(filters.certificate_type, new Set(["MAINTENANCE", "INSPECTION"]), "INSPECTION"),
+    certificateStatus: filters.certificate_status ? enumValue(filters.certificate_status, new Set(["VALID", "EXPIRING", "EXPIRED", "MISSING", "UNKNOWN", "CONTRACT_ENDED"])) : null,
+    includeHistorical: bool(filters.include_historical, false),
     qLike: q ? `%${q}%` : null,
     scope: filters.scope ? enumValue(filters.scope, SCOPE_SET) : null,
     status: filters.status ? enumValue(filters.status, STATUS_SET) : null,
@@ -157,6 +156,9 @@ export async function listInspectionOverview(filters: any = {}) {
     certificateExpiringDays,
   });
   return {
+    total_count: Number(rows?.[0]?.total_count || 0),
+    truncated: Number(rows?.[0]?.total_count || 0) > (rows?.length || 0),
+    summary: { total: Number(rows?.[0]?.total_count || 0), certificateMissing: Number(rows?.[0]?.certificate_problem_count || 0), noCase: Number(rows?.[0]?.no_case_count || 0), attention: Number(rows?.[0]?.critical_count || 0) },
     items: (rows || []).map((row: any) => ({
       ...row,
       scopes: parseJson(row.scopes_json).map((item: any) => item.scope),
@@ -174,8 +176,9 @@ export async function getInspectionCase(caseId: string) {
   const sets: any[] = result.recordsets || [];
   if (!sets[0]?.[0]) throw new Error("inspection case not found");
   return {
-    case: sets[0][0], scopes: sets[1] || [], work_orders: sets[2] || [], checklist: sets[3] || [],
-    packages: (sets[4] || []).map((item: any) => ({ ...item, items: parseJson(item.items_json), items_json: undefined })),
+    case: { ...sets[0][0], row_version: sets[0][0].row_version_hex, row_version_hex: undefined }, scopes: sets[1] || [], work_orders: sets[2] || [],
+    checklist: (sets[3] || []).map((item: any) => ({ ...item, row_version: item.row_version_hex, row_version_hex: undefined })),
+    packages: (sets[4] || []).map((item: any) => ({ ...item, row_version: item.row_version_hex, row_version_hex: undefined, items: parseJson(item.items_json), items_json: undefined })),
     reports: sets[5] || [],
     actions: (sets[6] || []).map((item: any) => ({
       ...item,
@@ -185,6 +188,7 @@ export async function getInspectionCase(caseId: string) {
     document_choices: sets[8] || [], certificate_choices: sets[9] || [],
     certification_requirements: sets[10] || [],
     current_certificates: (sets[11] || []).map((item: any) => ({ ...item, scopes: parseJson(item.scopes_json).map((scope: any) => scope.scope), scopes_json: undefined })),
+    editable_statuses: (sets[12] || []).map((item: any) => item.target_status),
   };
 }
 
@@ -197,6 +201,11 @@ export async function createInspectionCase(payload: any, user: any) {
   const inspectionScopes = scopes(payload?.scopes);
   const inspectionType = enumValue(payload?.inspection_type, TYPE_SET, "INITIAL");
   const installationCode = text(payload?.atrium_installation_code, 450, true);
+  await assertInstallationWritable(installationCode!);
+  const certification = await getCertificationOverview(installationCode!);
+  if (!inspectionScopes.length || inspectionScopes.some((scope) => !certification.scopes.includes(scope as any))) {
+    throw new CertificationValidationError("Inspectiescopes passen niet bij de expliciet vastgelegde installatiesoort");
+  }
   const rows = await sqlQuery(createInspectionCaseSql, {
     installationCode,
     parentCaseId: uuid(payload?.parent_inspection_case_id, false),
@@ -215,10 +224,12 @@ export async function createInspectionCase(payload: any, user: any) {
 }
 
 export async function updateInspectionCase(caseId: string, payload: any, user: any) {
+  const detail = await getInspectionCase(caseId);
   const rows = await sqlQuery(updateInspectionCaseSql, {
     caseId: uuid(caseId), rowVersion: rowVersion(payload?.row_version),
     dueDate: date(payload?.due_date), status: enumValue(payload?.status, STATUS_SET),
     inspectionBody: text(payload?.inspection_body, 200),
+    plannedDate: payload?.planned_date === undefined ? detail.case.planned_date : date(payload.planned_date),
     logbookLinked: payload?.logbook_linked == null ? null : bool(payload.logbook_linked),
     inspectionBodyHasLogbookAccess: payload?.inspection_body_has_logbook_access == null ? null : bool(payload.inspection_body_has_logbook_access),
     packageAvailableInLogbook: payload?.document_package_available_in_logbook == null ? null : bool(payload.document_package_available_in_logbook),
@@ -231,7 +242,7 @@ export async function updateInspectionCase(caseId: string, payload: any, user: a
 export async function updateInspectionAssignment(caseId: string, payload: any, user: any) {
   const assignedUserId = text(payload?.assigned_user_id, 200);
   const assignedRoleCode = text(payload?.assigned_role_code, 100);
-  if (assignedUserId && assignedRoleCode) throw new Error("choose either an assigned user or an assigned role");
+  if (assignedUserId && assignedRoleCode) throw new CertificationValidationError("Kies een toegewezen gebruiker of een rol, niet beide");
   const rows = await sqlQuery(updateInspectionAssignmentSql, {
     caseId: uuid(caseId),
     rowVersion: rowVersion(payload?.row_version),
@@ -248,15 +259,20 @@ async function inspectionReaderWindowDays() {
   return Number.isFinite(value) ? Math.max(1, Math.min(3650, Math.trunc(value))) : 730;
 }
 
-export async function refreshInspectionWorkOrders(caseId: string, user: any) {
+export async function refreshInspectionWorkOrders(caseId: string, user: any, payload: any = {}) {
   const detail = await getInspectionCase(caseId);
   const installationCode = detail.case.atrium_installation_code;
-  const result = detail.case.atrium_work_order_key
-    ? await atriumReaderClient.getWorkorder(detail.case.atrium_work_order_key)
+  const selectedKey = text(payload?.work_order_key, 450) || detail.case.atrium_work_order_key || null;
+  if (selectedKey !== detail.case.atrium_work_order_key && ["REPORT_RECEIVED", "REPAIR_REQUIRED", "CERTIFICATE_RECEIVED"].includes(detail.case.status)) {
+    throw new Error("invalid change: werkbon hoort bij het ontvangen rapport en kan niet meer worden vervangen");
+  }
+  const result = selectedKey
+    ? await atriumReaderClient.getWorkorder(selectedKey)
     : await atriumReaderClient.getInspectionWorkorders([installationCode], await inspectionReaderWindowDays());
   const rows = result.rows.map(normalizeReaderRow).filter((row) => row.installation_code === installationCode);
+  if (selectedKey && !rows.some((row) => row.work_order_key === selectedKey)) throw new Error("invalid workorder: live werkbon hoort niet bij deze installatie");
   await sqlQuery(refreshInspectionWorkOrdersSql, {
-    caseId: uuid(caseId), rowsJson: JSON.stringify(rows), correlationId: result.correlationId, actor: getUserAuditActor(user),
+    caseId: uuid(caseId), selectedKey, rowsJson: JSON.stringify(rows), correlationId: result.correlationId, actor: getUserAuditActor(user),
   });
   return { ...result, rows };
 }
@@ -288,7 +304,12 @@ export async function registerReport(caseId: string, payload: any, user: any) {
   return rows?.[0] || { ok: true };
 }
 export async function processConclusion(caseId: string, payload: any, user: any) {
-  await sqlQuery(processInspectionConclusionSql, { caseId: uuid(caseId), rowVersion: rowVersion(payload?.row_version), conclusion: enumValue(payload?.conclusion, new Set(["PASS", "FAIL"])), certificateId: uuid(payload?.installation_certificate_id, false), dueDate: date(payload?.repair_due_date), note: text(payload?.note, 2000), actor: getUserAuditActor(user) });
+  const conclusion = enumValue(payload?.conclusion, new Set(["PASS", "FAIL"]));
+  const selected = payload?.installation_certificate_ids ?? (payload?.installation_certificate_id ? [payload.installation_certificate_id] : []);
+  if (!Array.isArray(selected) || selected.length > 4) throw new CertificationValidationError("Kies maximaal vier certificaten");
+  const ids = conclusion === "PASS" ? [...new Set(selected.map((id) => uuid(id)))] : [];
+  if (conclusion === "PASS" && !ids.length) throw new CertificationValidationError("Kies de inspectiecertificaten die de dossierscopes dekken");
+  await sqlQuery(processInspectionConclusionSql, { caseId: uuid(caseId), rowVersion: rowVersion(payload?.row_version), conclusion, certificateId: ids[0] || null, certificateIdsJson: JSON.stringify(ids), dueDate: date(payload?.repair_due_date), note: text(payload?.note, 2000), actor: getUserAuditActor(user) });
   return { ok: true };
 }
 export async function createReinspection(caseId: string, payload: any, user: any) {

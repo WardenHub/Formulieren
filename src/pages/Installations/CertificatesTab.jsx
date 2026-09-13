@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Award, CheckCircle2, Clock3, FileCheck2, History, Plus, Send, ShieldAlert } from "lucide-react";
+import CertificationDocumentUpload from "./CertificationDocumentUpload.jsx";
 
 import {
   createInstallationCertificate,
@@ -29,6 +30,7 @@ const STATUS_LABELS = {
   VERIFIED: "Gecontroleerd",
   UNVERIFIED: "Niet gecontroleerd",
   REJECTED: "Afgekeurd",
+  CONTRACT_ENDED: "Contract beëindigd",
 };
 
 function toneForStatus(status) {
@@ -77,6 +79,7 @@ function emptyCertificate() {
     supersedes_certificate_id: "",
     installation_document_id: "",
     scopes: ["BMI"],
+    combined: false,
     change_reason: "",
   };
 }
@@ -99,12 +102,29 @@ function RequirementCard({ item, summary, readOnly, busy, onSave }) {
     setDraft((current) => ({ ...current, [key]: value }));
   }
 
-  return (
+  if (readOnly) return (
     <article className="card certification-requirement-card">
+      <div className="certification-card-title">Inspectiecertificaat {SCOPE_LABELS[item.scope] || item.scope}</div>
+      <dl className="certification-facts">
+        <div><dt>Eis</dt><dd>{STATUS_LABELS[summary?.requirement_status] || "Niet vastgesteld"}</dd></div>
+        <div><dt>Bewijs</dt><dd>{STATUS_LABELS[summary?.certificate_status] || "Onbekend"}</dd></div>
+        <div><dt>Onderbouwing</dt><dd>{item.reason || "Niet vastgelegd"}</dd></div>
+      </dl>
+    </article>
+  );
+
+  return (
+    <article className="card certification-requirement-card" onKeyDown={(event) => {
+      if (event.altKey && !event.ctrlKey && !event.metaKey && !event.shiftKey && event.key.toLowerCase() === "s") {
+        event.preventDefault();
+        event.stopPropagation();
+        if (!busy && !readOnly && !event.repeat) onSave(draft);
+      }
+    }}>
       <div className="certification-card-heading">
         <div>
           <div className="certification-card-title">{SCOPE_LABELS[item.scope] || item.scope}</div>
-          <div className="muted">Handmatig vastgesteld; niet afgeleid uit Atrium-contracten.</div>
+          <div className="muted">Inspectie-eis; contractgestuurde eisen worden in Syntess beheerd.</div>
         </div>
         <span className={`ember-label ember-label--${toneForStatus(summary?.certificate_status)}`}>
           {STATUS_LABELS[summary?.certificate_status] || summary?.certificate_status || "Onbekend"}
@@ -113,7 +133,7 @@ function RequirementCard({ item, summary, readOnly, busy, onSave }) {
 
       <div className="certification-form-grid">
         <label>
-          <span>Certificeringsplicht</span>
+          <span>Certificaateis</span>
           <select
             value={draft.requirement_status}
             disabled={readOnly || busy}
@@ -166,11 +186,13 @@ function RequirementCard({ item, summary, readOnly, busy, onSave }) {
       <div className="certification-card-actions">
         <button
           type="button"
-          className="btn btn-primary"
+          className="btn-save"
+          title="Certificaateis opslaan (Alt+S binnen deze kaart)"
+          aria-keyshortcuts="Alt+S"
           disabled={readOnly || busy}
           onClick={() => onSave(draft)}
         >
-          {busy ? "Opslaan..." : "Plicht opslaan"}
+          {busy ? "Opslaan..." : "Certificaateis opslaan"}
         </button>
         {item.events?.length ? (
           <button type="button" className="btn" onClick={() => setShowHistory((value) => !value)}>
@@ -195,16 +217,13 @@ function RequirementCard({ item, summary, readOnly, busy, onSave }) {
   );
 }
 
-function CertificateEditor({ draft, certificates, documents, busy, onChange, onSave, onCancel }) {
+function CertificateEditor({ draft, certificates, documents, scopes, combinationAllowed, busy, onChange, onSave, onCancel }) {
   function change(key, value) {
     onChange({ ...draft, [key]: value });
   }
 
   function toggleScope(scope) {
-    const next = draft.scopes.includes(scope)
-      ? draft.scopes.filter((item) => item !== scope)
-      : [...draft.scopes, scope];
-    change("scopes", next);
+    change("scopes", [scope]);
   }
 
   const editingId = draft.installation_certificate_id;
@@ -295,11 +314,16 @@ function CertificateEditor({ draft, certificates, documents, busy, onChange, onS
           </select>
         </label>
         <fieldset className="certification-form-grid__wide certification-scopes">
-          <legend>Scopes</legend>
-          {Object.entries(SCOPE_LABELS).map(([scope, label]) => (
+          <legend>Onderdelen op dit certificaat</legend>
+          {combinationAllowed ? <label className="certification-check">
+            <input type="checkbox" role="switch" checked={Boolean(draft.combined)} disabled={busy}
+              onChange={(event) => onChange({ ...draft, combined: event.target.checked, scopes: event.target.checked ? ["BMI", "OAI_B"] : [scopes[0]] })} />
+            <span>Combinatiecertificaat uploaden (BMI-OAI type B)</span>
+          </label> : null}
+          {scopes.map((scope) => (
             <label key={scope} className="certification-check">
-              <input type="checkbox" checked={draft.scopes.includes(scope)} disabled={busy} onChange={() => toggleScope(scope)} />
-              <span>{label}</span>
+              <input type="checkbox" checked={draft.scopes.includes(scope)} disabled={busy || draft.combined} onChange={() => toggleScope(scope)} />
+              <span>{SCOPE_LABELS[scope] || scope}</span>
             </label>
           ))}
         </fieldset>
@@ -410,7 +434,7 @@ function CertificateCard({ certificate, readOnly, busy, onEdit, onSend }) {
   );
 }
 
-export default function CertificatesTab({ code, readOnly = false }) {
+export default function CertificatesTab({ code, readOnly = false, onCertificateSaved }) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [busyKey, setBusyKey] = useState(null);
@@ -463,6 +487,7 @@ export default function CertificatesTab({ code, readOnly = false }) {
       }
       setEditor(null);
       await load();
+      await onCertificateSaved?.();
     } catch (cause) {
       setError(cause?.message || String(cause));
     } finally {
@@ -491,7 +516,7 @@ export default function CertificatesTab({ code, readOnly = false }) {
         <div className="certification-hero__icon"><Award size={26} /></div>
         <div>
           <h2>Certificeringsdossier</h2>
-          <p>Certificeringsplicht wordt handmatig vastgesteld. Certificaten worden als controleerbare dossierstukken vastgelegd; Atrium-data is hooguit een importkandidaat.</p>
+          <p>Onderhoudseisen volgen uit actieve onderhoudscontracten. Inspectie-eisen zijn contractgestuurd of handmatig vastgelegd. Bewijsstukken worden in Ember geregistreerd.</p>
         </div>
         <div className="certification-hero__meta">
           <Clock3 size={16} /> Signaaltermijn {data?.expiry_warning_days || 90} dagen
@@ -499,11 +524,23 @@ export default function CertificatesTab({ code, readOnly = false }) {
       </section>
 
       {error ? <div className="ember-alert ember-alert--danger">{error}</div> : null}
-      {readOnly ? <div className="ember-alert ember-alert--warning">Dit historische installatiedossier is alleen-lezen.</div> : null}
+      {readOnly ? <div className="ember-alert ember-alert--warning">Dit certificeringsdossier is voor jou alleen-lezen.</div> : null}
+      {!data?.scopes?.length ? <div className="ember-alert ember-alert--warning">Kies eerst een ondersteunde installatiesoort: BMI, BMI-OAI type B geïntegreerd of zelfstandige OAI type B. Er worden geen certificaateisen uit de naam geraden.</div> : null}
+      <section className="certification-requirement-grid" aria-label="Certificaatstatus per eis">
+        {(data?.certificate_summary || []).map((row) => <article className="card certification-requirement-card" key={`${row.certificate_type}:${row.scope}`}>
+          <div className="certification-card-heading">
+            <div className="certification-card-title">{row.certificate_type === "MAINTENANCE" ? "Onderhoudscertificaat" : "Inspectiecertificaat"} {SCOPE_LABELS[row.scope]}</div>
+            <span className={`ember-label ember-label--${toneForStatus(row.certificate_status)}`}>{STATUS_LABELS[row.certificate_status] || row.certificate_status}</span>
+          </div>
+          <div className="certification-card-heading">
+            <span className="ember-label ember-label--muted">{row.source_type === "CONTRACT" ? "Eis vanuit actief contract" : row.source_type === "MANUAL" ? "Handmatig vastgelegde eis" : row.requirement_status === "CONTRACT_ENDED" ? "Contract beëindigd" : "Geen actieve eis vastgesteld"}</span>
+          </div>
+        </article>)}
+      </section>
 
       <section>
         <div className="certification-section-heading">
-          <div><h2>Certificeringsplicht per scope</h2><p className="muted">Iedere wijziging wordt volledig geaudit.</p></div>
+          <div><h2>Certificaateisen</h2><p className="muted">Wijzigingen worden vastgelegd in de historie. Alt+S slaat alleen de kaart op waarin je werkt.</p></div>
           <ShieldAlert size={22} />
         </div>
         <div className="certification-requirement-grid">
@@ -512,7 +549,7 @@ export default function CertificatesTab({ code, readOnly = false }) {
               key={item.scope}
               item={item}
               summary={(data?.scope_summary || []).find((summary) => summary.scope === item.scope)}
-              readOnly={readOnly}
+              readOnly={readOnly || data?.inspection_service_status === "ACTIVE"}
               busy={busyKey === `requirement:${item.scope}`}
               onSave={saveRequirement}
             />
@@ -523,14 +560,22 @@ export default function CertificatesTab({ code, readOnly = false }) {
       <section>
         <div className="certification-section-heading">
           <div><h2>Certificaten</h2><p className="muted">Actuele, historische en ingetrokken certificaten blijven in één dossier zichtbaar.</p></div>
-          <button type="button" className="btn btn-primary" disabled={readOnly || Boolean(editor)} onClick={() => setEditor(emptyCertificate())}><Plus size={16} /> Certificaat registreren</button>
+          {!readOnly ? <button type="button" className="btn btn-primary" disabled={Boolean(editor) || !data?.scopes?.length} onClick={() => setEditor({ ...emptyCertificate(), scopes: [data.scopes[0]] })}><Plus size={16} /> Certificaat registreren</button> : null}
         </div>
 
+        {editor ? (
+          <CertificationDocumentUpload key={`${code}:${editor.certificate_type}`} code={code}
+            documentType={editor.certificate_type === "INSPECTION" ? "inspectiecertificaat" : "onderhoudscertificaat"}
+            label="Nieuw certificaatbestand" disabled={busyKey !== null || readOnly}
+            onUploaded={async (document) => { await load(); setEditor((current) => current ? { ...current, installation_document_id: document.document_id } : current); }} />
+        ) : null}
         {editor ? (
           <CertificateEditor
             draft={editor}
             certificates={data?.certificates || []}
             documents={data?.documents || []}
+            scopes={data?.scopes || []}
+            combinationAllowed={data?.combination_allowed === true}
             busy={busyKey === "certificate"}
             onChange={setEditor}
             onSave={saveCertificate}
@@ -545,7 +590,7 @@ export default function CertificatesTab({ code, readOnly = false }) {
               certificate={certificate}
               readOnly={readOnly}
               busy={Boolean(busyKey)}
-              onEdit={(item) => setEditor({ ...item, change_reason: "" })}
+              onEdit={(item) => setEditor({ ...item, combined: item.scopes.length > 1, change_reason: "" })}
               onSend={saveSend}
             />
           ))}

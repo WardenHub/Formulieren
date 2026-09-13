@@ -1533,6 +1533,15 @@ select.input option{
   white-space: nowrap;
 }
 
+/* De reden waarom een download niet lukte. Die moet wel leesbaar blijven, dus hier mag de
+   tekst over meerdere regels; de profielnotitie erboven blijft op één regel. */
+.avatar-menu-note--warning{
+  margin: 2px 10px 6px;
+  color: var(--warning-text, var(--text));
+  white-space: normal;
+  overflow: visible;
+}
+
 .menu-item{
   width: 100%;
   min-height: 42px;
@@ -5006,6 +5015,14 @@ html[data-appearance="light"] .type-telefonie{
 .installations-type-filters{
   display: grid;
   gap: 7px;
+}
+
+/* De regel onder het relatiegroepfilter; die zegt hoe oud de groepen zijn. Kleiner en
+   rustiger dan het label erboven, want het is een voetnoot en geen keuze. */
+.installations-relation-group-filter__note{
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 600;
 }
 
 .installations-filter-field__label{
@@ -8590,6 +8607,13 @@ button.monitor-tag{
 .inspection-timeline>a:hover{background:var(--row-hover)}
 .inspection-editor-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
 .inspection-editor-grid label{display:grid;gap:5px}
+.inspection-section,.inspection-editor-grid>*,.inspection-checklist__row>*{min-width:0}
+.inspection-editor-grid input,.inspection-editor-grid select,.inspection-checklist__row select{min-width:0;max-width:100%;width:100%;box-sizing:border-box}
+@media(max-width:1050px){.inspection-checklist__row--wide{grid-template-columns:minmax(0,1fr)}}
+@media(max-width:850px){.inspection-page .inspection-detail-grid{grid-template-columns:minmax(0,1fr)}}
+.inspection-hero>div{min-width:0}
+.inspection-hero h1{overflow-wrap:anywhere}
+@media(max-width:1050px){.inspection-hero{grid-template-columns:auto minmax(0,1fr)}.inspection-hero>.guidance-media-actions{grid-column:1/-1;justify-content:flex-start;flex-wrap:wrap}}
 .inspection-editor-grid label>span{font-size:.78rem;font-weight:700;color:var(--muted)}
 .inspection-editor-grid__wide{grid-column:1/-1}
 .inspection-scope-picker{border:0;margin:0;min-width:0;padding:0}

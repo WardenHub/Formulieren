@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { CheckCircle2 } from "lucide-react";
 
 import {
+  getInstallationRelationGroups,
   getInstallationTypes,
   getInstallationsMap,
   getInstallationsMapViewport,
@@ -28,9 +29,24 @@ const DEFAULT_FILTERS = {
   coordinateMode: "ALL",
   maintenanceStatus: "",
   inspectionServiceStatus: "",
+  certificateStatus: "",
+  certificateType: "",
   openFormsOnly: false,
   missingDocumentsOnly: false,
 };
+
+// Alleen dag en maand; het gaat om "hoe vers is dit", niet om de seconde.
+function formatSyncMoment(value) {
+  if (!value) return "";
+  const moment = new Date(value);
+  if (Number.isNaN(moment.getTime())) return "";
+  return moment.toLocaleString("nl-NL", {
+    day: "numeric",
+    month: "long",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
 
 function serviceTone(status) {
   const clean = String(status || "").toUpperCase();
@@ -50,6 +66,8 @@ function serviceLabel(status) {
     EXPIRED: "verlopen",
     MISSING: "ontbreekt",
     REVOKED: "ingetrokken",
+    CONTRACT_ENDED: "contract beëindigd",
+    NOT_REQUIRED: "geen certificaateis",
   };
   return labels[String(status || "").toUpperCase()] || String(status || "onbekend").toLowerCase();
 }
@@ -172,6 +190,12 @@ export default function InstallationsIndex() {
   // Leeg betekent alle bedrijfsonderdelen; zo hoeft niemand een keuze te maken die er
   // vandaag nog niet toe doet.
   const [selectedBusinessUnits, setSelectedBusinessUnits] = useState([]);
+  /* Relatiegroepen komen uit Atrium; een groep bundelt de relaties van een concern zoals RUG
+     of Woonzorg. Eén groep tegelijk dekt de vraag "toon alles van dit concern"; de API neemt
+     een lijst aan, dus meer tegelijk kan later zonder dat het contract verandert. */
+  const [relationGroups, setRelationGroups] = useState([]);
+  const [selectedRelationGroups, setSelectedRelationGroups] = useState([]);
+  const [relationGroupsLoadedAt, setRelationGroupsLoadedAt] = useState(null);
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState(null);
   const [viewport, setViewport] = useState(null);
@@ -219,6 +243,23 @@ export default function InstallationsIndex() {
   }, []);
 
   useEffect(() => {
+    let cancelled = false;
+    getInstallationRelationGroups({ businessUnits: selectedBusinessUnits, onlyCurrent })
+      .then((response) => {
+        if (cancelled) return;
+        setRelationGroups(response?.groups || []);
+        setRelationGroupsLoadedAt(response?.meta?.fabric_loaded_at || null);
+      })
+      .catch(() => {
+        // Zonder groepen blijft het filter gewoon leeg; de rest van het scherm werkt door.
+        if (!cancelled) setRelationGroups([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedBusinessUnits, onlyCurrent]);
+
+  useEffect(() => {
     if (mode !== "list") return undefined;
     let cancelled = false;
 
@@ -235,6 +276,7 @@ export default function InstallationsIndex() {
           onlyCurrent,
           installationTypes: selectedInstallationTypes,
           businessUnits: selectedBusinessUnits,
+          relationGroups: selectedRelationGroups,
           take: 500,
         });
         if (!cancelled) {
@@ -258,7 +300,7 @@ export default function InstallationsIndex() {
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [filters, onlyCurrent, q, mode, selectedInstallationTypes, selectedBusinessUnits, retryToken, handleLoadError]);
+  }, [filters, onlyCurrent, q, mode, selectedInstallationTypes, selectedBusinessUnits, selectedRelationGroups, retryToken, handleLoadError]);
 
   useEffect(() => {
     if (mode !== "map" || !viewport) return undefined;
@@ -278,6 +320,8 @@ export default function InstallationsIndex() {
         const hasOperationalFilters = Boolean(
           filters.maintenanceStatus ||
           filters.inspectionServiceStatus ||
+          filters.certificateStatus ||
+          filters.certificateType ||
           filters.openFormsOnly ||
           filters.missingDocumentsOnly ||
           selectedInstallationTypes.length > 1
@@ -289,6 +333,7 @@ export default function InstallationsIndex() {
             onlyCurrent,
             installationTypes: selectedInstallationTypes,
             businessUnits: selectedBusinessUnits,
+            relationGroups: selectedRelationGroups,
             take: cleanQuery ? 500 : 3000,
           }, { signal: controller.signal })
           : await getInstallationsMapViewport({
@@ -297,6 +342,7 @@ export default function InstallationsIndex() {
             onlyCurrent,
             installationTypes: selectedInstallationTypes,
             businessUnits: selectedBusinessUnits,
+            relationGroups: selectedRelationGroups.join(","),
             followUpMode: filters.followUpMode,
             take: cleanQuery ? 100 : 750,
           }, { signal: controller.signal });
@@ -325,7 +371,7 @@ export default function InstallationsIndex() {
       window.clearTimeout(timer);
       controller.abort();
     };
-  }, [filters, mode, onlyCurrent, q, selectedInstallationTypes, selectedBusinessUnits, viewport, retryToken, handleLoadError]);
+  }, [filters, mode, onlyCurrent, q, selectedInstallationTypes, selectedBusinessUnits, selectedRelationGroups, viewport, retryToken, handleLoadError]);
 
   const visibleList = useMemo(() => data.items.slice(0, 500), [data.items]);
   const summary = data.summary || {};
@@ -412,16 +458,59 @@ export default function InstallationsIndex() {
                 <option value="INACTIVE">Niet actief</option>
                 <option value="UNKNOWN">Onbekend</option>
               </FilterSelect>
-              <FilterSelect label="Inspectiecertificaat vereist" value={filters.inspectionServiceStatus} onChange={(value) => setFilter("inspectionServiceStatus", value)}>
+              <FilterSelect label="Inspectiebegeleiding gecontracteerd" value={filters.inspectionServiceStatus} onChange={(value) => setFilter("inspectionServiceStatus", value)}>
                 <option value="">Alle statussen</option>
                 <option value="ACTIVE">Actief</option>
                 <option value="INACTIVE">Niet actief</option>
                 <option value="UNKNOWN">Onbekend</option>
               </FilterSelect>
               <CheckFilter label="Met openstaande formulieren" checked={filters.openFormsOnly} onChange={(value) => setFilter("openFormsOnly", value)} />
+              <FilterSelect label="Certificaattype" value={filters.certificateType} onChange={(value) => setFilter("certificateType", value)}>
+                <option value="">Alle certificaattypen</option>
+                <option value="MAINTENANCE">Onderhoudscertificaat</option>
+                <option value="INSPECTION">Inspectiecertificaat</option>
+              </FilterSelect>
+              <FilterSelect label="Certificaateis en bewijs" value={filters.certificateStatus} onChange={(value) => setFilter("certificateStatus", value)}>
+                <option value="">Alle statussen</option>
+                <option value="VALID">Voldoet aan certificaateisen</option>
+                <option value="MISSING">Vereist certificaat ontbreekt</option>
+                <option value="EXPIRED">Certificaat verlopen</option>
+                <option value="EXPIRING">Verloopt binnenkort</option>
+                <option value="UNKNOWN">Beoordeling nodig</option>
+                <option value="CONTRACT_ENDED">Contract beëindigd</option>
+                <option value="NOT_REQUIRED">Geen certificaateis</option>
+              </FilterSelect>
               <CheckFilter label="Verplichte documenten ontbreken" checked={filters.missingDocumentsOnly} onChange={(value) => setFilter("missingDocumentsOnly", value)} />
             </div>
           </details>
+
+          {/* Relatiegroep. De lijst komt van de server en bevat alleen groepen die ook echt
+              installaties opleveren, met het aantal erbij; klikken op een lege groep kan dus
+              niet. De regel eronder zegt wanneer deze groepen voor het laatst uit Atrium zijn
+              opgehaald, want dat is een sync en geen live beeld. */}
+          {relationGroups.length > 0 ? (
+            <div className="installations-filter-field installations-relation-group-filter">
+              <span>Relatiegroep</span>
+              <select
+                value={selectedRelationGroups[0] || ""}
+                onChange={(event) =>
+                  setSelectedRelationGroups(event.target.value ? [event.target.value] : [])
+                }
+              >
+                <option value="">Alle relatiegroepen</option>
+                {relationGroups.map((group) => (
+                  <option key={group.relation_group_key} value={group.relation_group_key}>
+                    {group.relation_group_name || group.relation_group_code} ({group.installation_count})
+                  </option>
+                ))}
+              </select>
+              {relationGroupsLoadedAt ? (
+                <span className="installations-relation-group-filter__note">
+                  Groepen bijgewerkt op {formatSyncMoment(relationGroupsLoadedAt)}
+                </span>
+              ) : null}
+            </div>
+          ) : null}
 
           <div className="installations-type-filters" aria-label="Bedrijven">
             <span className="installations-filter-field__label">Bedrijven</span>
@@ -470,7 +559,7 @@ export default function InstallationsIndex() {
             </div>
           </div>
 
-          <button type="button" className="btn btn-secondary" onClick={() => { setFilters(DEFAULT_FILTERS); setSelectedInstallationTypes([]); setSelectedBusinessUnits([]); }}>
+          <button type="button" className="btn btn-secondary" onClick={() => { setFilters(DEFAULT_FILTERS); setSelectedInstallationTypes([]); setSelectedBusinessUnits([]); setSelectedRelationGroups([]); }}>
             Filters wissen
           </button>
         </aside>

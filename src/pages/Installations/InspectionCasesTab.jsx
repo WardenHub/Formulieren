@@ -1,42 +1,52 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { getInspectionCases, getInstallationCertification, getInstallationOperationalSummary } from "../../api/emberApi.js";
+import { getInspectionCases, getInstallationCertification } from "../../api/emberApi.js";
+import { certificationAppearance } from "@/lib/certificationAppearance.js";
 
-export default function InspectionCasesTab({code}){
-  const[items,setItems]=useState([]);const[operational,setOperational]=useState(null);const[certification,setCertification]=useState(null);const[loading,setLoading]=useState(true);const[error,setError]=useState("");
+/** Read-only installation summary; dossier mutations remain protected by the API. */
+export default function InspectionCasesTab({ code }) {
+  const [items, setItems] = useState([]);
+  const [certification, setCertification] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
   useEffect(() => {
     let cancelled = false;
-
-    // De laadstand hoort bij het ophalen zelf; zo staat de hele levenscyclus van deze
-    // drie aanroepen op een plek in plaats van los in het effect.
-    async function laad() {
-      setLoading(true);
-
+    async function load() {
+      setLoading(true); setError("");
       try {
-        const [cases, summary, certs] = await Promise.all([
-          getInspectionCases({ q: code, active: "false", take: 100 }),
-          getInstallationOperationalSummary(code),
-          getInstallationCertification(code),
-        ]);
-
+        const [cases, certs] = await Promise.all([getInspectionCases({ q: code, active: "false", take: 500 }), getInstallationCertification(code)]);
         if (cancelled) return;
-
         setItems((cases?.items || []).filter((item) => item.atrium_installation_code === code));
-        setOperational(summary?.item || null);
-        setCertification(certs || null);
-      } catch (e) {
-        if (!cancelled) setError(e?.message || "Inspecties laden is mislukt.");
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
+        setCertification(certs);
+      } catch (cause) { if (!cancelled) setError(cause?.message || "Inspecties laden is mislukt."); }
+      finally { if (!cancelled) setLoading(false); }
     }
-
-    laad();
-
-    return () => {
-      cancelled = true;
-    };
+    void load();
+    return () => { cancelled = true; };
   }, [code]);
-  const active=useMemo(()=>items.filter((item)=>!["COMPLETED","CANCELLED"].includes(item.status)),[items]);const historical=useMemo(()=>items.filter((item)=>["COMPLETED","CANCELLED"].includes(item.status)),[items]);const currentCertificates=(certification?.certificates||[]).filter((cert)=>cert.certificate_type==="INSPECTION"&&cert.record_status==="CURRENT");const nextAction=active.find((item)=>Number(item.open_action_count||0)>0)||active[0]||null;
-  return <div className="inspection-page"><section className="inspection-kpis"><div className="card"><span>Actuele status</span><strong>{operational?.active_inspection_case_status?.replaceAll("_"," ")||"Geen actieve case"}</strong></div><div className="card"><span>Volgende signalering</span><strong>{operational?.inspection_due_date?String(operational.inspection_due_date).slice(0,10):"-"}</strong></div><div className="card"><span>Inspectiecertificaat</span><strong>{currentCertificates[0]?.certificate_number||operational?.certificate_status||"Onbekend"}</strong></div><div className="card"><span>Eerstvolgende handeling</span><strong>{nextAction?.status?.replaceAll("_"," ")||"Geen"}</strong></div></section><section className="card inspection-section"><div className="inspection-section__head"><div><h2>Inspectiecases</h2><p className="ember-page-subtitle">Actuele en historische inspecties voor deze installatie.</p></div><Link className="btn btn-secondary" to="/inspecties">Alle inspecties</Link></div>{error?<div className="ember-error-text">{error}</div>:null}{loading?<div className="inspection-empty">Laden...</div>:items.length?<><h3>Actief</h3><div className="inspection-timeline">{active.map((item)=><Link key={item.inspection_case_id} to={`/inspecties/${item.inspection_case_id}`}><strong>{item.status_display_name||item.status}</strong><span>{item.inspection_type} ; {(item.scopes||[]).join(", ")} ; {item.due_date||"geen vervaldatum"}</span></Link>)}{!active.length?<p className="ember-page-subtitle">Geen actieve inspectiecases.</p>:null}</div><h3>Historie</h3><div className="inspection-timeline">{historical.map((item)=><Link key={item.inspection_case_id} to={`/inspecties/${item.inspection_case_id}`}><strong>{item.status_display_name||item.status}</strong><span>{item.inspection_type} ; {(item.scopes||[]).join(", ")}</span></Link>)}{!historical.length?<p className="ember-page-subtitle">Nog geen historische cases.</p>:null}</div></>:<div className="inspection-empty">Nog geen inspectiecase voor deze installatie.</div>}</section></div>
+  if (loading) return <div className="inspection-empty">Inspecties laden...</div>;
+  if (error) return <div className="ember-error-text" role="alert">{error}</div>;
+  const active = items.filter((item) => !["COMPLETED", "CANCELLED"].includes(item.status));
+  const historical = items.filter((item) => ["COMPLETED", "CANCELLED"].includes(item.status));
+  const summary = (certification?.certificate_summary || []).filter((item) => item.certificate_type === "INSPECTION");
+  function casesSection(title, cases) {
+    return <section className="card inspection-section"><h3>{title}</h3>
+      <div className="inspection-timeline">{cases.map((item) => <Link key={item.inspection_case_id} to={`/inspecties/${item.inspection_case_id}`}>
+        <strong>{item.status_display_name || item.status}</strong>
+        <span>{(item.scopes || []).join(", ")} ; {item.planned_date ? `gepland ${String(item.planned_date).slice(0, 10)}` : "Nog niet gepland"}</span>
+        <span>{item.inspection_body || "Keuringsinstantie nog niet gekozen"}</span>
+      </Link>)}</div>{!cases.length ? <p className="muted">Geen dossiers in deze categorie.</p> : null}
+    </section>;
+  }
+  return <div className="inspection-page">
+    <section className="inspection-kpis">{summary.map((item) => <div className="card" key={item.scope}>
+      <span>Inspectiecertificaat {item.scope.replace("_", "-")}</span>
+      <strong>{certificationAppearance(item.certificate_status).label}</strong>
+      <small>{item.source_type === "CONTRACT" ? "Eis vanuit actief contract" : item.source_type === "MANUAL" ? "Handmatige inspectie-eis" : "Geen actieve eis bevestigd"}</small>
+    </div>)}</section>
+    {!summary.length ? <p className="muted">Leg eerst de toepasselijke installatiesoort vast om de certificaateisen te beoordelen.</p> : null}
+    <Link className="btn btn-secondary" to="/inspecties">Certificeringsmonitor</Link>
+    {casesSection("Actieve inspecties", active)}
+    {casesSection("Historie", historical)}
+  </div>;
 }

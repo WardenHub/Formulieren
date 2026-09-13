@@ -51,6 +51,7 @@ import {
   searchInstallations,
   getInstallationMap,
   getInstallationMapViewport,
+  getInstallationRelationGroups,
   getInstallationOperationalSummary,
   getEnergySupplies,
   putEnergySupplies,
@@ -131,6 +132,7 @@ const certificationWriteRoles = ["admin", "certificering_coordinator"] as const;
 router.get("/search", requireRole("admin", "gebruiker"), searchInstallations);
 router.get("/map", requireRole("admin", "gebruiker"), getInstallationMap);
 router.get("/map/viewport", requireRole("admin", "gebruiker"), getInstallationMapViewport);
+router.get("/relation-groups", requireRole("admin", "gebruiker"), getInstallationRelationGroups);
 router.get("/map/summary", requireRole("admin", "gebruiker"), getInstallationMap);
 
 // stroomvoorziening e.d.

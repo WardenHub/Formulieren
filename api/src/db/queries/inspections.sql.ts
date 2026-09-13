@@ -2,10 +2,15 @@ import { operationalCtes } from "./installationOperational.sql.js";
 
 export const listInspectionOverviewSql = `${operationalCtes}
 select top (@take)
-  o.atrium_installation_code,o.installation_name,o.object_name,o.formatted_address,
+  o.atrium_installation_code,o.installation_name,o.object_name,o.formatted_address,o.latitude,o.longitude,o.installation_status,
+  count_big(*) over() as total_count,
+  sum(case when o.attention_status=N'CRITICAL' then 1 else 0 end) over() as critical_count,
+  sum(case when selected_cert.certificate_status in(N'MISSING',N'EXPIRED') then 1 else 0 end) over() as certificate_problem_count,
+  sum(case when c.inspection_case_id is null and @certificateType=N'INSPECTION' and selected_cert.required_count>0 then 1 else 0 end) over() as no_case_count,
   coalesce(o.gebruiker_naam,o.eigenaar_naam,o.debiteur_naam) as relation_name,
-  o.certification_required,o.certificate_status,o.nearest_certificate_valid_until,
-  datediff(day,cast(sysutcdatetime() as date),o.nearest_certificate_valid_until) as certificate_days_remaining,
+  cast(case when selected_cert.required_count>0 then 1 else 0 end as bit) as certification_required,
+  selected_cert.certificate_status,selected_cert.nearest_certificate_valid_until,
+  datediff(day,convert(date,sysutcdatetime() at time zone 'UTC' at time zone 'W. Europe Standard Time'),selected_cert.nearest_certificate_valid_until) as certificate_days_remaining,
   o.active_inspection_case_count,o.active_inspection_case_status,o.inspection_due_date,
   o.inspection_attention_required,o.attention_status,o.attention_reason,
   c.inspection_case_id,c.inspection_type,c.status,c.status_display_name,c.due_date,c.inspection_body,
@@ -17,13 +22,21 @@ select top (@take)
   coalesce((
     select distinct s.scope
     from (
-      select r.scope from dbo.InstallationCertificationRequirement r where r.atrium_installation_code=o.atrium_installation_code and r.requirement_status=N'REQUIRED'
+      select r.scope from certificate_requirements r where r.atrium_installation_code=o.atrium_installation_code and r.certificate_type=@certificateType and r.requirement_status<>N'NOT_REQUIRED'
       union
       select cs.scope from dbo.InspectionCaseScope cs where cs.inspection_case_id=c.inspection_case_id
     ) s
     order by s.scope for json path
   ),N'[]') as scopes_json
 from operational o
+outer apply (
+  select sum(case when cs.requirement_status=N'REQUIRED' then 1 else 0 end) as required_count,
+    case max(case cs.certificate_status when N'MISSING' then 6 when N'EXPIRED' then 5 when N'UNKNOWN' then 4 when N'EXPIRING' then 3 when N'VALID' then 2 when N'CONTRACT_ENDED' then 1 else 0 end)
+      when 6 then N'MISSING' when 5 then N'EXPIRED' when 4 then N'UNKNOWN' when 3 then N'EXPIRING' when 2 then N'VALID' when 1 then N'CONTRACT_ENDED' else N'NOT_REQUIRED' end as certificate_status,
+    min(case when cs.requirement_status=N'REQUIRED' then cs.valid_until end) as nearest_certificate_valid_until
+  from certificate_scope_status cs where cs.atrium_installation_code=o.atrium_installation_code and cs.certificate_type=@certificateType
+    and (@scope is null or cs.scope=@scope)
+) selected_cert
 outer apply (
   select top 1 ic.*,sd.display_name as status_display_name
   from dbo.InspectionCase ic
@@ -34,7 +47,7 @@ outer apply (
 outer apply (
   select top 1 ic.certificate_number,ic.valid_until as certificate_valid_until
   from dbo.InstallationCertificate ic
-  where ic.atrium_installation_code=o.atrium_installation_code and ic.certificate_type=N'INSPECTION' and ic.record_status=N'CURRENT' and ic.verification_status<>N'REJECTED'
+  where ic.atrium_installation_code=o.atrium_installation_code and ic.certificate_type=@certificateType and ic.record_status=N'CURRENT' and ic.verification_status=N'VERIFIED'
   order by coalesce(ic.valid_until,ic.issue_date) desc,ic.created_at desc
 ) cert
 outer apply (
@@ -49,17 +62,20 @@ outer apply (
   join dbo.FollowUpStatusDefinition st on st.status_code=a.status and st.is_terminal=0
   where s.inspection_case_id=c.inspection_case_id
 ) act
-where (o.certification_required=1 or c.inspection_case_id is not null)
+where (selected_cert.required_count>0 or selected_cert.certificate_status in(N'CONTRACT_ENDED',N'UNKNOWN') or (@certificateType=N'INSPECTION' and c.inspection_case_id is not null))
+  and (@includeHistorical=1 or upper(coalesce(o.installation_status,N''))<>N'J')
+  and (@certificateStatus is null or selected_cert.certificate_status=@certificateStatus)
   and (@qLike is null or o.atrium_installation_code like @qLike or o.installation_name like @qLike or o.object_name like @qLike or o.formatted_address like @qLike or o.gebruiker_naam like @qLike or o.eigenaar_naam like @qLike or o.debiteur_naam like @qLike or c.atrium_work_order_code like @qLike)
-  and (@scope is null or exists(select 1 from dbo.InstallationCertificationRequirement r where r.atrium_installation_code=o.atrium_installation_code and r.requirement_status=N'REQUIRED' and r.scope=@scope) or exists(select 1 from dbo.InspectionCaseScope s where s.inspection_case_id=c.inspection_case_id and s.scope=@scope))
+  and (@scope is null or exists(select 1 from certificate_requirements r where r.atrium_installation_code=o.atrium_installation_code and r.certificate_type=@certificateType and r.scope=@scope) or exists(select 1 from dbo.InspectionCaseScope s where s.inspection_case_id=c.inspection_case_id and s.scope=@scope))
   and (@status is null or c.status=@status)
   and (@inspectionBody is null or c.inspection_body=@inspectionBody)
-  and (@attentionFilter<>N'CERTIFICATE_MISSING' or o.certificate_status=N'MISSING')
-  and (@attentionFilter<>N'CERTIFICATE_EXPIRING' or o.certificate_status=N'EXPIRING')
-  and (@attentionFilter<>N'CERTIFICATE_EXPIRED' or o.certificate_status in(N'EXPIRED',N'REVOKED'))
+  and (@attentionFilter<>N'CERTIFICATE_MISSING' or selected_cert.certificate_status=N'MISSING')
+  and (@attentionFilter<>N'CERTIFICATE_EXPIRING' or selected_cert.certificate_status=N'EXPIRING')
+  and (@attentionFilter<>N'CERTIFICATE_EXPIRED' or selected_cert.certificate_status=N'EXPIRED')
   and (@attentionFilter<>N'NO_ACTIVE_CASE' or c.inspection_case_id is null)
-  and (@attentionFilter<>N'PLANNING_MISSING' or c.inspection_case_id is not null and c.appointment_status=N'NO_PLANNING')
-  and (@attentionFilter<>N'APPOINTMENT_UNCONFIRMED' or c.appointment_status=N'PLANNED_UNCONFIRMED')
+  and (@attentionFilter<>N'PLANNING_MISSING' or c.inspection_case_id is not null and c.planned_date is null
+    and c.status in(N'ATTENTION_REQUIRED',N'OFFER_REQUIRED',N'ORDERED',N'PLANNING_REQUIRED',N'PLANNED_UNCONFIRMED',N'PLANNED_CONFIRMED'))
+  and (@attentionFilter<>N'APPOINTMENT_UNCONFIRMED' or c.status=N'PLANNED_UNCONFIRMED')
   and (@attentionFilter<>N'DOCUMENTS_MISSING' or coalesce(doc.missing_document_count,0)>0)
   and (@attentionFilter<>N'REPORT_MISSING' or c.status=N'EXECUTED_AWAITING_REPORT' and not exists(select 1 from dbo.InspectionCaseReport r where r.inspection_case_id=c.inspection_case_id and r.is_current=1))
   and (@attentionFilter<>N'REINSPECTION_REQUIRED' or c.reinspection_required=1)
@@ -76,7 +92,7 @@ select top (@take)
   c.appointment_status, c.execution_date, c.conclusion, c.reinspection_required,
   c.logbook_linked, c.inspection_body_has_logbook_access,
   c.document_package_available_in_logbook, c.report_uploaded_to_logbook,
-  c.created_at, c.updated_at, convert(varchar(18), c.row_version, 1) as row_version,
+  c.created_at, c.updated_at, convert(varchar(18), convert(binary(8), c.row_version), 1) as row_version,
   coalesce(a.installatie_naam, a.obj_naam, c.atrium_installation_code) as installation_name,
   a.obj_naam as object_name, a.obj_adr_formatted as formatted_address,
   (select s.scope from dbo.InspectionCaseScope s where s.inspection_case_id = c.inspection_case_id for json path) as scopes_json,
@@ -94,7 +110,7 @@ order by case when sd.is_terminal = 0 then 0 else 1 end, coalesce(c.due_date, co
 `;
 
 export const getInspectionCaseSql = `
-select top 1 c.*, sd.display_name as status_display_name, convert(varchar(18), c.row_version, 1) as row_version,
+select top 1 c.*, sd.display_name as status_display_name, convert(varchar(18), convert(binary(8), c.row_version), 1) as row_version_hex,
   coalesce(a.installatie_naam, a.obj_naam, c.atrium_installation_code) as installation_name,
   a.obj_naam as object_name, a.obj_adr_formatted as formatted_address,
   coalesce(a.gebruiker_naam,a.eigenaar_naam,a.debiteur_naam) as relation_name
@@ -107,13 +123,13 @@ select s.* from dbo.InspectionCaseScope s where s.inspection_case_id = @caseId o
 
 select w.* from dbo.InspectionCaseWorkOrderSnapshot w where w.inspection_case_id = @caseId order by w.source_modified_at desc;
 
-select r.*, d.title as document_title, sf.file_name, convert(varchar(18), r.row_version, 1) as row_version
+select r.*, d.title as document_title, sf.file_name, convert(varchar(18), convert(binary(8), r.row_version), 1) as row_version_hex
 from dbo.InspectionCaseDocumentRequirement r
 left join dbo.InstallationDocument d on d.document_id = r.installation_document_id
 left join dbo.StoredFile sf on sf.stored_file_id = r.stored_file_id and sf.is_deleted = 0
 where r.inspection_case_id = @caseId order by r.requirement_level desc, r.requirement_key;
 
-select p.*, convert(varchar(18), p.row_version, 1) as row_version,
+select p.*, convert(varchar(18), convert(binary(8), p.row_version), 1) as row_version_hex,
   (select i.installation_document_id, i.stored_file_id, i.document_type_key, i.document_label_snapshot from dbo.InspectionCaseDocumentPackageItem i where i.inspection_case_document_package_id = p.inspection_case_document_package_id for json path) as items_json
 from dbo.InspectionCaseDocumentPackage p where p.inspection_case_id = @caseId order by p.package_version desc;
 
@@ -141,7 +157,7 @@ where s.inspection_case_id = @caseId order by f.created_at desc;
 
 select e.* from dbo.InspectionCaseEvent e where e.inspection_case_id = @caseId order by e.event_at desc, e.inspection_case_event_id desc;
 
-select d.document_id, d.stored_file_id, d.document_type_key, d.title, sf.file_name, sf.content_type, sf.checksum_sha256, d.created_at
+select d.document_id, d.stored_file_id, d.document_type_key, d.title, sf.file_name, sf.mime_type as content_type, sf.checksum_sha256, d.created_at
 from dbo.InstallationDocument d
 join dbo.InspectionCase c on c.atrium_installation_code = d.atrium_installation_code
 join dbo.StoredFile sf on sf.stored_file_id = d.stored_file_id and sf.is_deleted = 0
@@ -150,7 +166,14 @@ order by d.created_at desc;
 
 select c.installation_certificate_id, c.certificate_number, c.description, c.valid_until, c.record_status, c.verification_status, c.installation_document_id, c.stored_file_id
 from dbo.InstallationCertificate c
-where c.source_inspection_case_id = @caseId and c.certificate_type = N'INSPECTION'
+join dbo.InspectionCase ic on ic.atrium_installation_code=c.atrium_installation_code
+join dbo.StoredFile sf on sf.stored_file_id=c.stored_file_id and sf.is_deleted=0
+where ic.inspection_case_id=@caseId and (c.source_inspection_case_id=@caseId or c.source_inspection_case_id is null)
+  and c.certificate_type=N'INSPECTION' and c.record_status=N'CURRENT' and c.verification_status=N'VERIFIED'
+  and c.issue_date<=convert(date,sysutcdatetime() at time zone 'UTC' at time zone 'W. Europe Standard Time')
+  and c.valid_until>=convert(date,sysutcdatetime() at time zone 'UTC' at time zone 'W. Europe Standard Time')
+  and exists(select 1 from dbo.InspectionCaseScope cs join dbo.InstallationCertificateScope s on s.scope=cs.scope
+    where cs.inspection_case_id=@caseId and s.installation_certificate_id=c.installation_certificate_id)
 order by c.created_at desc;
 
 select r.* from dbo.InstallationCertificationRequirement r
@@ -163,6 +186,14 @@ from dbo.InstallationCertificate cert
 join dbo.InspectionCase c on c.atrium_installation_code=cert.atrium_installation_code
 where c.inspection_case_id=@caseId and cert.certificate_type=N'INSPECTION'
 order by case cert.record_status when N'CURRENT' then 0 else 1 end,coalesce(cert.valid_until,cert.issue_date) desc,cert.created_at desc;
+
+select t.target_status
+from dbo.InspectionCaseTransitionDefinition t
+join dbo.InspectionCase c on c.status=t.source_status
+where c.inspection_case_id=@caseId and t.is_active=1
+  and c.status not in(N'COMPLETED',N'CANCELLED')
+  and t.target_status not in(N'REPORT_RECEIVED',N'REPAIR_REQUIRED',N'REINSPECTION_REQUIRED',N'CERTIFICATE_RECEIVED',N'COMPLETED')
+order by t.target_status;
 `;
 
 export const getInspectionCaseEventsSql = `
@@ -175,6 +206,7 @@ begin try
   declare @installationId uniqueidentifier;
   select @installationId = installation_id from dbo.Installation where atrium_installation_code = @installationCode;
   if @installationId is null throw 50000, 'installation not found', 1;
+  if @status<>N'ATTENTION_REQUIRED' throw 50000,'Een nieuw dossier begint bij signalering',1;
   declare @caseId uniqueidentifier = newid();
   insert dbo.InspectionCase (inspection_case_id, installation_id, atrium_installation_code, parent_inspection_case_id, inspection_type, due_date, signal_from_date, status, inspection_body, assigned_user_id, assigned_role_code, source_fingerprint, created_by)
   values (@caseId, @installationId, @installationCode, @parentCaseId, @inspectionType, @dueDate, @signalFromDate, @status, @inspectionBody, @assignedUserId, @assignedRoleCode, @sourceFingerprint, @actor);
@@ -197,9 +229,16 @@ begin try
   declare @oldStatus nvarchar(40), @oldDue date, @oldBody nvarchar(200);
   select @oldStatus=status, @oldDue=due_date, @oldBody=inspection_body from dbo.InspectionCase where inspection_case_id=@caseId;
   if @oldStatus is null throw 50000, 'inspection case not found', 1;
+  if @oldStatus in(N'COMPLETED',N'CANCELLED') throw 50000,'Afgerond of geannuleerd dossier is alleen-lezen',1;
   if @status=N'COMPLETED' throw 50000, 'use inspection completion gate', 1;
+  if @oldStatus<>@status and @status in(N'REPORT_RECEIVED',N'REPAIR_REQUIRED',N'REINSPECTION_REQUIRED',N'CERTIFICATE_RECEIVED')
+    throw 50000,'Gebruik de rapport-, conclusie- of herinspectiestap',1;
+  if @status in(N'PLANNED_UNCONFIRMED',N'PLANNED_CONFIRMED',N'EXECUTED_AWAITING_REPORT') and (@plannedDate is null or nullif(@inspectionBody,N'') is null)
+    throw 50000,'Inspectiedatum en inspectie-instelling zijn verplicht',1;
+  if @status=N'EXECUTED_AWAITING_REPORT' and not exists(select 1 from dbo.InspectionCase where inspection_case_id=@caseId and atrium_work_order_key is not null)
+    throw 50000,'Koppel eerst de werkbon voor uitvoering',1;
   if not exists (select 1 from dbo.InspectionCaseTransitionDefinition where source_status=@oldStatus and target_status=@status and is_active=1) and @oldStatus<>@status throw 50000, 'inspection status transition invalid', 1;
-  update dbo.InspectionCase set due_date=@dueDate, status=@status, inspection_body=@inspectionBody,
+  update dbo.InspectionCase set due_date=@dueDate, status=@status, inspection_body=@inspectionBody, planned_date=@plannedDate,
     logbook_linked=@logbookLinked, inspection_body_has_logbook_access=@inspectionBodyHasLogbookAccess,
     document_package_available_in_logbook=@packageAvailableInLogbook, report_uploaded_to_logbook=@reportUploadedToLogbook,
     updated_at=sysutcdatetime(), updated_by=@actor
@@ -210,7 +249,7 @@ begin try
   if isnull(convert(nvarchar(10),@oldDue,23),N'')<>isnull(convert(nvarchar(10),@dueDate,23),N'') insert dbo.InspectionCaseEvent(inspection_case_id,event_type,before_json,after_json,event_by) values(@caseId,N'DUE_DATE_CHANGED',@before,@after,@actor);
   if isnull(@oldBody,N'')<>isnull(@inspectionBody,N'') insert dbo.InspectionCaseEvent(inspection_case_id,event_type,before_json,after_json,event_by) values(@caseId,N'INSPECTION_BODY_CHANGED',@before,@after,@actor);
   commit transaction;
-  select convert(varchar(18),row_version,1) as row_version from dbo.InspectionCase where inspection_case_id=@caseId;
+  select convert(varchar(18), convert(binary(8), row_version), 1) as row_version from dbo.InspectionCase where inspection_case_id=@caseId;
 end try begin catch if @@trancount>0 rollback transaction; throw; end catch;
 `;
 
@@ -225,7 +264,7 @@ begin try
   declare @after nvarchar(max)=(select assigned_user_id,assigned_role_code from dbo.InspectionCase where inspection_case_id=@caseId for json path,without_array_wrapper);
   insert dbo.InspectionCaseEvent(inspection_case_id,event_type,before_json,after_json,event_by) values(@caseId,N'ASSIGNMENT_CHANGED',@before,@after,@actor);
   commit transaction;
-  select convert(varchar(18),row_version,1) as row_version from dbo.InspectionCase where inspection_case_id=@caseId;
+  select convert(varchar(18), convert(binary(8), row_version), 1) as row_version from dbo.InspectionCase where inspection_case_id=@caseId;
 end try begin catch if @@trancount>0 rollback transaction; throw; end catch;
 `;
 
@@ -241,8 +280,11 @@ begin try
   when not matched then insert(inspection_case_id,source_system,business_unit,atrium_work_order_key,atrium_work_order_code,work_order_title,raw_status,mapped_status,planned_date,execution_date,source_modified_at,last_verified_at,reader_correlation_id)
     values(@caseId,N'ATRIUM_READER',source.business_unit,source.atrium_work_order_key,source.atrium_work_order_code,source.work_order_title,source.raw_status,source.mapped_status,source.planned_date,source.execution_date,source.source_modified_at,source.last_verified_at,@correlationId);
   declare @bestKey nvarchar(450), @bestCode nvarchar(100), @mapped nvarchar(30), @planned datetime2(3), @executed datetime2(3);
-  select top 1 @bestKey=atrium_work_order_key,@bestCode=atrium_work_order_code,@mapped=mapped_status,@planned=planned_date,@executed=execution_date from dbo.InspectionCaseWorkOrderSnapshot where inspection_case_id=@caseId order by source_modified_at desc;
-  update dbo.InspectionCase set atrium_work_order_key=@bestKey, atrium_work_order_code=@bestCode, appointment_status=coalesce(@mapped,N'NO_PLANNING'), planned_date=convert(date,@planned), execution_date=convert(date,@executed), status=case when @mapped=N'EXECUTED' then N'EXECUTED_AWAITING_REPORT' when @mapped=N'PLANNED_CONFIRMED' then N'PLANNED_CONFIRMED' when @mapped=N'PLANNED_UNCONFIRMED' then N'PLANNED_UNCONFIRMED' else status end, updated_at=sysutcdatetime(), updated_by=@actor where inspection_case_id=@caseId;
+  select top 1 @bestKey=atrium_work_order_key,@bestCode=atrium_work_order_code,@mapped=mapped_status,@planned=planned_date,@executed=execution_date from dbo.InspectionCaseWorkOrderSnapshot
+  where inspection_case_id=@caseId and (atrium_work_order_key=@selectedKey or (@selectedKey is null and (select count(*) from openjson(@rowsJson))=1
+    and atrium_work_order_key=(select json_value([value],'$.work_order_key') from openjson(@rowsJson))))
+  order by source_modified_at desc;
+  update dbo.InspectionCase set atrium_work_order_key=@bestKey, atrium_work_order_code=@bestCode, appointment_status=coalesce(@mapped,N'NO_PLANNING'), planned_date=coalesce(planned_date,convert(date,@planned)), execution_date=coalesce(execution_date,convert(date,@executed)), updated_at=sysutcdatetime(), updated_by=@actor where inspection_case_id=@caseId;
   insert dbo.InspectionCaseEvent(inspection_case_id,event_type,after_json,event_by) values(@caseId,N'WORK_ORDER_REFRESHED',json_object('correlationId':@correlationId,'rowCount':(select count(*) from openjson(@rowsJson)),'appointmentStatus':coalesce(@mapped,N'NO_PLANNING')),@actor);
   commit transaction;
 end try begin catch if @@trancount>0 rollback transaction; throw; end catch;
@@ -276,7 +318,7 @@ begin try
   declare @after nvarchar(max)=(select * from dbo.InspectionCaseDocumentRequirement where inspection_case_document_requirement_id=@requirementId for json path,without_array_wrapper);
   insert dbo.InspectionCaseEvent(inspection_case_id,event_type,before_json,after_json,event_by) values(@caseId,case when @documentId is not null then N'DOCUMENT_LINKED' else N'CHECKLIST_CHANGED' end,@before,@after,@actor);
   commit transaction;
-  select convert(varchar(18),row_version,1) as row_version from dbo.InspectionCaseDocumentRequirement where inspection_case_document_requirement_id=@requirementId;
+  select convert(varchar(18), convert(binary(8), row_version), 1) as row_version from dbo.InspectionCaseDocumentRequirement where inspection_case_document_requirement_id=@requirementId;
 end try begin catch if @@trancount>0 rollback transaction; throw; end catch;
 `;
 
@@ -319,9 +361,10 @@ set nocount on; set xact_abort on; begin transaction;
 begin try
   declare @currentStatus nvarchar(40)=(select status from dbo.InspectionCase where inspection_case_id=@caseId);
   if @currentStatus not in(N'EXECUTED_AWAITING_REPORT',N'REPORT_RECEIVED') throw 50000,'inspection case is not awaiting a report',1;
+  if @inspectionDate is null throw 50000,'inspection date required',1;
   if not exists(
     select 1 from dbo.InspectionCase c
-    join dbo.InstallationDocument d on d.atrium_installation_code=c.atrium_installation_code and d.document_id=@documentId and d.stored_file_id=@storedFileId and d.is_active=1
+    join dbo.InstallationDocument d on d.atrium_installation_code=c.atrium_installation_code and d.document_id=@documentId and d.stored_file_id=@storedFileId and d.is_active=1 and d.document_type_key=N'inspectierapport'
     join dbo.StoredFile sf on sf.stored_file_id=@storedFileId and sf.is_deleted=0
     where c.inspection_case_id=@caseId
   ) throw 50000,'exact inspection report file not found for case installation',1;
@@ -338,8 +381,31 @@ export const processInspectionConclusionSql = `
 set nocount on; set xact_abort on; begin transaction;
 begin try
   if not exists(select 1 from dbo.InspectionCaseReport where inspection_case_id=@caseId and is_current=1) throw 50000,'current inspection report required',1;
+  if not exists(select 1 from dbo.InspectionCase where inspection_case_id=@caseId and status=N'REPORT_RECEIVED') throw 50000,'Beoordeel eerst het ontvangen inspectierapport',1;
   if @conclusion=N'PASS' and @certificateId is null throw 50000,'inspection certificate required for pass',1;
-  if @certificateId is not null and not exists(select 1 from dbo.InstallationCertificate where installation_certificate_id=@certificateId and source_inspection_case_id=@caseId and certificate_type=N'INSPECTION') throw 50000,'inspection certificate not linked to case',1;
+  if @certificateId is not null
+  begin
+    if exists(select 1 from openjson(@certificateIdsJson) chosen where not exists(
+      select 1 from dbo.InstallationCertificate cert with(updlock,holdlock)
+      join dbo.InspectionCase ic on ic.atrium_installation_code=cert.atrium_installation_code
+      join dbo.StoredFile sf on sf.stored_file_id=cert.stored_file_id and sf.is_deleted=0
+      where ic.inspection_case_id=@caseId and cert.installation_certificate_id=try_convert(uniqueidentifier,chosen.[value])
+        and (cert.source_inspection_case_id is null or cert.source_inspection_case_id=@caseId)
+        and cert.certificate_type=N'INSPECTION' and cert.record_status=N'CURRENT' and cert.verification_status=N'VERIFIED'
+        and nullif(trim(cert.certificate_number),N'') is not null and nullif(trim(cert.issuer_name),N'') is not null
+        and cert.issue_date<=convert(date,sysutcdatetime() at time zone 'UTC' at time zone 'W. Europe Standard Time')
+        and cert.valid_until>=convert(date,sysutcdatetime() at time zone 'UTC' at time zone 'W. Europe Standard Time')
+        and exists(select 1 from dbo.InspectionCaseScope cs where cs.inspection_case_id=@caseId)
+        and exists(select 1 from dbo.InspectionCaseScope cs join dbo.InstallationCertificateScope s on s.scope=cs.scope
+          where cs.inspection_case_id=@caseId and s.installation_certificate_id=cert.installation_certificate_id)
+    )) throw 50000,'Certificaten moeten geldig zijn en bij deze installatie en dossierscopes horen',1;
+    if exists(select 1 from dbo.InspectionCaseScope cs where cs.inspection_case_id=@caseId
+      and not exists(select 1 from dbo.InstallationCertificateScope s join openjson(@certificateIdsJson) chosen
+        on s.installation_certificate_id=try_convert(uniqueidentifier,chosen.[value]) where s.scope=cs.scope))
+      throw 50000,'De gekozen certificaten moeten samen alle dossierscopes dekken',1;
+    update cert set source_inspection_case_id=@caseId from dbo.InstallationCertificate cert
+      join openjson(@certificateIdsJson) chosen on cert.installation_certificate_id=try_convert(uniqueidentifier,chosen.[value]);
+  end;
   update dbo.InspectionCase set conclusion=@conclusion,reinspection_required=case when @conclusion=N'FAIL' then 1 else 0 end,resulting_certificate_id=@certificateId,status=case when @conclusion=N'FAIL' then N'REPAIR_REQUIRED' else N'CERTIFICATE_RECEIVED' end,updated_at=sysutcdatetime(),updated_by=@actor where inspection_case_id=@caseId and row_version=convert(binary(8),@rowVersion,1);
   if @@rowcount=0 throw 50000,'inspection case version conflict',1;
   if @conclusion=N'FAIL' and not exists(select 1 from dbo.FollowUpActionInspectionCaseSource where inspection_case_id=@caseId and source_fingerprint=N'REPAIR|CURRENT')
@@ -351,7 +417,7 @@ begin try
     insert dbo.FollowUpActionInstallationContext(follow_up_action_id,installation_id,atrium_installation_code,is_primary,created_by) values(@actionId,@installationId,@code,1,@actor);
     insert dbo.InspectionCaseEvent(inspection_case_id,event_type,after_json,event_by) values(@caseId,N'REPAIR_ACTION_CREATED',json_object('followUpActionId':convert(nvarchar(36),@actionId)),@actor);
   end;
-  insert dbo.InspectionCaseEvent(inspection_case_id,event_type,after_json,event_by) values(@caseId,case when @conclusion=N'PASS' then N'CONCLUSION_PASS' else N'CONCLUSION_FAIL' end,json_object('conclusion':@conclusion,'certificateId':convert(nvarchar(36),@certificateId)),@actor);
+  insert dbo.InspectionCaseEvent(inspection_case_id,event_type,after_json,event_by) values(@caseId,case when @conclusion=N'PASS' then N'CONCLUSION_PASS' else N'CONCLUSION_FAIL' end,json_object('conclusion':@conclusion,'certificateId':convert(nvarchar(36),@certificateId),'certificateIds':json_query(@certificateIdsJson)),@actor);
   commit transaction;
 end try begin catch if @@trancount>0 rollback transaction; throw; end catch;
 `;
@@ -379,6 +445,16 @@ begin try
   if exists(select 1 from dbo.InspectionCaseDocumentRequirement where inspection_case_id=@caseId and requirement_level=N'REQUIRED' and is_blocking=1 and status not in(N'CHECKED',N'SENT',N'WAIVED')) throw 50000,'blocking checklist items incomplete',1;
   if exists(select 1 from dbo.FollowUpActionInspectionCaseSource s join dbo.FollowUpAction a on a.follow_up_action_id=s.follow_up_action_id join dbo.FollowUpStatusDefinition st on st.status_code=a.status and st.is_terminal=0 where s.inspection_case_id=@caseId and s.is_blocking=1) throw 50000,'blocking follow up actions remain open',1;
   if not exists(select 1 from dbo.InspectionCase where inspection_case_id=@caseId and conclusion=N'PASS' and resulting_certificate_id is not null) throw 50000,'pass conclusion and certificate required',1;
+  if not exists(select 1 from dbo.InspectionCase where inspection_case_id=@caseId and status=N'CERTIFICATE_RECEIVED') throw 50000,'Dossier is niet gereed voor afronding',1;
+  if exists(select 1 from dbo.InspectionCaseScope cs where cs.inspection_case_id=@caseId and not exists(
+    select 1 from dbo.InstallationCertificate cert
+    join dbo.InstallationCertificateScope s on s.installation_certificate_id=cert.installation_certificate_id and s.scope=cs.scope
+    join dbo.StoredFile sf on sf.stored_file_id=cert.stored_file_id and sf.is_deleted=0
+    where cert.source_inspection_case_id=@caseId and cert.certificate_type=N'INSPECTION'
+      and cert.record_status=N'CURRENT' and cert.verification_status=N'VERIFIED'
+      and cert.issue_date<=convert(date,sysutcdatetime() at time zone 'UTC' at time zone 'W. Europe Standard Time')
+      and cert.valid_until>=convert(date,sysutcdatetime() at time zone 'UTC' at time zone 'W. Europe Standard Time')
+  )) throw 50000,'Geldige certificaatbestanden moeten bij afronding nog alle scopes dekken',1;
   if not exists(select 1 from dbo.InspectionCaseReport where inspection_case_id=@caseId and is_current=1) throw 50000,'current inspection report required',1;
   if not exists(select 1 from dbo.InspectionCaseDocumentPackage where inspection_case_id=@caseId and package_status=N'SENT') throw 50000,'sent inspection document package required',1;
   if not exists(select 1 from dbo.InspectionCaseEvent where inspection_case_id=@caseId and event_type=N'CONCLUSION_PASS') throw 50000,'inspection conclusion audit required',1;
@@ -402,16 +478,15 @@ begin try
     due_date date null,
     primary key(atrium_installation_code,scope)
   );
-  ;with current_cert as (
-    select c.atrium_installation_code,cs.scope,c.installation_certificate_id,c.valid_until,row_number() over(partition by c.atrium_installation_code,cs.scope order by case c.record_status when N'CURRENT' then 0 else 1 end,coalesce(c.valid_until,c.issue_date) desc,c.created_at desc) rn
-    from dbo.InstallationCertificate c join dbo.InstallationCertificateScope cs on cs.installation_certificate_id=c.installation_certificate_id where c.verification_status<>N'REJECTED'
-  )
+  ${operationalCtes.replaceAll("@certificateExpiringDays", "@horizon")}
   insert @candidates(atrium_installation_code,scope,source_certificate_id,valid_until,due_date)
-  select r.atrium_installation_code,r.scope,cc.installation_certificate_id,cc.valid_until,coalesce(cc.valid_until,r.first_inspection_due_date,r.review_due_date)
-  from dbo.InstallationCertificationRequirement r
-  left join current_cert cc on cc.atrium_installation_code=r.atrium_installation_code and cc.scope=r.scope and cc.rn=1
-  where r.requirement_status=N'REQUIRED'
-    and (cc.installation_certificate_id is null or cc.valid_until is null or cc.valid_until<=dateadd(day,@horizon,cast(sysutcdatetime() as date)));
+  select cs.atrium_installation_code,cs.scope,cs.installation_certificate_id,cs.valid_until,coalesce(cs.valid_until,r.first_inspection_due_date,r.review_due_date)
+  from certificate_scope_status cs
+  join dbo.AtriumInstallationBase a on a.installatie_code=cs.atrium_installation_code
+  left join dbo.InstallationCertificationRequirement r on r.atrium_installation_code=cs.atrium_installation_code and r.scope=cs.scope
+  where cs.requirement_status=N'REQUIRED' and cs.certificate_type=N'INSPECTION'
+    and upper(coalesce(a.installation_status,N''))<>N'J'
+    and cs.certificate_status in(N'MISSING',N'UNKNOWN',N'EXPIRED',N'EXPIRING');
 
   declare @grouped table(
     atrium_installation_code nvarchar(450) primary key,
@@ -431,7 +506,7 @@ begin try
   output inserted.inspection_case_id into @created(inspection_case_id)
   select i.installation_id,g.atrium_installation_code,N'INITIAL',g.due_date,dateadd(day,-@horizon,g.due_date),N'ATTENTION_REQUIRED',g.source_certificate_id,concat(N'CERTIFICATE|',g.atrium_installation_code,N'|',coalesce(convert(nvarchar(10),g.due_date,23),N'MISSING')),@actor
   from @grouped g join dbo.Installation i on i.atrium_installation_code=g.atrium_installation_code
-  where not exists(select 1 from dbo.InspectionCase c join dbo.InspectionCaseStatusDefinition s on s.status_code=c.status and s.is_terminal=0 where c.atrium_installation_code=g.atrium_installation_code);
+  where not exists(select 1 from dbo.InspectionCase c with(updlock,holdlock) join dbo.InspectionCaseStatusDefinition s on s.status_code=c.status and s.is_terminal=0 where c.atrium_installation_code=g.atrium_installation_code);
   declare @createdCases int=@@rowcount;
 
   insert dbo.InspectionCaseScope(inspection_case_id,scope,created_by)
@@ -439,11 +514,13 @@ begin try
   from @candidates x
   join @grouped g on g.atrium_installation_code=x.atrium_installation_code
   join dbo.InspectionCase c on c.atrium_installation_code=x.atrium_installation_code and c.source_fingerprint=concat(N'CERTIFICATE|',g.atrium_installation_code,N'|',coalesce(convert(nvarchar(10),g.due_date,23),N'MISSING'))
+  join @created newcase on newcase.inspection_case_id=c.inspection_case_id
   where not exists(select 1 from dbo.InspectionCaseScope s where s.inspection_case_id=c.inspection_case_id and s.scope=x.scope);
 
   insert dbo.InspectionCaseDocumentRequirement(inspection_case_id,requirement_key,document_type_key,requirement_level,responsibility_type,is_blocking,created_by)
   select c.inspection_case_id,d.requirement_key,d.document_type_key,d.requirement_level,d.responsibility_type,d.is_blocking,@actor
   from dbo.InspectionCase c
+  join @created newcase on newcase.inspection_case_id=c.inspection_case_id
   join @grouped g on g.atrium_installation_code=c.atrium_installation_code
   cross join dbo.InspectionDocumentRequirementDefinition d
   where c.source_fingerprint=concat(N'CERTIFICATE|',g.atrium_installation_code,N'|',coalesce(convert(nvarchar(10),g.due_date,23),N'MISSING'))

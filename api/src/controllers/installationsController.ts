@@ -1,5 +1,6 @@
 // api/src/controllers/installationsController.ts
 import type { Request, Response } from "express";
+import { CertificationValidationError } from "../utils/certificationValidation.js";
 import * as service from "../services/installationsService.js";
 import { describeParentInstanceProblem } from "../db/queries/parentInstanceGuard.sql.js";
 import * as formsService from "../services/formsService.js";
@@ -43,6 +44,7 @@ function drawingErrorResponse(res: Response, err: any, fallback: string) {
 }
 
 function certificationErrorResponse(res: Response, err: any, fallback: string) {
+  if (err instanceof CertificationValidationError) return res.status(400).json({ error: err.message });
   const message = String(err?.message || err || "");
   const clean = message.toLowerCase();
   if (isHistoricalReadOnlyMessage(clean)) {
@@ -580,6 +582,7 @@ export async function getInstallationMap(req: any, res: Response) {
       installationType: req.query?.installationType,
       installationTypes: req.query?.installationTypes,
       businessUnits: req.query?.businessUnits,
+      relationGroups: req.query?.relationGroups,
       fields: req.query?.fields,
       coordinateMode: req.query?.coordinateMode,
       followUpMode: req.query?.followUpMode,
@@ -590,6 +593,7 @@ export async function getInstallationMap(req: any, res: Response) {
       monitoringServiceStatus: req.query?.monitoringServiceStatus,
       certificationRequiredOnly: req.query?.certificationRequiredOnly,
       certificateStatus: req.query?.certificateStatus,
+      certificateType: req.query?.certificateType,
       activeInspectionOnly: req.query?.activeInspectionOnly,
     });
     return res.json(data);
@@ -687,6 +691,7 @@ export async function getInstallationMapViewport(req: any, res: Response) {
       installationType: req.query?.installationType,
       installationTypes: req.query?.installationTypes,
       businessUnits: req.query?.businessUnits,
+      relationGroups: req.query?.relationGroups,
       fields: req.query?.fields,
       followUpMode: req.query?.followUpMode,
     });
@@ -694,6 +699,21 @@ export async function getInstallationMapViewport(req: any, res: Response) {
   } catch (err) {
     console.error(err);
     return res.status(500).json({ error: "installation map could not be loaded" });
+  }
+}
+
+/* De relatiegroepen waarop de installatiekaart gefilterd kan worden. Een groep komt uit
+   Atrium en groepeert relaties; denk aan RUG of Woonzorg met tientallen gebouwen. */
+export async function getInstallationRelationGroups(req: any, res: Response) {
+  try {
+    const data = await operationalService.listInstallationRelationGroups({
+      onlyCurrent: req.query?.onlyCurrent,
+      businessUnits: req.query?.businessUnits,
+    });
+    return res.json(data);
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ error: "relation groups could not be loaded" });
   }
 }
 

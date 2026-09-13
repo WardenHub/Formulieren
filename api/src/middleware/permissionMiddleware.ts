@@ -19,7 +19,9 @@ export async function getPermissionsForRoles(roles: string[]) {
      and p.is_active = 1
     where rp.application_role in (select [value] from openjson(@rolesJson));
   `, { rolesJson: JSON.stringify(normalized) });
-  const permissions = (rows || []).map((row) => String(row.permission_code));
+  const certificationManager = normalized.some((role) => ["admin", "certificering_coordinator"].includes(role));
+  const permissions = (rows || []).map((row) => String(row.permission_code)).filter((permission) =>
+    certificationManager || !permission.startsWith("inspection.") || ["inspection.view", "inspection.audit.view"].includes(permission));
   permissionCache.set(cacheKey, { expiresAt: Date.now() + CACHE_TTL_MS, permissions });
   return permissions;
 }

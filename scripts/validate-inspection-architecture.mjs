@@ -111,12 +111,12 @@ if (readerProgram && readerCatalog && readerService && readerOptions && readerMa
 }
 
 expect("UI overzicht", list, ["inspection-grid__row", "Nieuwe case", "Signalen bijwerken", "inspection-scope-picker"]);
-expect("UI detail", detail, ["Voorbereidingschecklist", "Documentpakket", "Inspectierapport", "PASS verwerken", "FAIL en herstelactie", "Herinspectie aanmaken", "Case afronden", "Toon op tekening"]);
+expect("UI detail", detail, ["Voorbereidingschecklist", "Documentpakket", "Inspectierapport", "Goedgekeurd vastleggen", "Afgekeurd; herstelactie aanmaken", "Herinspectie aanmaken", "Dossier afronden", "Toon op tekening"]);
 
 expect("set-based inspectieoverzicht", queries, [
   "listInspectionOverviewSql",
   "from operational o",
-  "o.certification_required=1 or c.inspection_case_id is not null",
+  "selected_cert.required_count>0",
   "@attentionFilter<>N'CERTIFICATE_MISSING'",
   "@attentionFilter<>N'PLANNING_MISSING'",
   "@attentionFilter<>N'DOCUMENTS_MISSING'",
@@ -124,7 +124,7 @@ expect("set-based inspectieoverzicht", queries, [
   "@attentionFilter<>N'REINSPECTION_REQUIRED'",
   "@attentionFilter<>N'OPEN_ACTIONS'",
 ]);
-expect("gedeelde operationele CTE", operationalQueries, ["export const operationalCtes", "certificate_scope_status", "inspection_summary", "operational as ("]);
+expect("gedeelde operationele CTE", operationalQueries, ["export const operationalCtes", "certificationPolicyCtes", "inspection_summary", "operational as ("]);
 expect("overzichtservice", service, ["listInspectionOverview", "ATTENTION_FILTER_SET", "certificateExpiringDays", "listInspectionOverviewSql"]);
 expect("gescheiden overzicht- en caseroutes", routes, ['router.get("/",', 'router.get("/cases",']);
 expect("overzichtfilters", list, ["CERTIFICATE_MISSING", "PLANNING_MISSING", "APPOINTMENT_UNCONFIRMED", "DOCUMENTS_MISSING", "REPORT_MISSING", "REINSPECTION_REQUIRED", "OPEN_ACTIONS"]);

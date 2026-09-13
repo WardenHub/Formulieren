@@ -24,6 +24,8 @@ import { BookTextIcon } from "@/components/ui/book-text";
 import { LaughIcon } from "@/components/ui/laugh";
 import { GavelIcon } from "@/components/ui/gavel";
 import { CircleHelpIcon } from "@/components/ui/circle-help";
+import { DownloadIcon } from "@/components/ui/download";
+import { getOfflineClientLatest } from "../api/emberApi.js";
 import { buildInitials, resolveProfileAvatarPath } from "../lib/avatar.js";
 import { publishProfileAvatar } from "../lib/profileAvatarStore.js";
 import NotificationCenter from "../components/NotificationCenter.jsx";
@@ -147,6 +149,8 @@ export default function Layout() {
   const [rolesStatus, setRolesStatus] = useState("loading");
   const [rolesProblem, setRolesProblem] = useState(null);
   const [meRetryToken, setMeRetryToken] = useState(0);
+  // "idle" | "bezig" | de reden waarom het niet lukte; zie handleOfflineClientDownload.
+  const [offlineClientState, setOfflineClientState] = useState("idle");
   const [meData, setMeData] = useState(null);
   const [profileData, setProfileData] = useState(null);
   const [avatarObjectUrl, setAvatarObjectUrl] = useState(null);
@@ -159,6 +163,30 @@ export default function Layout() {
     () => resolveProfileUpdatedKey(profileData, meData, profileRefreshToken),
     [profileData, meData, profileRefreshToken]
   );
+
+  /* Haalt de actuele versie op en start de download. De link komt pas op dit moment van de
+     server en verloopt vanzelf, dus er staat nergens een URL die kan verouderen. */
+  async function handleOfflineClientDownload() {
+    if (offlineClientState === "bezig") return;
+
+    setOfflineClientState("bezig");
+
+    try {
+      const data = await getOfflineClientLatest();
+
+      if (!data?.available || !data?.download_url) {
+        setOfflineClientState(data?.reason || "de download is nu niet beschikbaar");
+        return;
+      }
+
+      setOfflineClientState("idle");
+      setAvatarOpen(false);
+      window.location.assign(data.download_url);
+    } catch (err) {
+      console.error("offline client ophalen mislukt", err);
+      setOfflineClientState(describeApiFailure(err));
+    }
+  }
 
   function go(to) {
     setNavOpen(false);
@@ -537,6 +565,19 @@ export default function Layout() {
               >
                 Feedback
               </AnimatedMenuLink>
+
+              <AnimatedMenuItem
+                Icon={DownloadIcon}
+                onClick={handleOfflineClientDownload}
+              >
+                {offlineClientState === "bezig" ? "Ember Offline ophalen..." : "Ember Offline downloaden"}
+              </AnimatedMenuItem>
+
+              {offlineClientState !== "idle" && offlineClientState !== "bezig" ? (
+                <p className="avatar-menu-note avatar-menu-note--warning" role="status">
+                  {offlineClientState}
+                </p>
+              ) : null}
 
               <AnimatedMenuAnchor
                 href="https://kennis.wardenburg.nl/Main/Werkwijze/Ember/"

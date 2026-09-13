@@ -1,4 +1,5 @@
 import { sqlQuery } from "../db/index.js";
+import { CertificationValidationError } from "../utils/certificationValidation.js";
 import {
   createCertificateSendHistorySql,
   createInstallationCertificateSql,
@@ -10,6 +11,8 @@ import {
 } from "../db/queries/certificates.sql.js";
 import { assertInstallationWritable } from "./installationsService.js";
 import { getUserAuditActor } from "../utils/userIdentity.js";
+import { getCertificationContextSql } from "../db/queries/certificationContext.sql.js";
+import { certificateWarningDays, INSTALLATION_CERTIFICATE_SCOPES, validateCertificateCoverage } from "./certificationPolicy.js";
 
 const SCOPES = ["BMI", "OAI_A", "OAI_B", "OAI_PZI"] as const;
 const SCOPE_SET = new Set(SCOPES);
@@ -44,7 +47,8 @@ function enumValue(value: unknown, field: string, allowed: Set<string>, fallback
 function dateValue(value: unknown, field: string) {
   const clean = String(value ?? "").trim();
   if (!clean) return null;
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(clean) || Number.isNaN(Date.parse(`${clean}T00:00:00Z`))) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(clean) || Number.isNaN(Date.parse(`${clean}T00:00:00Z`))
+    || new Date(`${clean}T00:00:00Z`).toISOString().slice(0, 10) !== clean) {
     throw new Error(`${field} invalid`);
   }
   return clean;
@@ -133,66 +137,39 @@ function scopeValues(value: unknown) {
   return scopes;
 }
 
-function expiryWarningDays() {
-  const configured = Number(process.env.CERTIFICATE_EXPIRY_WARNING_DAYS || 90);
-  return Number.isInteger(configured) && configured >= 1 && configured <= 730 ? configured : 90;
-}
-
-function buildScopeSummary(requirements: any[], certificates: any[]) {
-  return SCOPES.map((scope) => {
-    const requirement = requirements.find((item) => item.scope === scope) || null;
-    const relevant = certificates.filter(
-      (item) => item.record_status === "CURRENT" && item.scopes.includes(scope)
-    );
-    const verified = relevant.filter((item) => item.verification_status === "VERIFIED");
-    let certificateStatus = "UNKNOWN";
-
-    if (requirement?.requirement_status === "NOT_REQUIRED") {
-      certificateStatus = "NOT_REQUIRED";
-    } else if (requirement?.requirement_status === "REQUIRED") {
-      if (!verified.length) {
-        certificateStatus = relevant.length ? "UNKNOWN" : "MISSING";
-      } else if (verified.some((item) => item.validity_status === "VALID")) {
-        certificateStatus = "VALID";
-      } else if (verified.some((item) => item.validity_status === "EXPIRING")) {
-        certificateStatus = "EXPIRING";
-      } else if (verified.some((item) => item.validity_status === "EXPIRED")) {
-        certificateStatus = "EXPIRED";
-      } else {
-        certificateStatus = "UNKNOWN";
-      }
-    }
-
-    return {
-      scope,
-      requirement_status: requirement?.requirement_status || "UNKNOWN",
-      requirement,
-      certificate_status: certificateStatus,
-      current_certificates: relevant,
-    };
-  });
-}
 
 export async function getCertificationOverview(code: string) {
   const installationCode = cleanCode(code);
-  const warningDays = expiryWarningDays();
-  const [requirementsRows, certificateRows, documents] = await Promise.all([
+  const warningDays = certificateWarningDays();
+  const [requirementsRows, certificateRows, documents, contextRows] = await Promise.all([
     sqlQuery(getCertificationRequirementsSql, { code: installationCode }),
     sqlQuery(getInstallationCertificatesSql, {
       code: installationCode,
       expiryWarningDays: warningDays,
     }),
     sqlQuery(getCertificateDocumentChoicesSql, { code: installationCode }),
+    sqlQuery(getCertificationContextSql, { code: installationCode, certificateExpiringDays: warningDays }),
   ]);
   const requirements = (requirementsRows || []).map(normalizeRequirement);
   const certificates = (certificateRows || []).map(normalizeCertificate);
+  const context = contextRows?.[0] as any;
+  const allowedScopes = INSTALLATION_CERTIFICATE_SCOPES[context?.installation_type_key] || [];
+  const maintenanceContract = context?.maintenance_contract_status || "NONE";
+  const inspectionContract = context?.inspection_service_status || "NONE";
+  const typedSummary = parseArray(context?.summary_json).map((row) => ({ ...row,
+    requirement: requirements.find((requirement) => requirement.scope === row.scope) || null }));
   return {
-    scopes: [...SCOPES],
+    scopes: [...allowedScopes],
+    installation_type_key: context?.installation_type_key || null,
+    combination_allowed: allowedScopes.includes("BMI") && allowedScopes.includes("OAI_B"),
+    maintenance_contract_status: maintenanceContract,
+    inspection_service_status: inspectionContract,
+    certificate_summary: typedSummary,
     expiry_warning_days: warningDays,
     requirements,
     certificates,
     documents: documents || [],
-    scope_summary: buildScopeSummary(requirements, certificates),
+    scope_summary: typedSummary.filter((r) => r.certificate_type === "INSPECTION"),
   };
 }
 
@@ -200,6 +177,11 @@ export async function upsertCertificationRequirement(code: string, payload: any,
   const installationCode = cleanCode(code);
   await assertInstallationWritable(installationCode);
   const scope = enumValue(payload?.scope, "scope", SCOPE_SET as Set<string>);
+  const overview = await getCertificationOverview(installationCode);
+  if (!overview.scopes.includes(scope as any)) throw new CertificationValidationError("Certificaat past niet bij de vastgelegde installatiesoort");
+  if (overview.inspection_service_status === "ACTIVE" && payload?.requirement_status !== "REQUIRED") {
+    throw new CertificationValidationError("Contractgestuurde inspectie-eis wijzigen in Syntess, niet in Ember");
+  }
   const existing = Boolean(String(payload?.row_version || "").trim());
   const rows = await sqlQuery(upsertCertificationRequirementSql, {
     code: installationCode,
@@ -222,15 +204,20 @@ export async function upsertCertificationRequirement(code: string, payload: any,
 
 function certificateParams(code: string, payload: any, user: any) {
   const scopes = scopeValues(payload?.scopes);
+  const issueDate = dateValue(payload?.issue_date, "issue date");
+  const validUntil = dateValue(payload?.valid_until, "valid until");
+  if (!issueDate || !validUntil || validUntil < issueDate) {
+    throw new CertificationValidationError("Vul geldige afgifte- en geldigheidsdatums in; geldig tot mag niet vóór afgifte liggen");
+  }
   return {
     code,
     certificateType: enumValue(payload?.certificate_type, "certificate type", CERTIFICATE_TYPES),
-    certificateNumber: optionalText(payload?.certificate_number, 200),
+    certificateNumber: requiredText(payload?.certificate_number, "certificate number", 200),
     description: requiredText(payload?.description, "description", 500),
-    issueDate: dateValue(payload?.issue_date, "issue date"),
+    issueDate,
     inspectionDate: dateValue(payload?.inspection_date, "inspection date"),
-    validUntil: dateValue(payload?.valid_until, "valid until"),
-    issuerName: optionalText(payload?.issuer_name, 200),
+    validUntil,
+    issuerName: requiredText(payload?.issuer_name, "issuer name", 200),
     inspectionBody: optionalText(payload?.inspection_body, 200),
     recordStatus: enumValue(payload?.record_status, "record status", RECORD_STATUSES, "CURRENT"),
     verificationStatus: enumValue(
@@ -240,7 +227,7 @@ function certificateParams(code: string, payload: any, user: any) {
       "VERIFIED"
     ),
     supersedesCertificateId: uuid(payload?.supersedes_certificate_id, "superseded certificate id", true),
-    documentId: uuid(payload?.installation_document_id, "installation document id", true),
+    documentId: uuid(payload?.installation_document_id, "installation document id"),
     scopesJson: JSON.stringify(scopes),
     changeReason: optionalText(payload?.change_reason, 2000),
     actor: getUserAuditActor(user),
@@ -250,6 +237,11 @@ function certificateParams(code: string, payload: any, user: any) {
 export async function createInstallationCertificate(code: string, payload: any, user: any) {
   const installationCode = cleanCode(code);
   await assertInstallationWritable(installationCode);
+  const overview = await getCertificationOverview(installationCode);
+  validateCertificateCoverage(overview.scopes, scopeValues(payload?.scopes), payload?.combined === true);
+  if (!payload?.installation_document_id || !payload?.certificate_number || !payload?.issue_date || !payload?.valid_until || !payload?.issuer_name) {
+    throw new CertificationValidationError("Certificaatbestand, nummer, uitgever, afgiftedatum en geldigheidsdatum zijn verplicht");
+  }
   const rows = await sqlQuery(createInstallationCertificateSql, certificateParams(installationCode, payload, user));
   return { ok: true, installation_certificate_id: rows?.[0]?.installation_certificate_id || null };
 }
@@ -262,6 +254,8 @@ export async function updateInstallationCertificate(
 ) {
   const installationCode = cleanCode(code);
   await assertInstallationWritable(installationCode);
+  const overview = await getCertificationOverview(installationCode);
+  validateCertificateCoverage(overview.scopes, scopeValues(payload?.scopes), payload?.combined === true);
   const rows = await sqlQuery(updateInstallationCertificateSql, {
     ...certificateParams(installationCode, payload, user),
     certificateId: uuid(certificateId, "certificate id"),

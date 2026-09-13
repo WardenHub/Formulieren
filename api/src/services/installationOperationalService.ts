@@ -1,5 +1,12 @@
 import { sqlQuery } from "../db/index.js";
-import { getInstallationMapViewportSql, getInstallationOperationalRowsSql } from "../db/queries/installationOperational.sql.js";
+import { certificateWarningDays } from "./certificationPolicy.js";
+import {
+  getInstallationMapViewportSql,
+  getInstallationOperationalRowsSql,
+  getInstallationRelationGroupsSql,
+  getRelationGroupTablesAvailableSql,
+  withRelationGroupFilter,
+} from "../db/queries/installationOperational.sql.js";
 
 export type InstallationOperationalFilters = {
   q?: string | null;
@@ -8,6 +15,7 @@ export type InstallationOperationalFilters = {
   installationType?: string | null;
   installationTypes?: string | string[] | null;
   businessUnits?: string | string[] | null;
+  relationGroups?: string | string[] | null;
   fields?: string | null;
   coordinateMode?: "ALL" | "WITH" | "WITHOUT";
   followUpMode?: "ALL" | "OPEN" | "NONE" | "OVERDUE";
@@ -17,7 +25,8 @@ export type InstallationOperationalFilters = {
   inspectionServiceStatus?: "ACTIVE" | "INACTIVE" | "UNKNOWN" | null;
   monitoringServiceStatus?: "ACTIVE" | "INACTIVE" | "UNKNOWN" | null;
   certificationRequiredOnly?: boolean;
-  certificateStatus?: "VALID" | "EXPIRING" | "EXPIRED" | "MISSING" | "REVOKED" | "UNKNOWN" | null;
+  certificateType?: "MAINTENANCE" | "INSPECTION" | null;
+  certificateStatus?: "VALID" | "EXPIRING" | "EXPIRED" | "MISSING" | "REVOKED" | "UNKNOWN" | "CONTRACT_ENDED" | "NOT_REQUIRED" | null;
   activeInspectionOnly?: boolean;
 };
 
@@ -30,9 +39,15 @@ export type InstallationMapViewportFilters = InstallationOperationalFilters & {
 };
 
 const SERVICE_STATUSES = new Set(["ACTIVE", "INACTIVE", "UNKNOWN"]);
-const CERTIFICATE_STATUSES = new Set(["VALID", "EXPIRING", "EXPIRED", "MISSING", "REVOKED", "UNKNOWN"]);
+const CERTIFICATE_STATUSES = new Set(["VALID", "EXPIRING", "EXPIRED", "MISSING", "REVOKED", "UNKNOWN", "CONTRACT_ENDED", "NOT_REQUIRED"]);
 const COORDINATE_MODES = new Set(["ALL", "WITH", "WITHOUT"]);
 const FOLLOW_UP_MODES = new Set(["ALL", "OPEN", "NONE", "OVERDUE"]);
+
+/* Via welke objectrollen een installatie bij een relatiegroep hoort. Intern alle vier; wie
+   bij een concern hoort, hoort erbij, ongeacht of dat via de gebruiker of de debiteur loopt.
+   Externe toegang hoort een smallere lijst mee te geven, en daarom staat dit als parameter in
+   de query en niet als vaste regel. */
+export const RELATION_GROUP_ROLES = ["GEBRUIKER", "EIGENAAR", "BEHEERDER", "DEBITEUR"];
 
 function enumValue(value: unknown, allowed: Set<string>, fallback: string | null) {
   const clean = String(value ?? "").trim().toUpperCase();
@@ -110,11 +125,23 @@ function normalizeBusinessUnits(filters: InstallationOperationalFilters) {
   return units.slice(0, 20);
 }
 
+/* De sleutels zijn "Wardenburg|100112"; ze komen uit onze eigen lijst en gaan als json naar
+   de query, dus ze worden alleen ontdaan van witruimte en begrensd in aantal. */
+function normalizeRelationGroups(filters: InstallationOperationalFilters) {
+  const raw = filters.relationGroups ?? "";
+  const list = Array.isArray(raw) ? raw : String(raw).split(",");
+
+  const groups = Array.from(
+    new Set(list.map((value) => String(value || "").trim()).filter(Boolean))
+  );
+
+  return groups.slice(0, 50);
+}
+
 function queryParams(filters: InstallationOperationalFilters, installationCode: string | null) {
   const q = String(filters.q ?? "").trim();
   const installationTypes = normalizeInstallationTypes(filters);
   const installationType = installationTypes.length === 1 ? installationTypes[0] : "";
-  const configuredHorizon = Number(process.env.CERTIFICATE_EXPIRING_HORIZON_DAYS || 90);
 
   return {
     installationCode,
@@ -129,6 +156,11 @@ function queryParams(filters: InstallationOperationalFilters, installationCode: 
       const units = normalizeBusinessUnits(filters);
       return units.length ? JSON.stringify(units) : null;
     })(),
+    relationGroupsJson: (() => {
+      const groups = normalizeRelationGroups(filters);
+      return groups.length ? JSON.stringify(groups) : null;
+    })(),
+    relationGroupRolesJson: JSON.stringify(RELATION_GROUP_ROLES),
     coordinateMode: enumValue(filters.coordinateMode, COORDINATE_MODES, "ALL"),
     followUpMode: enumValue(filters.followUpMode, FOLLOW_UP_MODES, "ALL"),
     openFormsOnly: boolValue(filters.openFormsOnly),
@@ -137,11 +169,10 @@ function queryParams(filters: InstallationOperationalFilters, installationCode: 
     inspectionServiceStatus: enumValue(filters.inspectionServiceStatus, SERVICE_STATUSES, null),
     monitoringServiceStatus: enumValue(filters.monitoringServiceStatus, SERVICE_STATUSES, null),
     certificationRequiredOnly: boolValue(filters.certificationRequiredOnly),
+    certificateType: enumValue(filters.certificateType, new Set(["MAINTENANCE", "INSPECTION"]), null),
     certificateStatus: enumValue(filters.certificateStatus, CERTIFICATE_STATUSES, null),
     activeInspectionOnly: boolValue(filters.activeInspectionOnly),
-    certificateExpiringDays: Number.isFinite(configuredHorizon)
-      ? Math.max(1, Math.min(730, Math.trunc(configuredHorizon)))
-      : 90,
+    certificateExpiringDays: certificateWarningDays(),
   };
 }
 
@@ -214,7 +245,10 @@ export async function getInstallationOperationalSummary(code: string) {
   const cleanCode = String(code || "").trim();
   if (!cleanCode) throw new Error("installation code required");
 
-  const rows = await sqlQuery(getInstallationOperationalRowsSql, queryParams({ take: 1, onlyCurrent: false }, cleanCode));
+  const rows = await sqlQuery(
+    withRelationGroupFilter(getInstallationOperationalRowsSql, "o", false),
+    queryParams({ take: 1, onlyCurrent: false }, cleanCode)
+  );
   const item = rows?.[0] ? normalizeRow(rows[0]) : null;
   return { item };
 }
@@ -261,7 +295,11 @@ function toListRow(row: any) {
 }
 
 export async function getInstallationMap(filters: InstallationOperationalFilters = {}) {
-  const rows = await sqlQuery(getInstallationOperationalRowsSql, queryParams(filters, null));
+  const params = queryParams(filters, null);
+  const rows = await sqlQuery(
+    withRelationGroupFilter(getInstallationOperationalRowsSql, "o", Boolean(params.relationGroupsJson)),
+    params
+  );
   const items = (rows || []).map(normalizeRow);
   // fields=full geeft de volledige rij terug voor wie dat nodig heeft; standaard gaat de
   // uitgeklede vorm mee, want dat is wat de lijst en de kaart tonen.
@@ -341,7 +379,9 @@ export async function getInstallationMapViewport(filters: InstallationMapViewpor
   }, null);
 
   const startedAt = Date.now();
-  const rows = await sqlQuery(getInstallationMapViewportSql, {
+  const rows = await sqlQuery(
+    withRelationGroupFilter(getInstallationMapViewportSql, "a", Boolean(params.relationGroupsJson)),
+    {
     ...params,
     north: boundedNumber(filters.north, 53.8, -90, 90),
     south: boundedNumber(filters.south, 50.5, -90, 90),
@@ -350,7 +390,8 @@ export async function getInstallationMapViewport(filters: InstallationMapViewpor
     zoom,
     cellSize,
     maxPerMarker,
-  });
+    }
+  );
 
   return {
     markers: (rows || []).map((row: any) => {
@@ -373,6 +414,58 @@ export async function getInstallationMapViewport(filters: InstallationMapViewpor
       max_per_marker: maxPerMarker,
       query_ms: Date.now() - startedAt,
       truncated: Number(rows?.length || 0) >= Number(params.take),
+    },
+  };
+}
+
+/* De relatiegroepen voor het filter. Alleen groepen die installaties opleveren, met het
+   aantal erbij, zodat het scherm "RUG (345)" kan tonen en niemand op een lege groep klikt.
+
+   fabric_loaded_at is het moment waarop Fabric deze groep in Ember heeft gezet. Dat hoort
+   zichtbaar te zijn: de groepen komen uit Atrium en zijn dus zo actueel als de laatste sync. */
+export async function listInstallationRelationGroups(filters: InstallationOperationalFilters = {}) {
+  const [availability] = (await sqlQuery(getRelationGroupTablesAvailableSql, {})) || [];
+
+  // Voor de eerste sync bestaan de spiegels nog niet. Dat is geen fout; het filter hoort dan
+  // gewoon niet in beeld te komen.
+  if (!availability?.available) {
+    return { groups: [], meta: { group_count: 0, fabric_loaded_at: null, roles: RELATION_GROUP_ROLES, available: false } };
+  }
+
+  const rows = await sqlQuery(getInstallationRelationGroupsSql, {
+    onlyCurrent: boolValue(filters.onlyCurrent, true),
+    businessUnitsJson: (() => {
+      const units = normalizeBusinessUnits(filters);
+      return units.length ? JSON.stringify(units) : null;
+    })(),
+    relationGroupRolesJson: JSON.stringify(RELATION_GROUP_ROLES),
+  });
+
+  const groups = (rows || []).map((row: any) => ({
+    business_unit: row.business_unit ?? null,
+    relation_group_key: row.relation_group_key ?? null,
+    relation_group_code: row.relation_group_code ?? null,
+    relation_group_name: row.relation_group_name ?? null,
+    relation_group_kind: row.relation_group_kind ?? null,
+    installation_count: Number(row.installation_count || 0),
+    fabric_loaded_at: row.fabric_loaded_at ?? null,
+  }));
+
+  const loadedAt = groups
+    .map((group) => group.fabric_loaded_at)
+    .filter(Boolean)
+    .sort()
+    .at(-1) ?? null;
+
+  return {
+    groups,
+    meta: {
+      group_count: groups.length,
+      // De oudste sync bepaalt hoe oud het beeld is; de nieuwste zegt wanneer er voor het
+      // laatst iets is binnengekomen. Het scherm toont de laatste.
+      fabric_loaded_at: loadedAt,
+      roles: RELATION_GROUP_ROLES,
+      available: true,
     },
   };
 }

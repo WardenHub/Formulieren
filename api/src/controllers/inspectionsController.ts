@@ -1,7 +1,9 @@
 import type { Response } from "express";
+import { CertificationValidationError } from "../utils/certificationValidation.js";
 import * as service from "../services/inspectionService.js";
 
 function respondError(res: Response, error: any, fallback: string) {
+  if (error instanceof CertificationValidationError) return res.status(400).json({ error: error.message });
   if (["TIMEOUT", "UNAVAILABLE", "CONFIGURATION", "BAD_RESPONSE"].includes(String(error?.category || ""))) return res.status(503).json({ error: "atrium reader unavailable" });
   if (String(error?.category || "") === "VALIDATION") return res.status(400).json({ error: "atrium reader request invalid" });
   const message = String(error?.message || error || "");
@@ -20,7 +22,7 @@ export async function get(req: any, res: Response) { try { return res.json(await
 export async function create(req: any, res: Response) { try { return res.status(201).json(await service.createInspectionCase(req.body,req.user)); } catch (e) { return respondError(res,e,"create inspection failed"); } }
 export async function update(req: any, res: Response) { try { return res.json(await service.updateInspectionCase(req.params.caseId,req.body,req.user)); } catch (e) { return respondError(res,e,"update inspection failed"); } }
 export async function assignment(req: any, res: Response) { try { return res.json(await service.updateInspectionAssignment(req.params.caseId,req.body,req.user)); } catch (e) { return respondError(res,e,"update inspection assignment failed"); } }
-export async function refresh(req: any, res: Response) { try { return res.json(await service.refreshInspectionWorkOrders(req.params.caseId,req.user)); } catch (e) { return respondError(res,e,"refresh inspection work orders failed"); } }
+export async function refresh(req: any, res: Response) { try { return res.json(await service.refreshInspectionWorkOrders(req.params.caseId,req.user,req.body)); } catch (e) { return respondError(res,e,"refresh inspection work orders failed"); } }
 export async function checklist(req: any, res: Response) { try { return res.json(await service.updateChecklistItem(req.params.caseId,req.params.requirementId,req.body,req.user)); } catch (e) { return respondError(res,e,"update inspection checklist failed"); } }
 export async function preparePackage(req: any, res: Response) { try { return res.status(201).json(await service.preparePackage(req.params.caseId,req.body,req.user)); } catch (e) { return respondError(res,e,"prepare inspection package failed"); } }
 export async function sendPackage(req: any, res: Response) { try { return res.json(await service.sendPackage(req.params.caseId,req.params.packageId,req.body,req.user)); } catch (e) { return respondError(res,e,"send inspection package failed"); } }
