@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { HardDriveDownload, Info, Trash2, WifiOff } from "lucide-react";
 import OfflineDetailPanel from "./components/OfflineDetailPanel.jsx";
 import OnlineFormPickupPanel from "./components/OnlineFormPickupPanel.jsx";
+import ConnectionStrip from "./components/ConnectionStrip.jsx";
 import OfflinePackageImportPanel from "./components/OfflinePackageImportPanel.jsx";
 import OfflineRunnerPanel from "./components/OfflineRunnerPanel.jsx";
 import OfflineWorklist from "./components/OfflineWorklist.jsx";
@@ -10,12 +11,24 @@ import { buildOfflineCounts, mergeOfflinePackage, normalizeOfflinePackage } from
 import {
   deleteOfflinePackage,
   deleteOfflineDocuments,
+  deleteOfflinePhoto,
+  deleteOfflinePhotos,
   getOfflinePackage,
   listOfflinePackages,
+  listOfflinePhotos,
   saveOfflinePackage,
+  saveOfflinePhoto,
 } from "./lib/offlineStore.js";
 import { removeDocumentFolder } from "./lib/offlineFiles.js";
-import { withdrawFormInstance } from "./lib/emberOfflineApi.js";
+import {
+  createFormInstanceDocumentRow,
+  linkDocumentToFollowUp,
+  listFormInstanceDocuments,
+  syncOfflineForm,
+  uploadFormInstanceDocumentFile,
+  withdrawFormInstance,
+} from "./lib/emberOfflineApi.js";
+import { buildOfflineReturnDocument, resolveClientSyncId } from "./lib/offlineSyncDocument.js";
 import { getDesktopAuthSession } from "./lib/desktopAuth.js";
 
 const HOW_IT_WORKS_STORAGE_KEY = "ember-offline-hide-how-it-works";
@@ -48,6 +61,10 @@ export default function App() {
   const [hideHowItWorks, setHideHowItWorks] = useState(false);
   const [showClearWorklist, setShowClearWorklist] = useState(false);
   const [deleteCandidate, setDeleteCandidate] = useState(null);
+  const [syncBezig, setSyncBezig] = useState(false);
+  const [syncMelding, setSyncMelding] = useState("");
+  const [syncToon, setSyncToon] = useState("success");
+  const [photos, setPhotos] = useState([]);
   const [legacyDeleteConfirmed, setLegacyDeleteConfirmed] = useState(false);
 
   useEffect(() => {
@@ -125,6 +142,10 @@ export default function App() {
       setActiveView("detail");
     }
   }, [activeView, selectedItem]);
+
+  useEffect(() => {
+    refreshPhotos(selectedId);
+  }, [selectedId]);
 
   async function handleFilesSelected(files) {
     setBusy(true);
@@ -205,6 +226,287 @@ export default function App() {
     };
 
     await saveOfflinePackage(updated);
+    await refreshPackages(id);
+  }
+
+  /* Alles waar lokaal aan gewerkt is mag terug; ook een formulier dat nog niet is
+     afgerond, want tussentijds opslaan is bij Ember normaal en een concept dat thuis staat
+     is veiliger dan een concept dat alleen op een laptop staat. Een conflict mag opnieuw
+     worden geprobeerd, want misschien is het online intussen opgelost. */
+  function heeftLokaalWerk(item) {
+    const status = item?.local_status;
+
+    /* Een formulier waarvan de antwoorden al geland zijn maar de foto's niet, hoort in de
+       lijst te blijven staan. Zonder dit verdwijnt de knop zodra de antwoorden binnen zijn
+       en blijven die foto's stil op het apparaat achter. */
+    if (item?.local_runtime?.photos_pending) return true;
+
+    return (
+      status === "lokaal_in_bewerking" ||
+      status === "lokaal_afgerond" ||
+      status === "wacht_op_online_afronden" ||
+      status === "conflict"
+    );
+  }
+
+  /* De foto's van één pakket naar Ember brengen, nadat de antwoorden en de punten er zijn.
+     Pas dan bestaat het actiepunt waar een foto aan hangt; eerder uploaden zou een bestand
+     opleveren dat nergens bij hoort.
+
+     Dezelfde drie stappen als online: documentregel, bestand, koppeling. Een foto die is
+     geland krijgt uploaded_at en wordt daarna overgeslagen, zodat een tweede poging niet
+     dezelfde foto nog een keer op kantoor zet. */
+  async function stuurFotosTerug(item, accessToken, puntItems) {
+    const code = item?.summary?.installation_code;
+    const instanceId = item?.summary?.form_instance_id;
+
+    const alleFotos = await listOfflinePhotos(item.id);
+    const teSturen = alleFotos.filter((foto) => !foto.uploaded_at && foto.blob);
+    if (!teSturen.length) return { verstuurd: 0, mislukt: 0 };
+
+    const idPerPunt = new Map(
+      (Array.isArray(puntItems) ? puntItems : [])
+        .filter((punt) => punt?.local_id && punt?.follow_up_action_id)
+        .map((punt) => [punt.local_id, punt.follow_up_action_id])
+    );
+
+    const punten = item?.local_runtime?.manual_points || [];
+    let verstuurd = 0;
+    let mislukt = 0;
+
+    for (const foto of teSturen) {
+      const actionId = idPerPunt.get(foto.point_local_id);
+      if (!actionId) {
+        mislukt += 1;
+        continue;
+      }
+
+      try {
+        const titel =
+          punten.find((punt) => punt.local_id === foto.point_local_id)?.title || "Foto uit het veld";
+
+        /* Welke documentregel er zojuist bij gekomen is, blijkt uit het verschil met de
+           lijst van ervoor; de PUT geeft de hele set terug en niet alleen de nieuwe. */
+        const voor = await listFormInstanceDocuments(accessToken, code, instanceId);
+        const voorIds = new Set(
+          (voor?.items || []).map((doc) => String(doc.form_instance_document_id || doc.document_id))
+        );
+
+        const na = await createFormInstanceDocumentRow(accessToken, code, instanceId, titel);
+        const nieuw = (na?.items || []).find(
+          (doc) => !voorIds.has(String(doc.form_instance_document_id || doc.document_id))
+        );
+
+        const documentId = nieuw?.form_instance_document_id || nieuw?.document_id || null;
+        if (!documentId) {
+          mislukt += 1;
+          continue;
+        }
+
+        await uploadFormInstanceDocumentFile(
+          accessToken,
+          code,
+          instanceId,
+          documentId,
+          foto.blob,
+          foto.file_name
+        );
+
+        await linkDocumentToFollowUp(accessToken, code, instanceId, documentId, actionId);
+
+        await saveOfflinePhoto({ ...foto, uploaded_at: new Date().toISOString() });
+        verstuurd += 1;
+      } catch {
+        /* Een foto die niet landt mag de rest niet ophouden; de antwoorden staan al vast en
+           de foto blijft hier staan voor een volgende poging. */
+        mislukt += 1;
+      }
+    }
+
+    return { verstuurd, mislukt };
+  }
+
+  async function handleSyncAll() {
+    const teSturen = items.filter(heeftLokaalWerk);
+    if (!teSturen.length || syncBezig) return;
+
+    const session = getDesktopAuthSession();
+
+    if (!session?.accessToken) {
+      setError("Meld je eerst aan; daarna kun je je werk terugsturen naar Ember.");
+      setWorkspaceMode("online");
+      return;
+    }
+
+    setSyncBezig(true);
+    setSyncMelding("");
+    setError("");
+
+    let verstuurd = 0;
+    let conflicten = 0;
+    let versieGewijzigd = 0;
+    let fotosVerstuurd = 0;
+    let fotosMislukt = 0;
+    let gestopt = "";
+
+    for (const item of teSturen) {
+      const code = item?.summary?.installation_code;
+      const instanceId = item?.summary?.form_instance_id;
+      if (!code || instanceId == null) continue;
+
+      const clientSyncId = resolveClientSyncId(item);
+
+      try {
+        const uitkomst = await syncOfflineForm(
+          session.accessToken,
+          code,
+          instanceId,
+          buildOfflineReturnDocument(item, { clientSyncId })
+        );
+
+        const geslaagd = Boolean(uitkomst?.ok);
+        const nieuweVersie = !geslaagd && uitkomst?.result === "version_changed";
+
+        let fotosBlijvenStaan = false;
+
+        if (geslaagd) {
+          const fotoResultaat = await stuurFotosTerug(
+            item,
+            session.accessToken,
+            uitkomst?.payload?.points?.items
+          );
+          fotosVerstuurd += fotoResultaat.verstuurd;
+          fotosMislukt += fotoResultaat.mislukt;
+          fotosBlijvenStaan = fotoResultaat.mislukt > 0;
+        }
+
+        if (geslaagd) verstuurd += 1;
+        else if (nieuweVersie) versieGewijzigd += 1;
+        else conflicten += 1;
+
+        const huidig = await getOfflinePackage(item.id);
+        if (!huidig) continue;
+
+        await saveOfflinePackage({
+          ...huidig,
+          local_status: geslaagd ? "gesynchroniseerd" : "conflict",
+          needs_online_finish: !geslaagd,
+          has_conflict: !geslaagd,
+          local_updated_at: new Date().toISOString(),
+          local_runtime: {
+            ...huidig.local_runtime,
+            // Dezelfde sleutel bij een volgende poging; anders maakt de server alles nog
+            // een keer aan in plaats van te herkennen dat het er al is.
+            client_sync_id: clientSyncId,
+            last_sync_at: new Date().toISOString(),
+            last_sync_result: geslaagd ? "accepted" : uitkomst?.result || "conflict",
+            photos_pending: fotosBlijvenStaan,
+          },
+        });
+      } catch (e) {
+        /* Netwerk weg of sessie verlopen; dan heeft doorgaan met de rest geen zin en blijft
+           alles gewoon lokaal staan. */
+        gestopt = e?.message || "Het terugsturen is gestopt.";
+        break;
+      }
+    }
+
+    await refreshPackages(selectedId);
+    setSyncBezig(false);
+
+    if (gestopt) {
+      setError(gestopt);
+      return;
+    }
+
+    const delen = [];
+    if (verstuurd) delen.push(`${verstuurd} ${verstuurd === 1 ? "formulier" : "formulieren"} teruggestuurd naar Ember`);
+    if (conflicten) {
+      delen.push(
+        `${conflicten} ${conflicten === 1 ? "formulier is" : "formulieren zijn"} online gewijzigd; open ${conflicten === 1 ? "het" : "ze"} in Ember om te kijken wat er anders is`
+      );
+    }
+    /* Een nieuwe definitieversie is iets anders dan een gewijzigd antwoord: de vragen zelf
+       zijn veranderd, dus het ingevulde werk hoort bij een formulier dat niet meer bestaat.
+       Dat verdient een eigen zin; "kijk wat er anders is" helpt hier niet. */
+    if (versieGewijzigd) {
+      delen.push(
+        `${versieGewijzigd} ${versieGewijzigd === 1 ? "formulier heeft" : "formulieren hebben"} online een nieuwe versie gekregen; neem contact op met kantoor voordat je ${versieGewijzigd === 1 ? "het" : "ze"} opnieuw verstuurt`
+      );
+    }
+
+    if (fotosVerstuurd) {
+      delen.push(`${fotosVerstuurd} ${fotosVerstuurd === 1 ? "foto" : "foto's"} meegestuurd`);
+    }
+    if (fotosMislukt) {
+      delen.push(
+        `${fotosMislukt} ${fotosMislukt === 1 ? "foto staat" : "foto's staan"} nog op dit apparaat; probeer het straks opnieuw`
+      );
+    }
+
+    setSyncMelding(delen.join(". ") + ".");
+    setSyncToon(conflicten || versieGewijzigd || fotosMislukt ? "warning" : "success");
+
+    await refreshPhotos(selectedId);
+  }
+
+  /* De foto's van het geopende pakket. Ze staan in hun eigen opslag, dus ze moeten apart
+     worden geladen; het pakket zelf blijft daardoor klein genoeg om snel te lezen. */
+  async function refreshPhotos(packageId) {
+    if (!packageId) {
+      setPhotos([]);
+      return;
+    }
+
+    try {
+      setPhotos(await listOfflinePhotos(packageId));
+    } catch (e) {
+      setError(e?.message || "De foto's konden niet worden geladen.");
+    }
+  }
+
+  async function handleAddPhoto(packageId, pointLocalId, bestand) {
+    const nu = new Date();
+    const naam = String(bestand?.name || "").trim() || `foto-${nu.toISOString().slice(0, 19).replace(/[:T]/g, "")}.jpg`;
+
+    await saveOfflinePhoto({
+      id: `${packageId}::${pointLocalId}::${nu.getTime()}`,
+      package_id: packageId,
+      point_local_id: pointLocalId,
+      file_name: naam,
+      mime_type: bestand?.type || "image/jpeg",
+      size_bytes: bestand?.size ?? null,
+      /* Het blob zelf gaat mee de opslag in. Alleen een pad bewaren zou betekenen dat de
+         foto verdwijnt zodra de camera-app of de gebruiker hem opruimt. */
+      blob: bestand,
+      created_at: nu.toISOString(),
+      uploaded_at: null,
+    });
+
+    await refreshPhotos(packageId);
+  }
+
+  async function handleRemovePhoto(photoId) {
+    await deleteOfflinePhoto(photoId);
+    await refreshPhotos(selectedId);
+  }
+
+  /* Punten die in het veld zijn opgeschreven. Ze staan bij het pakket en reizen mee in het
+     terugstuurdocument; de server maakt ze daar per stuk aan, met het lokale id als sleutel
+     zodat een tweede poging niets dubbel aanmaakt. */
+  async function handleSavePoints(id, punten) {
+    const current = await getOfflinePackage(id);
+    if (!current) return;
+
+    await saveOfflinePackage({
+      ...current,
+      local_updated_at: new Date().toISOString(),
+      local_runtime: {
+        ...current.local_runtime,
+        manual_points: Array.isArray(punten) ? punten : [],
+      },
+    });
+
     await refreshPackages(id);
   }
 
@@ -297,6 +599,9 @@ export default function App() {
     await cancelOnlineFormBeforeRemoval(item, options);
     await removeDocumentFolder(item.id);
     await deleteOfflineDocuments(item.id);
+    // Foto's staan in hun eigen opslag; zonder dit blijven ze achter bij een pakket dat er
+    // niet meer is en raakt het apparaat langzaam vol met beeld dat niemand nog kan plaatsen.
+    await deleteOfflinePhotos(item.id);
     await deleteOfflinePackage(item.id);
   }
 
@@ -349,6 +654,10 @@ export default function App() {
           onBack={() => setActiveView("detail")}
           onSaveAnswers={handleSaveAnswers}
           onSetStatus={handleSetStatus}
+          onSavePoints={handleSavePoints}
+          photos={photos}
+          onAddPhoto={handleAddPhoto}
+          onRemovePhoto={handleRemovePhoto}
         />
       </div>
     );
@@ -388,6 +697,17 @@ export default function App() {
           </button>
         </div>
       </header>
+
+      {/* Altijd zichtbaar, ook als alles goed gaat. De vraag "doet dit ding het wel zonder
+          internet" hoort beantwoord te zijn voordat iemand hem stelt. */}
+      <ConnectionStrip
+        wachtendAantal={items.filter(heeftLokaalWerk).length}
+        conflictAantal={items.filter((item) => item?.local_status === "conflict").length}
+        onSync={handleSyncAll}
+        syncBezig={syncBezig}
+      />
+
+      {syncMelding ? <p className={`eo-inline-note eo-inline-note--${syncToon}`}>{syncMelding}</p> : null}
 
       <section className="eo-summary-grid">
         <SummaryCard

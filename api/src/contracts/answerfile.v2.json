@@ -34,7 +34,13 @@
         "description": "Spanning gemeten op 11,2 V.",
         "category": null,
         "priority": "HIGH",
-        "source_question_name": null
+        "source_question_name": null,
+        "pin": {
+          "document_id": "11111111-2222-3333-4444-555555555555",
+          "page_number": 1,
+          "x_normalized": 0.245833,
+          "y_normalized": 0.744110
+        }
       }
     ]
   },

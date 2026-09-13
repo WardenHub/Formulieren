@@ -341,6 +341,13 @@ textarea {
   color: var(--danger);
 }
 
+/* Een conflict is geen fout van de monteur en geen succes; het is iets om te bekijken.
+   Groen zou zeggen dat het klaar is, rood dat er iets stuk is. Allebei onwaar. */
+.eo-inline-note--warning {
+  background: var(--warning-soft);
+  color: var(--warning);
+}
+
 .eo-worklist {
   display: grid;
   gap: 12px;
@@ -1536,4 +1543,404 @@ textarea {
     align-items: stretch;
     flex-direction: column;
   }
+}
+
+/* =========================================================
+   Verbindingsstrook
+   =========================================================
+   Altijd zichtbaar, ook als alles goed is. Offline is hier geen storing maar de bedoeling,
+   dus die stand is rustig blauw en niet rood; rood zou een monteur laten denken dat er iets
+   stuk is terwijl hij juist doet waar de app voor gemaakt is. */
+
+.eo-connection {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--surface);
+  box-shadow: var(--shadow);
+  font-size: 15px;
+}
+
+.eo-connection__icon {
+  display: inline-flex;
+  flex: none;
+}
+
+.eo-connection__text {
+  flex: 1;
+  min-width: 0;
+}
+
+.eo-connection__button {
+  flex: none;
+}
+
+.eo-connection--offline {
+  border-color: var(--brand);
+  background: var(--brand-soft);
+  color: var(--text-strong);
+}
+
+.eo-connection--terugsturen {
+  border-color: var(--warning);
+  background: var(--warning-soft);
+  color: var(--text-strong);
+}
+
+.eo-connection--online {
+  color: var(--text-soft);
+}
+
+/* In de runner is de strook een dunne regel; daar telt het formulier en niet de melding. */
+.eo-connection--compact {
+  border-radius: 0;
+  border-left: 0;
+  border-right: 0;
+  box-shadow: none;
+  padding: 8px 20px;
+  font-size: 14px;
+}
+
+/* =========================================================
+   Doorbladeren onder het formulier
+   ========================================================= */
+
+.eo-runner__pagefooter {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-top: 20px;
+  padding: 16px 0 8px;
+  border-top: 1px solid var(--border);
+}
+
+.eo-runner__pagecount {
+  color: var(--text-soft);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+/* =========================================================
+   Wat er nog ontbreekt
+   ========================================================= */
+
+.eo-controle-lijst {
+  display: grid;
+  gap: 8px;
+  margin: 4px 0 0;
+  padding: 0;
+  list-style: none;
+  max-height: 46vh;
+  overflow-y: auto;
+}
+
+.eo-controle-lijst button {
+  display: grid;
+  gap: 2px;
+  width: 100%;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface-soft);
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.eo-controle-lijst button:hover {
+  border-color: var(--brand);
+  background: var(--brand-soft);
+}
+
+.eo-controle-lijst__vraag {
+  font-weight: 700;
+}
+
+.eo-controle-lijst__pagina,
+.eo-controle-lijst__melding {
+  color: var(--text-soft);
+  font-size: 13px;
+}
+
+/* =========================================================
+   Punten voor kantoor; wat de monteur onderweg ziet
+   ========================================================= */
+
+.eo-points {
+  display: grid;
+  gap: 10px;
+}
+
+.eo-points__list {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.eo-points__item {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface-soft, #f7f9fc);
+}
+
+.eo-points__item-text {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  flex: 1;
+}
+
+.eo-points__item-title {
+  color: var(--text-strong);
+  font-weight: 700;
+  font-size: 14px;
+  overflow-wrap: anywhere;
+}
+
+.eo-points__item-note {
+  color: var(--text-soft);
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
+.eo-points__item-priority {
+  color: var(--text-soft);
+  font-size: 12px;
+}
+
+.eo-points__remove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  /* Ruim genoeg om met een werkhandschoen te raken. */
+  width: 34px;
+  height: 34px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--danger);
+  cursor: pointer;
+}
+
+.eo-points__remove:hover:not(:disabled) {
+  background: var(--danger-soft);
+}
+
+.eo-points__form {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+}
+
+.eo-points__field {
+  display: grid;
+  gap: 4px;
+  font-size: 13px;
+  color: var(--text-soft);
+}
+
+.eo-points__field input,
+.eo-points__field textarea,
+.eo-points__field select {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--text-strong);
+  font: inherit;
+  font-size: 14px;
+}
+
+.eo-points__field textarea {
+  resize: vertical;
+}
+
+.eo-points__error {
+  margin: 0;
+  color: var(--danger);
+  font-size: 13px;
+}
+
+.eo-points__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.eo-points__toggle {
+  justify-content: center;
+}
+
+.eo-points__photos {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.eo-points__photo {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  padding: 4px 6px 4px 10px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  font-size: 12px;
+  color: var(--text-soft);
+}
+
+.eo-points__photo-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 16ch;
+}
+
+.eo-points__photo-remove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--danger);
+  cursor: pointer;
+}
+
+.eo-points__photo-add {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  /* Even hoog als de knoppen eromheen; met handschoenen aan is een klein doel geen doel. */
+  min-height: 34px;
+  padding: 6px 12px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--text-strong);
+  font-size: 13px;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.eo-points__photo-add:hover:not(:disabled) {
+  background: var(--surface-soft);
+  border-color: var(--border-strong);
+}
+
+/* =========================================================
+   Plek op tekening kiezen
+   ========================================================= */
+
+.eo-pin-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  background: rgba(15, 33, 61, 0.45);
+}
+
+.eo-pin-dialog {
+  width: min(1000px, 100%);
+  max-height: 92vh;
+  overflow: auto;
+  display: grid;
+  gap: 12px;
+  padding: 20px;
+  border-radius: 22px;
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+
+.eo-pin-dialog__head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.eo-pin-dialog__title {
+  font-size: 20px;
+  font-weight: 800;
+  color: var(--text-strong);
+}
+
+.eo-pin-dialog__hint {
+  margin: 4px 0 0;
+  color: var(--text-soft);
+  font-size: 14px;
+}
+
+.eo-pin-dialog__close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+  color: var(--text);
+  cursor: pointer;
+}
+
+.eo-pin-dialog__controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: flex-end;
+}
+
+.eo-pin-dialog__pages {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 14px;
+  color: var(--text-soft);
+}
+
+.eo-pin-dialog__canvas {
+  position: relative;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  overflow: hidden;
+  background: #fff;
+  /* Aanwijzen is de hele bedoeling van dit vlak; dat mag de cursor ook zeggen. */
+  cursor: crosshair;
+  line-height: 0;
+}
+
+.eo-pin-dialog__canvas canvas {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.eo-pin-dialog__marker {
+  position: absolute;
+  color: var(--danger);
+  /* De punt van de speld wijst naar de plek, niet het midden van het icoon. */
+  transform: translate(-50%, -100%);
+  pointer-events: none;
 }

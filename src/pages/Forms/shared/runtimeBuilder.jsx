@@ -114,12 +114,15 @@ export function createRuntimeSurveyModel(
 export function setRuntimeSurveyData(model, answersObj, suppressDirtyRef) {
   const normalizedAnswers = normalizeFixedMatrixAnswers(model, answersObj);
 
-  suppressDirtyRef.current = true;
+  /* De vlag onderdrukt de dirty-melding tijdens het vullen. Een aanroeper zonder ref heeft
+     die melding ook niet; Ember Offline bouwt zijn model buiten React om. Zonder deze
+     controle liep dat stuk op een ref die er niet is. */
+  if (suppressDirtyRef) suppressDirtyRef.current = true;
   try {
     model.data = normalizedAnswers;
     syncAllMatrixQuestionVisualErrors(model);
   } finally {
-    suppressDirtyRef.current = false;
+    if (suppressDirtyRef) suppressDirtyRef.current = false;
   }
 }
 
@@ -343,7 +346,13 @@ export function applyRuntimePrefillToModel({
   };
 }
 
-export async function buildRuntimeModelFromSurvey({
+/* Dezelfde opbouw, zonder await.
+ *
+ * Ember Offline bouwt zijn model in een useMemo en kan dus niet wachten; zonder deze
+ * synchrone variant zou de offline app de stappen hieronder moeten naschrijven, en dan
+ * lopen online en offline vroeg of laat uit elkaar. Er valt hier niets te wachten: de
+ * prefill is al opgehaald voordat deze functie wordt aangeroepen. */
+export function buildRuntimeModelFromSurveySync({
   surveyJson,
   answersObj = {},
   prefillPayload = null,
@@ -399,6 +408,10 @@ export async function buildRuntimeModelFromSurvey({
     prefillPayload: effectivePrefillPayload,
     lastAppliedMap: nextApplied,
   };
+}
+
+export async function buildRuntimeModelFromSurvey(options) {
+  return buildRuntimeModelFromSurveySync(options);
 }
 
 export async function buildRuntimeModelFromInstance({

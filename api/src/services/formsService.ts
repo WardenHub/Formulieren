@@ -21,6 +21,8 @@ import {
   reopenFormInstanceSql,
   upgradeConceptInstanceToActiveVersionSql,
   updateFormInstanceMetadataSql,
+  setFormInstanceOfflineCheckoutSql,
+  clearFormInstanceOfflineCheckoutSql,
 } from "../db/queries/forms.sql.js";
 
 import { getFormPrefillSql } from "../db/queries/prefill.sql.js";
@@ -429,6 +431,14 @@ export async function getInstallationFormInstances(
         assigned_email_snapshot: r.assigned_email_snapshot ?? null,
         assigned_at: r.assigned_at ?? null,
         assigned_by: r.assigned_by ?? null,
+        /* Staat dit formulier offline in het veld; kantoor ziet dat anders pas wanneer er
+           twee mensen aan hetzelfde formulier blijken te hebben gewerkt. */
+        offline_checkout: r.locked_by
+          ? {
+              locked_by: r.locked_by,
+              lock_expires_at: r.lock_expires_at ?? null,
+            }
+          : null,
         form_code: r.form_code ?? null,
         form_name: r.form_name ?? null,
         version: r.version == null ? null : Number(r.version),
@@ -1131,4 +1141,50 @@ export async function getFormPrefill(
           ]
         : [],
   };
+}
+
+/* Zet of haalt het merkteken dat een formulier offline in het veld is.
+ *
+ * Een melding, geen slot; zie de toelichting bij setFormInstanceOfflineCheckoutSql. Beide
+ * functies mogen nooit de reden zijn dat een pakket niet gebouwd wordt of dat teruggestuurd
+ * werk niet landt, dus fouten worden hier opgevangen en gemeld in de uitkomst. */
+export async function markFormInstanceOfflineCheckout(
+  code: string,
+  instanceId: number | string,
+  user: any,
+  days = 14
+) {
+  const cleanCode = String(code || "").trim();
+  const id = parseInstanceId(instanceId);
+  if (id == null) return { ok: false, error: "not found" };
+
+  try {
+    const rows = await sqlQuery(setFormInstanceOfflineCheckoutSql, {
+      code: cleanCode,
+      instanceId: id,
+      actor: getUserAuditActor(user),
+      days,
+    });
+
+    return { ok: true, result: rows?.[0] ?? null };
+  } catch (err: any) {
+    return { ok: false, error: err?.message || String(err) };
+  }
+}
+
+export async function clearFormInstanceOfflineCheckout(code: string, instanceId: number | string) {
+  const cleanCode = String(code || "").trim();
+  const id = parseInstanceId(instanceId);
+  if (id == null) return { ok: false, error: "not found" };
+
+  try {
+    await sqlQuery(clearFormInstanceOfflineCheckoutSql, {
+      code: cleanCode,
+      instanceId: id,
+    });
+
+    return { ok: true };
+  } catch (err: any) {
+    return { ok: false, error: err?.message || String(err) };
+  }
 }

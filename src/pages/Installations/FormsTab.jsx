@@ -147,6 +147,23 @@ function SummaryTag({ children, title }) {
   );
 }
 
+/* Dit formulier is meegenomen het veld in.
+   Nadrukkelijk een melding en geen slot: online bewerken blijft mogelijk. Wie dit ziet en
+   toch gaat invullen, weet nu tenminste dat er iemand anders mee bezig is; zonder deze
+   regel komen ze elkaar pas tegen wanneer het offline werk terugkomt en er iets moet
+   wijken. */
+function OfflineCheckoutTag({ item }) {
+  const checkout = item?.offline_checkout;
+  const wie = String(checkout?.locked_by || "").trim();
+  if (!wie) return null;
+
+  return (
+    <span className="ember-label ember-label--warning" title="Dit formulier is offline meegenomen">
+      Offline bij {wie}
+    </span>
+  );
+}
+
 function RelationTag({ children, title }) {
   return (
     <span className="ember-label ember-label--active" title={title}>
@@ -1425,6 +1442,7 @@ export default function FormsTab({
                             <SummaryTag title="Formuliernummer">#{item.form_instance_id}</SummaryTag>
                             <SummaryTag title="Versie">v{item.version_label || "-"}</SummaryTag>
                             <AssignedTag item={item} ownerEntry={ownerEntry} />
+                            <OfflineCheckoutTag item={item} />
 
                             {item.parent_instance_id ? (
                               <RelationTag title="Vervolgrelatie">

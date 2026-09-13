@@ -60,6 +60,10 @@ base as (
     fi.assigned_at,
     fi.assigned_by,
 
+    -- Offline uitgifte; zie setFormInstanceOfflineCheckoutSql.
+    fi.locked_by,
+    fi.lock_expires_at,
+
     fd.code as form_code,
     fd.name as form_name,
     fd.review_scope,
@@ -403,6 +407,10 @@ select top 1
   fi.assigned_email_snapshot,
   fi.assigned_at,
   fi.assigned_by,
+
+  -- Offline uitgifte; zie setFormInstanceOfflineCheckoutSql.
+  fi.locked_by,
+  fi.lock_expires_at,
 
   fd.code as form_code,
   fd.name as form_name,

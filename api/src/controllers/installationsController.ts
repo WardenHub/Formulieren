@@ -1248,6 +1248,8 @@ export async function postFormInstanceOfflineSync(req: any, res: any) {
     /* Een conflict is geen fout van de client maar een stand van zaken; 409 zegt dat, en de
        app kan de gebruiker dan tonen wie er online iets gewijzigd heeft. */
     if (result?.result === "conflict") return res.status(409).json(result);
+    // Een nieuwe definitieversie is net als een conflict een stand van zaken, geen fout.
+    if (result?.result === "version_changed") return res.status(409).json(result);
     if (result?.result === "not_editable") return res.status(409).json(result);
     if (result?.result === "not_found") return res.status(404).json(result);
 

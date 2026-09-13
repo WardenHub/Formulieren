@@ -14,13 +14,32 @@
 // uit, en laat de afgeleide opvolgpunten door hun eigen fingerprintsync lopen. Wat offline
 // is bedacht wordt dus online opnieuw gewogen; de server blijft de waarheid.
 
-import { getFormInstance, saveFormAnswers } from "./formsService.js";
+import {
+  clearFormInstanceOfflineCheckout,
+  getFormInstance,
+  saveFormAnswers,
+} from "./formsService.js";
 import { addRunnerFollowUpPoint } from "./followUpService.js";
+import {
+  createDrawingPin,
+  getDrawingPins,
+  linkDrawingPinAction,
+} from "./drawingPinService.js";
 
 export const OFFLINE_RETURN_SCHEMA = "ember.form.answerfile.v2";
 
 // Een pakket met duizend punten is geen veldwerk maar een ongeluk; dan stopt het hier.
 const MAX_MANUAL_POINTS = 200;
+
+/* De plek op de tekening die offline is aangewezen. Genormaliseerd, 0 tot 1, precies zoals
+   de online pin; hier wordt hij pas een echte DrawingPin, aan het punt gehangen dat uit dit
+   werk voortkomt. */
+export type OfflinePointPin = {
+  document_id: string;
+  page_number: number;
+  x_normalized: number;
+  y_normalized: number;
+};
 
 export type OfflineManualPoint = {
   local_id: string;
@@ -29,6 +48,7 @@ export type OfflineManualPoint = {
   category: string | null;
   priority: string | null;
   source_question_name: string | null;
+  pin: OfflinePointPin | null;
 };
 
 export type OfflineReturnDocument = {
@@ -36,6 +56,9 @@ export type OfflineReturnDocument = {
   atrium_installation_code: string;
   form_instance_id: number;
   expected_draft_rev: number;
+  /* De definitieversie waarvoor het pakket is gemaakt. Optioneel, want pakketten van voor
+     package_version 0.2 kennen hem niet; staat hij er wel, dan moet hij kloppen. */
+  expected_form_version_id: string | null;
   answers_json: Record<string, unknown>;
   client_sync_id: string;
   local_saved_at: string | null;
@@ -142,6 +165,37 @@ export function parseOfflineReturnDocument(raw: any): OfflineReturnParse {
     const title = tekst((ruw as any).title);
     if (!title) return { ok: false, error: `manual_points[${index}].title ontbreekt` };
 
+    /* Een halve pin is erger dan geen pin: hij zou op kantoor op een willekeurige plek
+       terechtkomen. Klopt hij niet, dan weigert het hele document, zodat de monteur het
+       merkt terwijl hij er nog bij staat. */
+    const pinRuw = (ruw as any).pin;
+    let pin: OfflinePointPin | null = null;
+
+    if (pinRuw != null) {
+      if (!isGewoonObject(pinRuw)) {
+        return { ok: false, error: `manual_points[${index}].pin is geen object` };
+      }
+
+      const documentId = tekst((pinRuw as any).document_id);
+      if (!documentId) {
+        return { ok: false, error: `manual_points[${index}].pin.document_id ontbreekt` };
+      }
+
+      const pagina = Number((pinRuw as any).page_number);
+      if (!Number.isSafeInteger(pagina) || pagina < 1) {
+        return { ok: false, error: `manual_points[${index}].pin.page_number is ongeldig` };
+      }
+
+      const x = Number((pinRuw as any).x_normalized);
+      const y = Number((pinRuw as any).y_normalized);
+
+      if (!Number.isFinite(x) || x < 0 || x > 1 || !Number.isFinite(y) || y < 0 || y > 1) {
+        return { ok: false, error: `manual_points[${index}].pin ligt buiten de tekening` };
+      }
+
+      pin = { document_id: documentId.slice(0, 100), page_number: pagina, x_normalized: x, y_normalized: y };
+    }
+
     punten.push({
       local_id: localId.slice(0, 200),
       title: title.slice(0, 300),
@@ -149,6 +203,7 @@ export function parseOfflineReturnDocument(raw: any): OfflineReturnParse {
       category: optioneleTekst((ruw as any).category, 100),
       priority: optioneleTekst((ruw as any).priority, 30),
       source_question_name: optioneleTekst((ruw as any).source_question_name, 200),
+      pin,
     });
   }
 
@@ -159,6 +214,7 @@ export function parseOfflineReturnDocument(raw: any): OfflineReturnParse {
       atrium_installation_code: code,
       form_instance_id: instanceId,
       expected_draft_rev: expectedDraftRev,
+      expected_form_version_id: optioneleTekst(raw.form?.form_version_id, 100),
       answers_json: answers as Record<string, unknown>,
       client_sync_id: clientSyncId.slice(0, 200),
       local_saved_at: optioneleTekst(raw.sync?.local_saved_at, 40),
@@ -193,6 +249,8 @@ async function beschrijfHuidigeStand(code: string, instanceId: number) {
 
     return {
       draft_rev: item.draft_rev ?? null,
+      form_version_id: item.form_version_id ?? null,
+      version_label: item.version_label ?? null,
       status: item.status ?? null,
       updated_at: item.updated_at ?? item.answers_updated_at ?? null,
       updated_by: item.updated_by ?? item.answers_updated_by ?? null,
@@ -201,6 +259,58 @@ async function beschrijfHuidigeStand(code: string, instanceId: number) {
     // De stand erbij zoeken is een service aan de gebruiker, geen voorwaarde; zonder die
     // gegevens is het nog steeds een conflict.
     return null;
+  }
+}
+
+/* Zet de plek die offline is aangewezen op de tekening, en hangt hem aan het punt.
+ *
+ * Eerst kijken of die koppeling er al is. Een tweede verzending van hetzelfde werk mag geen
+ * tweede pin opleveren; de punten zelf zijn idempotent via hun fingerprint, en zonder deze
+ * controle zou de tekening bij elke poging voller lopen.
+ *
+ * Een pin die niet lukt is hinderlijk maar niet erg: het punt staat er, met titel en
+ * omschrijving. Daarom geeft deze functie een uitkomst terug in plaats van te gooien. */
+async function zorgVoorPin(
+  code: string,
+  followUpActionId: any,
+  pin: OfflinePointPin,
+  user: any
+): Promise<{ ok: boolean; created: boolean; error?: string }> {
+  const actionId = tekst(followUpActionId);
+  if (!actionId) return { ok: false, created: false, error: "het punt heeft geen id gekregen" };
+
+  try {
+    const bestaand: any = await getDrawingPins(code, pin.document_id, true);
+    const alGekoppeld = (bestaand?.pins || []).some((kandidaat: any) =>
+      (kandidaat?.follow_up_actions || []).some(
+        (actie: any) => tekst(actie?.follow_up_action_id) === actionId
+      )
+    );
+
+    if (alGekoppeld) return { ok: true, created: false };
+
+    const gemaakt: any = await createDrawingPin(
+      code,
+      pin.document_id,
+      {
+        page_number: pin.page_number,
+        x_normalized: pin.x_normalized,
+        y_normalized: pin.y_normalized,
+        // Het label komt van het punt zelf; twee keer dezelfde tekst onderhouden loopt uit elkaar.
+        label: tekst((pin as any).label) || "Punt uit het veld",
+        description: null,
+        pin_kind: "NOTE",
+      },
+      user
+    );
+
+    const pinId = tekst(gemaakt?.pin?.drawing_pin_id);
+    if (!pinId) return { ok: false, created: false, error: "de pin is niet aangemaakt" };
+
+    await linkDrawingPinAction(code, pinId, actionId, user);
+    return { ok: true, created: true };
+  } catch (err: any) {
+    return { ok: false, created: false, error: err?.message || String(err) };
   }
 }
 
@@ -239,6 +349,27 @@ export async function applyOfflineReturnDocument(
     };
   }
 
+  /* De antwoorden zijn ingevuld tegen de definitie die in het pakket zat. Is die online
+     intussen vervangen, dan gaan dezelfde antwoordsleutels over andere vragen; dat is geen
+     revisieconflict maar iets ernstigers, want draft_rev kan ongewijzigd zijn. Alleen
+     controleren wanneer het pakket de versie meedraagt, zodat oudere pakketten blijven
+     werken. */
+  if (document.expected_form_version_id) {
+    const stand = await beschrijfHuidigeStand(document.atrium_installation_code, document.form_instance_id);
+    const huidigeVersie = tekst(stand?.form_version_id);
+
+    if (huidigeVersie && huidigeVersie !== document.expected_form_version_id) {
+      return {
+        ok: false,
+        result: "version_changed",
+        error:
+          "dit formulier heeft online een nieuwe versie gekregen sinds het pakket is opgehaald",
+        current: stand,
+        expected_form_version_id: document.expected_form_version_id,
+      };
+    }
+  }
+
   let saved: any;
 
   try {
@@ -271,7 +402,17 @@ export async function applyOfflineReturnDocument(
     return { ok: false, result: "invalid", error: saved.error || "antwoorden geweigerd" };
   }
 
-  const punten = { created: 0, existing: 0, failed: [] as { local_id: string; error: string }[] };
+  /* items draagt per punt terug welk actiepunt het geworden is. Daar hangt de app zijn
+     foto's aan; zonder die koppeling zou een foto bij het verkeerde punt kunnen landen of
+     helemaal nergens. */
+  const punten = {
+    created: 0,
+    existing: 0,
+    items: [] as { local_id: string; follow_up_action_id: any; created: boolean }[],
+    failed: [] as { local_id: string; error: string }[],
+    pins_created: 0,
+    pins_failed: [] as { local_id: string; error: string }[],
+  };
 
   for (const punt of document.manual_points) {
     try {
@@ -291,8 +432,29 @@ export async function applyOfflineReturnDocument(
         continue;
       }
 
-      if (uitkomst?.created === false) punten.existing += 1;
-      else punten.created += 1;
+      const aangemaakt = uitkomst?.created !== false;
+      if (aangemaakt) punten.created += 1;
+      else punten.existing += 1;
+
+      punten.items.push({
+        local_id: punt.local_id,
+        follow_up_action_id: uitkomst?.follow_up_action_id ?? null,
+        created: aangemaakt,
+      });
+
+      if (punt.pin) {
+        const pinUitkomst = await zorgVoorPin(
+          document.atrium_installation_code,
+          uitkomst?.follow_up_action_id,
+          { ...punt.pin, label: punt.title } as any,
+          user
+        );
+
+        if (pinUitkomst.ok && pinUitkomst.created) punten.pins_created += 1;
+        if (!pinUitkomst.ok) {
+          punten.pins_failed.push({ local_id: punt.local_id, error: String(pinUitkomst.error || "geweigerd") });
+        }
+      }
     } catch (err: any) {
       /* Een punt dat niet landt mag de antwoorden niet ongedaan maken; die staan al vast en
          zijn het werk van de monteur. Het punt komt terug in de uitkomst zodat de app het
@@ -300,6 +462,14 @@ export async function applyOfflineReturnDocument(
       punten.failed.push({ local_id: punt.local_id, error: err?.message || String(err) });
     }
   }
+
+  /* Het werk is thuis, dus het formulier staat niet langer in het veld. Lukt het weghalen
+     van dat merkteken niet, dan is dat hinderlijk op kantoor maar geen reden om de monteur
+     te vertellen dat zijn werk niet is aangekomen. */
+  const checkout = await clearFormInstanceOfflineCheckout(
+    document.atrium_installation_code,
+    document.form_instance_id
+  );
 
   const stand = await beschrijfHuidigeStand(
     document.atrium_installation_code,
@@ -309,6 +479,7 @@ export async function applyOfflineReturnDocument(
   return {
     ok: true,
     result: "accepted",
+    checkout_cleared: checkout.ok === true,
     form_instance_id: document.form_instance_id,
     client_sync_id: document.client_sync_id,
     draft_rev: stand?.draft_rev ?? null,

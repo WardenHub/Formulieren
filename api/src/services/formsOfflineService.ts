@@ -36,6 +36,51 @@ function getAuditActor(user: any) {
   );
 }
 
+/* Welke prefill-sleutels dit formulier nodig heeft.
+ *
+ * Online haalt de runtime dit op met een POST tijdens het openen; offline is er geen server.
+ * Zit de prefill niet in het pakket, dan mist offline de keuzelijsten en de gebonden waarden
+ * en rekent het formulier dus anders dan online. Daarom leest deze functie dezelfde plek als
+ * collectRequestedPrefillKeys in de webapp: ember.bind met kind "prefill", en ember.choices.
+ * Bewust een wandeling door de JSON en niet door een survey-core model; die bibliotheek
+ * hoort niet in de API thuis, en de definitie van een sleutel staat gewoon in de JSON.
+ */
+export function collectPrefillKeysFromSurveyJson(surveyJson: any): string[] {
+  const keys = new Set<string>();
+  const stack: any[] = [surveyJson];
+
+  while (stack.length > 0) {
+    const node = stack.pop();
+    if (!node || typeof node !== "object") continue;
+
+    if (Array.isArray(node)) {
+      for (const child of node) stack.push(child);
+      continue;
+    }
+
+    const ember = (node as any).ember;
+    if (ember && typeof ember === "object") {
+      const bind = (ember as any).bind;
+      if (bind && typeof bind === "object" && toCleanString(bind.kind) === "prefill") {
+        const key = toCleanString(bind.key);
+        if (key) keys.add(key);
+      }
+
+      const choices = (ember as any).choices;
+      if (choices && typeof choices === "object") {
+        const key = toCleanString(choices.key);
+        if (key) keys.add(key);
+      }
+    }
+
+    for (const value of Object.values(node)) {
+      if (value && typeof value === "object") stack.push(value);
+    }
+  }
+
+  return Array.from(keys.values());
+}
+
 function normalizeSelectedKeys(value: any) {
   if (!Array.isArray(value)) return [];
   return Array.from(
@@ -153,9 +198,21 @@ export async function buildOfflineFormPackage(
     };
   });
 
+  /* De prefill gaat mee in het pakket, gebonden aan de versie waarvoor hij is opgehaald.
+     Zo rekent en kiest offline met exact dezelfde gegevens als online; zonder dit zou een
+     keuzelijst offline leeg zijn en een gebonden veld anders uitvallen. */
+  const surveyJson = safeParseJson(item?.survey_json, null);
+  const prefillKeys = collectPrefillKeysFromSurveyJson(surveyJson);
+  const prefillPayload = await formsService.getFormPrefill(
+    cleanCode,
+    toCleanString(item?.form_code),
+    prefillKeys,
+    user
+  );
+
   const packageData = {
     package_kind: "ember_offline_form_package",
-    package_version: "0.1",
+    package_version: "0.2",
     generated_at: new Date().toISOString(),
     generated_by: getAuditActor(user),
     source: {
@@ -164,7 +221,9 @@ export async function buildOfflineFormPackage(
       poc: true,
     },
     offline_constraints: {
-      supports_offline_attachments: false,
+      /* Foto's kunnen offline gemaakt worden en reizen bij het terugsturen mee naar het
+         opvolgpunt waar ze bij horen; ze landen dus pas op kantoor zodra er verbinding is. */
+      supports_offline_attachments: true,
       supports_offline_final_submit: false,
       final_submit_requires_online: true,
     },
@@ -184,6 +243,9 @@ export async function buildOfflineFormPackage(
     form_instance: {
       form_instance_id: item?.form_instance_id ?? null,
       form_id: item?.form_id ?? null,
+      // De versie waaraan de prefill hieronder vastzit; wijkt hij online af, dan is het
+      // pakket verouderd.
+      form_version_id: item?.form_version_id ?? null,
       form_code: item?.form_code ?? null,
       form_name: item?.form_name ?? null,
       version: item?.version ?? null,
@@ -198,7 +260,13 @@ export async function buildOfflineFormPackage(
       updated_by: item?.updated_by ?? null,
     },
     runtime: {
-      survey_json: safeParseJson(item?.survey_json, null),
+      survey_json: surveyJson,
+      prefill: {
+        form_version_id: item?.form_version_id ?? null,
+        captured_at: new Date().toISOString(),
+        requested_keys: prefillKeys,
+        payload: prefillPayload,
+      },
       answers_json: safeParseJson(item?.answers_json, {}),
       calculated_json: safeParseJson(item?.calculated_json, null),
       guidance_by_question: item?.guidance_by_question ?? {},
@@ -211,6 +279,15 @@ export async function buildOfflineFormPackage(
     selected_documents: selectedDocuments,
   };
 
+  /* Kantoor moet kunnen zien dat dit formulier het veld in is. Het merkteken mag het
+     bouwen van het pakket nooit tegenhouden; lukt het niet, dan gaat de monteur gewoon op
+     pad en staat dat in de uitkomst. */
+  const checkout = await formsService.markFormInstanceOfflineCheckout(
+    cleanCode,
+    item?.form_instance_id,
+    user
+  );
+
   const fileName = [
     "ember-offline",
     slugify(item?.form_name, item?.form_code || "formulier"),
@@ -222,5 +299,10 @@ export async function buildOfflineFormPackage(
     ok: true,
     file_name: fileName,
     package: packageData,
+    checkout: {
+      marked: checkout.ok === true,
+      locked_by: (checkout as any)?.result?.locked_by ?? null,
+      lock_expires_at: (checkout as any)?.result?.lock_expires_at ?? null,
+    },
   };
 }

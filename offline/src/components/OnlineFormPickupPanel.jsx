@@ -308,8 +308,16 @@ export default function OnlineFormPickupPanel({ onPackagePrepared, onOpenOffline
       <section className="eo-online-card eo-online-card--auth">
         <ShieldCheck size={24} />
         <div>
-          <h2>Aanmelden instellen</h2>
-          <p>De Entra-configuratie voor Ember Offline ontbreekt nog. Voeg de waarden toe aan <code>.env.local</code> voordat formulieren online kunnen worden opgehaald.</p>
+          <h2>Aanmelden lukt nu niet</h2>
+          {/* Hier stond een instructie om waarden in .env.local te zetten. Dat is taal voor
+              wie de app bouwt; een monteur kan er niets mee en gaat ervan twijfelen of hij
+              zelf iets fout doet. In een gebouwde installatie hoort dit nooit te verschijnen,
+              en als het toch gebeurt is het iets voor de beheerder. */}
+          <p>
+            Deze installatie van Ember Offline mist een instelling om aan te melden. Je
+            offline formulieren blijven gewoon staan; neem contact op met de beheerder van
+            Ember om dit te laten herstellen.
+          </p>
         </div>
       </section>
     );

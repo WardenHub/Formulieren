@@ -322,6 +322,10 @@ base as (
     fi.assigned_at,
     fi.assigned_by,
 
+    -- Staat dit formulier offline bij iemand; kantoor hoort dat te zien.
+    fi.locked_by,
+    fi.lock_expires_at,
+
     fd.code as form_code,
     fd.name as form_name,
     fv.version,
@@ -2393,5 +2397,71 @@ where form_instance_document_id = @documentId
 
 select
   @documentId as form_instance_document_id,
+  cast(1 as bit) as ok;
+`;
+
+// =========================================================
+// Offline uitgifte; kantoor moet zien dat een formulier het veld in is
+// =========================================================
+//
+// Een pakket dat mee het veld in gaat is onzichtbaar op kantoor. Twee mensen die hetzelfde
+// formulier invullen merken dat pas bij het terugsturen, en dan is er werk weg. Daarom zet
+// het bouwen van een pakket een merkteken op de instance en haalt het terugsturen dat weer
+// weg.
+//
+// Bewust locked_by en lock_expires_at: die kolommen staan er al, hebben al een index en
+// werden nergens geschreven. Het is nadrukkelijk een melding en geen slot; online bewerken
+// blijft mogelijk, want een monteur die zijn laptop laat liggen mag kantoor niet ophouden.
+//
+// draft_rev en updated_at blijven met opzet ongemoeid. Het pakket draagt draft_rev mee als
+// verwachting voor de terugweg; zou het uitgeven die ophogen, dan zou elk pakket bij
+// terugkomst met zichzelf in conflict zijn.
+
+export const setFormInstanceOfflineCheckoutSql = `
+-- expects:
+--   @code nvarchar(...)
+--   @instanceId bigint
+--   @actor nvarchar(200)
+--   @days int
+
+if not exists (
+  select 1
+  from dbo.FormInstance
+  where form_instance_id = @instanceId
+    and atrium_installation_code = @code
+)
+begin
+  throw 50000, 'form instance not found', 1;
+end;
+
+update dbo.FormInstance
+set
+  locked_by = @actor,
+  lock_expires_at = dateadd(day, @days, sysutcdatetime())
+where form_instance_id = @instanceId
+  and atrium_installation_code = @code;
+
+select
+  form_instance_id,
+  locked_by,
+  lock_expires_at
+from dbo.FormInstance
+where form_instance_id = @instanceId;
+`;
+
+export const clearFormInstanceOfflineCheckoutSql = `
+-- expects:
+--   @code nvarchar(...)
+--   @instanceId bigint
+
+update dbo.FormInstance
+set
+  locked_by = null,
+  lock_expires_at = null
+where form_instance_id = @instanceId
+  and atrium_installation_code = @code;
+
+select
+  @instanceId as form_instance_id,
   cast(1 as bit) as ok;
 `;

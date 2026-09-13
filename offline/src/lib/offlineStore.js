@@ -1,7 +1,10 @@
 const DB_NAME = "ember-offline";
-const DB_VERSION = 2;
+const DB_VERSION = 3;
 const STORE_PACKAGES = "packages";
 const STORE_DOCUMENTS = "documents";
+/* Foto's staan bewust niet bij de meegenomen documenten. Die lijst wordt bij elk opnieuw
+   ophalen in zijn geheel vervangen; werk van de monteur mag daar niet tussen staan. */
+const STORE_PHOTOS = "photos";
 
 function openDb() {
   return new Promise((resolve, reject) => {
@@ -19,6 +22,10 @@ function openDb() {
     }
     if (!db.objectStoreNames.contains(STORE_DOCUMENTS)) {
       const store = db.createObjectStore(STORE_DOCUMENTS, { keyPath: "id" });
+      store.createIndex("package_id", "package_id", { unique: false });
+    }
+    if (!db.objectStoreNames.contains(STORE_PHOTOS)) {
+      const store = db.createObjectStore(STORE_PHOTOS, { keyPath: "id" });
       store.createIndex("package_id", "package_id", { unique: false });
     }
     };
@@ -142,4 +149,62 @@ export async function listOfflineDocuments(packageId) {
       reject(tx.error || new Error("Lokale bestanden konden niet worden geladen."));
     };
   });
+}
+
+/* Foto's die in het veld zijn gemaakt.
+ *
+ * Ze horen bij een punt en worden pas na het terugsturen geüpload, want dan pas bestaat het
+ * actiepunt waar ze aan hangen. Tot die tijd staan ze hier, met het blob erbij; een foto die
+ * alleen in het geheugen van de camera-app zit is geen bewijs dat ooit op kantoor aankomt. */
+export async function saveOfflinePhoto(photo) {
+  const db = await openDb();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE_PHOTOS, "readwrite");
+    tx.objectStore(STORE_PHOTOS).put(photo);
+    tx.oncomplete = () => resolve(photo);
+    tx.onerror = () => reject(tx.error || new Error("De foto kon niet worden opgeslagen."));
+    tx.onabort = () => reject(tx.error || new Error("De foto kon niet worden opgeslagen."));
+  }).finally(() => db.close());
+}
+
+export async function listOfflinePhotos(packageId) {
+  const db = await openDb();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE_PHOTOS, "readonly");
+    const request = tx.objectStore(STORE_PHOTOS).index("package_id").getAll(packageId);
+    request.onsuccess = () => resolve(Array.isArray(request.result) ? request.result : []);
+    request.onerror = () => reject(request.error || new Error("De foto's konden niet worden geladen."));
+    tx.oncomplete = () => db.close();
+    tx.onerror = () => {
+      db.close();
+      reject(tx.error || new Error("De foto's konden niet worden geladen."));
+    };
+  });
+}
+
+export async function deleteOfflinePhoto(photoId) {
+  const db = await openDb();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE_PHOTOS, "readwrite");
+    tx.objectStore(STORE_PHOTOS).delete(photoId);
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error || new Error("De foto kon niet worden verwijderd."));
+    tx.onabort = () => reject(tx.error || new Error("De foto kon niet worden verwijderd."));
+  }).finally(() => db.close());
+}
+
+export async function deleteOfflinePhotos(packageId) {
+  const db = await openDb();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE_PHOTOS, "readwrite");
+    const store = tx.objectStore(STORE_PHOTOS);
+    const request = store.index("package_id").getAllKeys(packageId);
+    request.onsuccess = () => {
+      for (const key of request.result || []) store.delete(key);
+    };
+    request.onerror = () => reject(request.error || new Error("De foto's konden niet worden verwijderd."));
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error || new Error("De foto's konden niet worden verwijderd."));
+    tx.onabort = () => reject(tx.error || new Error("De foto's konden niet worden verwijderd."));
+  }).finally(() => db.close());
 }

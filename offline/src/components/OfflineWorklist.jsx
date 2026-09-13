@@ -88,7 +88,7 @@ export default function OfflineWorklist({
                 <div className="eo-worklist-item__row eo-worklist-item__row--soft">
                   <span className="eo-inline-icon">
                     <Files size={14} />
-                    {item.summary?.selected_document_count || 0} bestanden
+                    {item.summary?.selected_document_count || 0} bestanden gekozen
                   </span>
                   <span className="eo-inline-icon">
                     <ShieldCheck size={14} />

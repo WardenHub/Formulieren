@@ -732,6 +732,14 @@ export default function FormsMonitorPage() {
           <div className="monitor-dossier-row__title-tags">
             <SummaryTag title="Documentnummer" tone="muted">{row.form_instance_id ?? "-"}</SummaryTag>
             <SummaryTag title="Formulierversie" tone="muted">v{row.version_label || "-"}</SummaryTag>
+            {/* Dit formulier is offline meegenomen het veld in. Een melding, geen slot;
+                online bewerken blijft mogelijk, maar wie dit ziet weet dat er iemand mee
+                bezig is. */}
+            {row.offline_checkout?.locked_by ? (
+              <SummaryTag title="Dit formulier is offline meegenomen" tone="warning">
+                Offline bij {row.offline_checkout.locked_by}
+              </SummaryTag>
+            ) : null}
             {row.parent_instance_id ? (
               <button
                 type="button"

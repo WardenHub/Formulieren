@@ -95,13 +95,27 @@ const laatsteTag = git("describe", "--tags", "--abbrev=0", "--match", TAG_PATROO
 if (!laatsteTag) {
   console.log("Nog geen offline-release getagd, of de tags ontbreken in deze checkout.");
 } else {
-  const gewijzigd = git("diff", "--name-only", `${laatsteTag}..HEAD`, "--", "offline");
-  const aantal = gewijzigd ? gewijzigd.split("\n").filter(Boolean).length : 0;
+  const gecommit = git("diff", "--name-only", `${laatsteTag}..HEAD`, "--", "offline");
 
-  if (aantal > 0) {
+  /* Ook werk dat nog niet gecommit is telt mee. Deze melding bestaat om te zeggen dat de
+     downloadlink nog de vorige versie aanbiedt, en dat is juist waar op het moment dat de
+     wijzigingen nog in de werkmap staan; alleen naar commits kijken zou precies dan zwijgen. */
+  const lokaal = git("status", "--porcelain", "--", "offline");
+
+  const bestanden = new Set(
+    [
+      ...(gecommit ? gecommit.split("\n") : []),
+      ...(lokaal ? lokaal.split("\n").map((regel) => regel.slice(3)) : []),
+    ]
+      .map((regel) => regel.trim())
+      .filter(Boolean)
+  );
+
+  if (bestanden.size > 0) {
     console.log(
-      `Let op; ${aantal} bestand(en) in offline/ gewijzigd sinds ${laatsteTag}. ` +
-        "De downloadlink biedt nog de vorige versie aan tot er een nieuwe tag staat."
+      `Let op; ${bestanden.size} bestand(en) in offline/ gewijzigd sinds ${laatsteTag}` +
+        (lokaal ? " (inclusief werk dat nog niet gecommit is)" : "") +
+        ". De downloadlink biedt nog de vorige versie aan tot er een nieuwe tag staat."
     );
   } else {
     console.log(`Geen wijzigingen in offline/ sinds ${laatsteTag}.`);

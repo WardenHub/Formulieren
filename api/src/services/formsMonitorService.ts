@@ -658,6 +658,10 @@ export async function getMonitorList(input: {
     assigned_email_snapshot: r.assigned_email_snapshot ?? null,
     assigned_at: r.assigned_at ?? null,
     assigned_by: r.assigned_by ?? null,
+    // Staat dit formulier offline in het veld; zie setFormInstanceOfflineCheckoutSql.
+    offline_checkout: r.locked_by
+      ? { locked_by: r.locked_by, lock_expires_at: r.lock_expires_at ?? null }
+      : null,
     form_code: r.form_code,
     form_name: r.form_name,
     review_scope: r.review_scope ?? "INSTALLATION",
