@@ -5017,6 +5017,91 @@ html[data-appearance="light"] .type-telefonie{
   gap: 7px;
 }
 
+/* De relatiegroep die bij je zoektekst past, aangeboden onder de zoekbalk. */
+.installations-search-suggestions{
+  display: grid;
+  gap: 5px;
+  margin-top: -4px;
+}
+
+.installations-search-suggestions__label{
+  color: var(--muted);
+  font-size: 11.5px;
+  font-weight: 700;
+}
+
+.installations-search-suggestions__list{
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.installations-search-suggestion{
+  display: inline-flex;
+  align-items: baseline;
+  gap: 7px;
+  min-height: 30px;
+  padding: 4px 10px;
+  border: 1px solid var(--info-border, var(--border));
+  border-radius: var(--radius-pill);
+  background: var(--info-bg, var(--surface-2));
+  color: var(--info-text, var(--text));
+  font: inherit;
+  font-size: 12px;
+  font-weight: 800;
+  cursor: pointer;
+  text-align: left;
+}
+
+.installations-search-suggestion span{
+  font-size: 11px;
+  font-weight: 600;
+  opacity: .8;
+}
+
+.installations-search-suggestion:hover{ filter: brightness(0.95); }
+.installations-search-suggestion:focus-visible{ outline: 3px solid var(--focus-ring, var(--brand-red)); outline-offset: 2px; }
+
+/* Wat er nu aan staat, boven de resultaten, met een kruisje per filter. */
+.installations-active-filters{
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.installations-active-filter{
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 28px;
+  padding: 3px 9px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  background: var(--surface-2);
+  color: var(--text);
+  font: inherit;
+  font-size: 11.5px;
+  font-weight: 700;
+  cursor: pointer;
+  /* Alleen de rand beweegt. Ook de tekstkleur laten overlopen betekent dat een
+     themawissel de letters zichtbaar laat verkleuren, en dat wil niemand zien. */
+  transition: border-color 140ms ease;
+}
+
+.installations-active-filter span:last-child{
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1;
+}
+
+.installations-active-filter:hover{
+  border-color: var(--danger-border, var(--border));
+  color: var(--danger-text, var(--text));
+}
+
+.installations-active-filter:hover span:last-child{ color: inherit; }
+.installations-active-filter:focus-visible{ outline: 3px solid var(--focus-ring, var(--brand-red)); outline-offset: 2px; }
+
 /* De regel onder het relatiegroepfilter; die zegt hoe oud de groepen zijn. Kleiner en
    rustiger dan het label erboven, want het is een voetnoot en geen keuze. */
 .installations-relation-group-filter__note{
@@ -5347,7 +5432,7 @@ html[data-appearance="light"] .type-telefonie{
 }
 
 .leaflet-marker-icon{ cursor: pointer; }
-.leaflet-marker-icon:focus-visible{ outline: 3px solid var(--focus-ring); outline-offset: 3px; }
+.leaflet-marker-icon:focus-visible{ outline: 3px solid var(--focus-ring, var(--brand-red)); outline-offset: 3px; }
 
 .installation-map-loading{
   position: absolute;
@@ -5814,6 +5899,34 @@ html[data-appearance="dark"] .leaflet-popup-content a{
   flex-wrap: wrap;
   gap: 6px;
 }
+
+/* De relatiegroepen van een installatie. Een tag is een link naar de kaart met alles van dat
+   concern, dus hij hoort er ook uit te zien als iets waar je op kunt klikken. */
+.installation-overview__relation-groups{
+  display: grid;
+  gap: 5px;
+}
+
+.installation-overview__relation-groups-label{
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 750;
+}
+
+.installation-overview__relation-group-tags{
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.installation-relation-group-tag{
+  text-decoration: none;
+  cursor: pointer;
+  transition: filter 140ms ease;
+}
+
+.installation-relation-group-tag:hover{ filter: brightness(0.94); }
+.installation-relation-group-tag:focus-visible{ outline: 3px solid var(--focus-ring, var(--brand-red)); outline-offset: 2px; }
 
 .installation-overview__service-grid{
   display: grid;

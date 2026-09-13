@@ -5,6 +5,7 @@ import {
   getInstallationOperationalRowsSql,
   getInstallationRelationGroupsSql,
   getRelationGroupTablesAvailableSql,
+  getRelationGroupsForInstallationSql,
   withRelationGroupFilter,
 } from "../db/queries/installationOperational.sql.js";
 
@@ -250,7 +251,32 @@ export async function getInstallationOperationalSummary(code: string) {
     queryParams({ take: 1, onlyCurrent: false }, cleanCode)
   );
   const item = rows?.[0] ? normalizeRow(rows[0]) : null;
-  return { item };
+  if (!item) return { item };
+
+  return { item: { ...item, relation_groups: await listRelationGroupsForInstallation(cleanCode) } };
+}
+
+/* De relatiegroepen waar één installatie bij hoort. Bestaan de spiegels nog niet, dan levert
+   dit een lege lijst en blijft het scherm gewoon werken; dat is dezelfde afspraak als bij de
+   filterlijst. */
+async function listRelationGroupsForInstallation(installationCode: string) {
+  const [availability] = (await sqlQuery(getRelationGroupTablesAvailableSql, {})) || [];
+  if (!availability?.available) return [];
+
+  const rows = await sqlQuery(getRelationGroupsForInstallationSql, {
+    installationCode,
+    relationGroupRolesJson: JSON.stringify(RELATION_GROUP_ROLES),
+  });
+
+  return (rows || []).map((row: any) => ({
+    business_unit: row.business_unit ?? null,
+    relation_group_key: row.relation_group_key ?? null,
+    relation_group_code: row.relation_group_code ?? null,
+    relation_group_name: row.relation_group_name ?? null,
+    relation_name: row.relation_name ?? null,
+    roles: String(row.roles || "").split(",").filter(Boolean),
+    fabric_loaded_at: row.fabric_loaded_at ?? null,
+  }));
 }
 
 /* Wat een lijstkaart en een marker werkelijk laten zien. Een rij heeft achtenveertig velden

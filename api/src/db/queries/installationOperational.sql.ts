@@ -652,3 +652,39 @@ group by
 having count(distinct a.installatie_code) > 0
 order by g.relation_group_name, g.relation_group_code;
 `;
+
+/* De relatiegroepen van één installatie, voor de tags op het installatiescherm.
+
+   Behalve de groep zelf komt mee via welke objectrol de installatie eraan hangt. Dat is geen
+   franje: bij een concern dat zowel eigenaar als gebruiker is staat er één rol, en bij een
+   woningcorporatie die eigenaar is van een pand dat een zorgorganisatie gebruikt, zie je
+   meteen waarom deze installatie bij deze groep hoort.
+
+   Dezelfde rolmaskering als het filter, zodat de tag en het filter hetzelfde zeggen. */
+export const getRelationGroupsForInstallationSql = `
+select
+  g.business_unit,
+  g.relation_group_key,
+  g.relation_group_code,
+  g.relation_group_name,
+  string_agg(rol.rol_code, N',') within group (order by rol.rol_code) as roles,
+  max(m.relation_name) as relation_name,
+  max(g.fabric_loaded_at) as fabric_loaded_at
+from dbo.AtriumInstallationBase a
+join dbo.AtriumRelationGroupMember m
+  on m.business_unit = a.BedrijfUnit
+cross apply (values
+  (N'GEBRUIKER', a.object_gebruiker_gcid),
+  (N'EIGENAAR', a.object_eigenaar_gcid),
+  (N'BEHEERDER', a.object_beheerder_gcid),
+  (N'DEBITEUR', a.object_debiteur_gcid)
+) as rol(rol_code, relation_key)
+join dbo.AtriumRelationGroup g
+  on g.business_unit = m.business_unit
+ and g.relation_group_key = m.relation_group_key
+where a.installatie_code = @installationCode
+  and m.relation_key = rol.relation_key
+  and rol.rol_code in (select value from openjson(@relationGroupRolesJson))
+group by g.business_unit, g.relation_group_key, g.relation_group_code, g.relation_group_name
+order by g.relation_group_name;
+`;

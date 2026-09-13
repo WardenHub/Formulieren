@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { Link } from "react-router-dom";
 import { Navigation } from "lucide-react";
 
 import { getInstallationOperationalSummary } from "@/api/emberApi.js";
@@ -28,6 +29,9 @@ function label(value) {
   return labels[String(value || "").toUpperCase()] || String(value || "onbekend").toLowerCase();
 }
 
+/* De tag toont alleen de naam van de relatiegroep. Hoe de installatie eraan hangt, via de
+   gebruiker of de eigenaar, hoort bij de Atriumgegevens en niet op een etiket. De tooltip zegt
+   daarom wat er gebeurt als je klikt. */
 function Metric({ value, label: metricLabel, tone: metricTone = "muted" }) {
   return (
     <div className={`installation-overview-metric installation-overview-metric--${metricTone}`}>
@@ -171,6 +175,26 @@ export default function InstallationOverviewTab({ code, onOpenTab }) {
             </span>
           ) : null}
         </div>
+
+        {/* Relatiegroepen uit Atrium. Een groep bundelt de relaties van een concern, dus dit
+            zegt bij wie dit gebouw hoort. Klikken opent de kaart met alles van die groep. */}
+        {Array.isArray(item.relation_groups) && item.relation_groups.length ? (
+          <div className="installation-overview__relation-groups">
+            <span className="installation-overview__relation-groups-label">Relatiegroep</span>
+            <div className="installation-overview__relation-group-tags">
+              {item.relation_groups.map((group) => (
+                <Link
+                  key={group.relation_group_key}
+                  className="ember-label ember-label--info installation-relation-group-tag"
+                  to={`/installaties?relatiegroep=${encodeURIComponent(group.relation_group_key)}`}
+                  title={`Toon alle installaties van ${group.relation_group_name || group.relation_group_code}`}
+                >
+                  {group.relation_group_name || group.relation_group_code}
+                </Link>
+              ))}
+            </div>
+          </div>
+        ) : null}
 
         {Number(item.open_follow_up_count || 0) > 0 ? (
           <button type="button" className="btn btn-secondary" onClick={() => onOpenTab?.("followups")}>

@@ -8,6 +8,7 @@ import test from "node:test";
 
 import {
   RELATION_GROUP_FILTER_PLACEHOLDER,
+  getRelationGroupsForInstallationSql,
   buildRelationGroupFilterSql,
   getInstallationMapViewportSql,
   getInstallationOperationalRowsSql,
@@ -115,4 +116,28 @@ test("de groepenlijst respecteert dezelfde rollen als het filter", () => {
     getInstallationRelationGroupsSql,
     /rol\.rol_code in \(select value from openjson\(@relationGroupRolesJson\)\)/
   );
+});
+
+test("de tags van een installatie gebruiken dezelfde rollen als het filter", () => {
+  // Anders zegt de tag op het installatiescherm iets anders dan het filter op de kaart, en
+  // dan klopt een van de twee niet.
+  assert.match(
+    getRelationGroupsForInstallationSql,
+    /rol\.rol_code in \(select value from openjson\(@relationGroupRolesJson\)\)/
+  );
+
+  for (const kolom of [
+    "object_gebruiker_gcid",
+    "object_eigenaar_gcid",
+    "object_beheerder_gcid",
+    "object_debiteur_gcid",
+  ]) {
+    assert.ok(getRelationGroupsForInstallationSql.includes(`a.${kolom}`), `${kolom} ontbreekt`);
+  }
+});
+
+test("de tags horen bij één installatie en groeperen per groep", () => {
+  assert.match(getRelationGroupsForInstallationSql, /a\.installatie_code = @installationCode/);
+  // Zonder group by staat dezelfde groep er vier keer, een keer per objectrol.
+  assert.match(getRelationGroupsForInstallationSql, /group by g\.business_unit, g\.relation_group_key/);
 });

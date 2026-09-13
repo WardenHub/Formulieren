@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { CheckCircle2 } from "lucide-react";
 
 import {
@@ -194,13 +194,44 @@ export default function InstallationsIndex() {
      of Woonzorg. Eén groep tegelijk dekt de vraag "toon alles van dit concern"; de API neemt
      een lijst aan, dus meer tegelijk kan later zonder dat het contract verandert. */
   const [relationGroups, setRelationGroups] = useState([]);
-  const [selectedRelationGroups, setSelectedRelationGroups] = useState([]);
+  /* Een tag op een installatiescherm linkt hierheen met ?relatiegroep=..., zodat je vanaf een
+     gebouw in een klik alles van dat concern ziet. De keuze blijft daarna gewoon in de hand
+     van het filter. */
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [selectedRelationGroups, setSelectedRelationGroups] = useState(() => {
+    const fromUrl = searchParams.get("relatiegroep");
+    return fromUrl ? [fromUrl] : [];
+  });
   const [relationGroupsLoadedAt, setRelationGroupsLoadedAt] = useState(null);
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState(null);
   const [viewport, setViewport] = useState(null);
   const mapRequestRef = useRef(null);
   const startupLoader = useApiStartupLoader(loading);
+
+  const searchTerm = useMemo(() => q.trim(), [q]);
+
+  /* Typt iemand iets dat op een relatiegroep lijkt, dan bieden we die groep aan in plaats van
+     te verwachten dat hij weet dat er een filter voor bestaat. Herkennen gebeurt tegen de
+     lijst die voor de keuzelijst toch al is opgehaald, dus dit kost geen enkele query en het
+     zware zoekpad blijft precies zoals het was. */
+  const groupSuggestions = useMemo(() => {
+    if (searchTerm.length < 2) return [];
+
+    const needle = searchTerm.toLowerCase();
+    return relationGroups
+      .filter((group) => String(group.relation_group_name || "").toLowerCase().includes(needle))
+      .filter((group) => !selectedRelationGroups.includes(group.relation_group_key))
+      .slice(0, 3);
+  }, [searchTerm, relationGroups, selectedRelationGroups]);
+
+  function chooseRelationGroup(group) {
+    // De suggestie vervangt de zoektekst; wie op de groep klikt bedoelde de groep en niet de
+    // letters die hij toevallig intypte.
+    setSelectedRelationGroups([group.relation_group_key]);
+    setQ("");
+  }
+
 
   /* Een koude API geeft 401 of 503 terug op een geldig verzoek. Dat is geen fout van de
      gebruiker en ook niets om een pagina voor te herladen; dit vraagt het gewoon opnieuw,
@@ -272,7 +303,7 @@ export default function InstallationsIndex() {
         // tientallen megabytes per keer.
         const response = await getInstallationsMap({
           ...filters,
-          q: q.trim(),
+          q: searchTerm,
           onlyCurrent,
           installationTypes: selectedInstallationTypes,
           businessUnits: selectedBusinessUnits,
@@ -300,11 +331,11 @@ export default function InstallationsIndex() {
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [filters, onlyCurrent, q, mode, selectedInstallationTypes, selectedBusinessUnits, selectedRelationGroups, retryToken, handleLoadError]);
+  }, [filters, onlyCurrent, searchTerm, mode, selectedInstallationTypes, selectedBusinessUnits, selectedRelationGroups, retryToken, handleLoadError]);
 
   useEffect(() => {
     if (mode !== "map" || !viewport) return undefined;
-    const cleanQuery = q.trim();
+    const cleanQuery = searchTerm;
     if (cleanQuery.length === 1) {
       setErr("Typ minimaal twee tekens om op de kaart te zoeken.");
       return undefined;
@@ -371,10 +402,115 @@ export default function InstallationsIndex() {
       window.clearTimeout(timer);
       controller.abort();
     };
-  }, [filters, mode, onlyCurrent, q, selectedInstallationTypes, selectedBusinessUnits, selectedRelationGroups, viewport, retryToken, handleLoadError]);
+  }, [filters, mode, onlyCurrent, searchTerm, selectedInstallationTypes, selectedBusinessUnits, selectedRelationGroups, viewport, retryToken, handleLoadError]);
+
+  useEffect(() => {
+    const current = searchParams.get("relatiegroep") || "";
+    const chosen = selectedRelationGroups[0] || "";
+    if (current === chosen) return;
+
+    const next = new URLSearchParams(searchParams);
+    if (chosen) next.set("relatiegroep", chosen);
+    else next.delete("relatiegroep");
+    setSearchParams(next, { replace: true });
+  }, [selectedRelationGroups, searchParams, setSearchParams]);
 
   const visibleList = useMemo(() => data.items.slice(0, 500), [data.items]);
   const summary = data.summary || {};
+
+  /* Wat er nu aan staat, in gewone taal, met een kruisje per filter. Zonder dit is de zijbalk
+     de enige plek waar je kunt zien waarom er 290 van de 11000 installaties overblijven, en
+     die kun je weggescrold hebben. */
+  const activeFilters = useMemo(() => {
+    const chips = [];
+
+    for (const key of selectedRelationGroups) {
+      const group = relationGroups.find((item) => item.relation_group_key === key);
+      chips.push({
+        id: `groep:${key}`,
+        label: `Relatiegroep: ${group?.relation_group_name || key}`,
+        clear: () => setSelectedRelationGroups([]),
+      });
+    }
+
+    if (selectedInstallationTypes.length) {
+      const labels = selectedInstallationTypes.map(
+        (key) => installationTypes.find((type) => String(type.installation_type_key || "").toUpperCase() === key)?.display_name || key
+      );
+      chips.push({
+        id: "soorten",
+        label: `Soort: ${labels.join(", ")}`,
+        clear: () => setSelectedInstallationTypes([]),
+      });
+    }
+
+    if (selectedBusinessUnits.length) {
+      const labels = selectedBusinessUnits.map(
+        (key) => BUSINESS_UNITS.find((unit) => unit.key === key)?.label || key
+      );
+      chips.push({
+        id: "bedrijven",
+        label: `Bedrijf: ${labels.join(", ")}`,
+        clear: () => setSelectedBusinessUnits([]),
+      });
+    }
+
+    const followUpLabels = {
+      OPEN: "Met open opvolging",
+      OVERDUE: "Met verlopen opvolging",
+      NONE: "Zonder open opvolging",
+    };
+    if (followUpLabels[filters.followUpMode]) {
+      chips.push({
+        id: "opvolging",
+        label: followUpLabels[filters.followUpMode],
+        clear: () => setFilter("followUpMode", "ALL"),
+      });
+    }
+
+    const statusLabels = { ACTIVE: "actief", INACTIVE: "niet actief", UNKNOWN: "onbekend" };
+    if (filters.maintenanceStatus) {
+      chips.push({
+        id: "onderhoud",
+        label: `Onderhoudscontract: ${statusLabels[filters.maintenanceStatus] || filters.maintenanceStatus}`,
+        clear: () => setFilter("maintenanceStatus", ""),
+      });
+    }
+    if (filters.inspectionServiceStatus) {
+      chips.push({
+        id: "inspectie",
+        label: `Inspectiecertificaat: ${statusLabels[filters.inspectionServiceStatus] || filters.inspectionServiceStatus}`,
+        clear: () => setFilter("inspectionServiceStatus", ""),
+      });
+    }
+    if (filters.openFormsOnly) {
+      chips.push({
+        id: "formulieren",
+        label: "Met openstaande formulieren",
+        clear: () => setFilter("openFormsOnly", false),
+      });
+    }
+    if (filters.missingDocumentsOnly) {
+      chips.push({
+        id: "documenten",
+        label: "Verplichte documenten ontbreken",
+        clear: () => setFilter("missingDocumentsOnly", false),
+      });
+    }
+    if (searchTerm) {
+      chips.push({ id: "zoek", label: `Zoekt op "${searchTerm}"`, clear: () => setQ("") });
+    }
+
+    return chips;
+  }, [
+    filters,
+    searchTerm,
+    selectedRelationGroups,
+    selectedInstallationTypes,
+    selectedBusinessUnits,
+    relationGroups,
+    installationTypes,
+  ]);
 
   function setFilter(key, value) {
     setFilters((current) => ({ ...current, [key]: value }));
@@ -422,10 +558,31 @@ export default function InstallationsIndex() {
               className="searchbar-input"
               value={q}
               onChange={(event) => setQ(event.target.value)}
-              placeholder="Code, naam, object of relatie"
+              placeholder="Zoek op code, naam of adres"
               autoComplete="off"
             />
           </div>
+
+          {/* Lijkt wat je typt op een relatiegroep, dan bieden we die aan. Klikken zet het
+              filter; wie niets klikt merkt er niets van en zoekt gewoon door op tekst. */}
+          {groupSuggestions.length ? (
+            <div className="installations-search-suggestions">
+              <span className="installations-search-suggestions__label">Relatiegroep gevonden</span>
+              <div className="installations-search-suggestions__list">
+                {groupSuggestions.map((group) => (
+                  <button
+                    key={group.relation_group_key}
+                    type="button"
+                    className="installations-search-suggestion"
+                    onClick={() => chooseRelationGroup(group)}
+                  >
+                    {group.relation_group_name || group.relation_group_code}
+                    <span>{group.installation_count} installaties</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          ) : null}
 
           <FilterSelect label="Opvolging" value={filters.followUpMode} onChange={(value) => setFilter("followUpMode", value)}>
             <option value="ALL">Alle installaties</option>
@@ -565,6 +722,23 @@ export default function InstallationsIndex() {
         </aside>
 
         <main className="installations-results">
+          {activeFilters.length ? (
+            <div className="installations-active-filters" aria-label="Actieve filters">
+              {activeFilters.map((chip) => (
+                <button
+                  key={chip.id}
+                  type="button"
+                  className="installations-active-filter"
+                  onClick={chip.clear}
+                  title={`${chip.label}; klik om dit filter weg te halen`}
+                >
+                  <span>{chip.label}</span>
+                  <span aria-hidden="true">×</span>
+                </button>
+              ))}
+            </div>
+          ) : null}
+
           <div className="installations-summary" aria-live="polite">
             <span className="ember-label ember-label--muted">{summary.result_count || 0} installaties</span>
             <span className="ember-label ember-label--danger">{summary.critical_count || 0} kritisch</span>
@@ -591,7 +765,7 @@ export default function InstallationsIndex() {
               error={err}
               onRetry={retryNow}
               onViewportChange={setViewport}
-              fitRequestKey={q.trim().length >= 2 ? q.trim() : ""}
+              fitRequestKey={searchTerm.length >= 2 ? searchTerm : ""}
               showLegend
             />
           ) : null}
