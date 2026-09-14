@@ -415,7 +415,7 @@ begin try
   begin
     declare @actionId uniqueidentifier=newid(),@installationId uniqueidentifier,@code nvarchar(450);
     select @installationId=installation_id,@code=atrium_installation_code from dbo.InspectionCase where inspection_case_id=@caseId;
-    insert dbo.FollowUpAction(follow_up_action_id,source_type,kind,workflow_title,workflow_description,category,priority,responsibility_type,certificate_impact,status,assignment_type,assigned_role_code,due_date,created_by) values(@actionId,N'INSPECTION_CASE',N'workflow',N'Herstelpunten inspectie uitvoeren',@note,N'Inspectieherstel',N'HIGH',N'INTERN',N'yes',N'OPEN',N'ROLE',N'INSPECTION_REPAIR_OWNER',@dueDate,@actor);
+    insert dbo.FollowUpAction(follow_up_action_id,source_type,kind,workflow_title,workflow_description,category,priority,responsibility_type,certificate_impact,status,assignment_type,assigned_role_code,due_date,created_by) values(@actionId,N'INSPECTION_CASE',N'workflow',N'Herstelpunten inspectie uitvoeren',@note,N'Inspectieherstel',N'HIGH',N'INTERN',N'yes',N'OPEN',N'ROLE',N'INSPECTION_COORDINATOR',@dueDate,@actor);
     insert dbo.FollowUpActionInspectionCaseSource(follow_up_action_id,inspection_case_id,source_kind,is_blocking,source_fingerprint,created_by) values(@actionId,@caseId,N'REPAIR',1,N'REPAIR|CURRENT',@actor);
     insert dbo.FollowUpActionInstallationContext(follow_up_action_id,installation_id,atrium_installation_code,is_primary,created_by) values(@actionId,@installationId,@code,1,@actor);
     insert dbo.InspectionCaseEvent(inspection_case_id,event_type,after_json,event_by) values(@caseId,N'REPAIR_ACTION_CREATED',json_object('followUpActionId':convert(nvarchar(36),@actionId)),@actor);

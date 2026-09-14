@@ -19,10 +19,14 @@ function buildDraft(catalog) {
   }
 
   const requiredByDocType = new Map();
+  const conditionalByDocType = new Map();
   for (const link of catalog?.documentTypeRequirements || []) {
-    const arr = requiredByDocType.get(link.document_type_key) || [];
-    if (link.is_required) arr.push(link.installation_type_key);
-    requiredByDocType.set(link.document_type_key, arr);
+    const target = link.applicability === "CONDITIONAL" ? conditionalByDocType : requiredByDocType;
+    const arr = target.get(link.document_type_key) || [];
+    if (link.applicability === "REQUIRED" || link.applicability === "CONDITIONAL") {
+      arr.push(link.installation_type_key);
+    }
+    target.set(link.document_type_key, arr);
   }
 
   const attachmentParentsByDocType = new Map();
@@ -43,6 +47,7 @@ function buildDraft(catalog) {
           is_active: x.is_active ?? true,
           applicability_type_keys: applicabilityByDocType.get(x.document_type_key) || [],
           required_type_keys: x.is_attachment_only === true ? [] : (requiredByDocType.get(x.document_type_key) || []),
+          conditional_type_keys: x.is_attachment_only === true ? [] : (conditionalByDocType.get(x.document_type_key) || []),
           attachment_parent_type_keys: attachmentParentsByDocType.get(x.document_type_key) || [],
         }))
         .sort((a, b) => {
@@ -196,10 +201,12 @@ const AdminInstallationDocumentsTab = forwardRef(function AdminInstallationDocum
 
         const applicability = new Set(row.applicability_type_keys || []);
         const required = new Set(row.required_type_keys || []);
+        const conditional = new Set(row.conditional_type_keys || []);
 
         if (applicability.has(typeKey)) {
           applicability.delete(typeKey);
           required.delete(typeKey);
+          conditional.delete(typeKey);
         } else {
           applicability.add(typeKey);
         }
@@ -208,33 +215,34 @@ const AdminInstallationDocumentsTab = forwardRef(function AdminInstallationDocum
           ...row,
           applicability_type_keys: Array.from(applicability),
           required_type_keys: Array.from(required),
+          conditional_type_keys: Array.from(conditional),
         };
       })
     );
   }
 
-  function toggleRequired(index, typeKey) {
+  // De documentmatrix kent drie standen per installatiesoort; optioneel is de rustpositie.
+  function setApplicabilityLevel(index, typeKey, level) {
     setDraft((prev) =>
       prev.map((row, i) => {
         if (i !== index) return row;
 
         const applicability = new Set(row.applicability_type_keys || []);
         const required = new Set(row.required_type_keys || []);
+        const conditional = new Set(row.conditional_type_keys || []);
         const allTypesImplicit = applicability.size === 0;
 
-        if (!allTypesImplicit && !applicability.has(typeKey)) {
-          return row;
-        }
+        if (!allTypesImplicit && !applicability.has(typeKey)) return row;
 
-        if (required.has(typeKey)) {
-          required.delete(typeKey);
-        } else {
-          required.add(typeKey);
-        }
+        required.delete(typeKey);
+        conditional.delete(typeKey);
+        if (level === "REQUIRED") required.add(typeKey);
+        if (level === "CONDITIONAL") conditional.add(typeKey);
 
         return {
           ...row,
           required_type_keys: Array.from(required),
+          conditional_type_keys: Array.from(conditional),
         };
       })
     );
@@ -248,6 +256,7 @@ const AdminInstallationDocumentsTab = forwardRef(function AdminInstallationDocum
           ...row,
           is_attachment_only: Boolean(nextValue),
           required_type_keys: nextValue ? [] : row.required_type_keys,
+          conditional_type_keys: nextValue ? [] : row.conditional_type_keys,
           attachment_parent_type_keys: nextValue ? row.attachment_parent_type_keys || [] : [],
         };
       })
@@ -282,6 +291,7 @@ const AdminInstallationDocumentsTab = forwardRef(function AdminInstallationDocum
         is_active: true,
         applicability_type_keys: [],
         required_type_keys: [],
+        conditional_type_keys: [],
         is_attachment_only: false,
         attachment_parent_type_keys: [],
       },
@@ -624,6 +634,7 @@ const AdminInstallationDocumentsTab = forwardRef(function AdminInstallationDocum
                 {draft.map((row, index) => {
                   const applicabilitySet = new Set(row.applicability_type_keys || []);
                   const requiredSet = new Set(row.required_type_keys || []);
+                  const conditionalSet = new Set(row.conditional_type_keys || []);
                   const allTypesImplicit = applicabilitySet.size === 0;
                   const docTypeOpenKey = row.document_type_key || `__row_${index}`;
                   const isOpen = openDocTypeKeys[docTypeOpenKey] === true;
@@ -657,7 +668,7 @@ const AdminInstallationDocumentsTab = forwardRef(function AdminInstallationDocum
                             {allTypesImplicit
                               ? "alle installatiesoorten"
                               : `${applicabilitySet.size} gekozen`}{" "}
-                            ; {requiredSet.size} verplicht
+                            ; {requiredSet.size} verplicht ; {conditionalSet.size} conditioneel
                           </div>
                         </div>
 
@@ -703,7 +714,11 @@ const AdminInstallationDocumentsTab = forwardRef(function AdminInstallationDocum
                           <div className="admin-check-grid">
                             {installationTypes.map((type) => {
                               const applicable = applicabilitySet.has(type.installation_type_key);
-                              const required = requiredSet.has(type.installation_type_key);
+                              const level = requiredSet.has(type.installation_type_key)
+                                ? "REQUIRED"
+                                : conditionalSet.has(type.installation_type_key)
+                                  ? "CONDITIONAL"
+                                  : "OPTIONAL";
                               const canRequire =
                                 !row.is_attachment_only && (applicable || allTypesImplicit);
 
@@ -741,15 +756,22 @@ const AdminInstallationDocumentsTab = forwardRef(function AdminInstallationDocum
                                     </label>
 
                                     <label className="admin-checkbox-label">
-                                      <input
-                                        type="checkbox"
-                                        checked={required}
+                                      <select
+                                        className="input"
+                                        value={level}
                                         disabled={!canRequire}
-                                        onChange={() =>
-                                          toggleRequired(index, type.installation_type_key)
+                                        onChange={(event) =>
+                                          setApplicabilityLevel(
+                                            index,
+                                            type.installation_type_key,
+                                            event.target.value
+                                          )
                                         }
-                                      />
-                                      <span>verplicht</span>
+                                      >
+                                        <option value="OPTIONAL">optioneel</option>
+                                        <option value="CONDITIONAL">conditioneel</option>
+                                        <option value="REQUIRED">verplicht</option>
+                                      </select>
                                     </label>
                                   </div>
                                 </div>

@@ -144,7 +144,7 @@ order by
 select
   r.document_type_key,
   r.installation_type_key,
-  r.is_required
+  r.applicability
 from dbo.DocumentTypeRequirement r
 order by
   r.document_type_key,
@@ -536,18 +536,40 @@ where exists (
 insert into dbo.DocumentTypeRequirement (
   document_type_key,
   installation_type_key,
-  is_required
+  applicability
 )
 select
   src.document_type_key,
   src.installation_type_key,
-  cast(1 as bit)
+  -- Verplicht wint van conditioneel, conditioneel van optioneel.
+  case max(src.rank)
+    when 3 then N'REQUIRED'
+    when 2 then N'CONDITIONAL'
+    else N'OPTIONAL'
+  end as applicability
 from (
   select distinct
     convert(nvarchar(50), json_value(j.value, '$.document_type_key')) as document_type_key,
-    convert(nvarchar(50), a.value) as installation_type_key
+    convert(nvarchar(50), a.value) as installation_type_key,
+    3 as rank
   from openjson(@itemsJson) j
   cross apply openjson(json_query(j.value, '$.desired_type_keys')) a
+  union all
+  select distinct
+    convert(nvarchar(50), json_value(j.value, '$.document_type_key')),
+    convert(nvarchar(50), a.value),
+    2
+  from openjson(@itemsJson) j
+  cross apply openjson(json_query(j.value, '$.conditional_type_keys')) a
+  union all
+  -- Van toepassing zonder eis blijft als OPTIONAL vastgelegd, zodat de matrix
+  -- het verschil tussen "wel tonen" en "niet van toepassing" behoudt.
+  select distinct
+    convert(nvarchar(50), json_value(j.value, '$.document_type_key')),
+    convert(nvarchar(50), a.value),
+    1
+  from openjson(@itemsJson) j
+  cross apply openjson(json_query(j.value, '$.applicability_type_keys')) a
 ) src
 where exists (
   select 1
@@ -566,7 +588,8 @@ and (
     where x.document_type_key = src.document_type_key
       and x.installation_type_key = src.installation_type_key
   )
-);
+)
+group by src.document_type_key, src.installation_type_key;
 
 insert into dbo.DocumentTypeAttachmentParent (
   document_type_key,

@@ -45,7 +45,9 @@ expect("G checklistgate", queries, ["blocking inspection documents incomplete", 
 expect("H inspectieactie", schema, ["FollowUpActionInspectionCaseSource", "source_type IN (N'FORM', N'MANUAL', N'INSPECTION_CASE', N'IMPORT')"]);
 expect("I generieke zichtbaarheid", installationDetail, ['key: "certification"', "<CertificationTab"]);
 expect("I generieke followups", followUpQueries, ["FollowUpAction", "p.stored_file_id"]);
-expect("J-K FAIL", queries, ["N'REPAIR_REQUIRED'", "N'REPAIR_ACTION_CREATED'", "N'INSPECTION_REPAIR_OWNER'"]);
+// Een inspectierol; herstelpunten vallen onder de inspectiecoordinator.
+expect("J-K FAIL", queries, ["N'REPAIR_REQUIRED'", "N'REPAIR_ACTION_CREATED'", "N'INSPECTION_COORDINATOR'"]);
+if (queries.includes("N'INSPECTION_REPAIR_OWNER'")) failures.push("J-K FAIL; vervallen rol INSPECTION_REPAIR_OWNER wordt nog toegewezen");
 expect("L herinspectie", queries, ["N'REINSPECTION'", "parent_inspection_case_id", "N'REINSPECTION_CREATED'"]);
 expect("M PASS certificaat", queries, ["inspection certificate required for pass", "source_inspection_case_id=@caseId", "N'CERTIFICATE_RECEIVED'"]);
 expect("N-O completion", queries, ["current inspection report required", "pass conclusion and certificate required", "resulting_certificate_id is not null"]);

@@ -79,7 +79,7 @@ required_document_types as (
   from dbo.Installation i
   join dbo.DocumentTypeRequirement r
     on r.installation_type_key = i.installation_type_key
-   and r.is_required = 1
+   and r.applicability = N'REQUIRED'
   join dbo.DocumentType dt
     on dt.document_type_key = r.document_type_key
    and dt.is_active = 1

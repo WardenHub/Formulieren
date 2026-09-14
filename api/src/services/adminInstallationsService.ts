@@ -144,7 +144,8 @@ export async function getAdminInstallationsCatalog() {
     documentTypeRequirements: documentTypeRequirements.map((r: any) => ({
       document_type_key: r.document_type_key,
       installation_type_key: r.installation_type_key,
-      is_required: r.is_required === true,
+      applicability: String(r.applicability || "OPTIONAL"),
+      is_required: String(r.applicability || "") === "REQUIRED",
     })),
     externalFields: externalFields.map((r: any) => ({
       field_key: r.field_key,
@@ -312,6 +313,7 @@ export async function saveAdminInstallationDocuments(items: any[], user: any) {
     is_active: normalizeBool(x?.is_active, true),
     applicability_type_keys: uniqueStrings(x?.applicability_type_keys),
     desired_type_keys: uniqueStrings(x?.desired_type_keys ?? x?.required_type_keys),
+    conditional_type_keys: uniqueStrings(x?.conditional_type_keys),
     attachment_parent_type_keys: uniqueStrings(x?.attachment_parent_type_keys),
   }));
 
@@ -323,10 +325,19 @@ export async function saveAdminInstallationDocuments(items: any[], user: any) {
     if (!item.document_type_key) return { ok: false, error: "document_type_key is verplicht" };
     if (!item.document_type_name) return { ok: false, error: "document_type_name is verplicht" };
 
-    if (item.is_attachment_only && item.desired_type_keys.length > 0) {
+    if (item.is_attachment_only && (item.desired_type_keys.length > 0 || item.conditional_type_keys.length > 0)) {
       return {
         ok: false,
-        error: `attachment-only documenttype ${item.document_type_key} mag niet als los verplicht documenttype worden ingesteld`,
+        error: `attachment-only documenttype ${item.document_type_key} mag niet als los verplicht of conditioneel documenttype worden ingesteld`,
+      };
+    }
+
+    // Een installatiesoort is verplicht of conditioneel, nooit allebei.
+    const both = item.desired_type_keys.filter((key: string) => item.conditional_type_keys.includes(key));
+    if (both.length > 0) {
+      return {
+        ok: false,
+        error: `documenttype ${item.document_type_key} staat voor ${both[0]} zowel verplicht als conditioneel`,
       };
     }
 

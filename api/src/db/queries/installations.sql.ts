@@ -144,7 +144,8 @@ order by
 
 // ------------------------------
 // catalog; document types
-// note; no is_required in your table; we default to 0
+// De documentmatrix kent REQUIRED, CONDITIONAL en OPTIONAL; alleen REQUIRED telt mee
+// als verplicht. CONDITIONAL gaat mee naar de client zodat het scherm het verschil toont.
 // ------------------------------
 export const getCatalogDocumentTypesSql = `
 -- expects: @installationTypeKey (nullable)
@@ -164,13 +165,19 @@ select
          from dbo.DocumentTypeRequirement r
          where r.document_type_key = dt.document_type_key
            and r.installation_type_key = @installationTypeKey
-           and r.is_required = 1
+           and r.applicability = N'REQUIRED'
        )
       then 1
       else 0
     end
     as bit
-  ) as is_required
+  ) as is_required,
+  isnull((
+    select top 1 r.applicability
+    from dbo.DocumentTypeRequirement r
+    where r.document_type_key = dt.document_type_key
+      and r.installation_type_key = @installationTypeKey
+  ), N'OPTIONAL') as applicability
 from dbo.DocumentType dt
 where dt.is_active = 1
 and (
@@ -655,7 +662,7 @@ outer apply (
     join dbo.DocumentType dt
       on dt.document_type_key = r.document_type_key
     where r.installation_type_key = m.installation_type_key
-      and r.is_required = 1
+      and r.applicability = N'REQUIRED'
       and dt.is_active = 1
       and isnull(dt.is_attachment_only, 0) = 0
   ) req
