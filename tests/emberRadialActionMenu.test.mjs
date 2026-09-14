@@ -136,12 +136,34 @@ test("de bestaande DrawingPin-interactie en versiecontracten blijven aangesloten
 
   assert.match(source, /onContextMenu=\{openQuickMenu\}/);
   assert.match(source, /event\.pointerType === "mouse" \|\| readOnly \|\| placing/);
-  assert.match(source, /window\.setTimeout\(\(\) => \{[\s\S]*?showQuickMenu\(position, triggerElement\);[\s\S]*?\}, 550\)/);
+  /* De lange druk is de enige manier om het menu met een vinger te openen. Hij duurt nog
+     steeds 550 ms, maar verdraagt sinds 14 september 2026 wat trilling: zonder speling viel
+     hij bij twee pixels beweging al weg en bleef de tablet met lege handen achter. */
+  assert.match(source, /const LONG_PRESS_MS = 550;/);
+  assert.match(source, /const LONG_PRESS_SLOP = 10;/);
+  assert.match(source, /window\.setTimeout\(\(\) => \{[\s\S]*?showQuickMenu\(position, triggerElement\);[\s\S]*?\}, LONG_PRESS_MS\)/);
+  assert.match(source, /Math\.hypot\(event\.clientX - press\.x, event\.clientY - press\.y\) <= LONG_PRESS_SLOP/);
+  // Een tweede vinger is knijpen en dus geen lange druk.
+  assert.match(source, /if \(longPressRef\.current\) \{ cancelLongPress\(\); return; \}/);
+  // Slepen van een pin rekent nog steeds rechtstreeks vanuit de gebeurtenis.
   assert.match(source, /x_normalized: Math\.min\(1, Math\.max\(0, \(event\.clientX - rect\.left\) \/ rect\.width\)\)/);
   assert.match(source, /y_normalized: Math\.min\(1, Math\.max\(0, \(event\.clientY - rect\.top\) \/ rect\.height\)\)/);
+  // en een positie op de tekening komt uit een punt, zodat ook een knop er een kan opvragen.
+  assert.match(source, /function positionFromClientPoint\(clientX, clientY\)/);
+  assert.match(source, /const normalizedX = Math\.min\(1, Math\.max\(0, \(clientX - rect\.left\) \/ rect\.width\)\);/);
   assert.match(source, /page_number: pageNumber/);
   assert.match(source, /boundaryElement=\{boundaryElement\}/);
   assert.match(source, /setBoundaryElement\(element\)/);
+  /* Het menu hangt aan de shell en niet aan de pagina. Stond het in de pinlaag, dan schaalde
+     het mee met de zoom (bij 300 procent een ring van 768 pixels) en klemde het tegen de
+     pagina in plaats van tegen wat je ziet, waardoor de helft buiten beeld viel en pannen om
+     erbij te komen het menu sloot. Vandaar de grens op de shell en het anker in
+     shell-coordinaten. */
+  assert.match(source, /const connectShellElement = useCallback\(\(element\) => \{[\s\S]*?shellRef\.current = element;[\s\S]*?setBoundaryElement\(element\);/);
+  assert.match(source, /anchorPosition=\{quickMenu \? \{ x: quickMenu\.shell_x, y: quickMenu\.shell_y \} : null\}/);
+  // En een markering houdt haar maat op het scherm; het anker draait de zoom terug.
+  assert.match(source, /const markerScale = zoom > 0 \? 1 \/ zoom : 1;/);
+  assert.match(source, /"--drawing-marker-scale": markerScale/);
   assert.match(source, /downloadInstallationDocumentFile\(code, selectedDocumentId\)/);
   /* Het opslaan van een pin liep hier eerst als createDrawingPin(code, selectedDocumentId,
      draft) in dit bestand zelf. Sinds de driedelige beoordelingsronde gaat het via de

@@ -143,6 +143,9 @@ export default function FormDrawingSheet({ code, instanceId, onClose, readOnly =
   }, []);
 
   const pageCount = pdfDocument?.numPages || 1;
+  // Een vinkje hoort even groot te blijven als je inzoomt; het hangt aan een punt van de
+  // tekening, maar het is geen onderdeel van de tekening. Zie .drawing-pin-anchor.
+  const markerScale = zoom > 0 ? 1 / zoom : 1;
 
   return (
     <div className="form-drawing-sheet" role="dialog" aria-label="Tekening bij dit formulier">
@@ -243,11 +246,14 @@ export default function FormDrawingSheet({ code, instanceId, onClose, readOnly =
                 onClick={addPoint}
               >
                 {pagePoints.map((point, index) => (
-                  <button
+                  <span
                     key={point.id}
+                    className="drawing-pin-anchor drawing-pin-anchor--pin"
+                    style={{ left: `${point.x * 100}%`, top: `${point.y * 100}%`, "--drawing-marker-scale": markerScale }}
+                  >
+                  <button
                     type="button"
                     className="drawing-check"
-                    style={{ left: `${point.x * 100}%`, top: `${point.y * 100}%` }}
                     title={`Gecontroleerd ${index + 1}; tik om dit vinkje weg te halen`}
                     aria-label={`Gecontroleerd ${index + 1}, tik om weg te halen`}
                     onClick={(event) => {
@@ -257,6 +263,7 @@ export default function FormDrawingSheet({ code, instanceId, onClose, readOnly =
                   >
                     <Check size={15} aria-hidden="true" />
                   </button>
+                  </span>
                 ))}
               </div>
             </div>

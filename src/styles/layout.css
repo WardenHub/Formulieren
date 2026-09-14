@@ -6112,6 +6112,24 @@ html[data-appearance="dark"] .leaflet-popup-content a{
   inset: 0;
 }
 
+/* Een markering hangt aan een punt van de tekening en houdt haar eigen maat op het scherm.
+   Het anker is een punt zonder afmeting; schalen om dat punt heen laat de pin dus staan waar
+   hij staat, hoe ver je ook inzoomt. De markering zelf houdt haar eigen transform. */
+.drawing-pin-anchor{
+  position: absolute;
+  width: 0;
+  height: 0;
+  transform: scale(var(--drawing-marker-scale, 1));
+  transform-origin: 0 0;
+}
+
+.drawing-pin-anchor--pin{ z-index: 3; }
+.drawing-pin-anchor--tooltip{ z-index: 4; }
+.drawing-pin-anchor--preview{ z-index: 8; }
+.drawing-pin-anchor--indicator{ z-index: 10; }
+.drawing-pin-anchor:has(.drawing-pin:hover),
+.drawing-pin-anchor:has(.drawing-pin:focus-visible){ z-index: 6; }
+
 .drawing-pdf-shell.is-placing .drawing-pin-layer{
   cursor: crosshair;
 }
@@ -9078,7 +9096,8 @@ button.action-point-summary__tile:hover { border-color: var(--accent); }
 .ember-file-name-editor__input { border-radius: var(--radius, 10px) 0 0 var(--radius, 10px); min-width: 0; }
 .ember-file-name-editor__suffix { display: inline-flex; align-items: center; padding: 0 12px; border: 1px solid var(--border); border-left: 0; border-radius: 0 var(--radius, 10px) var(--radius, 10px) 0; background: var(--surface-subtle, rgba(127,127,127,.08)); color: var(--muted); font-weight: 700; }
 
-.drawing-quick-menu-fallback { position: absolute; right: 10px; top: 10px; z-index: 7; width: 38px; height: 38px; display: grid; place-items: center; border-radius: 999px; border: 1px solid var(--border); background: var(--surface, #fff); color: var(--text); cursor: pointer; box-shadow: 0 6px 18px rgba(0,0,0,.14); }
+.drawing-quick-menu-fallback { position: absolute; right: 10px; top: 10px; z-index: 13; width: 44px; height: 44px; display: grid; place-items: center; border-radius: 999px; border: 1px solid var(--border); background: var(--surface, #fff); color: var(--text); cursor: pointer; box-shadow: 0 6px 18px rgba(0,0,0,.14); }
+.drawing-quick-menu-fallback:focus-visible { outline: 3px solid var(--focus-ring, var(--brand-red)); outline-offset: 2px; }
 
 @media (prefers-reduced-motion: reduce){
   .drawing-pin-focus-indicator,

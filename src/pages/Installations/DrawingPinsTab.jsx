@@ -29,6 +29,11 @@ import {
 
 GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
 
+// De lange druk op een tablet. 550 ms is dezelfde tijd als voorheen; de speling is nieuw en
+// ligt bij de 12 pixels die de tekeningviewer voor een tik aanhoudt.
+const LONG_PRESS_MS = 550;
+const LONG_PRESS_SLOP = 10;
+
 const DRAWING_QUICK_ACTIONS = [
   {
     id: "component",
@@ -218,6 +223,11 @@ function PdfPinViewer({ pdfDocument, pageNumber, pageCount, pins, selectedPinId,
 
   const pagePins = pins.filter((pin) => Number(pin.page_number) === Number(pageNumber));
 
+  // Een pin is een markering op de tekening, geen onderdeel ervan. De laag zit in de geschaalde
+  // pagina, dus draaien de markeringen de zoom weer terug en houden ze op elk zoomniveau
+  // dezelfde maat op het scherm; bij ver uitzoomen bleven ze anders te klein om aan te tikken.
+  const markerScale = zoom > 0 ? 1 / zoom : 1;
+
   const initialEditorPosition = (() => {
     if (!editorOpen) return null;
     const editorWidth = Math.min(360, Math.max(280, shellSize.width - 24));
@@ -229,8 +239,14 @@ function PdfPinViewer({ pdfDocument, pageNumber, pageCount, pins, selectedPinId,
   })();
   const editorPosition = editorDragPosition || initialEditorPosition;
 
+  const cancelLongPress = useCallback(() => {
+    if (!longPressRef.current) return;
+    window.clearTimeout(longPressRef.current.timer);
+    longPressRef.current = null;
+  }, []);
+
   useEffect(() => () => {
-    if (longPressRef.current) window.clearTimeout(longPressRef.current);
+    if (longPressRef.current) window.clearTimeout(longPressRef.current.timer);
   }, []);
 
   const showQuickMenu = useCallback((position, triggerElement) => {
@@ -248,6 +264,13 @@ function PdfPinViewer({ pdfDocument, pageNumber, pageCount, pins, selectedPinId,
 
   const connectLayerElement = useCallback((element) => {
     layerRef.current = element;
+  }, []);
+
+  // Het radiale menu hoort bij het scherm en niet bij het papier. Stond het in de pinlaag, dan
+  // schaalde het mee met de zoom (bij 300 procent een ring van 768 pixels) en klemde het tegen
+  // de pagina in plaats van tegen wat je ziet, zodat de helft buiten beeld viel.
+  const connectShellElement = useCallback((element) => {
+    shellRef.current = element;
     setBoundaryElement(element);
   }, []);
 
@@ -266,27 +289,46 @@ function PdfPinViewer({ pdfDocument, pageNumber, pageCount, pins, selectedPinId,
     };
   }, [closeQuickMenu, quickMenu]);
 
-  function positionFromEvent(event) {
-    const layer = event.currentTarget;
+  function positionFromClientPoint(clientX, clientY) {
+    const layer = layerRef.current;
+    if (!layer) return null;
+
     const rect = layer.getBoundingClientRect();
     const shellRect = shellRef.current?.getBoundingClientRect();
-    const normalizedX = Math.min(1, Math.max(0, (event.clientX - rect.left) / rect.width));
-    const normalizedY = Math.min(1, Math.max(0, (event.clientY - rect.top) / rect.height));
+    const normalizedX = Math.min(1, Math.max(0, (clientX - rect.left) / rect.width));
+    const normalizedY = Math.min(1, Math.max(0, (clientY - rect.top) / rect.height));
+
     return {
       left: normalizedX * layer.clientWidth,
       top: normalizedY * layer.clientHeight,
       x_normalized: normalizedX,
       y_normalized: normalizedY,
       page_number: pageNumber,
-      shell_x: shellRect ? event.clientX - shellRect.left : event.clientX,
-      shell_y: shellRect ? event.clientY - shellRect.top : event.clientY,
+      shell_x: shellRect ? clientX - shellRect.left : clientX,
+      shell_y: shellRect ? clientY - shellRect.top : clientY,
     };
+  }
+
+  function positionFromEvent(event) {
+    return positionFromClientPoint(event.clientX, event.clientY);
+  }
+
+  // Waar kijkt de monteur nu naar. De knop met de drie puntjes zit aan het scherm vast, dus de
+  // pin die eruit volgt hoort in het midden van het zichtbare stuk tekening te komen.
+  function positionAtVisibleCentre() {
+    const viewport = viewportRef.current;
+    if (!viewport) return null;
+
+    const rect = viewport.getBoundingClientRect();
+    return positionFromClientPoint(rect.left + rect.width / 2, rect.top + rect.height / 2);
   }
 
   function openQuickMenu(event) {
     if (readOnly || placing || !pageSize.width || !pageSize.height) return;
+    const position = positionFromEvent(event);
+    if (!position) return;
     event.preventDefault();
-    showQuickMenu(positionFromEvent(event), event.currentTarget);
+    showQuickMenu(position, event.currentTarget);
   }
 
   function runQuickAction(kind) {
@@ -335,7 +377,7 @@ function PdfPinViewer({ pdfDocument, pageNumber, pageCount, pins, selectedPinId,
   }
 
   return (
-    <div ref={shellRef} className={`drawing-pdf-shell${placing ? " is-placing" : ""}${fullscreen.active ? " is-fullscreen" : ""}`}>
+    <div ref={connectShellElement} className={`drawing-pdf-shell${placing ? " is-placing" : ""}${fullscreen.active ? " is-fullscreen" : ""}`}>
       <div className="drawing-zoom-controls" aria-label="PDF zoom">
         <button type="button" className="icon-btn" title="Vorige pagina" aria-label="Vorige pagina" disabled={pageNumber <= 1} onClick={onPreviousPage}><ChevronLeft size={18} /></button>
         <span className="drawing-zoom-controls__page" title={`Pagina ${pageNumber} van ${pageCount}`}>{pageNumber}/{pageCount}</span>
@@ -380,23 +422,43 @@ function PdfPinViewer({ pdfDocument, pageNumber, pageCount, pins, selectedPinId,
           onContextMenu={openQuickMenu}
           onPointerDown={(event) => {
             if (event.pointerType === "mouse" || readOnly || placing) return;
+            // Een tweede vinger betekent knijpen; dan is er geen lange druk meer in de maak.
+            if (longPressRef.current) { cancelLongPress(); return; }
+
             const position = positionFromEvent(event);
+            if (!position) return;
             const triggerElement = event.currentTarget;
-            longPressRef.current = window.setTimeout(() => {
-              showQuickMenu(position, triggerElement);
-              longPressRef.current = null;
-            }, 550);
+
+            longPressRef.current = {
+              pointerId: event.pointerId,
+              x: event.clientX,
+              y: event.clientY,
+              timer: window.setTimeout(() => {
+                showQuickMenu(position, triggerElement);
+                longPressRef.current = null;
+              }, LONG_PRESS_MS),
+            };
           }}
-          onPointerUp={() => { if (longPressRef.current) window.clearTimeout(longPressRef.current); }}
-          onPointerCancel={() => { if (longPressRef.current) window.clearTimeout(longPressRef.current); }}
-          onPointerMove={() => { if (longPressRef.current) window.clearTimeout(longPressRef.current); }}
+          onPointerUp={cancelLongPress}
+          onPointerCancel={cancelLongPress}
+          onPointerMove={(event) => {
+            // Een vinger op glas staat nooit helemaal stil. Zonder speling ging de lange druk
+            // bij twee pixels trilling al verloren; dat is precies wat er op de tablet misging.
+            const press = longPressRef.current;
+            if (!press || press.pointerId !== event.pointerId) return;
+            if (Math.hypot(event.clientX - press.x, event.clientY - press.y) <= LONG_PRESS_SLOP) return;
+            cancelLongPress();
+          }}
         >
           {pagePins.map((pin) => (
-            <button
+            <span
               key={pin.drawing_pin_id}
+              className="drawing-pin-anchor drawing-pin-anchor--pin"
+              style={{ left: `${Number(pin.x_normalized) * 100}%`, top: `${Number(pin.y_normalized) * 100}%`, "--drawing-marker-scale": markerScale }}
+            >
+            <button
               type="button"
               className={`drawing-pin drawing-pin--${String(pin.pin_kind || "NOTE").toLowerCase()}${pin.pin_status === "HISTORICAL" ? " is-historical" : ""}${pin.drawing_pin_id === selectedPinId ? " is-selected" : ""}`}
-              style={{ left: `${Number(pin.x_normalized) * 100}%`, top: `${Number(pin.y_normalized) * 100}%` }}
               onClick={(event) => {
                 event.stopPropagation();
                 if (dragRef.current?.moved) { dragRef.current = null; return; }
@@ -431,32 +493,41 @@ function PdfPinViewer({ pdfDocument, pageNumber, pageCount, pins, selectedPinId,
             >
               {(() => { const Icon = PIN_TYPE_META[pin.pin_kind]?.Icon || MessageSquareMoreIcon; return <Icon className="drawing-pin__icon" size={19} aria-hidden="true" />; })()}
             </button>
+            </span>
           ))}
           {selectedPinId && selectedPin && Number(selectedPin.page_number) === Number(pageNumber) ? (
-            <div
+            <span
               key={`${selectedPinId}-${pageNumber}`}
-              className="drawing-pin-focus-indicator"
-              style={{ left: `${Number(selectedPin.x_normalized) * 100}%`, top: `${Number(selectedPin.y_normalized) * 100}%` }}
-              role="status"
-              aria-live="polite"
+              className="drawing-pin-anchor drawing-pin-anchor--indicator"
+              style={{ left: `${Number(selectedPin.x_normalized) * 100}%`, top: `${Number(selectedPin.y_normalized) * 100}%`, "--drawing-marker-scale": markerScale }}
             >
-              <span>Deze pin</span>
-            </div>
+              <div className="drawing-pin-focus-indicator" role="status" aria-live="polite">
+                <span>Deze pin</span>
+              </div>
+            </span>
           ) : null}
           {editorOpen && selectedPin && Number(selectedPin.page_number) === Number(pageNumber) ? (
-            <div className="drawing-pin-tooltip" style={{ left: `${Number(selectedPin.x_normalized) * 100}%`, top: `${Number(selectedPin.y_normalized) * 100}%` }} role="status">
-              <strong>{PIN_TYPE_META[selectedPin.pin_kind]?.label || "Markering"}</strong>
-              <span>{selectedPin.label}</span>
-              {selectedPin.description ? <small>{selectedPin.description}</small> : null}
-              {selectedPin.pin_status === "HISTORICAL" ? <small>Historisch</small> : null}
-            </div>
+            <span
+              className="drawing-pin-anchor drawing-pin-anchor--tooltip"
+              style={{ left: `${Number(selectedPin.x_normalized) * 100}%`, top: `${Number(selectedPin.y_normalized) * 100}%`, "--drawing-marker-scale": markerScale }}
+            >
+              <div className="drawing-pin-tooltip" role="status">
+                <strong>{PIN_TYPE_META[selectedPin.pin_kind]?.label || "Markering"}</strong>
+                <span>{selectedPin.label}</span>
+                {selectedPin.description ? <small>{selectedPin.description}</small> : null}
+                {selectedPin.pin_status === "HISTORICAL" ? <small>Historisch</small> : null}
+              </div>
+            </span>
           ) : null}
           {editorOpen && draft && !draft.drawing_pin_id && Number(draft.page_number) === Number(pageNumber) ? (
+            <span
+              key="drawing-pin-preview"
+              className="drawing-pin-anchor drawing-pin-anchor--preview"
+              style={{ left: `${Number(draft.x_normalized) * 100}%`, top: `${Number(draft.y_normalized) * 100}%`, "--drawing-marker-scale": markerScale }}
+            >
             <button
               type="button"
-              key="drawing-pin-preview"
-              className="drawing-pin-preview"
-              style={{ left: `${Number(draft.x_normalized) * 100}%`, top: `${Number(draft.y_normalized) * 100}%` }}
+              className="drawing-pin-preview" 
               aria-label="Nieuwe markering; houd Ctrl ingedrukt en sleep om te verplaatsen"
               title="Houd Ctrl ingedrukt en sleep om deze nieuwe markering te verplaatsen"
               onClick={(event) => event.stopPropagation()}
@@ -487,40 +558,37 @@ function PdfPinViewer({ pdfDocument, pageNumber, pageCount, pins, selectedPinId,
               <div className="drawing-pin-preview__icon"><MapPinPlusInsideIcon animate size={34} aria-hidden="true" /></div>
               <span>Nieuwe markering</span>
             </button>
+            </span>
           ) : null}
-          {!readOnly && !placing ? (
-            <button
-              type="button"
-              className="drawing-quick-menu-fallback"
-              aria-label="Snelmenu voor een pin openen"
-              title="Pin, opmerking of tekortkoming toevoegen"
-              onClick={(event) => {
-                event.stopPropagation();
-                const rect = event.currentTarget.parentElement.getBoundingClientRect();
-                showQuickMenu({
-                  left: rect.width - 54,
-                  top: 54,
-                  x_normalized: 0.88,
-                  y_normalized: 0.12,
-                  page_number: pageNumber,
-                }, event.currentTarget);
-              }}
-            ><MoreVertical size={19} /></button>
-          ) : null}
-          <EmberRadialActionMenu
-            open={Boolean(quickMenu)}
-            anchorPosition={quickMenu}
-            actions={DRAWING_QUICK_ACTIONS}
-            onSelect={(action) => runQuickAction(action.id)}
-            onClose={closeQuickMenu}
-            ariaLabel="Tekeningactie"
-            resolvedTheme={resolvedTheme}
-            boundaryElement={boundaryElement}
-          />
         </div>
       </div>
       </div>
       </div>
+      {!readOnly && !placing ? (
+        <button
+          type="button"
+          className="drawing-quick-menu-fallback"
+          aria-label="Snelmenu voor een pin openen"
+          title="Pin, opmerking of tekortkoming toevoegen"
+          onClick={(event) => {
+            event.stopPropagation();
+            const position = positionAtVisibleCentre();
+            if (position) showQuickMenu(position, event.currentTarget);
+          }}
+        ><MoreVertical size={19} /></button>
+      ) : null}
+
+      <EmberRadialActionMenu
+        open={Boolean(quickMenu)}
+        anchorPosition={quickMenu ? { x: quickMenu.shell_x, y: quickMenu.shell_y } : null}
+        actions={DRAWING_QUICK_ACTIONS}
+        onSelect={(action) => runQuickAction(action.id)}
+        onClose={closeQuickMenu}
+        ariaLabel="Tekeningactie"
+        resolvedTheme={resolvedTheme}
+        boundaryElement={boundaryElement}
+      />
+
       {rendering ? <div className="drawing-pdf-loading">PDF-pagina laden...</div> : null}
       {editorOpen && editorContent && editorPosition ? (
         <div
