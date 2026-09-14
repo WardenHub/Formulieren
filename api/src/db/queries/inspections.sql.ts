@@ -113,10 +113,12 @@ export const getInspectionCaseSql = `
 select top 1 c.*, sd.display_name as status_display_name, convert(varchar(18), convert(binary(8), c.row_version), 1) as row_version_hex,
   coalesce(a.installatie_naam, a.obj_naam, c.atrium_installation_code) as installation_name,
   a.obj_naam as object_name, a.obj_adr_formatted as formatted_address,
-  coalesce(a.gebruiker_naam,a.eigenaar_naam,a.debiteur_naam) as relation_name
+  coalesce(a.gebruiker_naam,a.eigenaar_naam,a.debiteur_naam) as relation_name,
+  wr.display_name as assigned_role_display_name
 from dbo.InspectionCase c
 join dbo.InspectionCaseStatusDefinition sd on sd.status_code = c.status
 left join dbo.AtriumInstallationBase a on a.installatie_code = c.atrium_installation_code
+left join dbo.WorkflowRoleDefinition wr on wr.role_code = c.assigned_role_code
 where c.inspection_case_id = @caseId;
 
 select s.* from dbo.InspectionCaseScope s where s.inspection_case_id = @caseId order by s.scope;
@@ -139,7 +141,7 @@ join dbo.InstallationDocument d on d.document_id = r.installation_document_id
 join dbo.StoredFile sf on sf.stored_file_id = r.stored_file_id and sf.is_deleted = 0
 where r.inspection_case_id = @caseId order by r.received_at desc;
 
-select f.*, s.source_kind, s.is_blocking, s.source_fingerprint,
+select f.*, fs.display_name as status_display_name, s.source_kind, s.is_blocking, s.source_fingerprint,
   coalesce((
     select p.drawing_pin_id, p.installation_document_id, p.stored_file_id, p.page_number,
       p.label as pin_label, d.title as drawing_title, sf.file_name as drawing_file_name
@@ -153,6 +155,7 @@ select f.*, s.source_kind, s.is_blocking, s.source_fingerprint,
   ),N'[]') as drawing_pins_json
 from dbo.FollowUpActionInspectionCaseSource s
 join dbo.FollowUpAction f on f.follow_up_action_id = s.follow_up_action_id
+left join dbo.FollowUpStatusDefinition fs on fs.status_code = f.status
 where s.inspection_case_id = @caseId order by f.created_at desc;
 
 select e.* from dbo.InspectionCaseEvent e where e.inspection_case_id = @caseId order by e.event_at desc, e.inspection_case_event_id desc;

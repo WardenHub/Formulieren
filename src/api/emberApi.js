@@ -1284,6 +1284,7 @@ export function createInspectionReinspection(caseId, payload) { return apiPost(`
 export function completeInspectionCase(caseId, payload) { return apiPost(`/inspections/cases/${encodeURIComponent(caseId)}/complete`, payload ?? {}); }
 export function signalInspectionCases() { return apiPost("/inspections/signal", {}); }
 export function getInspectionCaseEvents(caseId) { return apiGet(`/inspections/cases/${encodeURIComponent(caseId)}/events`); }
+export function downloadInspectionDossierPdf(caseId) { return httpDownload(`/inspections/cases/${encodeURIComponent(caseId)}/dossier.pdf`); }
 
 // ---------------------------------------------------------------------------
 // KAM-werklijst

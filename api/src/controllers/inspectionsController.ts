@@ -1,6 +1,7 @@
 import type { Response } from "express";
 import { CertificationValidationError } from "../utils/certificationValidation.js";
 import * as service from "../services/inspectionService.js";
+import { buildInspectionDossierPdf } from "../services/inspectionDossierPdfService.js";
 
 function respondError(res: Response, error: any, fallback: string) {
   if (error instanceof CertificationValidationError) return res.status(400).json({ error: error.message });
@@ -32,3 +33,13 @@ export async function reinspection(req: any, res: Response) { try { return res.s
 export async function complete(req: any, res: Response) { try { return res.json(await service.completeInspectionCase(req.params.caseId,req.body,req.user)); } catch (e) { return respondError(res,e,"complete inspection failed"); } }
 export async function signal(req: any, res: Response) { try { return res.json(await service.signalInspectionCases(req.user)); } catch (e) { return respondError(res,e,"signal inspections failed"); } }
 export async function events(req: any, res: Response) { try { return res.json(await service.getInspectionCaseEvents(req.params.caseId)); } catch (e) { return respondError(res,e,"get inspection audit failed"); } }
+export async function dossierPdf(req: any, res: Response) {
+  try {
+    const result = await buildInspectionDossierPdf(req.params.caseId);
+    res.setHeader("Content-Type", result.contentType);
+    res.setHeader("Content-Length", String(result.contentLength));
+    res.setHeader("Content-Disposition", result.contentDisposition);
+    res.setHeader("Cache-Control", "no-store");
+    return res.status(200).send(result.buffer);
+  } catch (e) { return respondError(res,e,"build inspection dossier pdf failed"); }
+}

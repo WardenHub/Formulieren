@@ -4610,6 +4610,43 @@ export function warmUpHtmlFormReportRenderer() {
   return browserWarmUpPromise;
 }
 
+/**
+ * Rendert een los HTML-document naar pdf op dezelfde gedeelde browser.
+ * Bedoeld voor kleinere documenten zoals het inspectiedossier; het
+ * formulierrapport houdt zijn eigen voorblad- en bodyroute.
+ */
+export async function renderHtmlToPdf(
+  html: string,
+  options: { headerTemplate?: string; footerTemplate?: string; margin?: Record<string, string> } = {}
+): Promise<Buffer> {
+  const browser = await getBrowser();
+  await primeHtmlFormReportRenderer(browser);
+  const page = await withTimeout("pdf page creation", browser.newPage(), FORM_REPORT_RENDER_STEP_TIMEOUT_MS);
+  page.setDefaultTimeout(FORM_REPORT_RENDER_STEP_TIMEOUT_MS);
+  page.setDefaultNavigationTimeout(FORM_REPORT_RENDER_STEP_TIMEOUT_MS);
+
+  try {
+    await withTimeout("pdf html content", page.setContent(html, { waitUntil: "domcontentloaded" }), FORM_REPORT_RENDER_STEP_TIMEOUT_MS);
+    await waitForDocumentFonts(page, "document");
+    const useHeaderFooter = Boolean(options.headerTemplate || options.footerTemplate);
+    return Buffer.from(
+      await withTimeout(
+        "pdf render",
+        page.pdf({
+          format: "A4",
+          printBackground: true,
+          displayHeaderFooter: useHeaderFooter,
+          ...(useHeaderFooter ? { headerTemplate: options.headerTemplate || "<span></span>", footerTemplate: options.footerTemplate || "<span></span>" } : {}),
+          margin: options.margin || { top: "18mm", right: "12mm", bottom: "16mm", left: "12mm" },
+        }),
+        FORM_REPORT_RENDER_STEP_TIMEOUT_MS
+      )
+    );
+  } finally {
+    await page.close().catch(() => {});
+  }
+}
+
 export async function tryBuildHtmlFormReportPdf(model: any, reportProgress?: RenderProgressReporter): Promise<any> {
   const browser = await getBrowser(reportProgress);
   await primeHtmlFormReportRenderer(browser);

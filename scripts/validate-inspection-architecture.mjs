@@ -62,7 +62,8 @@ for (const permission of ["inspection.view", "inspection.create", "inspection.up
   if (!detail.includes(`"${permission}"`) && !list.includes(`"${permission}"`) && permission !== "inspection.view") failures.push(`T UI permission ontbreekt: ${permission}`);
 }
 expect("T gescheiden toewijzing", routes, ["controller.assignment"]);
-expect("T gescheiden toewijzingsservice", service, ["updateInspectionAssignmentSql", "choose either an assigned user or an assigned role"]);
+// De guard zelf is wat telt; de melding is Nederlandse gebruikerstekst en staat zo in de service.
+expect("T gescheiden toewijzingsservice", service, ["updateInspectionAssignmentSql", "Kies een toegewezen gebruiker of een rol, niet beide"]);
 expect("T gescheiden toewijzingscontroller", controller, ["updateInspectionAssignment"]);
 
 for (const event of ["CASE_CREATED", "STATUS_CHANGED", "WORK_ORDER_REFRESHED", "CHECKLIST_CHANGED", "DOCUMENT_PACKAGE_PREPARED", "DOCUMENT_PACKAGE_SENT", "REPORT_RECEIVED", "CONCLUSION_PASS", "CONCLUSION_FAIL", "REPAIR_ACTION_CREATED", "REINSPECTION_CREATED", "CASE_COMPLETED"]) {
