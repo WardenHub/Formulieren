@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-// @ts-ignore Shared presentation rules; no replacement for server gates.
+// Gedeelde presentatieregels; geen vervanging van de poorten op de server.
 import {inspectionSections,inspectionPhaseStates} from '../../src/lib/inspectionProcess.js';
 test('only relevant process sections appear',()=>{
   assert.deepEqual(inspectionSections('EXECUTED_AWAITING_REPORT'),['report']);

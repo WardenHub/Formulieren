@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-// @ts-ignore Shared browser guidance; server validation remains authoritative.
+// Gedeelde browserbegeleiding; de servercontrole blijft doorslaggevend.
 import { inspectionSaveProblem } from "../../src/lib/inspectionJourney.js";
 
 test("planning explains missing date and inspection body before saving", () => {

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-// @ts-ignore Presentatielaag; de API en database blijven de echte poort.
+// Presentatielaag; de API en database blijven de echte poort.
 import {inspectionStepQuestions} from '../../src/lib/inspectionQuestions.js';
 
 const pve={document_id:'doc-pve',stored_file_id:'file-pve',document_type_key:'pve',title:'PvE 2026'};

@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-// @ts-ignore Shared frontend helper is intentionally executable without a browser.
+// Gedeelde frontendhelper; met opzet uitvoerbaar zonder browser.
 import { mergeInspectionEditor } from "../../src/lib/inspectionEditor.js";
 
 test("initial dossier starts with server values", () => {
