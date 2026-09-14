@@ -1,0 +1,137 @@
+// De bediening van een tekening zonder aanmelden en zonder PDF. De echte schermen zitten
+// achter een login en achter een document uit Atrium; de hooks uit src/lib/drawingViewer.js
+// weten daar niets van, dus hier ligt er een nagemaakte plattegrond onder.
+// Openen op /tests/drawing-viewer-harness.html.
+//
+// Waar naar te kijken:
+//   - slepen schuift de tekening, ook met een vinger; de knoppen blijven bedienbaar
+//   - ctrl of cmd met het wiel zoomt naar de muisaanwijzer toe, niet naar linksboven
+//   - twee vingers knijpen zoomt naar het midden tussen de vingers
+//   - dubbeltikken met een vinger wisselt tussen passend en twee keer
+//   - schermvullend vult echt het scherm; Escape brengt hem terug
+//   - tikken op de tekening zet een vinkje, tikken op een vinkje haalt hem weg
+//
+// Hier gemeten op 14 september 2026, in dit venster: knijpen van 80 naar 240 pixels tussen de
+// vingers gaf 100 naar 300 procent en het punt onder het midden bleef staan (438 op de
+// pagina, voor en na). Dubbeltikken gaf 100 - 200 - 100 procent. Slepen over 90 bij 50 pixels
+// verschoof precies 90 bij 50. Schermvullend gaf 880 in plaats van 636 pixels hoogte en
+// Escape bracht hem terug. Zoomen naar de muis kan het punt alleen vasthouden zolang de
+// tekening breder is dan het venster; daaronder loopt hij tegen het einde van de schuifbalk.
+
+import { useRef, useState } from "react";
+import ReactDOM from "react-dom/client";
+import { Check, Maximize2, Minimize2, Scan } from "lucide-react";
+
+import { useDrawingViewer, useFullscreen } from "../src/lib/drawingViewer.js";
+import "../src/styles/layout.css";
+
+const PAGE = { width: 900, height: 620 };
+
+// Een paar melders op vaste plekken, zodat er iets te mikken valt.
+const MELDERS = [
+  { id: "m1", x: 0.18, y: 0.22 },
+  { id: "m2", x: 0.44, y: 0.31 },
+  { id: "m3", x: 0.72, y: 0.24 },
+  { id: "m4", x: 0.27, y: 0.66 },
+  { id: "m5", x: 0.58, y: 0.71 },
+  { id: "m6", x: 0.83, y: 0.62 },
+];
+
+function Harness() {
+  const shellRef = useRef(null);
+  const fullscreen = useFullscreen(shellRef);
+  const { viewportRef, zoom, setZoom, zoomToPoint, handlers } = useDrawingViewer({ initial: 1 });
+  const [points, setPoints] = useState([]);
+
+  function onWheel(event) {
+    if (!event.ctrlKey && !event.metaKey) return;
+    event.preventDefault();
+    zoomToPoint(zoom + (event.deltaY < 0 ? 0.15 : -0.15), event.clientX, event.clientY);
+  }
+
+  function addPoint(event) {
+    const rect = event.currentTarget.getBoundingClientRect();
+    const x = (event.clientX - rect.left) / rect.width;
+    const y = (event.clientY - rect.top) / rect.height;
+    if (x < 0 || x > 1 || y < 0 || y > 1) return;
+
+    setPoints((current) => [...current, { id: `${Date.now()}-${current.length}`, x, y }]);
+  }
+
+  return (
+    <div style={{ padding: "1rem", maxWidth: 1100, margin: "0 auto" }}>
+      <h2 style={{ marginTop: 0 }}>Tekening bedienen</h2>
+      <p style={{ color: "var(--muted)" }}>
+        {points.length ? `${points.length} vinkjes gezet` : "Tik op de tekening om een vinkje te zetten"}
+        {" · "}
+        zoom {Math.round(zoom * 100)}%
+      </p>
+
+      <div ref={shellRef} className={`drawing-pdf-shell${fullscreen.active ? " is-fullscreen" : ""}`}>
+        <div className="drawing-zoom-controls" aria-label="Tekening bedienen">
+          <button type="button" className="icon-btn" title="Inzoomen" onClick={() => setZoom((current) => current + 0.2)}>+</button>
+          <span>{Math.round(zoom * 100)}%</span>
+          <button type="button" className="icon-btn" title="Uitzoomen" onClick={() => setZoom((current) => current - 0.2)}>−</button>
+          <button type="button" className="icon-btn" title="Passend maken" aria-label="Passend maken" onClick={() => setZoom(1)}>
+            <Scan size={17} aria-hidden="true" />
+          </button>
+          <span className="drawing-zoom-controls__divider" aria-hidden="true" />
+          <button
+            type="button"
+            className="icon-btn"
+            title={fullscreen.active ? "Schermvullend sluiten" : "Schermvullend tonen"}
+            aria-label={fullscreen.active ? "Schermvullend sluiten" : "Schermvullend tonen"}
+            aria-pressed={fullscreen.active}
+            onClick={fullscreen.toggle}
+          >
+            {fullscreen.active ? <Minimize2 size={17} aria-hidden="true" /> : <Maximize2 size={17} aria-hidden="true" />}
+          </button>
+        </div>
+
+        <div ref={viewportRef} className="drawing-pdf-viewport" onWheel={onWheel} {...handlers}>
+          <div
+            className="drawing-pdf-page-zoom-frame"
+            style={{ width: PAGE.width * zoom, height: PAGE.height * zoom }}
+          >
+            <div
+              className="drawing-pdf-page"
+              style={{ width: PAGE.width, height: PAGE.height, transform: `scale(${zoom})`, transformOrigin: "top left" }}
+            >
+              <svg width={PAGE.width} height={PAGE.height} role="img" aria-label="Nagemaakte plattegrond">
+                <rect width={PAGE.width} height={PAGE.height} fill="#f4f1ea" />
+                <rect x="40" y="40" width={PAGE.width - 80} height={PAGE.height - 80} fill="none" stroke="#333" strokeWidth="3" />
+                <line x1="40" y1="300" x2={PAGE.width - 40} y2="300" stroke="#333" strokeWidth="2" />
+                <line x1="400" y1="40" x2="400" y2="300" stroke="#333" strokeWidth="2" />
+                <line x1="620" y1="300" x2="620" y2={PAGE.height - 40} stroke="#333" strokeWidth="2" />
+                {MELDERS.map((melder) => (
+                  <circle key={melder.id} cx={melder.x * PAGE.width} cy={melder.y * PAGE.height} r="9" fill="#c8102e" />
+                ))}
+                <text x="56" y="76" fontSize="16" fill="#333">Begane grond</text>
+              </svg>
+
+              <div className="drawing-pin-layer drawing-check-layer" role="button" tabIndex={0} aria-label="Tik om te markeren" onClick={addPoint}>
+                {points.map((point, index) => (
+                  <button
+                    key={point.id}
+                    type="button"
+                    className="drawing-check"
+                    style={{ left: `${point.x * 100}%`, top: `${point.y * 100}%` }}
+                    aria-label={`Gecontroleerd ${index + 1}, tik om weg te halen`}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      setPoints((current) => current.filter((item) => item.id !== point.id));
+                    }}
+                  >
+                    <Check size={15} aria-hidden="true" />
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<Harness />);

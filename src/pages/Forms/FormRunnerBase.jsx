@@ -22,6 +22,7 @@ import { RotateCCWIcon } from "@/components/ui/rotate-ccw";
 import { ChevronUpIcon } from "@/components/ui/chevron-up";
 import { PlusIcon } from "@/components/ui/plus";
 import { AttachFileIcon } from "@/components/ui/attach-file";
+import { MapPinnedIcon } from "@/components/ui/map-pinned";
 import { MicIcon } from "@/components/ui/mic";
 import { AirVentIcon } from "@/components/ui/air-vent";
 import { MenuIcon } from "@/components/ui/menu";
@@ -61,6 +62,8 @@ import {
 import FormPageNavigator from "./shared/FormPageNavigator.jsx";
 import FormContextPanel from "./shared/FormContextPanel";
 import FormAssistantPanel from "./shared/FormAssistantPanel.jsx";
+import FormDrawingSheet from "./shared/FormDrawingSheet.jsx";
+import { clearCheckedPoints } from "./shared/checkedPoints.js";
 import EmberRuntimeSurvey from "./shared/EmberRuntimeSurvey.jsx";
 
 import {
@@ -671,6 +674,8 @@ export default function FormRunnerBase({ mode }) {
   const [instanceMetaOpen, setInstanceMetaOpen] = useState(false);
   const [contextPanelOpen, setContextPanelOpen] = useState(false);
   const [assistantPanelOpen, setAssistantPanelOpen] = useState(false);
+  // De tekening naast het formulier, met de tijdelijke vinkjes erop.
+  const [drawingPanelOpen, setDrawingPanelOpen] = useState(false);
   const [assistantAutoStartToken, setAssistantAutoStartToken] = useState(0);
   const [submitDialog, setSubmitDialog] = useState(null);
   const [actionsMenuOpen, setActionsMenuOpen] = useState(false);
@@ -682,6 +687,7 @@ export default function FormRunnerBase({ mode }) {
   const backIconRef = useRef(null);
   const contextToggleIconRef = useRef(null);
   const assistantToggleIconRef = useRef(null);
+  const drawingToggleIconRef = useRef(null);
   const assistantHeaderIconRef = useRef(null);
   const actionsMenuRef = useRef(null);
   const headerCardRef = useRef(null);
@@ -1075,7 +1081,7 @@ export default function FormRunnerBase({ mode }) {
     if (isDebug) return undefined;
 
     const originalOverflow = document.body.style.overflow;
-    if (contextPanelOpen || assistantPanelOpen) {
+    if (contextPanelOpen || assistantPanelOpen || drawingPanelOpen) {
       document.body.style.overflow = "hidden";
     } else {
       document.body.style.overflow = originalOverflow || "";
@@ -1084,26 +1090,28 @@ export default function FormRunnerBase({ mode }) {
     return () => {
       document.body.style.overflow = originalOverflow || "";
     };
-  }, [contextPanelOpen, assistantPanelOpen, isDebug]);
+  }, [contextPanelOpen, assistantPanelOpen, drawingPanelOpen, isDebug]);
 
   useEffect(() => {
-    if ((!contextPanelOpen && !assistantPanelOpen) || isDebug) return undefined;
+    if ((!contextPanelOpen && !assistantPanelOpen && !drawingPanelOpen) || isDebug) return undefined;
 
     function onKeyDown(e) {
       if (e.key === "Escape") {
         setContextPanelOpen(false);
         setAssistantPanelOpen(false);
+        setDrawingPanelOpen(false);
       }
     }
 
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [contextPanelOpen, assistantPanelOpen, isDebug]);
+  }, [contextPanelOpen, assistantPanelOpen, drawingPanelOpen, isDebug]);
 
   useEffect(() => {
     if (canEditAnswers) return;
     setContextPanelOpen(false);
     setAssistantPanelOpen(false);
+    setDrawingPanelOpen(false);
   }, [canEditAnswers]);
 
   useEffect(() => {
@@ -2534,9 +2542,13 @@ export default function FormRunnerBase({ mode }) {
       setPointsOpen(false);
       setContextPanelOpen(false);
       setAssistantPanelOpen(false);
+      setDrawingPanelOpen(false);
       setShowSubmitCelebration(true);
 
       clearFormDraft(instanceId);
+      // De vinkjes op de tekening waren een hulpmiddel tijdens het invullen; na indienen
+      // hebben ze geen betekenis meer. Zie shared/checkedPoints.js.
+      clearCheckedPoints(instanceId);
       void loadFollowUpPoints();
 
       setSubmitOk(true);
@@ -3440,8 +3452,22 @@ export default function FormRunnerBase({ mode }) {
             </div>
           )}
 
-          {!isGeneric && canEditAnswers && !contextPanelOpen && !assistantPanelOpen && (
+          {!isGeneric && canEditAnswers && !contextPanelOpen && !assistantPanelOpen && !drawingPanelOpen && (
             <>
+              <div className="form-runner-floating-actions form-runner-floating-actions--top">
+                <button
+                  type="button"
+                  className="icon-btn form-runner-floating-btn"
+                  title="Tekening openen"
+                  aria-label="Tekening openen"
+                  onClick={() => setDrawingPanelOpen(true)}
+                  onMouseEnter={() => drawingToggleIconRef.current?.startAnimation?.()}
+                  onMouseLeave={() => drawingToggleIconRef.current?.stopAnimation?.()}
+                >
+                  <MapPinnedIcon ref={drawingToggleIconRef} size={20} />
+                </button>
+              </div>
+
               <div className="form-runner-floating-actions form-runner-floating-actions--middle">
                 <button
                   type="button"
@@ -3518,6 +3544,26 @@ export default function FormRunnerBase({ mode }) {
                     />
                   </div>
                 </div>
+              </div>
+            </>
+          )}
+
+          {!isGeneric && drawingPanelOpen && (
+            <>
+              <button
+                type="button"
+                aria-label="Sluit de tekening"
+                onClick={() => setDrawingPanelOpen(false)}
+                className="form-runner-side-overlay"
+              />
+
+              <div className="form-runner-side-panel">
+                <FormDrawingSheet
+                  code={code}
+                  instanceId={instanceId}
+                  readOnly={!canEditAnswers}
+                  onClose={() => setDrawingPanelOpen(false)}
+                />
               </div>
             </>
           )}

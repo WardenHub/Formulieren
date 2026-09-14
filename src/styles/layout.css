@@ -5270,7 +5270,17 @@ html[data-appearance="light"] .type-telefonie{
 
 .installation-map-shell{
   position: relative;
-  min-height: 620px;
+  /* De kaart vult de hoogte die overblijft. De aftrek is de topbar, de padding van de inhoud,
+     de titelbalk en de regels met filters en tellingen erboven. De ondergrens houdt hem
+     bruikbaar op een laptop, de bovengrens voorkomt dat er op een zeer hoog scherm meer kaart
+     staat dan iemand in een blik overziet; dat kost alleen maar tegels en markers.
+
+     Bewust gekoppeld aan de vensterhoogte en niet aan de rasterruimte: dan verandert de hoogte
+     alleen bij een venstergrootte, en dat is precies het moment waarop Leaflet zichzelf al
+     opnieuw meet. Chips die verschijnen maken de pagina dus iets langer in plaats van de kaart
+     stiekem te verkleinen. */
+  height: 720px;
+  height: clamp(520px, calc(100dvh - 250px), 1100px);
   overflow: hidden;
   border: 1px solid var(--border-soft);
   border-radius: var(--radius-lg);
@@ -5279,17 +5289,17 @@ html[data-appearance="light"] .type-telefonie{
 }
 
 .installation-map-shell--compact{
-  min-height: 360px;
+  height: 360px;
 }
 
 .installation-map{
   width: 100%;
-  height: 720px;
+  height: 100%;
   z-index: 0;
 }
 
 .installation-map-shell--compact .installation-map{
-  height: 360px;
+  height: 100%;
 }
 
 .installation-map-route-link{
@@ -6150,7 +6160,109 @@ html[data-appearance="dark"] .drawing-pins-toolbar select{color-scheme:dark;}
 .drawing-pin:active{cursor:grabbing;}
 .drawing-pin:hover,.drawing-pin:focus-visible{transform:translate(-50%,-100%) rotate(-45deg);z-index:6;background:transparent;border-color:transparent;box-shadow:none;}
 .drawing-pin--note{border-radius:.45rem;}
-.drawing-pdf-viewport{position:relative;max-width:100%;max-height:72vh;overflow:auto;padding:.5rem;background:var(--surface-2);border-radius:var(--radius-md);overscroll-behavior:contain;cursor:grab;touch-action:none;}
+.drawing-pdf-viewport{position:relative;max-width:100%;max-height:72dvh;overflow:auto;padding:.5rem;background:var(--surface-2);border-radius:var(--radius-md);overscroll-behavior:contain;cursor:grab;touch-action:none;}
+
+/* De tekening naast het formulier, met tijdelijke vinkjes erop. */
+.form-drawing-sheet{
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-lg);
+  background: var(--card-bg);
+  box-shadow: var(--shadow-soft);
+}
+
+.form-drawing-sheet__header{
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.form-drawing-sheet__header strong{ display: block; color: var(--text-strong); }
+.form-drawing-sheet__header span{ color: var(--muted); font-size: 12px; }
+
+.form-drawing-sheet__header-actions{
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.form-drawing-sheet__picker{
+  display: grid;
+  gap: 5px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 750;
+}
+
+.form-drawing-sheet__picker select{
+  min-height: 40px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--input-bg);
+  color: var(--text);
+}
+
+.form-drawing-sheet__state,
+.form-drawing-sheet__rendering{
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  padding: 18px;
+  color: var(--muted);
+  font-size: 12.5px;
+}
+
+.form-drawing-sheet__note{
+  margin: 0;
+  color: var(--muted);
+  font-size: 11.5px;
+}
+
+/* Het vinkje. Nadrukkelijk anders dan een echte pin: rond, groen en zonder etiket, zodat
+   niemand het aanziet voor een tekortkoming. */
+.drawing-check{
+  position: absolute;
+  display: grid;
+  width: 30px;
+  height: 30px;
+  place-items: center;
+  padding: 0;
+  border: 2px solid var(--success-border, var(--border));
+  border-radius: 50%;
+  background: var(--success-bg, var(--surface-2));
+  color: var(--success-text, var(--text));
+  cursor: pointer;
+  transform: translate(-50%, -50%);
+  touch-action: none;
+}
+
+.drawing-check:hover{ filter: brightness(1.08); }
+.drawing-check:focus-visible{ outline: 3px solid var(--focus-ring, var(--brand-red)); outline-offset: 2px; }
+
+.drawing-check-layer{ cursor: crosshair; }
+
+/* Schermvullend. De tekening is het werk, dus dan mag alles eromheen weg. Waar de browser
+   volledig scherm toestaat verdwijnt ook de adresbalk; kan dat niet, dan vult deze laag het
+   venster en scheelt het nog steeds de halve pagina. */
+.drawing-pdf-shell.is-fullscreen{
+  position: fixed;
+  inset: 0;
+  z-index: 3000;
+  max-height: none;
+  padding: 10px;
+  border-radius: 0;
+  background: var(--surface);
+}
+
+.drawing-pdf-shell.is-fullscreen .drawing-pdf-viewport{
+  max-height: none;
+  height: calc(100dvh - 20px);
+}
 .drawing-pdf-viewport:active{cursor:grabbing;}
 .drawing-pdf-page-zoom-frame{position:relative;}
 .drawing-pdf-page{will-change:transform;}
@@ -7833,6 +7945,14 @@ button.monitor-tag{
 
 .form-runner-floating-actions--middle {
   top: 50%;
+  bottom: auto;
+  transform: translateY(-50%);
+}
+
+/* De tekeningknop staat boven de contextknop, ver genoeg uit elkaar om op een tablet niet de
+   verkeerde te raken. */
+.form-runner-floating-actions--top {
+  top: calc(50% - 72px);
   bottom: auto;
   transform: translateY(-50%);
 }

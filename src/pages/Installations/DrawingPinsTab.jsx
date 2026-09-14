@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { GlobalWorkerOptions, getDocument as loadPdfDocument } from "pdfjs-dist";
 import pdfWorkerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
-import { BadgeAlert, BriefcaseBusiness, ChevronLeft, ChevronRight, MapPinPlusInside, MessageSquareMore, MoreVertical, PanelRightClose, PanelRightOpen, Pin, PinOff, X } from "lucide-react";
+import { BadgeAlert, BriefcaseBusiness, ChevronLeft, ChevronRight, MapPinPlusInside, Maximize2, MessageSquareMore, Minimize2, MoreVertical, PanelRightClose, PanelRightOpen, Pin, PinOff, Scan, X } from "lucide-react";
 
 import EmberRadialActionMenu from "@/components/radial/EmberRadialActionMenu.jsx";
 import { BadgeAlertIcon } from "@/components/ui/badge-alert.jsx";
@@ -13,6 +13,7 @@ import { LoaderPinwheelIcon } from "@/components/ui/loader-pinwheel";
 import DateInput from "@/components/DateInput.jsx";
 import { savePointDrawing } from "../Forms/shared/pointEvidence.js";
 import { getResolvedAppearance, subscribeAppearance } from "@/theme/appearance.js";
+import { useDrawingViewer, useFullscreen, usePdfPage } from "@/lib/drawingViewer.js";
 
 import {
   createDrawingPin,
@@ -135,19 +136,26 @@ function DrawingChoicePicker({ value, options, onChange, ariaLabel }) {
 
 function PdfPinViewer({ pdfDocument, pageNumber, pageCount, pins, selectedPinId, selectedPin, componentReview, draft, editorOpen, editorContent, placing, onPreviousPage, onNextPage, onPlace, onSelect, onPinDragStart, onMove, onMoveEnd, onDraftMove, onQuickAction, readOnly }) {
   const shellRef = useRef(null);
-  const viewportRef = useRef(null);
   const layerRef = useRef(null);
-  const canvasRef = useRef(null);
-  const [pageSize, setPageSize] = useState({ width: 0, height: 0 });
   const [shellSize, setShellSize] = useState({ width: 900, height: 600 });
-  const [rendering, setRendering] = useState(false);
-  const [zoom, setZoom] = useState(() => componentReview ? 1.45 : 1);
+  const fullscreen = useFullscreen(shellRef);
+  // Zoomen, pannen en knijpen komen uit de gedeelde tekeningviewer; de FormRunner gebruikt
+  // dezelfde. Tijdens het plaatsen van een pin staan de gebaren uit, want dan is een tik een
+  // plaatsing en geen sleep.
+  const { viewportRef, zoom, setZoom, zoomToPoint, handlers: viewerHandlers } = useDrawingViewer({
+    initial: componentReview ? 1.45 : 1,
+    enabled: !placing,
+  });
+  const { canvasRef, pageSize, rendering } = usePdfPage({
+    pdfDocument,
+    pageNumber,
+    availableWidth: shellSize.width,
+  });
   const [quickMenu, setQuickMenu] = useState(null);
   const [boundaryElement, setBoundaryElement] = useState(null);
   const menuTriggerRef = useRef(null);
   const longPressRef = useRef(null);
   const dragRef = useRef(null);
-  const panRef = useRef(null);
   const lastFocusedPinRef = useRef("");
   const editorDragRef = useRef(null);
   const [editorDragPosition, setEditorDragPosition] = useState(null);
@@ -169,55 +177,21 @@ function PdfPinViewer({ pdfDocument, pageNumber, pageCount, pins, selectedPinId,
     return () => observer.disconnect();
   }, []);
 
+  // Ctrl of cmd plus wiel zoomt, met het punt onder de cursor als anker. Gewoon scrollen blijft
+  // gewoon scrollen, want in een tekening wil je vaker schuiven dan zoomen.
   useEffect(() => {
-    const viewport = viewportRef.current;
-    if (!viewport) return undefined;
-    const handleWheel = (event) => {
-      if ((!event.ctrlKey && !event.metaKey) || !viewport.contains(event.target)) return;
+    function handleWheel(event) {
+      const viewport = viewportRef.current;
+      if ((!event.ctrlKey && !event.metaKey) || !viewport?.contains(event.target)) return;
       event.preventDefault();
       event.stopPropagation();
-      setZoom((current) => Math.min(3, Math.max(0.5, current + (event.deltaY < 0 ? 0.1 : -0.1))));
-    };
-    window.addEventListener("wheel", handleWheel, { passive: false, capture: true });
-    return () => window.removeEventListener("wheel", handleWheel, { capture: true });
-  }, []);
-
-  useEffect(() => {
-    if (!pdfDocument || !canvasRef.current) return undefined;
-    let cancelled = false;
-    let renderTask = null;
-
-    async function render() {
-      setRendering(true);
-      const page = await pdfDocument.getPage(pageNumber);
-      if (cancelled) return;
-      const unscaled = page.getViewport({ scale: 1, rotation: page.rotate });
-      const cssScale = Math.max(0.15, (Math.max(280, shellSize.width) - 32) / unscaled.width);
-      const cssViewport = page.getViewport({ scale: cssScale, rotation: page.rotate });
-      const pixelRatio = Math.min(window.devicePixelRatio || 1, 2);
-      const renderViewport = page.getViewport({ scale: cssScale * pixelRatio, rotation: page.rotate });
-      const canvas = canvasRef.current;
-      canvas.width = Math.floor(renderViewport.width);
-      canvas.height = Math.floor(renderViewport.height);
-      canvas.style.width = `${cssViewport.width}px`;
-      canvas.style.height = `${cssViewport.height}px`;
-      setPageSize({ width: cssViewport.width, height: cssViewport.height });
-      const context = canvas.getContext("2d", { alpha: false });
-      renderTask = page.render({ canvasContext: context, viewport: renderViewport });
-      await renderTask.promise;
-      if (!cancelled) setRendering(false);
+      zoomToPoint(zoom + (event.deltaY < 0 ? 0.15 : -0.15), event.clientX, event.clientY);
     }
 
-    render().catch((error) => {
-      if (error?.name !== "RenderingCancelledException") console.error("PDF page render failed", error);
-      if (!cancelled) setRendering(false);
-    });
+    window.addEventListener("wheel", handleWheel, { passive: false, capture: true });
+    return () => window.removeEventListener("wheel", handleWheel, { capture: true });
+  }, [viewportRef, zoom, zoomToPoint]);
 
-    return () => {
-      cancelled = true;
-      renderTask?.cancel?.();
-    };
-  }, [pageNumber, pdfDocument, shellSize.width]);
 
   useEffect(() => {
     if (!selectedPinId || !selectedPin || rendering || !pageSize.width || !pageSize.height) return undefined;
@@ -240,7 +214,7 @@ function PdfPinViewer({ pdfDocument, pageNumber, pageCount, pins, selectedPinId,
       });
     });
     return () => window.cancelAnimationFrame(frameId);
-  }, [componentReview, pageNumber, pageSize.height, pageSize.width, rendering, selectedPin, selectedPinId, zoom]);
+  }, [componentReview, pageNumber, pageSize.height, pageSize.width, rendering, selectedPin, selectedPinId, viewportRef, zoom]);
 
   const pagePins = pins.filter((pin) => Number(pin.page_number) === Number(pageNumber));
 
@@ -361,38 +335,37 @@ function PdfPinViewer({ pdfDocument, pageNumber, pageCount, pins, selectedPinId,
   }
 
   return (
-    <div ref={shellRef} className={`drawing-pdf-shell${placing ? " is-placing" : ""}`}>
+    <div ref={shellRef} className={`drawing-pdf-shell${placing ? " is-placing" : ""}${fullscreen.active ? " is-fullscreen" : ""}`}>
       <div className="drawing-zoom-controls" aria-label="PDF zoom">
         <button type="button" className="icon-btn" title="Vorige pagina" aria-label="Vorige pagina" disabled={pageNumber <= 1} onClick={onPreviousPage}><ChevronLeft size={18} /></button>
         <span className="drawing-zoom-controls__page" title={`Pagina ${pageNumber} van ${pageCount}`}>{pageNumber}/{pageCount}</span>
         <button type="button" className="icon-btn" title="Volgende pagina" aria-label="Volgende pagina" disabled={pageNumber >= pageCount} onClick={onNextPage}><ChevronRight size={18} /></button>
         <span className="drawing-zoom-controls__divider" aria-hidden="true" />
-        <button type="button" className="icon-btn" title="Inzoomen" onClick={() => setZoom((current) => Math.min(3, current + 0.1))}>+</button>
+        <button type="button" className="icon-btn" title="Inzoomen" onClick={() => setZoom((current) => current + 0.2)}>+</button>
         <span>{Math.round(zoom * 100)}%</span>
-        <button type="button" className="icon-btn" title="Uitzoomen" onClick={() => setZoom((current) => Math.max(0.5, current - 0.1))}>−</button>
-        <button type="button" className="icon-btn" title="Zoom herstellen" onClick={() => setZoom(1)}>⟳</button>
+        <button type="button" className="icon-btn" title="Uitzoomen" onClick={() => setZoom((current) => current - 0.2)}>−</button>
+        <button type="button" className="icon-btn" title="Passend maken" aria-label="Passend maken" onClick={() => setZoom(1)}>
+          <Scan size={17} aria-hidden="true" />
+        </button>
+        <span className="drawing-zoom-controls__divider" aria-hidden="true" />
+        <button
+          type="button"
+          className="icon-btn"
+          title={fullscreen.active ? "Schermvullend sluiten" : "Schermvullend tonen"}
+          aria-label={fullscreen.active ? "Schermvullend sluiten" : "Schermvullend tonen"}
+          aria-pressed={fullscreen.active}
+          onClick={fullscreen.toggle}
+        >
+          {fullscreen.active ? <Minimize2 size={17} aria-hidden="true" /> : <Maximize2 size={17} aria-hidden="true" />}
+        </button>
       </div>
       {placing ? <div className="drawing-placement-hint">Klik op de juiste plaats in de tekening.</div> : null}
       {/* Wheel input is reserved for normal viewport scrolling; zoom is
           deliberately controlled by the visible buttons. */}
-      <div ref={viewportRef} className="drawing-pdf-viewport"
-        onPointerDown={(event) => {
-          if (placing || event.button !== 0 || event.target.closest?.(".drawing-pin, .ember-radial-action-menu, .drawing-zoom-controls")) return;
-          const viewport = event.currentTarget;
-          panRef.current = { pointerId: event.pointerId, x: event.clientX, y: event.clientY, left: viewport.scrollLeft, top: viewport.scrollTop };
-          viewport.setPointerCapture?.(event.pointerId);
-        }}
-        onPointerMove={(event) => {
-          const pan = panRef.current;
-          if (!pan || pan.pointerId !== event.pointerId) return;
-          const viewport = event.currentTarget;
-          viewport.scrollLeft = pan.left - (event.clientX - pan.x);
-          viewport.scrollTop = pan.top - (event.clientY - pan.y);
-        }}
-        onPointerUp={(event) => {
-          if (panRef.current?.pointerId === event.pointerId) panRef.current = null;
-        }}
-        onPointerCancel={() => { panRef.current = null; }}
+      <div
+        ref={viewportRef}
+        className="drawing-pdf-viewport"
+        {...viewerHandlers}
       >
       <div className="drawing-pdf-page-zoom-frame" style={{ width: pageSize.width ? pageSize.width * zoom : "auto", height: pageSize.height ? pageSize.height * zoom : "auto" }}>
       <div className="drawing-pdf-page" style={{ width: pageSize.width || "auto", height: pageSize.height || "auto", transform: `scale(${zoom})`, transformOrigin: "top left" }}>

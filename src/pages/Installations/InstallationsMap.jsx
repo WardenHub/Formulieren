@@ -74,8 +74,26 @@ function FitVisibleMarkers({ markers, fitRequestKey }) {
   return null;
 }
 
+/* De kaart groeit mee met het venster. Leaflet meet zichzelf alleen bij een venstergrootte,
+   niet wanneer zijn container om een andere reden van maat verandert; dan blijft er een grijze
+   strook staan waar nooit tegels zijn opgehaald. Deze waarnemer dekt beide gevallen af. */
+function ResizeReporter() {
+  const map = useMap();
+
+  useEffect(() => {
+    if (typeof ResizeObserver === "undefined") return undefined;
+
+    const observer = new ResizeObserver(() => map.invalidateSize({ animate: false }));
+    observer.observe(map.getContainer());
+    return () => observer.disconnect();
+  }, [map]);
+
+  return null;
+}
+
 function ViewportReporter({ onViewportChange }) {
-  const map = useMapEvents({ moveend: report, zoomend: report });
+  // resize hoort erbij; een hogere kaart toont meer gebied en dus meer markers.
+  const map = useMapEvents({ moveend: report, zoomend: report, resize: report });
   function report() {
     if (!onViewportChange) return;
     const bounds = map.getBounds();
@@ -305,6 +323,7 @@ export default function InstallationsMap({ markers = [], compact = false, loadin
           keepBuffer={3}
         />
         {showUserLocation ? <UserLocationControl avatar={avatar} /> : null}
+        <ResizeReporter />
         <ViewportReporter onViewportChange={onViewportChange} />
         <FitVisibleMarkers markers={stableMarkers} fitRequestKey={fitRequestKey} />
         {renderedMarkers}
