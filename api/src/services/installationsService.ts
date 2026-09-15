@@ -464,6 +464,9 @@ export async function getCatalog(code: string) {
       attachment_parent_type_keys: attachmentParentsByType[String(row.document_type_key || "").trim()] || [],
       is_active: row.is_active === false ? false : true,
       is_required: row.is_required === true,
+      // De query levert drie standen; is_required alleen kan REQUIRED en CONDITIONAL
+      // niet uit elkaar houden, dus de stand zelf gaat mee naar de client.
+      applicability: String(row.applicability || "OPTIONAL").trim().toUpperCase(),
     })),
     fieldOptions,
   };
