@@ -12,6 +12,10 @@ const NETHERLANDS_CENTER = [52.15, 5.3];
 
 /* Waar de kaart zijn beeld haalt.
 
+   Zowel de gewone kaart als de luchtfoto komen van PDOK. Daarmee gebruikt Ember geen
+   voor algemeen appverkeer bedoelde OpenStreetMap-tegelservers rechtstreeks; die kunnen
+   zulke verzoeken blokkeren en tonen dan een 403-melding in de kaart.
+
    Op het diepste zoomniveau heeft de gewone kaart bijna niets te tekenen; een tegel van
    een bedrijventerrein of een landelijk adres is dan een vlak zonder inhoud, en dat las
    als een kapotte kaart. Een luchtfoto laat daar juist het gebouw zelf zien, en dat is
@@ -24,9 +28,9 @@ const NETHERLANDS_CENTER = [52.15, 5.3];
 const MAP_LAYERS = {
   kaart: {
     label: "Kaart",
-    url: "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
-    credit: "Kaartgegevens © OpenStreetMap-bijdragers, ODbL",
-    creditHref: "https://www.openstreetmap.org/copyright",
+    url: "https://service.pdok.nl/kadaster/brt-achtergrondkaart/wmts/v2_0/standaard/EPSG:3857/{z}/{x}/{y}.png",
+    credit: "Achtergrondkaart © Kadaster / PDOK",
+    creditHref: "https://www.pdok.nl/ogc-webservices/-/article/basisregistratie-topografie-achtergrondkaarten-brt-a-",
     maxNativeZoom: 19,
   },
   luchtfoto: {
