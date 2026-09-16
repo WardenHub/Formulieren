@@ -28,8 +28,8 @@ const NETHERLANDS_CENTER = [52.15, 5.3];
 const MAP_LAYERS = {
   kaart: {
     label: "Kaart",
-    url: "https://service.pdok.nl/kadaster/brt-achtergrondkaart/wmts/v2_0/standaard/EPSG:3857/{z}/{x}/{y}.png",
-    credit: "Achtergrondkaart © Kadaster / PDOK",
+    url: "https://service.pdok.nl/kadaster/brt-achtergrondkaart/wmts/v2_0/pastel/EPSG:3857/{z}/{x}/{y}.png",
+    credit: "Achtergrondkaart Pastel © Kadaster / PDOK",
     creditHref: "https://www.pdok.nl/ogc-webservices/-/article/basisregistratie-topografie-achtergrondkaarten-brt-a-",
     maxNativeZoom: 19,
   },
