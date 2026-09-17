@@ -45,13 +45,30 @@ test('een enkel actief document wordt als antwoord voorgesteld, niet stil ingevu
   assert.equal(question.control.documentId,'');
 });
 
-test('een gekoppeld document telt als beantwoord en niet van toepassing ook',()=>{
-  const linked=planStep({checklist:[{...checklist[0],status:'AVAILABLE',installation_document_id:'doc-pve',document_title:'PvE 2026'}]});
-  const question=linked.questions.find((q:any)=>q.id==='checklist-req-pve');
-  assert.equal(question.answered,true);
-  assert.equal(question.control.suggestion,null);
-  const waived=planStep({checklist:[{...checklist[1],status:'WAIVED'}]});
-  assert.equal(waived.questions.find((q:any)=>q.id==='checklist-req-nva').answered,true);
+test('wat Ember al heeft wordt samengevat en niet meer gevraagd',()=>{
+  const linked=planStep({checklist:[
+    {...checklist[0],status:'AVAILABLE',installation_document_id:'doc-pve',document_title:'PvE 2026'},
+    {...checklist[1],status:'WAIVED'},
+  ]});
+  assert.equal(linked.questions.find((q:any)=>q.id==='checklist-req-pve'),undefined,'geen losse vraag meer');
+  assert.equal(linked.questions.find((q:any)=>q.id==='checklist-req-nva'),undefined);
+  const summary=linked.questions.find((q:any)=>q.id==='checklist-ready');
+  assert.equal(summary.answered,true);
+  assert.equal(summary.control.lines.length,2);
+  assert.ok(summary.control.lines[0].includes('PvE 2026'));
+  assert.ok(summary.control.lines[1].includes('Niet van toepassing'));
+});
+
+test('alleen ontbrekende documenten blijven een vraag, naast de samenvatting',()=>{
+  const mixed=planStep({checklist:[
+    {...checklist[0],status:'AVAILABLE',installation_document_id:'doc-pve',document_title:'PvE 2026'},
+    checklist[1],
+  ]});
+  const ids=mixed.questions.map((q:any)=>q.id);
+  assert.ok(ids.includes('checklist-ready'));
+  assert.ok(ids.includes('checklist-req-nva'));
+  assert.ok(!ids.includes('checklist-req-pve'));
+  assert.ok(mixed.questions.find((q:any)=>q.id==='checklist-ready').answer.includes('1 gereed'));
 });
 
 test('open verplichte vragen worden geteld zodat de gebruiker weet wat er nog moet',()=>{

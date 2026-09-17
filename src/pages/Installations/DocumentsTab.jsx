@@ -106,6 +106,7 @@ function newDraft(typeKey, overrides = {}) {
     document_number: "",
     document_date: null,
     revision: "",
+    is_signed: null,
     has_file: false,
     file_name: null,
     mime_type: null,
@@ -147,6 +148,7 @@ function flattenTypeDocuments(items) {
       document_number: doc.document_number ?? "",
       document_date: doc.document_date ?? null,
       revision: doc.revision ?? "",
+      is_signed: doc.is_signed ?? null,
       has_file: Boolean(doc.has_file || doc.storage_key),
       file_name: doc.file_name ?? null,
       mime_type: doc.mime_type ?? null,
@@ -677,6 +679,13 @@ const DocumentsTab = forwardRef(function DocumentsTab(
     return Array.isArray(catalog?.documentTypes) ? catalog.documentTypes : [];
   }, [catalog]);
 
+  // Alle actieve typen op sleutel, ook de bijlagetypen; de kaart moet ook voor een NvA
+  // kunnen zien of ondertekening telt.
+  const documentTypeByKey = useMemo(
+    () => new Map((catalogDocumentTypes || []).map((dt) => [String(dt.document_type_key), dt])),
+    [catalogDocumentTypes]
+  );
+
   const documentTypes = useMemo(() => {
     const list = catalogDocumentTypes || [];
 
@@ -1125,6 +1134,7 @@ const DocumentsTab = forwardRef(function DocumentsTab(
           document_number: r.document_number || null,
           document_date: r.document_date || null,
           revision: r.revision || null,
+          is_signed: r.is_signed === true ? true : r.is_signed === false ? false : null,
           file_name: r.file_name || null,
           is_active: Boolean(r.document_is_active),
         });
@@ -1287,6 +1297,7 @@ const DocumentsTab = forwardRef(function DocumentsTab(
         String(r.document_number || "") === String(localRow.document_number || "") &&
         String(isoDate(r.document_date) || "") === String(isoDate(localRow.document_date) || "") &&
         String(r.revision || "") === String(localRow.revision || "") &&
+        Boolean(r.is_signed) === Boolean(localRow.is_signed) &&
         Boolean(r.document_is_active) === Boolean(localRow.document_is_active)
       );
     });
@@ -1750,6 +1761,8 @@ const DocumentsTab = forwardRef(function DocumentsTab(
 
   function renderDocumentCard(typeKey, row, options = {}) {
     const compact = options.compact === true;
+    // Ondertekening tonen we alleen waar het documenttype zegt dat het meetelt.
+    const docType = documentTypeByKey.get(String(row.document_type_key || typeKey));
     const summary = renderFileSummary(row);
     const df = dirtyFields[row.document_id] || {};
     const pendingFile = pendingFilesByRowId[row.document_id];
@@ -1943,6 +1956,23 @@ const DocumentsTab = forwardRef(function DocumentsTab(
                     disabled={readOnly}
                   />
                 </div>
+
+                {docType?.tracks_signature ? (
+                  <div className="doc-field">
+                    {fieldLabel("ondertekend", Boolean(df.is_signed))}
+                    <label className="admin-checkbox-label">
+                      <input
+                        type="checkbox"
+                        checked={row.is_signed === true}
+                        onChange={(e) =>
+                          setRow(typeKey, row.document_id, { is_signed: e.target.checked }, "is_signed")
+                        }
+                        disabled={readOnly}
+                      />
+                      <span>{row.is_signed === true ? "Ondertekend" : "Nog niet ondertekend"}</span>
+                    </label>
+                  </div>
+                ) : null}
 
                 <div className="doc-field doc-field--wide">
                   {fieldLabel("notitie", Boolean(df.note))}

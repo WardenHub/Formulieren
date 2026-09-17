@@ -199,6 +199,50 @@ where c.inspection_case_id=@caseId and t.is_active=1
 order by t.target_status;
 `;
 
+/* Wat Ember al heeft hoeft niemand nog te bevestigen. Per openstaande checklistregel
+   koppelen we het nieuwste actieve document van het juiste type; documenttypen die een
+   datum bijhouden worden op die datum gerangschikt, de rest op aanmaakmoment. Regels die
+   al een keuze hebben of bewust op niet van toepassing staan blijven met rust. */
+export const resolveInspectionChecklistFromDocumentsSql = `
+set nocount on; set xact_abort on; begin transaction;
+begin try
+  declare @code nvarchar(450) = (select atrium_installation_code from dbo.InspectionCase where inspection_case_id=@caseId);
+  if @code is null throw 50000, 'inspection case not found', 1;
+
+  declare @linked table (requirement_key nvarchar(80), document_title nvarchar(250));
+
+  update r
+    set r.installation_document_id = pick.document_id,
+        r.stored_file_id = pick.stored_file_id,
+        r.status = N'AVAILABLE',
+        r.updated_at = sysutcdatetime(),
+        r.updated_by = @actor
+  output inserted.requirement_key, pick.title into @linked
+  from dbo.InspectionCaseDocumentRequirement r
+  cross apply (
+    select top 1 d.document_id, d.stored_file_id, d.title
+    from dbo.InstallationDocument d
+    join dbo.DocumentType dt on dt.document_type_key = d.document_type_key
+    where d.atrium_installation_code = @code
+      and d.document_type_key = r.document_type_key
+      and d.is_active = 1
+      and d.stored_file_id is not null
+    order by case when dt.requires_document_date = 1 then d.document_date end desc, d.created_at desc
+  ) pick
+  where r.inspection_case_id = @caseId
+    and r.status = N'MISSING'
+    and r.installation_document_id is null;
+
+  if exists (select 1 from @linked)
+    insert dbo.InspectionCaseEvent (inspection_case_id, event_type, after_json, event_by)
+    select @caseId, N'CHECKLIST_CHANGED',
+      (select requirement_key, document_title from @linked for json path), @actor;
+
+  commit transaction;
+  select count(*) as linked_count from @linked;
+end try begin catch if @@trancount>0 rollback transaction; throw; end catch;
+`;
+
 export const getInspectionCaseEventsSql = `
 select e.* from dbo.InspectionCaseEvent e where e.inspection_case_id=@caseId order by e.event_at desc,e.inspection_case_event_id desc;
 `;

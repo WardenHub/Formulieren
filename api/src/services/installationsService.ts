@@ -1264,6 +1264,8 @@ export async function upsertInstallationDocuments(code: string, documents: any[]
       document_number: d.document_number ?? null,
       document_date: d.document_date ?? null,
       revision: d.revision ?? null,
+      // Alleen documenttypen met tracks_signature bewaren dit; de database bepaalt dat.
+      is_signed: d.is_signed === true ? true : d.is_signed === false ? false : null,
 
       is_active: d.is_active ?? true,
     }));

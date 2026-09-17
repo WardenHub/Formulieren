@@ -111,6 +111,36 @@ function checklistQuestion(row, documentChoices, phaseId) {
   };
 }
 
+// Wat Ember al heeft is geen vraag meer. Die regels vatten we samen in een enkele
+// bevestigingsregel; alleen wat nog ontbreekt blijft een echte vraag.
+function checklistQuestions(rows, documentChoices, phaseId) {
+  const satisfied = rows.filter((row) => row.status === "WAIVED" || Boolean(row.installation_document_id));
+  const open = rows.filter((row) => !satisfied.includes(row));
+  const questions = open.map((row) => checklistQuestion(row, documentChoices, phaseId));
+  if (!satisfied.length) return questions;
+  return [{
+    id: "checklist-ready",
+    group: "checklist",
+    question: `${satisfied.length} van de ${rows.length} documenten staan al klaar in Ember.`,
+    help: "Ember heeft deze zelf gevonden bij de installatie. Wijzigen kan onder Volledig dossier.",
+    required: false,
+    blocking: false,
+    answered: true,
+    answer: `${satisfied.length} gereed, ${open.length} nog open`,
+    control: {
+      kind: "info",
+      lines: satisfied.map((row) => {
+        const label = (CHECKLIST_QUESTIONS[row.requirement_key]?.question || row.requirement_key)
+          .replace(/^Is (het|er|de) /, "").replace(/^Zijn de /, "").replace(/\?$/, "");
+        const value = row.status === "WAIVED"
+          ? CHECKLIST_ANSWERS.WAIVED
+          : row.document_title || row.file_name || CHECKLIST_ANSWERS[row.status] || row.status;
+        return `${label}; ${value}`;
+      }),
+    },
+  }, ...questions];
+}
+
 function offerQuestions(step) {
   const { editor } = step;
   const questions = [
@@ -235,7 +265,7 @@ function planQuestions(step) {
       options: step.workOrders.map((row) => ({ value: row.atrium_work_order_key, label: `${row.atrium_work_order_code}; ${row.work_order_title || "zonder titel"}` })),
     },
   });
-  for (const row of step.checklist) questions.push(checklistQuestion(row, step.documentChoices, "plan"));
+  for (const question of checklistQuestions(step.checklist, step.documentChoices, "plan")) questions.push(question);
   const executed = statusOption(step, "EXECUTED_AWAITING_REPORT", "Ja, de inspectie is uitgevoerd");
   if (executed) {
     questions.push({
@@ -403,7 +433,7 @@ function closeQuestions(step) {
       control: { kind: "info", lines: [] },
     }];
   }
-  const questions = step.checklist.map((row) => checklistQuestion(row, step.documentChoices, "close"));
+  const questions = checklistQuestions(step.checklist, step.documentChoices, "close");
   questions.push({
     id: "complete",
     question: "Is alles compleet zodat het dossier dicht kan?",

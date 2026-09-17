@@ -11,6 +11,7 @@ import {
   prepareInspectionPackageSql,
   processInspectionConclusionSql,
   refreshInspectionWorkOrdersSql,
+  resolveInspectionChecklistFromDocumentsSql,
   registerInspectionReportSql,
   sendInspectionPackageSql,
   signalInspectionCasesSql,
@@ -278,6 +279,14 @@ export async function refreshInspectionWorkOrders(caseId: string, user: any, pay
     caseId: uuid(caseId), selectedKey, rowsJson: JSON.stringify(rows), correlationId: result.correlationId, actor: getUserAuditActor(user),
   });
   return { ...result, rows };
+}
+
+/** Vult openstaande checklistregels met documenten die Ember al heeft. */
+export async function resolveChecklistFromDocuments(caseId: string, user: any) {
+  const rows = await sqlQuery(resolveInspectionChecklistFromDocumentsSql, {
+    caseId: uuid(caseId), actor: getUserAuditActor(user),
+  });
+  return { ok: true, linked_count: Number(rows?.[0]?.linked_count || 0) };
 }
 
 export async function updateChecklistItem(caseId: string, requirementId: string, payload: any, user: any) {

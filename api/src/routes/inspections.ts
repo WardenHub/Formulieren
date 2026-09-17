@@ -35,6 +35,7 @@ router.get("/cases/:caseId/events", requirePermission("inspection.audit.view"), 
 router.get("/cases/:caseId/dossier.pdf", requirePermission("inspection.view"), controller.dossierPdf);
 router.post("/cases/:caseId/workorders/refresh", requirePermission("inspection.refresh_workorder"), controller.refresh);
 router.put("/cases/:caseId/checklist/:requirementId", requirePermission("inspection.checklist.manage"), controller.checklist);
+router.post("/cases/:caseId/checklist/resolve", requirePermission("inspection.checklist.manage"), controller.resolveChecklist);
 router.post("/cases/:caseId/packages", requirePermission("inspection.package.prepare"), controller.preparePackage);
 router.post("/cases/:caseId/packages/:packageId/send", requirePermission("inspection.package.send"), controller.sendPackage);
 router.post("/cases/:caseId/reports", requirePermission("inspection.report.register"), controller.report);

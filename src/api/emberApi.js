@@ -1281,6 +1281,7 @@ export function updateInspectionCase(caseId, payload) { return apiPut(`/inspecti
 export function updateInspectionAssignment(caseId, payload) { return apiPut(`/inspections/cases/${encodeURIComponent(caseId)}/assignment`, payload ?? {}); }
 export function refreshInspectionWorkOrders(caseId, payload = {}) { return apiPost(`/inspections/cases/${encodeURIComponent(caseId)}/workorders/refresh`, payload); }
 export function updateInspectionChecklistItem(caseId, requirementId, payload) { return apiPut(`/inspections/cases/${encodeURIComponent(caseId)}/checklist/${encodeURIComponent(requirementId)}`, payload ?? {}); }
+export function resolveInspectionChecklist(caseId) { return apiPost(`/inspections/cases/${encodeURIComponent(caseId)}/checklist/resolve`, {}); }
 export function prepareInspectionPackage(caseId, payload) { return apiPost(`/inspections/cases/${encodeURIComponent(caseId)}/packages`, payload ?? {}); }
 export function sendInspectionPackage(caseId, packageId, payload) { return apiPost(`/inspections/cases/${encodeURIComponent(caseId)}/packages/${encodeURIComponent(packageId)}/send`, payload ?? {}); }
 export function registerInspectionReport(caseId, payload) { return apiPost(`/inspections/cases/${encodeURIComponent(caseId)}/reports`, payload ?? {}); }

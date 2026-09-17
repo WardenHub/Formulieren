@@ -15,7 +15,7 @@ import {
   prepareInspectionPackage, processInspectionConclusion, refreshInspectionWorkOrders,
   registerInspectionReport, sendInspectionPackage, updateInspectionCase,
   updateInspectionAssignment, updateInspectionChecklistItem,
-  getInspectionCaseEvents, downloadInspectionDossierPdf,
+  getInspectionCaseEvents, downloadInspectionDossierPdf, resolveInspectionChecklist,
 } from "../../api/emberApi.js";
 
 function formatDate(value){if(!value)return "-";const d=new Date(value);return Number.isNaN(d.getTime())?String(value):new Intl.DateTimeFormat("nl-NL",{dateStyle:"medium"}).format(d)}
@@ -32,6 +32,7 @@ function InspectionCaseDetail({caseId}){
   const canViewAudit=permissions.includes("inspection.audit.view");
   const serverEditor=useRef(null);
   const loadSequence=useRef(0);
+  const resolvedChecklist=useRef(false);
   const [notice,setNotice]=useState("");
   const [view,setView]=useState("process");
   const [pdfBusy,setPdfBusy]=useState(false);
@@ -58,6 +59,17 @@ function InspectionCaseDetail({caseId}){
     finally{if(request===loadSequence.current)setLoading(false)}
   },[caseId,canViewAudit]);
   useEffect(()=>{void load();return()=>{loadSequence.current+=1}},[load]);
+  // Wat Ember al bij de installatie heeft staan hoeft niemand nog een keer aan te wijzen.
+  useEffect(()=>{
+    if(resolvedChecklist.current||!data||!permissions.includes("inspection.checklist.manage"))return;
+    if(["COMPLETED","CANCELLED"].includes(data.case.status))return;
+    const open=data.checklist.filter((row)=>row.status==="MISSING"&&!row.installation_document_id);
+    if(!open.length)return;
+    const hasCandidate=open.some((row)=>data.document_choices.some((doc)=>doc.document_type_key===row.document_type_key));
+    if(!hasCandidate)return;
+    resolvedChecklist.current=true;
+    void resolveInspectionChecklist(caseId).then((result)=>{if(result?.linked_count)void load()}).catch(()=>{});
+  },[data,permissions,caseId,load]);
   const chosenReportDocument=useMemo(()=>data?.document_choices?.find((doc)=>String(doc.document_id).toLowerCase()===String(report.document_id).toLowerCase())||null,[data,report.document_id]);
   const step=useMemo(()=>data?inspectionStepQuestions({
     caseItem:data.case,editor,report,checklist:data.checklist,documentChoices:data.document_choices,

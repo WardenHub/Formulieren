@@ -17,6 +17,8 @@ select
   dt.sort_order,
   dt.is_active as document_type_is_active,
   dt.is_attachment_only,
+  dt.tracks_signature,
+  dt.requires_document_date,
 
   case
     when d.document_id is null then dt.document_type_key
@@ -60,6 +62,7 @@ select
   d.document_number,
   d.document_date,
   d.revision,
+  d.is_signed,
 
   sf.file_name,
   sf.mime_type,
@@ -180,6 +183,24 @@ begin
   throw 50000, 'attachment-only document type requires parent document', 1;
 end;
 
+if exists (
+  select 1
+  from openjson(@documentsJson)
+  with (
+    document_type_key nvarchar(50) '$.document_type_key',
+    document_date date '$.document_date',
+    is_active bit '$.is_active'
+  ) src
+  join dbo.DocumentType dt
+    on dt.document_type_key = src.document_type_key
+  where dt.requires_document_date = 1
+    and isnull(src.is_active, 1) = 1
+    and src.document_date is null
+)
+begin
+  throw 50000, 'document date required for this document type', 1;
+end;
+
 declare @actions table (action nvarchar(10));
 
 merge dbo.InstallationDocument as tgt
@@ -190,11 +211,13 @@ using (
     @atrium_installation_code as atrium_installation_code,
     src.document_type_key,
     dt.is_attachment_only,
+    dt.tracks_signature,
     src.title,
     src.note,
     src.document_number,
     src.document_date,
     src.revision,
+    src.is_signed,
     src.is_active
   from openjson(@documentsJson)
   with (
@@ -205,6 +228,7 @@ using (
     document_number nvarchar(200) '$.document_number',
     document_date date '$.document_date',
     revision nvarchar(50) '$.revision',
+    is_signed bit '$.is_signed',
     is_active bit '$.is_active'
   ) src
   join dbo.DocumentType dt
@@ -222,6 +246,7 @@ when matched then update set
   tgt.document_number = s.document_number,
   tgt.document_date = s.document_date,
   tgt.revision = s.revision,
+  tgt.is_signed = case when s.tracks_signature = 1 then s.is_signed end,
   tgt.is_active = isnull(s.is_active, 1),
   tgt.updated_at = sysutcdatetime(),
   tgt.updated_by = @updatedBy
@@ -235,6 +260,7 @@ when not matched and isnull(s.is_attachment_only, 0) = 0 then insert (
   document_number,
   document_date,
   revision,
+  is_signed,
   is_active,
   created_at,
   created_by,
@@ -250,6 +276,7 @@ when not matched and isnull(s.is_attachment_only, 0) = 0 then insert (
   s.document_number,
   s.document_date,
   s.revision,
+  case when s.tracks_signature = 1 then s.is_signed end,
   isnull(s.is_active, 1),
   sysutcdatetime(),
   @updatedBy,
@@ -279,6 +306,7 @@ select top 1
   d.document_number,
   d.document_date,
   d.revision,
+  d.is_signed,
   sf.file_name,
   sf.mime_type,
   sf.file_extension,
@@ -373,6 +401,7 @@ select top 1
   d.document_number,
   d.document_date,
   d.revision,
+  d.is_signed,
   sf.file_name,
   sf.mime_type,
   sf.file_extension,
@@ -503,6 +532,7 @@ select top 1
   d.document_number,
   d.document_date,
   d.revision,
+  d.is_signed,
   sf.file_name,
   sf.mime_type,
   sf.file_extension,
@@ -619,6 +649,7 @@ select top 1
   d.document_number,
   d.document_date,
   d.revision,
+  d.is_signed,
   sf.file_name,
   sf.mime_type,
   sf.file_extension,
