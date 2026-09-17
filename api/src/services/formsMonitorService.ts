@@ -13,6 +13,8 @@ import {
   upsertFormInstanceComplimentPointSql,
   getFormInstanceOwnershipSql,
 } from "../db/queries/formsMonitor.sql.js";
+import { withRelationGroupFilter } from "../db/queries/relationGroups.sql.js";
+import { relationGroupQueryParams } from "./relationGroupScope.js";
 import {
   getFormFollowUpSummaryByChainSql,
   getFormFollowUpsMonitorByChainSql,
@@ -619,26 +621,37 @@ export async function getMonitorList(input: {
     false
   );
 
-  const rows = await sqlQuery(getFormsMonitorListSql, {
-    q,
-    status,
-    formCode,
-    mine,
-    includeWithdrawn,
-    onlyActionable,
-    take,
-    skip,
-    actor,
-    actorCandidatesJson: JSON.stringify(actorCandidates),
-    assignedUserObjectId,
-    assignedSearch,
-    unassignedOnly,
-    workflowRoleCode,
-    selectedStatusesJson: JSON.stringify(cleanSelectedStatuses),
-    actionStatusFilter,
-    noRemainingOpenActionPoints,
-    includeSafetyForms,
-  });
+  /* Filteren op een concern. Dezelfde sleutels en dezelfde tekst als op het
+     installatiescherm; zonder gekozen groep komt er (1 = 1) in de query en verandert er voor
+     iedereen niets. Een formulier zonder installatie valt dan af, want het hangt aan geen
+     enkel gebouw. */
+  const relationGroups = relationGroupQueryParams(input?.query?.relationGroups);
+
+  const rows = await sqlQuery(
+    withRelationGroupFilter(getFormsMonitorListSql, "ab", Boolean(relationGroups.relationGroupsJson)),
+    {
+      q,
+      status,
+      formCode,
+      mine,
+      includeWithdrawn,
+      onlyActionable,
+      take,
+      skip,
+      actor,
+      actorCandidatesJson: JSON.stringify(actorCandidates),
+      assignedUserObjectId,
+      assignedSearch,
+      unassignedOnly,
+      workflowRoleCode,
+      selectedStatusesJson: JSON.stringify(cleanSelectedStatuses),
+      actionStatusFilter,
+      noRemainingOpenActionPoints,
+      includeSafetyForms,
+      relationGroupsJson: relationGroups.relationGroupsJson,
+      relationGroupRolesJson: relationGroups.relationGroupRolesJson,
+    }
+  );
 
   const items = (rows || []).map((r: any) => ({
     form_instance_id: r.form_instance_id,

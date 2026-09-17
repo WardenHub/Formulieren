@@ -8,6 +8,11 @@ import {
   getRelationGroupsForInstallationSql,
   withRelationGroupFilter,
 } from "../db/queries/installationOperational.sql.js";
+import { RELATION_GROUP_ROLES, normalizeRelationGroupKeys } from "./relationGroupScope.js";
+
+/* De rollenlijst en het opschonen van de keuze staan sinds 17 september 2026 in
+   relationGroupScope.ts, omdat de formuliermonitor dezelfde regels gebruikt. */
+export { RELATION_GROUP_ROLES };
 
 export type InstallationOperationalFilters = {
   q?: string | null;
@@ -43,12 +48,6 @@ const SERVICE_STATUSES = new Set(["ACTIVE", "INACTIVE", "UNKNOWN"]);
 const CERTIFICATE_STATUSES = new Set(["VALID", "EXPIRING", "EXPIRED", "MISSING", "REVOKED", "UNKNOWN", "CONTRACT_ENDED", "NOT_REQUIRED"]);
 const COORDINATE_MODES = new Set(["ALL", "WITH", "WITHOUT"]);
 const FOLLOW_UP_MODES = new Set(["ALL", "OPEN", "NONE", "OVERDUE"]);
-
-/* Via welke objectrollen een installatie bij een relatiegroep hoort. Intern alle vier; wie
-   bij een concern hoort, hoort erbij, ongeacht of dat via de gebruiker of de debiteur loopt.
-   Externe toegang hoort een smallere lijst mee te geven, en daarom staat dit als parameter in
-   de query en niet als vaste regel. */
-export const RELATION_GROUP_ROLES = ["GEBRUIKER", "EIGENAAR", "BEHEERDER", "DEBITEUR"];
 
 function enumValue(value: unknown, allowed: Set<string>, fallback: string | null) {
   const clean = String(value ?? "").trim().toUpperCase();
@@ -126,19 +125,6 @@ function normalizeBusinessUnits(filters: InstallationOperationalFilters) {
   return units.slice(0, 20);
 }
 
-/* De sleutels zijn "Wardenburg|100112"; ze komen uit onze eigen lijst en gaan als json naar
-   de query, dus ze worden alleen ontdaan van witruimte en begrensd in aantal. */
-function normalizeRelationGroups(filters: InstallationOperationalFilters) {
-  const raw = filters.relationGroups ?? "";
-  const list = Array.isArray(raw) ? raw : String(raw).split(",");
-
-  const groups = Array.from(
-    new Set(list.map((value) => String(value || "").trim()).filter(Boolean))
-  );
-
-  return groups.slice(0, 50);
-}
-
 function queryParams(filters: InstallationOperationalFilters, installationCode: string | null) {
   const q = String(filters.q ?? "").trim();
   const installationTypes = normalizeInstallationTypes(filters);
@@ -158,7 +144,7 @@ function queryParams(filters: InstallationOperationalFilters, installationCode: 
       return units.length ? JSON.stringify(units) : null;
     })(),
     relationGroupsJson: (() => {
-      const groups = normalizeRelationGroups(filters);
+      const groups = normalizeRelationGroupKeys(filters.relationGroups);
       return groups.length ? JSON.stringify(groups) : null;
     })(),
     relationGroupRolesJson: JSON.stringify(RELATION_GROUP_ROLES),

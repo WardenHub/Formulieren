@@ -1,7 +1,8 @@
-// Het relatiegroepfilter staat op één plek en wordt door twee queries gebruikt. Dit legt vast
-// dat die ene plek ook echt de enige is, en dat de regels die de veiligheid dragen erin staan:
-// de vier objectrollen als parameter, geen dubbele rijen, en niets filteren zolang er geen
-// groep is gekozen.
+// Het relatiegroepfilter staat op één plek en wordt inmiddels door drie queries gebruikt: de
+// installatielijst, de installatiekaart en de formuliermonitor. Dit legt vast dat die ene plek
+// ook echt de enige is, en dat de regels die de veiligheid dragen erin staan: de vier
+// objectrollen als parameter, geen dubbele rijen, en niets filteren zolang er geen groep is
+// gekozen.
 
 import assert from "node:assert/strict";
 import test from "node:test";
@@ -15,7 +16,12 @@ import {
   getInstallationRelationGroupsSql,
   withRelationGroupFilter,
 } from "../src/db/queries/installationOperational.sql.js";
-import { RELATION_GROUP_ROLES } from "../src/services/installationOperationalService.js";
+import { getFormsMonitorListSql } from "../src/db/queries/formsMonitor.sql.js";
+import {
+  RELATION_GROUP_ROLES,
+  normalizeRelationGroupKeys,
+  relationGroupQueryParams,
+} from "../src/services/relationGroupScope.js";
 
 test("het filter gebruikt het meegegeven alias overal", () => {
   const sql = buildRelationGroupFilterSql("x");
@@ -140,4 +146,38 @@ test("de tags horen bij één installatie en groeperen per groep", () => {
   assert.match(getRelationGroupsForInstallationSql, /a\.installatie_code = @installationCode/);
   // Zonder group by staat dezelfde groep er vier keer, een keer per objectrol.
   assert.match(getRelationGroupsForInstallationSql, /group by g\.business_unit, g\.relation_group_key/);
+});
+
+test("de formuliermonitor filtert met dezelfde tekst en op de installatiekant", () => {
+  assert.match(getFormsMonitorListSql, new RegExp(RELATION_GROUP_FILTER_PLACEHOLDER));
+
+  const zonder = withRelationGroupFilter(getFormsMonitorListSql, "ab", false);
+  assert.doesNotMatch(zonder, /AtriumRelationGroupMember/);
+
+  const met = withRelationGroupFilter(getFormsMonitorListSql, "ab", true);
+  assert.match(met, /m\.business_unit = ab\.BedrijfUnit/);
+  assert.match(met, /ab\.object_gebruiker_gcid/);
+});
+
+test("de keuze wordt opgeschoond en begrensd voordat hij de query in gaat", () => {
+  assert.deepEqual(normalizeRelationGroupKeys(" Wardenburg|1 , Wardenburg|1 ,, Wardenburg|2 "), [
+    "Wardenburg|1",
+    "Wardenburg|2",
+  ]);
+
+  const veel = Array.from({ length: 80 }, (_, i) => `Wardenburg|${i}`);
+  assert.equal(normalizeRelationGroupKeys(veel).length, 50);
+});
+
+test("geen groep betekent null en geen lege array, anders zou de query wel filteren", () => {
+  assert.equal(relationGroupQueryParams("").relationGroupsJson, null);
+  assert.equal(relationGroupQueryParams([]).relationGroupsJson, null);
+  assert.equal(
+    relationGroupQueryParams("Wardenburg|100092").relationGroupsJson,
+    JSON.stringify(["Wardenburg|100092"])
+  );
+  assert.equal(
+    relationGroupQueryParams("Wardenburg|100092").relationGroupRolesJson,
+    JSON.stringify(RELATION_GROUP_ROLES)
+  );
 });

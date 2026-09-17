@@ -4,6 +4,7 @@ import { Navigation } from "lucide-react";
 
 import { getInstallationOperationalSummary } from "@/api/emberApi.js";
 import InstallationsMap from "./InstallationsMap.jsx";
+import { describeRelationGroupRoles, formatRelationGroupRoles } from "@/lib/relationGroups.js";
 
 function tone(value) {
   const clean = String(value || "").toUpperCase();
@@ -182,16 +183,27 @@ export default function InstallationOverviewTab({ code, onOpenTab }) {
           <div className="installation-overview__relation-groups">
             <span className="installation-overview__relation-groups-label">Relatiegroep</span>
             <div className="installation-overview__relation-group-tags">
-              {item.relation_groups.map((group) => (
-                <Link
-                  key={group.relation_group_key}
-                  className="ember-label ember-label--info installation-relation-group-tag"
-                  to={`/installaties?relatiegroep=${encodeURIComponent(group.relation_group_key)}`}
-                  title={`Toon alle installaties van ${group.relation_group_name || group.relation_group_code}`}
-                >
-                  {group.relation_group_name || group.relation_group_code}
-                </Link>
-              ))}
+              {item.relation_groups.map((group) => {
+                const naam = group.relation_group_name || group.relation_group_code;
+                const rollen = formatRelationGroupRoles(group.roles);
+                const uitleg = describeRelationGroupRoles(group.roles);
+
+                return (
+                  <Link
+                    key={group.relation_group_key}
+                    className="ember-label ember-label--info installation-relation-group-tag"
+                    to={`/installaties?relatiegroep=${encodeURIComponent(group.relation_group_key)}`}
+                    title={uitleg
+                      ? `Dit object hoort bij ${naam} ${uitleg}; klik om alle installaties van die groep te tonen`
+                      : `Toon alle installaties van ${naam}`}
+                  >
+                    {naam}
+                    {/* De rol erbij, want een tag zonder onderbouwing roept alleen de vraag op
+                        waarom dit gebouw bij dat concern hoort. */}
+                    {rollen ? <small>{rollen}</small> : null}
+                  </Link>
+                );
+              })}
             </div>
           </div>
         ) : null}

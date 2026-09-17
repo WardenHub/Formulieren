@@ -1,3 +1,5 @@
+import { RELATION_GROUP_FILTER_PLACEHOLDER } from "./relationGroups.sql.js";
+
 // api/src/db/queries/formsMonitor.sql.ts
 
 export const getFormsMonitorListSql = `
@@ -130,6 +132,11 @@ base as (
       or fi.status in (select status_value from selected_statuses)
     )
     and (p.form_code_n is null or fd.code = p.form_code_n)
+    -- Filteren op een concern; dezelfde tekst als de installatielijst en de kaart, zodat een
+    -- groep overal hetzelfde betekent. Zonder gekozen groep staat hier (1 = 1) en worden de
+    -- relatiegroeptabellen niet genoemd. Formulieren zonder installatie vallen bij een gekozen
+    -- groep af, want ze horen bij geen enkel gebouw.
+    and ${RELATION_GROUP_FILTER_PLACEHOLDER}
     -- Veiligheidsformulieren worden in de KAM-werklijst afgehandeld, niet hier. Ze staan
     -- standaard buiten de Monitor zodat het overzicht van de installatieformulieren
     -- overzichtelijk blijft; met de schakelaar komen ze er ter inzage bij.

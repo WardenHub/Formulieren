@@ -5935,6 +5935,15 @@ html[data-appearance="dark"] .leaflet-popup-content a{
   transition: filter 140ms ease;
 }
 
+/* De rol staat achter de naam, een maat kleiner en wat rustiger; hij verklaart de tag maar
+   moet hem niet overstemmen. */
+.installation-relation-group-tag small{
+  margin-left: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  opacity: .72;
+}
+
 .installation-relation-group-tag:hover{ filter: brightness(0.94); }
 .installation-relation-group-tag:focus-visible{ outline: 3px solid var(--focus-ring, var(--brand-red)); outline-offset: 2px; }
 
@@ -7143,6 +7152,13 @@ html[data-appearance="dark"] .drawing-placement-hint{
   gap: 8px;
   flex-wrap: wrap;
   align-items: center;
+}
+
+/* De keuzelijst met relatiegroepen staat tussen de chips; namen als "Gemeente Midden-Groningen"
+   passen niet in de breedte van een chip. */
+.monitor-relation-group-select{
+  min-width: 220px;
+  max-width: 100%;
 }
 
 .monitor-filter-info-btn{

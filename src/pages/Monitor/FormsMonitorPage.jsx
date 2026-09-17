@@ -2,7 +2,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
-import { getFormsMonitorList, getUserDirectory } from "../../api/emberApi.js";
+import { getFormsMonitorList, getInstallationRelationGroups, getUserDirectory } from "../../api/emberApi.js";
 import ApiStartupLoader from "@/components/ApiStartupLoader.jsx";
 import { useApiStartupLoader } from "@/components/apiStartupLoaderState.js";
 import UserAvatar from "../../components/UserAvatar.jsx";
@@ -65,6 +65,8 @@ function buildDefaultFilters() {
     includeSafetyForms: false,
     selectedStatusGroups: DEFAULT_SELECTED_STATUS_GROUPS,
     actionStatusFilter: "ALL",
+    // Relatiegroepsleutels, bijvoorbeeld "Wardenburg|100092"; leeg is geen filter.
+    relationGroups: [],
     take: 25,
     skip: 0,
   };
@@ -91,6 +93,9 @@ function buildInitialFilters(storedState) {
         ? ["TODO"]
         : defaults.selectedStatusGroups,
     actionStatusFilter: storedFilters.actionStatusFilter ?? defaults.actionStatusFilter,
+    relationGroups: Array.isArray(storedFilters.relationGroups)
+      ? storedFilters.relationGroups
+      : defaults.relationGroups,
   };
 }
 
@@ -313,6 +318,7 @@ export default function FormsMonitorPage() {
     VIEW_MODES.has(storedState?.viewMode) ? storedState.viewMode : "list"
   );
   const [directoryItems, setDirectoryItems] = useState([]);
+  const [relationGroupOptions, setRelationGroupOptions] = useState([]);
   const [viewerUserObjectId, setViewerUserObjectId] = useState(null);
 
   // De status- en actiefilters draaien nu op de server. Nog een keer filteren in de browser
@@ -354,7 +360,8 @@ export default function FormsMonitorPage() {
       filters.noRemainingOpenActionPoints !== defaults.noRemainingOpenActionPoints ||
       filters.includeSafetyForms !== defaults.includeSafetyForms ||
       JSON.stringify(filters.selectedStatusGroups || []) !== JSON.stringify(defaults.selectedStatusGroups || []) ||
-      filters.actionStatusFilter !== defaults.actionStatusFilter
+      filters.actionStatusFilter !== defaults.actionStatusFilter ||
+      (filters.relationGroups || []).length > 0
     );
   }, [filters]);
 
@@ -439,6 +446,13 @@ export default function FormsMonitorPage() {
   // Een filter of een zoekterm wijzigen zet de lijst terug op de eerste pagina.
   // Wat je nu ziet, en hoeveel er in totaal zijn. Het serverfilter kapt af op 200 per keer;
   // zonder deze getallen en knoppen zag je stilzwijgend alleen de nieuwste tweehonderd.
+  const selectedRelationGroupLabel = useMemo(() => {
+    const key = (filters.relationGroups || [])[0];
+    if (!key) return "";
+    const hit = relationGroupOptions.find((group) => group.relation_group_key === key);
+    return hit?.relation_group_name || hit?.relation_group_code || key;
+  }, [filters.relationGroups, relationGroupOptions]);
+
   const pageSize = Number(filters.take) || 25;
   const pageSkip = Number(filters.skip) || 0;
   const pageStart = items.length ? pageSkip + 1 : 0;
@@ -483,6 +497,7 @@ export default function FormsMonitorPage() {
           actionStatusFilter: nextFilters.actionStatusFilter,
           noRemainingOpenActionPoints: nextFilters.noRemainingOpenActionPoints,
           includeSafetyForms: nextFilters.includeSafetyForms,
+          relationGroups: nextFilters.relationGroups,
           take: nextFilters.take,
           skip: nextFilters.skip,
         });
@@ -510,6 +525,27 @@ export default function FormsMonitorPage() {
   useEffect(() => {
     loadList();
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  /* De groepenlijst komt van het installatiescherm; dezelfde sleutels, dezelfde namen. Mag
+     iemand die lijst niet lezen of staan de spiegels er nog niet, dan blijft hij leeg en toont
+     het scherm dit filter gewoon niet. */
+  useEffect(() => {
+    let cancelled = false;
+
+    getInstallationRelationGroups()
+      .then((res) => {
+        if (cancelled) return;
+        setRelationGroupOptions(Array.isArray(res?.groups) ? res.groups : []);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setRelationGroupOptions([]);
+      });
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   useEffect(() => {
@@ -551,6 +587,7 @@ export default function FormsMonitorPage() {
     filters.includeSafetyForms,
     filters.selectedStatusGroups,
     filters.actionStatusFilter,
+    filters.relationGroups,
     autoRefreshEnabled,
   ]);
 
@@ -569,6 +606,13 @@ export default function FormsMonitorPage() {
 
   function openRow(row) {
     navigate(`/monitor/formulieren/${row.form_instance_id}`);
+  }
+
+  /* Eén groep tegelijk; dat is wat iemand op de monitor wil ("laat RUG zien"), en het houdt
+     het filter leesbaar. De query kan er meer aan, vandaar de array. */
+  async function chooseRelationGroup(key) {
+    const clean = String(key || "").trim();
+    await applyFilters({ ...filters, relationGroups: clean ? [clean] : [] });
   }
 
   async function toggleMine() {
@@ -947,6 +991,34 @@ export default function FormsMonitorPage() {
                 })}
               </datalist>
             </FilterGroup>
+
+            {relationGroupOptions.length > 0 ? (
+              <FilterGroup label="Relatiegroep">
+                <select
+                  className="input monitor-relation-group-select"
+                  aria-label="Filter op relatiegroep"
+                  value={(filters.relationGroups || [])[0] || ""}
+                  onChange={(e) => void chooseRelationGroup(e.target.value)}
+                >
+                  <option value="">Alle relatiegroepen</option>
+                  {relationGroupOptions.map((group) => (
+                    <option key={group.relation_group_key} value={group.relation_group_key}>
+                      {group.relation_group_name || group.relation_group_code}
+                      {group.installation_count ? ` (${group.installation_count})` : ""}
+                    </option>
+                  ))}
+                </select>
+
+                {(filters.relationGroups || []).length ? (
+                  <FilterChip
+                    active
+                    label={selectedRelationGroupLabel}
+                    title="Wis het filter op deze relatiegroep"
+                    onClick={() => void chooseRelationGroup("")}
+                  />
+                ) : null}
+              </FilterGroup>
+            ) : null}
 
             <FilterGroup label="Slimme filters">
               <FilterChip

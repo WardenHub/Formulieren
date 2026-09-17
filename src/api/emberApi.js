@@ -867,6 +867,11 @@ export async function getFormsMonitorList(params = {}) {
     qs.set("includeSafetyForms", params.includeSafetyForms ? "1" : "0");
   }
 
+  // Filteren op een concern; dezelfde sleutels als op het installatiescherm.
+  if (Array.isArray(params.relationGroups) && params.relationGroups.length) {
+    qs.set("relationGroups", params.relationGroups.join(","));
+  }
+
   if (params.take != null) qs.set("take", String(params.take));
   if (params.skip != null) qs.set("skip", String(params.skip));
 
