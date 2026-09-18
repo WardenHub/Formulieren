@@ -22,7 +22,7 @@
     "test:parenting": "node --import tsx --test ./tests/parentInstanceGuard.test.ts",
     "test:calculation-fields": "node --import tsx --test ./tests/calculationFields.test.ts",
   "test:signatures": "node --import tsx --test ./tests/documentSignature.test.ts",
-  "test:inspections": "node --import tsx --test ./tests/inspectionQuestions.test.ts ./tests/inspectionProcess.test.ts ./tests/inspectionJourney.test.ts ./tests/inspectionEditor.test.ts ./tests/inspectionDossierPdf.test.ts"
+  "test:inspections": "node --import tsx --test ./tests/inspectionQuestions.test.ts ./tests/inspectionProcess.test.ts ./tests/inspectionJourney.test.ts ./tests/inspectionEditor.test.ts ./tests/inspectionDossierPdf.test.ts ./tests/inspectionAudit.test.ts"
   },
   "dependencies": {
     "@azure/identity": "^4.13.0",

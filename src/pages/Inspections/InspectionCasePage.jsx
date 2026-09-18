@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { inspectionSections, inspectionPhaseStates } from "../../lib/inspectionProcess.js";
 import { inspectionStepQuestions } from "../../lib/inspectionQuestions.js";
+import { inspectionAuditTrail } from "../../lib/inspectionAudit.js";
 import InspectionStepPanel from "./InspectionStepPanel.jsx";
 import InspectionProcessTrack from "./InspectionProcessTrack.jsx";
 import { mergeInspectionEditor } from "../../lib/inspectionEditor.js";
@@ -212,6 +213,15 @@ function InspectionCaseDetail({caseId}){
       </article>
       <article hidden={view!=="dossier"} data-current-step={stepSection("actions")} className="card inspection-section"><h2 id="inspection-actions">Open acties</h2><div className="inspection-timeline">{data.actions.map((action)=><div key={action.follow_up_action_id}><strong>{action.workflow_title}</strong><span>{action.status_display_name||action.status} ; {action.responsibility_type}</span>{(action.drawing_pins||[]).map((pin)=><Link className="btn btn-secondary btn-compact" key={pin.drawing_pin_id} to={`/installaties/${encodeURIComponent(item.atrium_installation_code)}?tab=drawings&drawing=${encodeURIComponent(pin.installation_document_id)}&page=${encodeURIComponent(pin.page_number)}&pin=${encodeURIComponent(pin.drawing_pin_id)}`}>Toon op tekening ; pagina {pin.page_number}</Link>)}</div>)}{!data.actions.length?<p className="ember-page-subtitle">Geen acties voor deze inspectiecase.</p>:null}</div></article>
     </section>
-    {permissions.includes("inspection.audit.view")?<section hidden={view!=="dossier"} className="card inspection-section"><h2 id="inspection-history">Dossierhistorie</h2><div className="inspection-timeline">{auditEvents.map((event)=><div key={event.inspection_case_event_id}><strong>{event.event_type.replaceAll("_"," ")}</strong><span>{formatDate(event.event_at)} ; {event.event_by||"systeem"}</span></div>)}</div></section>:null}
+    {permissions.includes("inspection.audit.view")?<section hidden={view!=="dossier"} className="card inspection-section">
+      <div className="inspection-section__head"><div><h2 id="inspection-history">Wie deed wat, wanneer</h2><p className="ember-page-subtitle">Elke wijziging aan dit dossier, nieuwste eerst. Vastgelegd door Ember; niet te bewerken.</p></div></div>
+      <ol className="inspection-audit">{inspectionAuditTrail(auditEvents).map((entry)=><li key={entry.id}>
+        <div className="inspection-audit__head"><strong>{entry.what}</strong><span>{entry.at}</span></div>
+        <div className="inspection-audit__by">door {entry.by}</div>
+        {entry.changes.length?<ul className="inspection-audit__changes">{entry.changes.map((change)=><li key={change.field}>
+          <span>{change.label}</span><i>{change.from}</i><span aria-hidden="true">&rarr;</span><b>{change.to}</b>
+        </li>)}</ul>:null}
+      </li>)}{!auditEvents.length?<li className="muted">Nog geen wijzigingen vastgelegd.</li>:null}</ol>
+    </section>:null}
   </div>
 }

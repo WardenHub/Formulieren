@@ -34,11 +34,15 @@ const detail = {
   actions: [{ workflow_title: 'Herstel melder 12', status: 'OPEN', status_display_name: 'Open', responsibility_type: 'INTERN' }],
 };
 
-const events = [{ event_at: '2026-09-09T10:00:00Z', event_type: 'REPORT_RECEIVED', event_by: 'adminwb@wardenburg.nl' }];
+const events = [{
+  event_at: '2026-09-09T10:00:00Z', event_type: 'REPORT_RECEIVED', event_by: 'adminwb@wardenburg.nl',
+  before_json: JSON.stringify({ status: 'EXECUTED_AWAITING_REPORT', inspection_body: null }),
+  after_json: JSON.stringify({ status: 'REPORT_RECEIVED', inspection_body: 'Kiwa' }),
+}];
 
 test('het dossier bevat elke sectie, ook wanneer er nog niets is vastgelegd', () => {
   const html = buildInspectionDossierHtml(detail, events, new Date('2026-09-14T09:00:00Z'));
-  for (const heading of ['Kerngegevens', 'Voorbereidingschecklist', 'Inspectierapport', 'Certificaten', 'Documentpakket', 'Acties', 'Vastgelegde historie']) {
+  for (const heading of ['Kerngegevens', 'Voorbereidingschecklist', 'Inspectierapport', 'Certificaten', 'Documentpakket', 'Acties', 'Wie deed wat, wanneer']) {
     assert.ok(html.includes(`<h2>${heading}</h2>`), `sectie ontbreekt: ${heading}`);
   }
   assert.ok(html.includes('Nog geen inspectiecertificaat geregistreerd.'));
@@ -67,6 +71,13 @@ test('codes uit de database worden als Nederlandse tekst getoond', () => {
   for (const code of ['REQUIRED<', 'SENT<', 'INTERN<', 'INSPECTION_COORDINATOR<']) {
     assert.ok(!html.includes(code), `ruwe code zichtbaar: ${code}`);
   }
+});
+
+test('de historie vertelt wie wat wanneer wijzigde', () => {
+  const html = buildInspectionDossierHtml(detail, events, new Date('2026-09-14T09:00:00Z'));
+  assert.ok(html.includes('adminwb@wardenburg.nl'));
+  assert.ok(html.includes('Status: Uitgevoerd; rapport verwacht naar Rapport beoordelen'));
+  assert.ok(html.includes('Keuringsinstantie: leeg naar Kiwa'));
 });
 
 test('tekst uit de database wordt ge-escapet', () => {

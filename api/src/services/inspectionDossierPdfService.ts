@@ -40,6 +40,41 @@ const EVENT_LABELS: Record<string, string> = {
   CASE_COMPLETED: "Dossier afgerond", CASE_CANCELLED: "Dossier geannuleerd", ASSIGNMENT_CHANGED: "Toewijzing gewijzigd",
 };
 
+// Dezelfde velden als de tijdlijn in het scherm; het dossier moet hetzelfde vertellen.
+const AUDIT_FIELDS: Array<[string, string, ((value: any) => string)?]> = [
+  ["status", "Status", (value) => STATUS_LABELS[value] || value],
+  ["due_date", "Vervaldatum", formatDate],
+  ["planned_date", "Inspectiedatum", formatDate],
+  ["execution_date", "Uitgevoerd op", formatDate],
+  ["inspection_body", "Keuringsinstantie"],
+  ["atrium_work_order_code", "Werkbon"],
+  ["conclusion", "Conclusie", (value) => CONCLUSION_LABELS[value] || value],
+  ["assigned_user_id", "Toegewezen aan"],
+  ["assigned_role_code", "Toegewezen rol"],
+  ["reinspection_required", "Herinspectie nodig", (value) => (value ? "ja" : "nee")],
+];
+
+function auditSnapshot(raw: unknown) {
+  if (raw == null || raw === "") return null;
+  const value = typeof raw === "object" ? raw : (() => { try { return JSON.parse(String(raw)); } catch { return null; } })();
+  return Array.isArray(value) ? value[0] || null : value;
+}
+
+function auditChanges(event: any) {
+  const before = auditSnapshot(event?.before_json ?? event?.before);
+  const after = auditSnapshot(event?.after_json ?? event?.after);
+  if (!before || !after) return "";
+  const parts: string[] = [];
+  for (const [key, label, format] of AUDIT_FIELDS) {
+    const from = before[key] ?? null;
+    const to = after[key] ?? null;
+    if (String(from ?? "") === String(to ?? "")) continue;
+    const show = (value: any) => (value === null || value === undefined || value === "" ? "leeg" : String(format ? format(value) : value) || "leeg");
+    parts.push(`${label}: ${show(from)} naar ${show(to)}`);
+  }
+  return parts.join("; ");
+}
+
 function escapeHtml(value: unknown) {
   return String(value ?? "").replace(/[&<>"']/g, (character) => (
     { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[character] as string
@@ -169,11 +204,12 @@ export function buildInspectionDossierHtml(detail: any, events: any[], exportedA
       RESPONSIBILITY_LABELS[row.responsibility_type] || row.responsibility_type || "",
     ]), "Geen acties bij dit dossier.")}
 
-  ${table("Vastgelegde historie", ["Moment", "Gebeurtenis", "Door"],
+  ${table("Wie deed wat, wanneer", ["Moment", "Gebeurtenis", "Door", "Wijziging"],
     (events || []).map((row: any) => [
       formatDateTime(row.event_at),
       EVENT_LABELS[row.event_type] || String(row.event_type || "").replaceAll("_", " "),
-      row.event_by || "systeem",
+      row.event_by || "Ember zelf",
+      auditChanges(row),
     ]), "Geen historie vastgelegd.")}
 
   <p class="empty">Geexporteerd uit Ember op ${escapeHtml(formatDateTime(exportedAt))}. Dossier ${escapeHtml(item.inspection_case_id)}.</p>
