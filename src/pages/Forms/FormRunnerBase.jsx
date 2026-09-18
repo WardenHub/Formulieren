@@ -1546,7 +1546,7 @@ export default function FormRunnerBase({ mode }) {
       setDirty(false);
       if (answerResponse?.follow_up_sync?.ok === false) {
         followUpSyncFailed = true;
-        setPointsError("Antwoorden zijn opgeslagen, maar de opvolgacties konden niet worden bijgewerkt. Ververs de opvolgacties om opnieuw te proberen.");
+        setPointsError("Antwoorden zijn opgeslagen, maar de opvolgacties konden niet worden bijgewerkt. Je kunt gewoon verder; bij het indienen worden ze opnieuw opgebouwd.");
       }
     }
 
@@ -2431,8 +2431,15 @@ export default function FormRunnerBase({ mode }) {
       }
 
       // Synchroniseer conceptpunten voordat ze in het indienvenster kunnen worden verrijkt.
+      // Lukt dat niet, dan gaat indienen gewoon door; de server bouwt de punten bij het
+      // indienen zelf opnieuw op en dat is de leidende ronde. De melding blijft zichtbaar in
+      // het opvolgpaneel, zodat duidelijk is dat die lijst nog niet bijgewerkt is.
       const saved = await persistPendingChanges(cur.value, { reloadAfter: false, animateSave: false, forceAnswerSave: true });
-      if (saved.followUpSyncFailed) throw new Error("Je antwoorden zijn opgeslagen, maar de opvolgacties konden niet worden bijgewerkt. Probeer Indienen opnieuw.");
+      if (saved.followUpSyncFailed) {
+        setPointsError(
+          "De opvolgacties konden niet worden bijgewerkt. Je antwoorden staan opgeslagen en indienen kan gewoon; bij het indienen worden de punten opnieuw opgebouwd."
+        );
+      }
       await loadFollowUpPoints();
       const preview = await previewCurrentSubmit({
         answers_json: cur.value,
@@ -2502,8 +2509,13 @@ export default function FormRunnerBase({ mode }) {
       }
 
       if (hasUnsavedChanges) {
+        // Ook hier geen blokkade; zie de toelichting bij submit hierboven.
         const saved = await persistPendingChanges(cur.value, { reloadAfter: false, animateSave: false });
-        if (saved.followUpSyncFailed) throw new Error("Je antwoorden zijn opgeslagen, maar de opvolgacties zijn nog niet bijgewerkt. Probeer opnieuw voordat je indient.");
+        if (saved.followUpSyncFailed) {
+          setPointsError(
+            "De opvolgacties konden niet worden bijgewerkt. Bij het indienen worden ze opnieuw opgebouwd."
+          );
+        }
       }
 
       const submitRes = await submitCurrentInstance();

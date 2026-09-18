@@ -188,7 +188,7 @@ values
   coalesce(@priority, N'NORMAL'),
   coalesce(@responsibilityType, N'INTERN'),
   case when @dueInDays is null then null
-       else convert(date, dateadd(day, @dueInDays, sysutcdatetime())) end,
+       else convert(date, dateadd(day, try_convert(int, @dueInDays), sysutcdatetime())) end,
   @initialStatus, sysutcdatetime(), @actor, @actor
 );
 

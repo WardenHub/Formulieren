@@ -62,7 +62,7 @@ begin
     N'OPEN', @now, @actor,
     case when @assignedRoleCode is null then N'NONE' else N'ROLE' end,
     @assignedRoleCode,
-    case when @dueAfterDays is null then null else dateadd(day, @dueAfterDays, convert(date, @now)) end,
+    case when @dueAfterDays is null then null else dateadd(day, try_convert(int, @dueAfterDays), convert(date, @now)) end,
     @customerVisible,
     @actor
   );
@@ -146,7 +146,7 @@ begin
       due_date = case
         when due_date is not null then due_date
         when @dueAfterDays is null then null
-        else dateadd(day, @dueAfterDays, convert(date, created_at))
+        else dateadd(day, try_convert(int, @dueAfterDays), convert(date, created_at))
       end,
       customer_visible = @customerVisible,
       updated_at = @now,
