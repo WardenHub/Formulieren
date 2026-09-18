@@ -14,6 +14,7 @@ import SoftwareTab from "./SoftwareTab.jsx";
 import NotesTab from "./NotesTab.jsx";
 import ActionPointsTab from "./ActionPointsTab.jsx";
 import LogbookTab from "./LogbookTab.jsx";
+import HistoryTab from "./HistoryTab.jsx";
 import InstallationOverviewTab from "./InstallationOverviewTab.jsx";
 import DrawingPinsTab from "./DrawingPinsTab.jsx";
 import CertificationTab from "./CertificationTab.jsx";
@@ -35,6 +36,7 @@ import { ChevronsUpDownIcon } from "@/components/ui/chevrons-up-down";
 import { CogIcon } from "@/components/ui/cog";
 import { MonitorCheckIcon } from "@/components/ui/monitor-check";
 import { BookTextIcon } from "@/components/ui/book-text";
+import { HistoryIcon } from "@/components/ui/history";
 import { RefreshCWIcon } from "@/components/ui/refresh-cw";
 import { BadgeCheck, ClipboardList, MapPin, MapPinned, MessageSquareText } from "lucide-react";
 import { pushRecentHomeItem } from "../../lib/recentHomeItems.js";
@@ -1181,6 +1183,12 @@ export default function InstallationDetails() {
             onAnyOpenChange={(v) => setAnyOpen("performance", v)}
           />
         ),
+      },
+      {
+        key: "history",
+        label: "Historie",
+        Icon: HistoryIcon,
+        content: <HistoryTab code={code} isActive={activeTab === "history"} />,
       },
       {
         key: "forms",

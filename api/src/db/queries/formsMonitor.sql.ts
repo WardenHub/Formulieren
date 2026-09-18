@@ -37,6 +37,14 @@ selected_statuses as (
   from openjson(isnull(@selectedStatusesJson, N'[]'))
   where nullif(ltrim(rtrim(convert(nvarchar(30), [value]))), N'') is not null
 ),
+/* Wardenburg en Hefas staan in dezelfde database en worden op BedrijfUnit onderscheiden.
+   Hetzelfde jsonpatroon als de installatielijst, zodat beide schermen op dezelfde manier
+   filteren; leeg betekent alles. */
+selected_business_units as (
+  select distinct nullif(ltrim(rtrim(convert(nvarchar(100), [value]))), N'') as business_unit_value
+  from openjson(isnull(@businessUnitsJson, N'[]'))
+  where nullif(ltrim(rtrim(convert(nvarchar(100), [value]))), N'') is not null
+),
 actor_candidates as (
   select distinct nullif(ltrim(rtrim(convert(nvarchar(200), [value]))), N'') as actor_value
   from openjson(isnull(@actorCandidatesJson, N'[]'))
@@ -245,6 +253,10 @@ base as (
       or isnull(fi.assigned_display_name_snapshot, N'') like N'%' + p.assigned_search_n + N'%'
       or isnull(fi.assigned_email_snapshot, N'') like N'%' + p.assigned_search_n + N'%'
     )
+    and (
+      not exists (select 1 from selected_business_units)
+      or ab.BedrijfUnit in (select business_unit_value from selected_business_units)
+    )
 ),
 fu as (
   select
@@ -252,7 +264,7 @@ fu as (
     count(*) as follow_up_total_count,
     sum(case when f.status = N'OPEN' then 1 else 0 end) as follow_up_open_count,
     sum(case when f.status = N'PLANNING_NODIG' then 1 else 0 end) as follow_up_planning_needed_count,
-    sum(case when f.status = N'WACHTENOPDERDEN' then 1 else 0 end) as follow_up_waiting_count,
+    sum(case when f.status in (N'WACHTENOPDERDEN', N'WACHTENOPINTERN') then 1 else 0 end) as follow_up_waiting_count,
     sum(case when f.status = N'GEPLAND' then 1 else 0 end) as follow_up_planned_count,
     sum(case when sd.is_actionable = 1 then 1 else 0 end) as follow_up_actionable_count,
     sum(case when f.status = N'AFGEHANDELD' then 1 else 0 end) as follow_up_done_count,
@@ -317,7 +329,7 @@ filtered as (
           + isnull(fu.follow_up_waiting_count, 0) > 0
       )
       or (p.action_status_filter_n = N'PLANNING_NODIG' and isnull(fu.follow_up_planning_needed_count, 0) > 0)
-      or (p.action_status_filter_n = N'WACHTENOPDERDEN' and isnull(fu.follow_up_waiting_count, 0) > 0)
+      or (p.action_status_filter_n in (N'WACHTENOPDERDEN', N'WACHTENOPINTERN') and isnull(fu.follow_up_waiting_count, 0) > 0)
       or (p.action_status_filter_n = N'GEPLAND' and isnull(fu.follow_up_planned_count, 0) > 0)
       or (
         p.action_status_filter_n = N'DONE'
@@ -574,6 +586,53 @@ where cfi.parent_instance_id = @formInstanceId
 order by cfi.created_at desc, cfi.form_instance_id desc;
 `;
 
+/* Een regel in de Historie van een formulier. Bewust los van de statusupdate zelf: ook
+   handelingen zonder statuswissel horen hier thuis, en een mislukte registratie mag de
+   handeling niet terugdraaien. */
+export const insertFormInstanceEventSql = `
+insert into dbo.FormInstanceEvent (
+  form_instance_id,
+  event_type,
+  previous_status,
+  next_status,
+  detail_json,
+  actor_user_object_id,
+  actor_display_name_snapshot,
+  actor_email_snapshot,
+  created_by
+)
+values (
+  @formInstanceId,
+  @eventType,
+  @previousStatus,
+  @nextStatus,
+  @detailJson,
+  @actorUserObjectId,
+  @actorDisplayName,
+  @actorEmail,
+  @createdBy
+);
+`;
+
+/* De Historie van een formulier, nieuwste eerst. De begrenzing zit in de query zelf zodat
+   een formulier met een lange loop het scherm niet laat hangen. */
+export const getFormInstanceEventsSql = `
+select top (@take)
+  e.form_instance_event_id,
+  e.event_type,
+  e.previous_status,
+  e.next_status,
+  e.detail_json,
+  e.actor_user_object_id,
+  e.actor_display_name_snapshot,
+  e.actor_email_snapshot,
+  e.created_at,
+  e.created_by
+from dbo.FormInstanceEvent e
+where e.form_instance_id = @formInstanceId
+order by e.created_at desc, e.form_instance_event_id desc;
+`;
+
 export const updateFormInstanceStatusSql = `
 update dbo.FormInstance
 set
@@ -600,6 +659,77 @@ select top 1
   finalized_by
 from dbo.FormInstance
 where form_instance_id = @formInstanceId;
+`;
+
+/* Oppakken en toewijzen in één handeling, op het moment dat iemand het formulier opent.
+
+   Twee behandelaars werkten eerder onzichtbaar naast elkaar: openen zette de status wel op
+   in behandeling, maar liet de toewijzing leeg, dus de tweede zag niet wie er al mee bezig
+   was. Handmatig verdelen is geen optie; dan moet er iemand actief gaan verdelen.
+
+   Wie het als eerste opent staat er dus op. Een bestaande toewijzing wordt nooit
+   overschreven; overdragen blijft een bewuste handeling van een beheerder. */
+export const claimFormInstanceOnOpenSql = `
+declare @status_changed bit = 0;
+declare @claimed bit = 0;
+
+begin transaction;
+
+update dbo.FormInstance
+set
+  status = N'IN_BEHANDELING',
+  updated_at = sysutcdatetime(),
+  updated_by = @actor
+where form_instance_id = @formInstanceId
+  and status = N'INGEDIEND';
+
+set @status_changed = case when @@rowcount > 0 then 1 else 0 end;
+
+update dbo.FormInstance
+set
+  assigned_user_object_id = @assignedUserObjectId,
+  assigned_display_name_snapshot = @assignedDisplayNameSnapshot,
+  assigned_email_snapshot = @assignedEmailSnapshot,
+  assigned_at = sysutcdatetime(),
+  assigned_by = @actor,
+  updated_at = sysutcdatetime(),
+  updated_by = @actor
+where form_instance_id = @formInstanceId
+  and assigned_user_object_id is null
+  and @assignedUserObjectId is not null
+  and status in (N'INGEDIEND', N'IN_BEHANDELING');
+
+set @claimed = case when @@rowcount > 0 then 1 else 0 end;
+
+if @claimed = 1
+begin
+  insert into dbo.FormInstanceAssignmentAudit (
+    form_instance_id,
+    previous_assigned_user_object_id,
+    previous_assigned_display_name_snapshot,
+    previous_assigned_email_snapshot,
+    assigned_user_object_id,
+    assigned_display_name_snapshot,
+    assigned_email_snapshot,
+    action_type,
+    changed_by
+  )
+  values (
+    @formInstanceId,
+    null,
+    null,
+    null,
+    @assignedUserObjectId,
+    @assignedDisplayNameSnapshot,
+    @assignedEmailSnapshot,
+    N'assign',
+    @actor
+  );
+end
+
+commit transaction;
+
+select @status_changed as status_changed, @claimed as claimed;
 `;
 
 export const updateFormInstanceAssignmentSql = `

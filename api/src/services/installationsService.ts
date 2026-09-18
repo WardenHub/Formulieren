@@ -461,6 +461,11 @@ export async function getCatalog(code: string) {
       section_key: row.section_key ?? null,
       sort_order: row.sort_order == null ? null : Number(row.sort_order),
       is_attachment_only: row.is_attachment_only === true,
+      // De kaart vraagt alleen om een handtekening of een documentdatum waar dat iets
+      // betekent, en toont de ondertekenknop alleen waar dat mag.
+      tracks_signature: row.tracks_signature === true,
+      requires_document_date: row.requires_document_date === true,
+      supports_esignature: row.supports_esignature === true,
       attachment_parent_type_keys: attachmentParentsByType[String(row.document_type_key || "").trim()] || [],
       is_active: row.is_active === false ? false : true,
       is_required: row.is_required === true,
@@ -968,6 +973,8 @@ export async function getInstallationWorkflowItems(code: string) {
   const rows = await sqlQuery(getInstallationWorkflowItemsSql, { code: cleanCode });
   const items = (rows || []).map((row: any) => ({
     follow_up_action_id: row.follow_up_action_id,
+    // Zonder de versie kan het scherm niets meer opslaan; de API eist hem bij elke wijziging.
+    row_version: row.row_version ?? null,
     source_type: row.source_type ?? null,
     form_instance_id: row.form_instance_id,
     installation_id: row.installation_id,
@@ -1101,6 +1108,12 @@ export async function createManualInstallationFollowUp(code: string, payload: an
   return { ok: true, follow_up_action_id: rows?.[0]?.follow_up_action_id };
 }
 
+function expectedFollowUpRowVersion(value: any): string {
+  const clean = String(value ?? "").trim();
+  if (!/^0x[0-9a-f]{16}$/i.test(clean)) throw new Error("row version required");
+  return clean;
+}
+
 export async function updateInstallationFollowUpStatus(code: string, followUpActionId: string, payload: any, user: any) {
   const cleanCode = String(code || "").trim();
   await assertInstallationWritable(cleanCode);
@@ -1112,6 +1125,7 @@ export async function updateInstallationFollowUpStatus(code: string, followUpAct
     code: cleanCode,
     followUpActionId: cleanId,
     nextStatus,
+    expectedRowVersion: expectedFollowUpRowVersion(payload?.row_version ?? payload?.rowVersion),
     actor: getUserAuditActor(user),
     actorUserObjectId: getUserObjectId(user),
     actorDisplayName: getUserDisplayNameSnapshot(user),
@@ -1181,6 +1195,7 @@ export async function updateInstallationFollowUp(
   await sqlQuery(updateInstallationFollowUpFieldsSql, {
     code: cleanCode,
     followUpActionId: cleanId,
+    expectedRowVersion: expectedFollowUpRowVersion(payload?.row_version ?? payload?.rowVersion),
     title,
     description,
     descriptionSet: descriptionSet ? 1 : 0,

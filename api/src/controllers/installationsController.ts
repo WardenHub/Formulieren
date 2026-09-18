@@ -4,6 +4,7 @@ import { CertificationValidationError } from "../utils/certificationValidation.j
 import * as service from "../services/installationsService.js";
 import { describeParentInstanceProblem } from "../db/queries/parentInstanceGuard.sql.js";
 import * as formsService from "../services/formsService.js";
+import * as installationHistoryService from "../services/installationHistoryService.js";
 import * as offlineSyncService from "../services/offlineSyncService.js";
 import * as followUpService from "../services/followUpService.js";
 import * as submitRejectionService from "../services/formSubmitRejectionService.js";
@@ -634,6 +635,13 @@ export async function putInstallationFollowUpStatus(req: any, res: Response) {
     const message = String(err?.message || err || "");
     if (isHistoricalReadOnlyMessage(message)) return res.status(409).json({ error: "historical installation read-only" });
     if (message.toLowerCase().includes("not found")) return res.status(404).json({ error: message });
+    // Een botsing is geen serverfout; het scherm ververst en laat het opnieuw proberen.
+    if (message.toLowerCase().includes("version conflict")) {
+      return res.status(409).json({ error: "follow-up action version conflict" });
+    }
+    if (message.toLowerCase().includes("row version required")) {
+      return res.status(400).json({ error: "row version required" });
+    }
     if (message.toLowerCase().includes("invalid")) return res.status(400).json({ error: message });
     console.error(err);
     return res.status(500).json({ error: "follow-up status could not be changed" });
@@ -653,6 +661,13 @@ export async function putInstallationFollowUp(req: any, res: Response) {
     const message = String(err?.message || err || "");
     if (isHistoricalReadOnlyMessage(message)) return res.status(409).json({ error: "historical installation read-only" });
     if (message.toLowerCase().includes("not found")) return res.status(404).json({ error: message });
+    // Een botsing is geen serverfout; het scherm ververst en laat het opnieuw proberen.
+    if (message.toLowerCase().includes("version conflict")) {
+      return res.status(409).json({ error: "follow-up action version conflict" });
+    }
+    if (message.toLowerCase().includes("row version required")) {
+      return res.status(400).json({ error: "row version required" });
+    }
     if (message.toLowerCase().includes("invalid")) return res.status(400).json({ error: message });
     if (message.toLowerCase().includes("required")) return res.status(400).json({ error: message });
     if (message.toLowerCase().includes("too long")) return res.status(400).json({ error: message });
@@ -2052,5 +2067,20 @@ export async function deleteFormInstanceDocument(req: any, res: any) {
 
     console.error(err);
     return res.status(500).json({ error: "deleteFormInstanceDocument failed" });
+  }
+}
+
+export async function getInstallationHistory(req: any, res: Response) {
+  try {
+    const data = await installationHistoryService.getInstallationHistory(
+      String(req.params.code || ""),
+      req.query || {}
+    );
+
+    if ((data as any)?.error === "not found") return res.status(404).json({ error: "not found" });
+    return res.json(data);
+  } catch (err: any) {
+    console.error(err);
+    return res.status(500).json({ error: "getInstallationHistory failed" });
   }
 }

@@ -7,6 +7,7 @@ import {
   getCustomValues,
   putCustomValues,
   getDocuments,
+  getInstallationHistory,
   getInstallationLogbook,
   putInstallationLogbook,
   previewInstallationLogbookSync,
@@ -211,6 +212,7 @@ router.get(
 router.put("/:code/custom-values", requireRole("admin", "gebruiker"), putCustomValues);
 
 router.get("/:code/documents", requireRole(...documentRoles), getDocuments);
+router.get("/:code/history", requireRole(...documentRoles), getInstallationHistory);
 router.get("/:code/logbook", requireRole(...documentRoles), getInstallationLogbook);
 router.put("/:code/logbook", requireRole("admin"), putInstallationLogbook);
 router.post("/:code/logbook/sync-preview", requireRole(...documentRoles), previewInstallationLogbookSync);

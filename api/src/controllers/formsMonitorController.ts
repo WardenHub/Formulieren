@@ -122,6 +122,26 @@ export async function getFormsMonitorList(req: any, res: Response) {
   }
 }
 
+export async function getFormsMonitorEvents(req: any, res: Response) {
+  try {
+    const data = await service.getMonitorFormEvents(String(req.params.formInstanceId || ""), {
+      user: req.user,
+      roles: req.roles || [],
+    });
+
+    if (data?.error === "not found") return res.status(404).json({ error: "not found" });
+    return res.json(data);
+  } catch (err: any) {
+    const msg = String(err?.message || err).toLowerCase();
+    if (msg.includes("forbidden")) return res.status(403).json({ error: "forbidden" });
+    if (msg.includes("not found")) return res.status(404).json({ error: "not found" });
+    if (msg.includes("version conflict")) return res.status(409).json({ error: "follow-up action version conflict" });
+    if (msg.includes("row version required")) return res.status(400).json({ error: "row version required" });
+    console.error(err);
+    return res.status(500).json({ error: "getFormsMonitorEvents failed" });
+  }
+}
+
 export async function getFormsMonitorDetail(req: any, res: Response) {
   try {
     const formInstanceId = String(req.params.formInstanceId || "");
@@ -147,6 +167,12 @@ export async function getFormsMonitorDetail(req: any, res: Response) {
 
     if (msg.includes("not found")) {
       return res.status(404).json({ error: "not found" });
+    }
+    if (msg.includes("version conflict")) {
+      return res.status(409).json({ error: "follow-up action version conflict" });
+    }
+    if (msg.includes("row version required")) {
+      return res.status(400).json({ error: "row version required" });
     }
 
     if (msg.includes("forbidden")) {
@@ -185,6 +211,12 @@ export async function getFormsMonitorFollowUps(req: any, res: Response) {
 
     if (msg.includes("not found")) {
       return res.status(404).json({ error: "not found" });
+    }
+    if (msg.includes("version conflict")) {
+      return res.status(409).json({ error: "follow-up action version conflict" });
+    }
+    if (msg.includes("row version required")) {
+      return res.status(400).json({ error: "row version required" });
     }
 
     const correlationId = randomUUID();
@@ -262,6 +294,12 @@ export async function postFormsMonitorStatusAction(req: any, res: Response) {
     if (msg.includes("not found")) {
       return res.status(404).json({ error: "not found" });
     }
+    if (msg.includes("version conflict")) {
+      return res.status(409).json({ error: "follow-up action version conflict" });
+    }
+    if (msg.includes("row version required")) {
+      return res.status(400).json({ error: "row version required" });
+    }
     if (isHistoricalReadOnlyMessage(msg)) {
       return res.status(409).json({ error: "historical installation read-only" });
     }
@@ -305,6 +343,12 @@ export async function postFormsMonitorFollowUpStatusAction(req: any, res: Respon
     if (msg.includes("not found")) {
       return res.status(404).json({ error: "not found" });
     }
+    if (msg.includes("version conflict")) {
+      return res.status(409).json({ error: "follow-up action version conflict" });
+    }
+    if (msg.includes("row version required")) {
+      return res.status(400).json({ error: "row version required" });
+    }
     if (isHistoricalReadOnlyMessage(msg)) {
       return res.status(409).json({ error: "historical installation read-only" });
     }
@@ -342,6 +386,8 @@ export async function postFormsMonitorManualFollowUp(req: any, res: Response) {
   } catch (err: any) {
     const msg = String(err?.message || err).toLowerCase();
     if (msg.includes("not found")) return res.status(404).json({ error: "not found" });
+    if (msg.includes("version conflict")) return res.status(409).json({ error: "follow-up action version conflict" });
+    if (msg.includes("row version required")) return res.status(400).json({ error: "row version required" });
     if (isHistoricalReadOnlyMessage(msg)) return res.status(409).json({ error: "historical installation read-only" });
     if (msg.includes("title is required") || msg.includes("title is too long")) {
       return res.status(400).json({ error: msg });
@@ -383,6 +429,12 @@ export async function putFormsMonitorFollowUpNote(req: any, res: Response) {
     if (msg.includes("not found")) {
       return res.status(404).json({ error: "not found" });
     }
+    if (msg.includes("version conflict")) {
+      return res.status(409).json({ error: "follow-up action version conflict" });
+    }
+    if (msg.includes("row version required")) {
+      return res.status(400).json({ error: "row version required" });
+    }
     if (isHistoricalReadOnlyMessage(msg)) {
       return res.status(409).json({ error: "historical installation read-only" });
     }
@@ -411,6 +463,8 @@ export async function putFormsMonitorFollowUpClassification(req: any, res: Respo
     const msg = String(err?.message || err).toLowerCase();
 
     if (msg.includes("not found")) return res.status(404).json({ error: "not found" });
+    if (msg.includes("version conflict")) return res.status(409).json({ error: "follow-up action version conflict" });
+    if (msg.includes("row version required")) return res.status(400).json({ error: "row version required" });
     if (isHistoricalReadOnlyMessage(msg)) {
       return res.status(409).json({ error: "historical installation read-only" });
     }
@@ -441,6 +495,12 @@ export async function putFormsMonitorFollowUpCertificateImpact(req: any, res: Re
 
     if (msg.includes("not found")) {
       return res.status(404).json({ error: "not found" });
+    }
+    if (msg.includes("version conflict")) {
+      return res.status(409).json({ error: "follow-up action version conflict" });
+    }
+    if (msg.includes("row version required")) {
+      return res.status(400).json({ error: "row version required" });
     }
     if (isHistoricalReadOnlyMessage(msg)) {
       return res.status(409).json({ error: "historical installation read-only" });
@@ -481,6 +541,12 @@ export async function putFormsMonitorAssignment(req: any, res: Response) {
     if (msg.includes("not found")) {
       return res.status(404).json({ error: "not found" });
     }
+    if (msg.includes("version conflict")) {
+      return res.status(409).json({ error: "follow-up action version conflict" });
+    }
+    if (msg.includes("row version required")) {
+      return res.status(400).json({ error: "row version required" });
+    }
     if (msg.includes("assigned user not found")) {
       return res.status(400).json({ error: "assigned user not found" });
     }
@@ -516,6 +582,12 @@ export async function putFormsMonitorComplimentPoint(req: any, res: Response) {
 
     if (msg.includes("not found")) {
       return res.status(404).json({ error: "not found" });
+    }
+    if (msg.includes("version conflict")) {
+      return res.status(409).json({ error: "follow-up action version conflict" });
+    }
+    if (msg.includes("row version required")) {
+      return res.status(400).json({ error: "row version required" });
     }
     if (msg.includes("negative compliment point requires reason")) {
       return res.status(400).json({ error: "negative compliment point requires reason" });

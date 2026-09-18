@@ -349,7 +349,7 @@ update dbo.FollowUpAction
 set status = N'VERVALLEN', status_set_at = sysutcdatetime(), status_set_by = @actor,
     updated_at = sysutcdatetime(), updated_by = @actor
 where follow_up_action_id = @followUpActionId
-  and status in (N'OPEN', N'PLANNING_NODIG', N'WACHTENOPDERDEN', N'GEPLAND', N'INFORMATIEF');
+  and status in (N'OPEN', N'PLANNING_NODIG', N'WACHTENOPDERDEN', N'WACHTENOPINTERN', N'GEPLAND', N'INFORMATIEF');
 
 if @@rowcount > 0
   insert into dbo.FollowUpActionEvent
@@ -374,7 +374,7 @@ from dbo.FollowUpAction a
 join dbo.FollowUpActionFormSource fs
   on fs.follow_up_action_id = a.follow_up_action_id
 where fs.form_instance_id = @formInstanceId
-  and a.status in (N'OPEN', N'PLANNING_NODIG', N'WACHTENOPDERDEN', N'GEPLAND', N'INFORMATIEF');
+  and a.status in (N'OPEN', N'PLANNING_NODIG', N'WACHTENOPDERDEN', N'WACHTENOPINTERN', N'GEPLAND', N'INFORMATIEF');
 
 insert into dbo.FollowUpActionEvent
   (follow_up_action_id, event_type, old_values_json, new_values_json, actor_display_name_snapshot)
@@ -499,6 +499,7 @@ join dbo.FollowUpStatusDefinition sd on sd.status_code = a.status
 
 const monitorProjection = `
   a.follow_up_action_id,
+  convert(varchar(18), convert(binary(8), a.row_version), 1) as row_version,
   fs.form_instance_id,
   a.kind,
   a.workflow_title,
@@ -626,7 +627,8 @@ order by sd.is_terminal asc, sd.sort_order asc,
 
 export const getFormFollowUpByIdSql = `
 select top 1
-  a.follow_up_action_id, fs.form_instance_id, a.kind, a.status,
+  a.follow_up_action_id, convert(varchar(18), convert(binary(8), a.row_version), 1) as row_version,
+  fs.form_instance_id, a.kind, a.status,
   a.assigned_role_code,
   a.internal_note as note, a.workflow_title, a.certificate_impact,
   a.certificate_impact_override,
@@ -658,13 +660,20 @@ declare @oldValues nvarchar(max) = (
   for json path, without_array_wrapper
 );
 
-update dbo.FollowUpAction
+update a
 set status = @nextStatus, status_set_at = sysutcdatetime(), status_set_by = @actor,
     resolution_note = @resolutionNote,
     resolved_at = case when @isResolved = 1 then sysutcdatetime() else null end,
     resolved_by = case when @isResolved = 1 then @actor else null end,
     updated_at = sysutcdatetime(), updated_by = @actor
-where follow_up_action_id = @followUpActionId;
+from dbo.FollowUpAction a
+where a.follow_up_action_id = @followUpActionId
+  and a.row_version = convert(binary(8), @expectedRowVersion, 1);
+
+if @@rowcount = 0
+begin
+  throw 50000, 'follow-up action version conflict', 1;
+end;
 
 insert into dbo.FollowUpActionEvent
   (follow_up_action_id, event_type, old_values_json, new_values_json, actor_display_name_snapshot)
@@ -674,7 +683,8 @@ values
            case when @isResolved = 1 then @actor else null end as resolved_by
     for json path, without_array_wrapper), @actor);
 
-select top 1 a.follow_up_action_id, fs.form_instance_id, a.kind, a.status,
+select top 1 a.follow_up_action_id, convert(varchar(18), convert(binary(8), a.row_version), 1) as row_version,
+  fs.form_instance_id, a.kind, a.status,
   a.internal_note as note, a.resolution_outcome, a.resolution_note,
   a.resolved_at, a.resolved_by, a.updated_at, a.updated_by
 from dbo.FollowUpAction a
@@ -685,9 +695,16 @@ where a.follow_up_action_id = @followUpActionId
 export const updateFormFollowUpNoteSql = `
 declare @oldNote nvarchar(4000) = (select internal_note from dbo.FollowUpAction where follow_up_action_id = @followUpActionId);
 
-update dbo.FollowUpAction
+update a
 set internal_note = @note, updated_at = sysutcdatetime(), updated_by = @actor
-where follow_up_action_id = @followUpActionId;
+from dbo.FollowUpAction a
+where a.follow_up_action_id = @followUpActionId
+  and a.row_version = convert(binary(8), @expectedRowVersion, 1);
+
+if @@rowcount = 0
+begin
+  throw 50000, 'follow-up action version conflict', 1;
+end;
 
 insert into dbo.FollowUpActionEvent
   (follow_up_action_id, event_type, old_values_json, new_values_json, actor_display_name_snapshot)
@@ -696,7 +713,8 @@ values
    (select @oldNote as note for json path, without_array_wrapper),
    (select @note as note for json path, without_array_wrapper), @actor);
 
-select top 1 a.follow_up_action_id, fs.form_instance_id, a.kind, a.status,
+select top 1 a.follow_up_action_id, convert(varchar(18), convert(binary(8), a.row_version), 1) as row_version,
+  fs.form_instance_id, a.kind, a.status,
   a.internal_note as note, a.resolution_outcome, a.updated_at, a.updated_by
 from dbo.FollowUpAction a
 join dbo.FollowUpActionFormSource fs on fs.follow_up_action_id = a.follow_up_action_id
@@ -706,20 +724,28 @@ where a.follow_up_action_id = @followUpActionId
 export const updateFormFollowUpCertificateImpactSql = `
 declare @oldImpact nvarchar(20) = (select certificate_impact_override from dbo.FollowUpAction where follow_up_action_id = @followUpActionId);
 
-update dbo.FollowUpAction
+update a
 set certificate_impact_override = @certificateImpactOverride,
     updated_at = sysutcdatetime(), updated_by = @actor
-where follow_up_action_id = @followUpActionId and kind = N'workflow';
+from dbo.FollowUpAction a
+where a.follow_up_action_id = @followUpActionId
+  and a.kind = N'workflow'
+  and a.row_version = convert(binary(8), @expectedRowVersion, 1);
 
-if @@rowcount > 0
-  insert into dbo.FollowUpActionEvent
+if @@rowcount = 0
+begin
+  throw 50000, 'follow-up action version conflict', 1;
+end;
+
+insert into dbo.FollowUpActionEvent
     (follow_up_action_id, event_type, old_values_json, new_values_json, actor_display_name_snapshot)
   values
     (@followUpActionId, N'CERTIFICATE_IMPACT_CHANGED',
      (select @oldImpact as certificate_impact_override for json path, without_array_wrapper),
      (select @certificateImpactOverride as certificate_impact_override for json path, without_array_wrapper), @actor);
 
-select top 1 a.follow_up_action_id, fs.form_instance_id, a.kind,
+select top 1 a.follow_up_action_id, convert(varchar(18), convert(binary(8), a.row_version), 1) as row_version,
+  fs.form_instance_id, a.kind,
   a.certificate_impact, a.certificate_impact_override,
   isnull(a.certificate_impact_override, a.certificate_impact) as effective_certificate_impact,
   a.updated_at, a.updated_by
@@ -765,13 +791,20 @@ declare @oldValues nvarchar(max) = (
 if not exists (select 1 from dbo.FollowUpAction where follow_up_action_id = @followUpActionId)
   throw 50000, 'follow-up action not found', 1;
 
-update dbo.FollowUpAction
-set priority = coalesce(@priority, priority),
-    responsibility_type = coalesce(@responsibilityType, responsibility_type),
-    due_date = case when @dueDateSet = 1 then @dueDate else due_date end,
+update a
+set priority = coalesce(@priority, a.priority),
+    responsibility_type = coalesce(@responsibilityType, a.responsibility_type),
+    due_date = case when @dueDateSet = 1 then @dueDate else a.due_date end,
     updated_at = sysutcdatetime(),
     updated_by = @actor
-where follow_up_action_id = @followUpActionId;
+from dbo.FollowUpAction a
+where a.follow_up_action_id = @followUpActionId
+  and a.row_version = convert(binary(8), @expectedRowVersion, 1);
+
+if @@rowcount = 0
+begin
+  throw 50000, 'follow-up action version conflict', 1;
+end;
 
 insert into dbo.FollowUpActionEvent
   (follow_up_action_id, event_type, old_values_json, new_values_json, actor_display_name_snapshot)

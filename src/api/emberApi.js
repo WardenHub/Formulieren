@@ -135,8 +135,11 @@ export function getInstallationFollowUpCatalog(code) {
   return apiGet(`/installations/${encodeURIComponent(code)}/follow-ups/catalog`);
 }
 
-export function updateInstallationFollowUpStatus(code, followUpActionId, status) {
-  return apiPut(`/installations/${encodeURIComponent(code)}/follow-ups/${encodeURIComponent(followUpActionId)}/status`, { status });
+export function updateInstallationFollowUpStatus(code, followUpActionId, status, rowVersion) {
+  return apiPut(
+    `/installations/${encodeURIComponent(code)}/follow-ups/${encodeURIComponent(followUpActionId)}/status`,
+    { status, row_version: rowVersion }
+  );
 }
 
 export function updateInstallationFollowUp(code, followUpActionId, payload) {
@@ -872,6 +875,11 @@ export async function getFormsMonitorList(params = {}) {
     qs.set("relationGroups", params.relationGroups.join(","));
   }
 
+  // Wardenburg of Hefas; ook hier dezelfde schrijfwijze als op het installatiescherm.
+  if (Array.isArray(params.businessUnits) && params.businessUnits.length) {
+    qs.set("businessUnits", params.businessUnits.join(","));
+  }
+
   if (params.take != null) qs.set("take", String(params.take));
   if (params.skip != null) qs.set("skip", String(params.skip));
 
@@ -1305,4 +1313,18 @@ export function getKamQueue(params = {}) {
   }
 
   return apiGet(`/kam/queue${qs.toString() ? `?${qs.toString()}` : ""}`);
+}
+
+// De Historie van een formulier; wie deed wat en wanneer.
+export function getFormsMonitorEvents(formInstanceId) {
+  return apiGet(`/forms-monitor/${encodeURIComponent(formInstanceId)}/events`);
+}
+
+// De Historie van een installatie; samengevoegd uit de bronnen die er al zijn.
+export function getInstallationHistory(code, params = {}) {
+  const qs = new URLSearchParams();
+  if (params.includeSystem) qs.set("includeSystem", "1");
+  if (Array.isArray(params.sources) && params.sources.length) qs.set("sources", params.sources.join(","));
+  const suffix = qs.toString() ? `?${qs.toString()}` : "";
+  return apiGet(`/installations/${encodeURIComponent(code)}/history${suffix}`);
 }

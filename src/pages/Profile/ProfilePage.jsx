@@ -838,7 +838,7 @@ export default function ProfilePage() {
                   <div className="ember-status-grid ember-status-grid--calm">
                     <StatTile label="Totaal" value={stats?.follow_ups?.total ?? 0} tone="neutral" />
                     <StatTile label="Open" value={stats?.follow_ups?.open ?? 0} tone="active" />
-                    <StatTile label="Wachten op derden" value={stats?.follow_ups?.waiting ?? 0} tone="warning" />
+                    <StatTile label="Wachten" value={stats?.follow_ups?.waiting ?? 0} tone="warning" />
                     <StatTile label="Afgehandeld" value={stats?.follow_ups?.done ?? 0} tone="success" />
                     <StatTile label="Afgewezen" value={stats?.follow_ups?.rejected ?? 0} tone="danger" />
                     <StatTile label="Vervallen" value={stats?.follow_ups?.expired ?? 0} tone="muted" />

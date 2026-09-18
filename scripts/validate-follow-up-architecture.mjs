@@ -34,6 +34,7 @@ const requiredStatuses = [
   "PLANNING_NODIG",
   "GEPLAND",
   "WACHTENOPDERDEN",
+  "WACHTENOPINTERN",
   "AFGEHANDELD",
   "AFGEWEZEN",
   "VERVALLEN",

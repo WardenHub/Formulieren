@@ -21,6 +21,7 @@ import { RefreshCWIcon } from "@/components/ui/refresh-cw";
 import { RefreshCWOffIcon } from "@/components/ui/refresh-cw-off";
 import { BadgeAlertIcon } from "@/components/ui/badge-alert";
 import { LayoutGridIcon, LayoutListIcon } from "@/components/ui/view-toggle-icons";
+import { BUSINESS_UNITS, getBusinessUnitAppearance } from "@/lib/businessUnitAppearance.js";
 
 import {
   OVERVIEW_LS_KEY,
@@ -67,6 +68,8 @@ function buildDefaultFilters() {
     actionStatusFilter: "ALL",
     // Relatiegroepsleutels, bijvoorbeeld "Wardenburg|100092"; leeg is geen filter.
     relationGroups: [],
+    // Wardenburg of Hefas; leeg is alles. Zelfde filter als op de installatielijst.
+    businessUnits: [],
     take: 25,
     skip: 0,
   };
@@ -96,6 +99,9 @@ function buildInitialFilters(storedState) {
     relationGroups: Array.isArray(storedFilters.relationGroups)
       ? storedFilters.relationGroups
       : defaults.relationGroups,
+    businessUnits: Array.isArray(storedFilters.businessUnits)
+      ? storedFilters.businessUnits
+      : defaults.businessUnits,
   };
 }
 
@@ -242,6 +248,27 @@ function FilterGroup({ label, children, extra = null, className = "" }) {
   );
 }
 
+/* Welk bedrijf hoort bij dit formulier. Het beeldmerk is klein en de naam staat ernaast; wie
+   Hefas niet kent moet het toch kunnen lezen. Een formulier zonder installatie, zoals een
+   veiligheidsformulier, heeft geen bedrijfsonderdeel en krijgt hier niets. */
+function renderBusinessUnitTag(row) {
+  const key = String(row?.BedrijfUnit || "").trim();
+  if (!key) return null;
+
+  const unit = getBusinessUnitAppearance(key);
+
+  return (
+    <span
+      className="monitor-tag monitor-business-unit-tag"
+      style={{ "--business-unit-color": unit.color }}
+      title={`Installatieformulier van ${unit.label}`}
+    >
+      {unit.logo ? <img src={unit.logo} alt="" className="monitor-business-unit-tag__logo" /> : null}
+      <span>{unit.label}</span>
+    </span>
+  );
+}
+
 function renderAssignedOwnerChip(row, ownerEntry, onClick = null) {
   const label =
     getDirectoryDisplayName(ownerEntry) ||
@@ -361,7 +388,8 @@ export default function FormsMonitorPage() {
       filters.includeSafetyForms !== defaults.includeSafetyForms ||
       JSON.stringify(filters.selectedStatusGroups || []) !== JSON.stringify(defaults.selectedStatusGroups || []) ||
       filters.actionStatusFilter !== defaults.actionStatusFilter ||
-      (filters.relationGroups || []).length > 0
+      (filters.relationGroups || []).length > 0 ||
+      (filters.businessUnits || []).length > 0
     );
   }, [filters]);
 
@@ -498,6 +526,7 @@ export default function FormsMonitorPage() {
           noRemainingOpenActionPoints: nextFilters.noRemainingOpenActionPoints,
           includeSafetyForms: nextFilters.includeSafetyForms,
           relationGroups: nextFilters.relationGroups,
+          businessUnits: nextFilters.businessUnits,
           take: nextFilters.take,
           skip: nextFilters.skip,
         });
@@ -588,6 +617,7 @@ export default function FormsMonitorPage() {
     filters.selectedStatusGroups,
     filters.actionStatusFilter,
     filters.relationGroups,
+    filters.businessUnits,
     autoRefreshEnabled,
   ]);
 
@@ -832,6 +862,10 @@ export default function FormsMonitorPage() {
           {row.instance_title ? <div className="monitor-dossier-row__meta">{row.instance_title}</div> : null}
         </div>
 
+        <div className="monitor-grid-row__cell" data-label="Bedrijf">
+          {renderBusinessUnitTag(row) || <span className="ember-page-subtitle">-</span>}
+        </div>
+
         <div className="monitor-grid-row__cell" data-label="Toegewezen aan">
           {row.assigned_display_name_snapshot || row.assigned_email_snapshot ? (
             renderAssignedOwnerChip(row, ownerEntry)
@@ -844,7 +878,7 @@ export default function FormsMonitorPage() {
           <div className="monitor-row-action-chips">
             <SummaryTag title="Aantal openstaande workflowacties" tone="active">Open {actionCounts.open}</SummaryTag>
             <SummaryTag title="Aantal actiepunten waarvoor planning nodig is" tone="warning">Planning nodig {actionCounts.planningNeeded}</SummaryTag>
-            <SummaryTag title="Aantal wacht op derden" tone="warning">Wachten op derden {actionCounts.waiting}</SummaryTag>
+            <SummaryTag title="Aantal actiepunten dat wacht; op de klant of op een collega" tone="warning">Wachten {actionCounts.waiting}</SummaryTag>
             <SummaryTag title="Aantal afgehandelde of geplande actiepunten" tone="success">Afgehandeld {actionCounts.done}</SummaryTag>
           </div>
         </div>
@@ -1019,6 +1053,44 @@ export default function FormsMonitorPage() {
                 ) : null}
               </FilterGroup>
             ) : null}
+
+            {/* Wardenburg en Hefas staan in dezelfde database. Dezelfde knoppen en dezelfde
+                betekenis als op de installatielijst; niets gekozen is beide. De keuze gaat mee
+                in de opgeslagen filters, dus hij staat er de volgende keer nog. */}
+            <FilterGroup label="Bedrijven">
+              <FilterChip
+                active={(filters.businessUnits || []).length === 0}
+                label="Beide"
+                title="Formulieren van Wardenburg en Hefas"
+                onClick={() => void applyFilters({ ...filters, businessUnits: [] })}
+              />
+              {BUSINESS_UNITS.map((unit) => {
+                const gekozen = filters.businessUnits || [];
+                const active = gekozen.length === 0 || gekozen.includes(unit.key);
+
+                return (
+                  <FilterChip
+                    key={unit.key}
+                    active={active}
+                    label={unit.label}
+                    title={unit.note || `Alleen formulieren van ${unit.label}`}
+                    onClick={() => {
+                      const basis = gekozen.length === 0 ? BUSINESS_UNITS.map((item) => item.key) : gekozen;
+                      const volgende = basis.includes(unit.key)
+                        ? basis.filter((item) => item !== unit.key)
+                        : [...basis, unit.key];
+
+                      // Alles aangevinkt is hetzelfde als geen keuze; dat houdt de aanvraag
+                      // klein en de knop Beide eerlijk.
+                      void applyFilters({
+                        ...filters,
+                        businessUnits: volgende.length === BUSINESS_UNITS.length ? [] : volgende,
+                      });
+                    }}
+                  />
+                );
+              })}
+            </FilterGroup>
 
             <FilterGroup label="Slimme filters">
               <FilterChip
@@ -1213,7 +1285,7 @@ export default function FormsMonitorPage() {
                 active={filters.actionStatusFilter === "WACHTENOPDERDEN"}
                 onClick={() => setActionStatusFilter("WACHTENOPDERDEN")}
               >
-                Wachten op derden {visibleTotals.waiting}
+                Wachten {visibleTotals.waiting}
               </SummaryTag>
 
               <SummaryTag
@@ -1258,6 +1330,7 @@ export default function FormsMonitorPage() {
                 <div className="monitor-grid__header">
                   <div>Formulier</div>
                   <div>Hoort bij</div>
+                  <div>Bedrijf</div>
                   <div>Toegewezen aan</div>
                   <div>Actiepunten</div>
                   <div>Status</div>
@@ -1309,6 +1382,8 @@ export default function FormsMonitorPage() {
                           <SummaryTag title="Formulierversie" tone="muted">
                             v{row.version_label || "-"}
                           </SummaryTag>
+
+                          {renderBusinessUnitTag(row)}
 
                           {row.assigned_display_name_snapshot || row.assigned_email_snapshot ? (
                             renderAssignedOwnerChip(row, ownerEntry)
@@ -1373,7 +1448,7 @@ export default function FormsMonitorPage() {
                         </SummaryTag>
 
                         <SummaryTag title="Aantal wacht op derden" tone="warning">
-                          Wachten op derden {actionCounts.waiting}
+                          Wachten {actionCounts.waiting}
                         </SummaryTag>
 
                         <SummaryTag title="Aantal afgehandelde of geplande actiepunten" tone="success">

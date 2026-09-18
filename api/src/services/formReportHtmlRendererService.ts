@@ -698,7 +698,8 @@ function normalizedStatusLabel(value: any) {
   if (token === "INFORMATIEF") return "Informatief";
   if (token === "OPEN") return "Open";
   if (token === "PLANNING_NODIG") return "Planning nodig";
-  if (token === "WACHTENOPDERDEN") return "Wachten op derden";
+  if (token === "WACHTENOPDERDEN") return "Wachten op klant";
+  if (token === "WACHTENOPINTERN") return "Wachten op intern";
   if (token === "GEPLAND") return "Gepland";
   if (token === "AFGEHANDELD") return "Afgehandeld";
   if (token === "AFGEWEZEN") return "Afgewezen";
@@ -718,7 +719,7 @@ function renderFollowUpStatusChip(value: any) {
         ? "is-yes"
         : token === "AFGEWEZEN" || token === "VERVALLEN"
           ? "is-neutral"
-          : token === "OPEN" || token === "PLANNING_NODIG" || token === "WACHTENOPDERDEN"
+          : token === "OPEN" || token === "PLANNING_NODIG" || token === "WACHTENOPDERDEN" || token === "WACHTENOPINTERN"
             ? "is-no"
             : "is-neutral";
   return `<span class="assessment-chip status-chip ${className}">${escapeHtml(normalizedStatusLabel(value))}</span>`;

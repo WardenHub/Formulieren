@@ -21,6 +21,7 @@ export const FOLLOW_UP_STATUS_ORDER = [
   "OPEN",
   "PLANNING_NODIG",
   "WACHTENOPDERDEN",
+  "WACHTENOPINTERN",
   "GEPLAND",
   "AFGEHANDELD",
   "AFGEWEZEN",
@@ -43,7 +44,8 @@ export function statusLabel(status) {
   if (status === "INGETROKKEN") return "Ingetrokken";
   if (status === "OPEN") return "Open";
   if (status === "PLANNING_NODIG") return "Planning nodig";
-  if (status === "WACHTENOPDERDEN") return "Wachten op derden";
+  if (status === "WACHTENOPDERDEN") return "Wachten op klant";
+  if (status === "WACHTENOPINTERN") return "Wachten op intern";
   if (status === "GEPLAND") return "Gepland";
   if (status === "AFGEWEZEN") return "Afgewezen";
   if (status === "VERVALLEN") return "Vervallen";
@@ -60,6 +62,7 @@ export function getStatusTone(status) {
   if (status === "OPEN") return "active";
   if (status === "PLANNING_NODIG") return "warning";
   if (status === "WACHTENOPDERDEN") return "waiting";
+  if (status === "WACHTENOPINTERN") return "waiting-internal";
   if (status === "GEPLAND") return "planned";
   if (status === "AFGEWEZEN") return "danger";
   if (status === "VERVALLEN") return "muted";
@@ -73,6 +76,7 @@ export function getToneClass(tone) {
   if (tone === "success") return "monitor-tag monitor-tag--success";
   if (tone === "warning") return "monitor-tag monitor-tag--warning";
   if (tone === "waiting") return "monitor-tag monitor-tag--waiting";
+  if (tone === "waiting-internal") return "monitor-tag monitor-tag--waiting-internal";
   if (tone === "planned") return "monitor-tag monitor-tag--planned";
   if (tone === "danger") return "monitor-tag monitor-tag--danger";
   return "monitor-tag monitor-tag--muted";
@@ -85,6 +89,7 @@ export function getCardToneClass(status) {
   if (tone === "success") return "monitor-surface monitor-surface--success";
   if (tone === "warning") return "monitor-surface monitor-surface--warning";
   if (tone === "waiting") return "monitor-surface monitor-surface--waiting";
+  if (tone === "waiting-internal") return "monitor-surface monitor-surface--waiting-internal";
   if (tone === "planned") return "monitor-surface monitor-surface--planned";
   if (tone === "danger") return "monitor-surface monitor-surface--danger";
   return "monitor-surface monitor-surface--muted";
@@ -97,6 +102,7 @@ export function getFollowUpCardClass(status) {
   if (tone === "success") return "monitor-followup-card monitor-followup-card--success";
   if (tone === "warning") return "monitor-followup-card monitor-followup-card--warning";
   if (tone === "waiting") return "monitor-followup-card monitor-followup-card--waiting";
+  if (tone === "waiting-internal") return "monitor-followup-card monitor-followup-card--waiting-internal";
   if (tone === "planned") return "monitor-followup-card monitor-followup-card--planned";
   if (tone === "danger") return "monitor-followup-card monitor-followup-card--danger";
   return "monitor-followup-card monitor-followup-card--muted";
@@ -263,6 +269,7 @@ export function buildFollowUpStatusCounts(rows) {
     OPEN: 0,
     PLANNING_NODIG: 0,
     WACHTENOPDERDEN: 0,
+    WACHTENOPINTERN: 0,
     GEPLAND: 0,
     AFGEHANDELD: 0,
     AFGEWEZEN: 0,

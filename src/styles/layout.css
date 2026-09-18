@@ -87,6 +87,13 @@ html[data-appearance="dark"]{
   --waiting-border: rgba(249,115,22,.36);
   --waiting-text: rgba(255,237,213,.98);
 
+  /* Wachten op een collega. Oranje is de klant; violet is intern, zodat je in een lange
+     lijst meteen ziet of je naar buiten of naar binnen moet bellen. */
+  --waiting-internal-bg: rgba(167,139,250,.17);
+  --waiting-internal-bg-soft: rgba(167,139,250,.09);
+  --waiting-internal-border: rgba(167,139,250,.38);
+  --waiting-internal-text: rgba(237,233,254,.98);
+
   --planned-bg: rgba(74,222,128,.13);
   --planned-bg-soft: rgba(74,222,128,.07);
   --planned-border: rgba(74,222,128,.30);
@@ -210,6 +217,11 @@ html[data-appearance="light"]{
   --waiting-bg-soft: #fff7ed;
   --waiting-border: #fdba74;
   --waiting-text: #9a3412;
+
+  --waiting-internal-bg: #ede9fe;
+  --waiting-internal-bg-soft: #f5f3ff;
+  --waiting-internal-border: #c4b5fd;
+  --waiting-internal-text: #5b21b6;
 
   --planned-bg: #f0fdf4;
   --planned-bg-soft: #f7fef9;
@@ -999,6 +1011,13 @@ select.input option{
   border-color: var(--waiting-border);
   background: var(--waiting-bg);
   color: var(--waiting-text);
+}
+
+.ember-label--waiting-internal,
+.monitor-tag--waiting-internal{
+  border-color: var(--waiting-internal-border);
+  background: var(--waiting-internal-bg);
+  color: var(--waiting-internal-text);
 }
 
 .ember-label--all,
@@ -3169,6 +3188,216 @@ html[data-appearance="light"] .type-telefonie{
   justify-content: flex-end;
 }
 
+/* ondertekenen van een document */
+
+.doc-sign__body{
+  display: grid;
+  gap: 16px;
+}
+
+.doc-sign__balk{
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.doc-sign__reden{
+  margin: 0;
+}
+
+.doc-sign__melding{
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+}
+
+.doc-sign__melding--fout{
+  border-color: var(--danger-border, var(--border));
+  color: var(--danger-text, var(--text));
+}
+
+.doc-sign__sectie{
+  display: grid;
+  gap: 10px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border-soft);
+}
+
+.doc-sign__sectie h3{
+  margin: 0;
+  font-size: 1rem;
+}
+
+.doc-sign-signers{
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 10px;
+}
+
+.doc-sign-signers__row{
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: start;
+}
+
+.doc-sign-signers__nr{
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 999px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  font-size: 0.85rem;
+}
+
+.doc-sign-signers__velden{
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.doc-sign-signers__velden select{
+  grid-column: 1 / -1;
+}
+
+.doc-sign-signers__weg{
+  padding: 6px 8px;
+}
+
+.doc-sign__acties-links{
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.doc-sign__keuze{
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr);
+  gap: 10px;
+  align-items: start;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface-2);
+  cursor: pointer;
+}
+
+.doc-sign__keuze span{
+  display: grid;
+  gap: 3px;
+}
+
+.doc-sign__keuze strong{
+  font-weight: 600;
+}
+
+.doc-sign-progress{
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.doc-sign-progress__row{
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  padding: 8px 10px;
+  border: 1px solid var(--border-soft);
+  border-radius: 10px;
+}
+
+.doc-sign-progress__icon{
+  display: grid;
+  place-items: center;
+}
+
+.doc-sign-progress__icon--signed{ color: var(--success-text, inherit); }
+.doc-sign-progress__icon--declined,
+.doc-sign-progress__icon--bounced{ color: var(--danger-text, inherit); }
+
+.doc-sign-progress__who{
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.doc-sign-progress__status{
+  text-align: right;
+  white-space: nowrap;
+}
+
+.doc-sign__downloads{
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.doc-sign__voet{
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  padding: 14px 16px;
+  border-top: 1px solid var(--border);
+}
+
+.doc-sign-designer{
+  height: calc(100dvh - 24px);
+}
+
+.doc-sign-designer__frame{
+  flex: 1;
+  min-height: 0;
+}
+
+.doc-sign-designer__frame iframe{
+  width: 100%;
+  height: 100%;
+  border: 0;
+}
+
+.doc-sign-decision{
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--warning-border, var(--border));
+  border-radius: 12px;
+  background: var(--surface-2);
+}
+
+.doc-sign-decision__acties{
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+@media (max-width: 720px){
+  .doc-sign-signers__velden{
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .doc-sign-progress__row{
+    grid-template-columns: 24px minmax(0, 1fr);
+  }
+
+  .doc-sign-progress__status{
+    grid-column: 2;
+    text-align: left;
+    white-space: normal;
+  }
+}
+
 .doc-card__editor{
   display: grid;
   gap: 12px;
@@ -3532,6 +3761,7 @@ html[data-appearance="light"] .type-telefonie{
 .monitor-surface--success{ border-color: var(--success-border); background: var(--success-bg-soft); }
 .monitor-surface--warning{ border-color: var(--warning-border); background: var(--warning-bg-soft); }
 .monitor-surface--waiting{ border-color: var(--waiting-border); background: var(--waiting-bg-soft); }
+.monitor-surface--waiting-internal{ border-color: var(--waiting-internal-border); background: var(--waiting-internal-bg-soft); }
 .monitor-surface--planned{ border-color: var(--planned-border); background: var(--planned-bg-soft); }
 .monitor-surface--danger{ border-color: var(--danger-border); background: var(--danger-bg-soft); }
 .monitor-surface--muted{ border-color: var(--muted-border); background: var(--muted-bg); }
@@ -3833,6 +4063,7 @@ html[data-appearance="light"] .type-telefonie{
 .monitor-followup-card--active{ border-color: var(--info-border); background: var(--info-bg-soft); }
 .monitor-followup-card--warning{ border-color: var(--warning-border); background: var(--warning-bg-soft); }
 .monitor-followup-card--waiting{ border-color: var(--waiting-border); background: var(--waiting-bg-soft); }
+.monitor-followup-card--waiting-internal{ border-color: var(--waiting-internal-border); background: var(--waiting-internal-bg-soft); }
 .monitor-followup-card--planned{ border-color: var(--planned-border); background: var(--planned-bg-soft); }
 .monitor-followup-card--success{ border-color: var(--success-border); background: var(--success-bg-soft); }
 .monitor-followup-card--danger{ border-color: var(--danger-border); background: var(--danger-bg-soft); }
@@ -3913,6 +4144,12 @@ html[data-appearance="light"] .type-telefonie{
   border-color: var(--waiting-border);
   background: var(--waiting-bg-soft);
   color: var(--waiting-text);
+}
+
+.monitor-followup-status-btn--waiting-internal{
+  border-color: var(--waiting-internal-border);
+  background: var(--waiting-internal-bg-soft);
+  color: var(--waiting-internal-text);
 }
 
 .monitor-followup-status-btn--planned{
@@ -6068,9 +6305,16 @@ html[data-appearance="dark"] .leaflet-popup-content a{
 .drawing-pin-editor-overlay .drawing-pin-editor{background:var(--surface-2);opacity:1;}
 @keyframes drawing-editor-enter{from{opacity:0;transform:translateX(18px) scale(.98);}to{opacity:1;transform:translateX(0) scale(1);}}
 
+/* Het paneel was sticky maar onbegrensd. Zodra de editor, de opvolgingen en de pinlijst samen
+   hoger werden dan het scherm deed sticky niets meer en zakten Opslaan en Annuleren onder de
+   vouw. Nu scrollt het paneel zelf, net als de tekening ernaast. */
 .drawing-pins-side-panel{
   position: sticky;
   top: 16px;
+  max-height: calc(100dvh - 32px);
+  overflow: auto;
+  overscroll-behavior: contain;
+  padding-right: 2px;
 }
 
 .drawing-page-navigation{
@@ -6308,13 +6552,10 @@ html[data-appearance="dark"] .drawing-pins-toolbar select{color-scheme:dark;}
 @keyframes drawing-required-pulse{0%,100%{box-shadow:0 0 0 0 transparent;}50%{box-shadow:0 0 0 3px color-mix(in srgb, var(--warning-border) 28%, transparent);}}
 .drawing-date-field{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:.35rem;align-items:center;}
 .drawing-date-clear{color:var(--danger-text);}
-.drawing-manual-action-cancel{display:inline-flex;align-items:center;justify-content:center;gap:.4rem;width:100%;margin-top:.35rem;}
 html[data-appearance="dark"] .drawing-pin-editor select,
 html[data-appearance="dark"] .drawing-pin-editor select option,
 html[data-appearance="dark"] .drawing-pin-actions select,
-html[data-appearance="dark"] .drawing-pin-actions select option,
-html[data-appearance="dark"] .drawing-manual-action-form select,
-html[data-appearance="dark"] .drawing-manual-action-form select option{background:var(--control-bg,#18202b);color:var(--text,#f4f7fb);color-scheme:dark;}
+html[data-appearance="dark"] .drawing-pin-actions select option{background:var(--control-bg,#18202b);color:var(--text,#f4f7fb);color-scheme:dark;}
 
 .drawing-pin.is-selected{
   box-shadow: 0 0 0 5px var(--warning-border), var(--shadow-panel);
@@ -6442,6 +6683,30 @@ html[data-appearance="dark"] .drawing-placement-hint{
   justify-content: space-between;
 }
 
+/* Opslaan blijft in beeld, ook als de editor langer is dan het paneel. */
+.drawing-pin-editor__actions{
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
+  margin: 2px -14px -14px;
+  padding: 10px 14px;
+  border-top: 1px solid var(--border-soft);
+  border-radius: 0 0 var(--radius-lg) var(--radius-lg);
+  background: var(--card-bg);
+}
+
+/* De keuze om er meteen een opvolgpunt van te maken; de uitleg eronder is bewust klein. */
+.drawing-pin-editor__follow-up .ember-toggle__label{
+  display: grid;
+  gap: 2px;
+}
+
+.drawing-pin-editor__follow-up .ember-toggle__label small{
+  color: var(--muted);
+  font-weight: 500;
+  line-height: 1.35;
+}
+
 .drawing-pin-editor__title{
   min-width:0;
   display:flex;
@@ -6508,19 +6773,6 @@ html[data-appearance="dark"] .drawing-placement-hint{
 .drawing-pin-actions__link select{
   min-width: 0;
   flex: 1 1 180px;
-}
-
-.drawing-manual-action-form{
-  display: grid;
-  gap: 10px;
-  padding-top: 10px;
-  border-top: 1px solid var(--border-soft);
-}
-
-.drawing-manual-action-form__grid{
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 8px;
 }
 
 .drawing-loading-card{
@@ -6674,11 +6926,10 @@ html[data-appearance="dark"] .drawing-placement-hint{
 
   .drawing-pins-side-panel{
     position: static;
+    max-height: none;
+    overflow: visible;
   }
 
-  .drawing-manual-action-form__grid{
-    grid-template-columns: 1fr;
-  }
 }
 
 .installations-list{
@@ -7244,7 +7495,7 @@ html[data-appearance="dark"] .drawing-placement-hint{
 }
 
 .monitor-grid{
-  min-width: 1120px;
+  min-width: 1260px;
   display: grid;
   gap: 6px;
 }
@@ -7255,6 +7506,7 @@ html[data-appearance="dark"] .drawing-placement-hint{
   grid-template-columns:
     minmax(220px, 1.2fr)
     minmax(160px, .9fr)
+    minmax(130px, .6fr)
     minmax(160px, .8fr)
     minmax(260px, 1.2fr)
     minmax(110px, .65fr)
@@ -7268,6 +7520,23 @@ html[data-appearance="dark"] .drawing-placement-hint{
   color: var(--muted);
   font-size: 12px;
   font-weight: 800;
+}
+
+/* Wardenburg of Hefas bij een formulier. Het beeldmerk is klein; de naam blijft ernaast staan
+   voor wie het logo niet kent. Zelfde opzet als op de installatielijst. */
+.monitor-business-unit-tag{
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border-color: color-mix(in srgb, var(--business-unit-color, var(--border)) 45%, var(--border));
+  color: var(--text);
+}
+
+.monitor-business-unit-tag__logo{
+  width: 14px;
+  height: 14px;
+  object-fit: contain;
+  border-radius: 3px;
 }
 
 .monitor-grid-row{
@@ -9428,6 +9697,18 @@ html[data-appearance="dark"] .ember-radial-action-menu {
 .inspection-answer-suggestion{display:inline-flex;align-items:center;gap:7px;align-self:start;padding:7px 12px;border:1px dashed var(--success-border);border-radius:999px;background:var(--success-bg-soft,transparent);color:var(--success-text);font-weight:750;cursor:pointer}
 .inspection-answer-suggestion:hover:not(:disabled){background:var(--success-bg)}
 .inspection-answer-suggestion:disabled{opacity:.55;cursor:not-allowed}
+/* Wie deed wat, wanneer. Leesbaar als tijdlijn, met het verschil per veld erbij. */
+.inspection-audit{display:grid;gap:8px;list-style:none;padding:0;margin:0}
+.inspection-audit>li{display:grid;gap:5px;padding:12px 14px;border-left:3px solid var(--border-soft);border-radius:0 10px 10px 0;background:var(--row-bg)}
+.inspection-audit>li:first-child{border-left-color:var(--accent)}
+.inspection-audit__head{display:flex;justify-content:space-between;align-items:baseline;gap:12px;flex-wrap:wrap}
+.inspection-audit__head span{font-size:.78rem;color:var(--muted);white-space:nowrap}
+.inspection-audit__by{font-size:.78rem;color:var(--muted)}
+.inspection-audit__changes{display:grid;gap:4px;list-style:none;padding:0;margin:2px 0 0}
+.inspection-audit__changes li{display:flex;flex-wrap:wrap;align-items:baseline;gap:7px;font-size:.82rem}
+.inspection-audit__changes span:first-child{font-weight:750;min-width:9rem}
+.inspection-audit__changes i{font-style:normal;color:var(--muted);text-decoration:line-through}
+.inspection-audit__changes b{font-weight:750}
 .inspection-section[data-current-step=yes]{border-color:var(--accent)}
 .inspection-detail-grid:has(>[hidden]):not(:has(>:not([hidden]))){display:none}
 .inspection-detail-grid:has(>[hidden]){grid-template-columns:1fr}
@@ -9441,4 +9722,256 @@ html[data-appearance="dark"] .ember-radial-action-menu {
   .inspection-process-track small{grid-column:2}
   .inspection-question{grid-template-columns:minmax(0,1fr)}
   .inspection-question__marker{display:none}
+}
+
+/* ---------------------------------------------------------------------------
+   Historie; wanneer, wie, wat. Gedeeld door het formulierdetail en de installatie.
+   --------------------------------------------------------------------------- */
+.history-table{
+  display: grid;
+  gap: 12px;
+}
+
+.history-table__controls{
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.history-table__state{
+  padding: 14px;
+  border: 1px dashed var(--border-soft);
+  border-radius: var(--radius-lg);
+}
+
+.history-table__scroll{
+  overflow-x: auto;
+}
+
+.history-table__grid{
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.history-table__grid th{
+  padding: 0 12px 8px;
+  text-align: left;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.history-table__grid td{
+  padding: 10px 12px;
+  border-top: 1px solid var(--border-soft);
+  vertical-align: top;
+}
+
+.history-table__grid tbody tr:hover{
+  background: var(--row-bg-hover);
+}
+
+.history-table__when{
+  white-space: nowrap;
+  width: 1%;
+}
+
+/* De tijd staat onder de datum; zo blijft de kolom smal en toch precies. */
+.history-table__date{
+  display: block;
+  font-weight: 700;
+}
+
+.history-table__time{
+  display: block;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.history-table__who{
+  white-space: nowrap;
+  width: 1%;
+}
+
+.history-table__who,
+.history-table__avatar{
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.history-table__what{
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.history-table__detail,
+.history-table__source{
+  color: var(--muted);
+  font-size: 12px;
+}
+
+/* Op een telefoon past een tabel van drie kolommen niet; elke regel wordt een blokje
+   met de kolomnaam ervoor. */
+@media (max-width: 720px){
+  .history-table__grid thead{
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+  }
+
+  .history-table__grid tr{
+    display: grid;
+    gap: 4px;
+    padding: 10px 0;
+    border-top: 1px solid var(--border-soft);
+  }
+
+  .history-table__grid td{
+    display: grid;
+    grid-template-columns: 76px minmax(0, 1fr);
+    gap: 10px;
+    padding: 2px 0;
+    border: 0;
+  }
+
+  .history-table__grid td::before{
+    content: attr(data-label);
+    color: var(--muted);
+    font-size: 12px;
+    font-weight: 800;
+  }
+
+  .history-table__when,
+  .history-table__who{
+    width: auto;
+  }
+}
+
+/* ---------------------------------------------------------------------------
+   Tabbalk op telefoonformaat.
+
+   Veertien tabs naast elkaar liepen op een iPhone uit tot vijf regels, waardoor de inhoud
+   pas onder de vouw begon. Onder 720 pixels staat er daarom één regel met de tab waar je
+   nu bent; tikken opent een vel met alles erin, twee kolommen, ruime raakvlakken.
+
+   Boven die breedte verandert er niets; daar werkt de volle balk prima.
+   --------------------------------------------------------------------------- */
+.tabs-compact{
+  display: none;
+  position: relative;
+}
+
+@media (max-width: 720px){
+  .tabs-row{
+    display: none;
+  }
+
+  .tabs-compact{
+    display: block;
+  }
+}
+
+.tabs-compact__trigger{
+  width: 100%;
+  min-height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  background: var(--row-bg-active);
+  color: var(--text-strong);
+  font-weight: 850;
+  cursor: pointer;
+}
+
+.tabs-compact__current{
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.tabs-compact__current > span:not([class]){
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tabs-compact__hint{
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+}
+
+/* Het vel hangt onder de knop en niet onderaan het scherm; zo blijft de plek waar je tikte
+   in beeld en begrijp je waar de lijst vandaan komt. */
+.tabs-compact__backdrop{
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  border: 0;
+  padding: 0;
+  background: var(--backdrop-bg);
+}
+
+.tabs-compact__sheet{
+  position: absolute;
+  z-index: 41;
+  top: calc(100% + 6px);
+  left: 0;
+  right: 0;
+  max-height: min(60dvh, 520px);
+  overflow: auto;
+  overscroll-behavior: contain;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  box-shadow: var(--shadow-panel);
+}
+
+.tabs-compact__grid{
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.tabs-compact__item{
+  min-height: 52px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+}
+
+.tabs-compact__item.is-active{
+  border-color: var(--border-strong);
+  background: var(--row-bg-active);
+  color: var(--text-strong);
+  font-weight: 850;
+}
+
+.tabs-compact__label{
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }

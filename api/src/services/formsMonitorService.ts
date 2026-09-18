@@ -8,6 +8,9 @@ import {
   getFormsMonitorChildrenSql,
   updateFormInstanceStatusSql,
   setFormInstanceInBehandelingIfSubmittedSql,
+  claimFormInstanceOnOpenSql,
+  insertFormInstanceEventSql,
+  getFormInstanceEventsSql,
   updateFormInstanceAssignmentSql,
   getFormInstanceComplimentPointsSql,
   upsertFormInstanceComplimentPointSql,
@@ -120,6 +123,59 @@ async function getUserProfileSnapshot(userObjectIdRaw: any) {
     display_name_snapshot: profileDisplayName(row),
     email_snapshot: normalizeOptionalString(row.email_snapshot),
   };
+}
+
+/* Wardenburg en Hefas staan in dezelfde database, onderscheiden op BedrijfUnit. Dezelfde
+   normalisatie als de installatielijst: een lijst of een kommagescheiden tekst, ontdubbeld en
+   begrensd, en leeg betekent geen filter. */
+function normalizeBusinessUnits(raw: any): string[] {
+  const list = Array.isArray(raw) ? raw : String(raw ?? "").split(",");
+  const units = Array.from(
+    new Set(list.map((value) => String(value ?? "").trim()).filter(Boolean))
+  );
+  return units.slice(0, 20);
+}
+
+/* Een regel in de Historie. Faalt het schrijven, dan blijft de handeling staan en verliezen
+   we alleen de regel; een audit die de handeling terugdraait maakt het werk onbetrouwbaarder
+   in plaats van beter. Het mislukken komt wel in de serverlog terecht. */
+async function recordFormInstanceEvent(args: {
+  formInstanceId: number;
+  eventType: string;
+  previousStatus?: string | null;
+  nextStatus?: string | null;
+  detail?: Record<string, any> | null;
+  user: any;
+  actor: string;
+}) {
+  try {
+    await sqlQuery(insertFormInstanceEventSql, {
+      formInstanceId: args.formInstanceId,
+      eventType: args.eventType,
+      previousStatus: normalizeOptionalString(args.previousStatus),
+      nextStatus: normalizeOptionalString(args.nextStatus),
+      detailJson: args.detail && Object.keys(args.detail).length ? JSON.stringify(args.detail) : null,
+      actorUserObjectId: getUserObjectId(args.user) ?? null,
+      actorDisplayName: getUserDisplayNameSnapshot(args.user) ?? null,
+      actorEmail: getUserEmail(args.user) ?? null,
+      createdBy: args.actor,
+    });
+  } catch (error) {
+    console.error("recordFormInstanceEvent failed", {
+      formInstanceId: args.formInstanceId,
+      eventType: args.eventType,
+      error,
+    });
+  }
+}
+
+
+function expectedRowVersion(value: any): string {
+  const clean = String(value ?? "").trim();
+  if (!/^0x[0-9a-f]{16}$/i.test(clean)) {
+    throw new Error("row version required");
+  }
+  return clean;
 }
 
 function isManager(roles: string[]) {
@@ -404,20 +460,62 @@ async function maybeAutoClaim(
   formInstanceId: number,
   item: any,
   roles: string[],
+  user: any,
   actor: string,
   autoClaim: boolean
 ) {
   if (!autoClaim) return false;
   if (!isManager(roles) && !resolveFormProcessor(item, roles).allowed) return false;
   if (isHistoricalInstallationStatus(item?.installation_status)) return false;
-  if (String(item?.status || "").trim() !== "INGEDIEND") return false;
 
-  await sqlQuery(setFormInstanceInBehandelingIfSubmittedSql, {
+  const status = String(item?.status || "").trim();
+  if (status !== "INGEDIEND" && status !== "IN_BEHANDELING") return false;
+
+  // Een formulier dat al een behandelaar heeft is klaar; dan valt er niets meer te claimen en
+  // hoeft de database niet aangeraakt te worden bij elke keer openen.
+  const alreadyAssigned = Boolean(normalizeOptionalString(item?.assigned_user_object_id));
+  if (status === "IN_BEHANDELING" && alreadyAssigned) return false;
+
+  // De snapshot komt uit hetzelfde profiel als bij handmatig toewijzen, zodat de naam in de
+  // lijst er hetzelfde uitziet ongeacht hoe de toewijzing ontstond.
+  const userObjectId = getUserObjectId(user);
+  const snapshot = userObjectId ? await getUserProfileSnapshot(userObjectId) : null;
+
+  const rows = await sqlQuery(claimFormInstanceOnOpenSql, {
     formInstanceId,
-    updatedBy: actor,
+    actor,
+    assignedUserObjectId: snapshot?.user_object_id ?? null,
+    assignedDisplayNameSnapshot: snapshot?.display_name_snapshot ?? null,
+    assignedEmailSnapshot: snapshot?.email_snapshot ?? null,
   });
 
-  return true;
+  const row = rows?.[0];
+  const statusChanged = Number(row?.status_changed ?? 0) > 0;
+  const claimed = Number(row?.claimed ?? 0) > 0;
+
+  if (statusChanged) {
+    await recordFormInstanceEvent({
+      formInstanceId,
+      eventType: "OPGEPAKT",
+      previousStatus: "INGEDIEND",
+      nextStatus: "IN_BEHANDELING",
+      detail: { bron: "openen" },
+      user,
+      actor,
+    });
+  }
+
+  if (claimed) {
+    await recordFormInstanceEvent({
+      formInstanceId,
+      eventType: "ASSIGNED",
+      detail: { bron: "openen", toegewezen_aan: snapshot?.display_name_snapshot ?? null },
+      user,
+      actor,
+    });
+  }
+
+  return statusChanged || claimed;
 }
 
 function assertFormStatusActionAllowed(item: any, action: string, roles: string[], followUpSummary: any) {
@@ -493,6 +591,7 @@ function assertFollowUpActionAllowed(followUpRow: any, action: string, roles: st
     "set_open",
     "set_planning_needed",
     "set_waiting_third_party",
+    "set_waiting_internal",
     "set_planned",
     "set_rejected",
     "set_vervallen",
@@ -526,6 +625,14 @@ function mapFollowUpAction(action: string) {
   if (action === "set_waiting_third_party") {
     return {
       nextStatus: "WACHTENOPDERDEN",
+      isResolved: false,
+    };
+  }
+  /* Wachten op een collega is iets anders dan wachten op de klant; dat verschil bepaalt of
+     iemand de klant belt of intern navraagt. */
+  if (action === "set_waiting_internal") {
+    return {
+      nextStatus: "WACHTENOPINTERN",
       isResolved: false,
     };
   }
@@ -570,6 +677,7 @@ export async function getMonitorList(input: {
   const assignedUserObjectId = normalizeOptionalString(input?.query?.assignedUserObjectId);
   const assignedSearch = normalizeOptionalString(input?.query?.assignedSearch);
   const unassignedOnly = normalizeBoolean(input?.query?.unassignedOnly, false);
+  const businessUnits = normalizeBusinessUnits(input?.query?.businessUnits);
   const viewerUserObjectId = getUserObjectId(input.user);
   const kamOnly = isKamOnly(input.roles || []);
   const workflowRoleCode = kamOnly ? "KAM_COORDINATOR" : null;
@@ -643,6 +751,10 @@ export async function getMonitorList(input: {
       assignedUserObjectId,
       assignedSearch,
       unassignedOnly,
+      // Altijd een string en nooit null: een null-parameter wordt als getal gebonden en dan
+      // levert isnull(@p, N[]) geen json meer op. Dezelfde schrijfwijze als de twee
+      // json-parameters hierboven.
+      businessUnitsJson: JSON.stringify(businessUnits),
       workflowRoleCode,
       selectedStatusesJson: JSON.stringify(cleanSelectedStatuses),
       actionStatusFilter,
@@ -753,6 +865,7 @@ export async function getMonitorDetail(formInstanceIdRaw: any, context: DetailCo
     formInstanceId,
     item,
     context.roles || [],
+    context.user,
     actor,
     context.autoClaim !== false
   );
@@ -1074,6 +1187,16 @@ export async function runMonitorFormStatusAction(formInstanceIdRaw: any, action:
     updatedBy: actor,
   });
 
+  await recordFormInstanceEvent({
+    formInstanceId,
+    eventType: "STATUS_CHANGED",
+    previousStatus: String(item?.status || "").trim() || null,
+    nextStatus,
+    detail: { action },
+    user: context.user,
+    actor,
+  });
+
   if (nextStatus === "AFGEHANDELD") {
     let answers: Record<string, any> = {};
     try {
@@ -1140,6 +1263,7 @@ export async function runMonitorFollowUpStatusAction(
     actor,
     resolutionNote,
     isResolved: mapped.isResolved ? 1 : 0,
+    expectedRowVersion: expectedRowVersion(payload?.row_version ?? payload?.rowVersion),
   });
 
   const summary = await getFollowUpChainSummary(Number(followUpRow.form_instance_id));
@@ -1179,6 +1303,7 @@ export async function updateMonitorFollowUpNote(
     followUpActionId,
     note,
     actor,
+    expectedRowVersion: expectedRowVersion(payload?.row_version ?? payload?.rowVersion),
   });
 
   return {
@@ -1244,6 +1369,7 @@ export async function updateMonitorFollowUpClassification(
     dueDate,
     dueDateSet: dueDateSet ? 1 : 0,
     actor: getUserAuditActor(context.user),
+    expectedRowVersion: expectedRowVersion(payload?.row_version ?? payload?.rowVersion),
   });
 
   return { ok: true, item: rows?.[0] ?? null };
@@ -1282,6 +1408,7 @@ export async function updateMonitorFollowUpCertificateImpact(
     followUpActionId,
     certificateImpactOverride,
     actor,
+    expectedRowVersion: expectedRowVersion(payload?.row_version ?? payload?.rowVersion),
   });
 
   return {
@@ -1323,6 +1450,18 @@ export async function updateMonitorFormAssignment(
     assignedDisplayNameSnapshot: snapshot?.display_name_snapshot ?? null,
     assignedEmailSnapshot: snapshot?.email_snapshot ?? null,
     changedBy,
+  });
+
+  await recordFormInstanceEvent({
+    formInstanceId,
+    eventType: snapshot ? "ASSIGNED" : "ASSIGNMENT_CLEARED",
+    detail: {
+      bron: "handmatig",
+      toegewezen_aan: snapshot?.display_name_snapshot ?? null,
+      vorige: normalizeOptionalString(item?.assigned_display_name_snapshot),
+    },
+    user: context.user,
+    actor: changedBy,
   });
 
   return await getMonitorDetail(formInstanceId, {
@@ -1419,5 +1558,40 @@ export async function getMonitorFollowUpAttachmentDownloadUrl(
     file_name: attachment.file_name ?? null,
     mime_type: attachment.mime_type ?? null,
     file_size_bytes: attachment.file_size_bytes ?? null,
+  };
+}
+
+/* De Historie van een formulier. Zelfde leesgrens als het detail zelf: wie het formulier
+   mag zien mag ook zien wat ermee gebeurd is. */
+export async function getMonitorFormEvents(formInstanceIdRaw: any, context: UserContext) {
+  const formInstanceId = parsePositiveInt(formInstanceIdRaw);
+  if (formInstanceId == null) return { error: "not found" };
+
+  const item = await getMonitorDetailRow(formInstanceId);
+  if (!item) return { error: "not found" };
+  await assertMayReadFormInstance(formInstanceId, context);
+
+  const rows = await sqlQuery(getFormInstanceEventsSql, { formInstanceId, take: 500 });
+
+  return {
+    items: (rows || []).map((row: any) => ({
+      form_instance_event_id: row.form_instance_event_id,
+      event_type: row.event_type,
+      previous_status: row.previous_status ?? null,
+      next_status: row.next_status ?? null,
+      detail: (() => {
+        if (row.detail_json == null || row.detail_json === "") return null;
+        try {
+          return typeof row.detail_json === "object" ? row.detail_json : JSON.parse(String(row.detail_json));
+        } catch {
+          return null;
+        }
+      })(),
+      actor_user_object_id: row.actor_user_object_id ?? null,
+      actor_display_name_snapshot: row.actor_display_name_snapshot ?? null,
+      actor_email_snapshot: row.actor_email_snapshot ?? null,
+      created_at: row.created_at,
+      created_by: row.created_by ?? null,
+    })),
   };
 }

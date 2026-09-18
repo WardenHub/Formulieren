@@ -5,6 +5,7 @@ import {
   getFormsMonitorList,
   getFormsMonitorDetail,
   getFormsMonitorFollowUps,
+  getFormsMonitorEvents,
   getFormsMonitorFollowUpReview,
   postFormsMonitorFollowUpReview,
   postFormsMonitorStatusAction,
@@ -35,6 +36,7 @@ router.get("/:formInstanceId/follow-up-review", requireRole("admin", "gebruiker"
 // Ruimer dan de handeling zelf; resolveFormProcessor in de service bepaalt per formulier
 // wie mag beoordelen. Een KAM-coordinator op een gewoon formulier krijgt daar forbidden.
 router.post("/:formInstanceId/follow-up-review", requireRole("admin", "documentbeheerder", "kam_coordinator"), postFormsMonitorFollowUpReview);
+router.get("/:formInstanceId/events", requireRole("admin", "gebruiker", "documentbeheerder", "kam_coordinator"), getFormsMonitorEvents);
 router.get("/:formInstanceId", requireRole("admin", "gebruiker", "documentbeheerder", "kam_coordinator"), getFormsMonitorDetail);
 
 

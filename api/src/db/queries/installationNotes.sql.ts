@@ -380,6 +380,7 @@ where recipient_user_object_id = @recipientUserObjectId
 export const getInstallationWorkflowItemsSql = `
 select
   a.follow_up_action_id,
+  convert(varchar(18), convert(binary(8), a.row_version), 1) as row_version,
   a.source_type,
   fs.form_instance_id,
   ic.installation_id,
@@ -681,12 +682,16 @@ where action.follow_up_action_id = @followUpActionId and context.atrium_installa
 if @oldStatus is null throw 50000, 'follow-up action not found', 1;
 if not exists (select 1 from dbo.FollowUpStatusDefinition where status_code = @nextStatus and is_active = 1)
   throw 50000, 'follow-up status invalid', 1;
-update dbo.FollowUpAction
+update action
 set status = @nextStatus, status_set_at = sysutcdatetime(), status_set_by = @actor,
     resolved_at = case when @nextStatus = N'AFGEHANDELD' then sysutcdatetime() else null end,
     resolved_by = case when @nextStatus = N'AFGEHANDELD' then @actor else null end,
     updated_at = sysutcdatetime(), updated_by = @actor
-where follow_up_action_id = @followUpActionId;
+from dbo.FollowUpAction action
+where action.follow_up_action_id = @followUpActionId
+  and action.row_version = convert(binary(8), @expectedRowVersion, 1);
+
+if @@rowcount = 0 throw 50000, 'follow-up action version conflict', 1;
 insert dbo.FollowUpActionEvent (follow_up_action_id, event_type, old_values_json, new_values_json, actor_user_object_id, actor_display_name_snapshot, actor_email_snapshot)
 values (
   @followUpActionId,
@@ -788,7 +793,7 @@ begin
   set @nextAssignedEmail = case when @nextAssignedUser is not null then @assignedEmail end;
 end
 
-update dbo.FollowUpAction
+update action
 set
   workflow_title = @nextTitle,
   workflow_description = @nextDescription,
@@ -805,7 +810,11 @@ set
   assigned_email_snapshot = case when @assignmentSet = 1 then @nextAssignedEmail else assigned_email_snapshot end,
   updated_at = sysutcdatetime(),
   updated_by = @actor
-where follow_up_action_id = @followUpActionId;
+from dbo.FollowUpAction action
+where action.follow_up_action_id = @followUpActionId
+  and action.row_version = convert(binary(8), @expectedRowVersion, 1);
+
+if @@rowcount = 0 throw 50000, 'follow-up action version conflict', 1;
 
 insert dbo.FollowUpActionEvent (
   follow_up_action_id,

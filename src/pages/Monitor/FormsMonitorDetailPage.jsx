@@ -4,6 +4,7 @@ import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom"
 
 import {
   getFormsMonitorDetail,
+  getFormsMonitorEvents,
   getFormsMonitorFollowUps,
   getFormsMonitorFollowUpReview,
   postFormsMonitorFollowUpReview,
@@ -45,6 +46,7 @@ import { ChevronUpIcon } from "@/components/ui/chevron-up";
 import { ChevronsDownUpIcon } from "@/components/ui/chevrons-down-up";
 import { ChevronsUpDownIcon } from "@/components/ui/chevrons-up-down";
 import { ArchiveIcon } from "@/components/ui/archive";
+import HistoryTable from "@/components/HistoryTable.jsx";
 import { ChevronLeftIcon } from "@/components/ui/chevron-left";
 import { BadgeAlertIcon } from "@/components/ui/badge-alert";
 import { PartyPopperIcon } from "@/components/ui/party-popper";
@@ -107,6 +109,7 @@ const DETAIL_STATUS_FILTER_KEYS = [
   "OPEN_GROUP",
   "PLANNING_NODIG",
   "WACHTENOPDERDEN",
+  "WACHTENOPINTERN",
   "AFGEHANDELD",
   "AFGEWEZEN",
   "GEPLAND",
@@ -153,10 +156,18 @@ function MonitorFollowUpClassification({ row, disabled, onSaved }) {
     setError(null);
 
     try {
-      await putFormsMonitorFollowUpClassification(row.follow_up_action_id, patch);
+      await putFormsMonitorFollowUpClassification(row.follow_up_action_id, {
+        ...patch,
+        row_version: row.row_version,
+      });
       await onSaved?.();
     } catch (err) {
-      setError(err?.message || "Bijwerken is mislukt.");
+      if (isVersieConflict(err)) {
+        setError(CONFLICT_MELDING);
+        await onSaved?.();
+      } else {
+        setError(err?.message || "Bijwerken is mislukt.");
+      }
     } finally {
       setSaving(false);
     }
@@ -236,6 +247,7 @@ function SummaryTag({ children, title, tone = "neutral", active = false, activeT
   if (effectiveTone === "all") cls = "ember-label ember-label--all";
   if (effectiveTone === "warning") cls = "ember-label ember-label--warning";
   if (effectiveTone === "waiting") cls = "ember-label ember-label--waiting";
+  if (effectiveTone === "waiting-internal") cls = "ember-label ember-label--waiting-internal";
   if (effectiveTone === "planned") cls = "ember-label ember-label--planned";
   if (effectiveTone === "success") cls = "ember-label ember-label--success";
   if (effectiveTone === "danger") cls = "ember-label ember-label--danger";
@@ -278,6 +290,40 @@ function AssignedOwnerChip({ label, email, ownerEntry, onClick }) {
       <span className="monitor-assignee-chip__text">Toegewezen aan {label}</span>
     </button>
   );
+}
+
+// Twee behandelaars in hetzelfde formulier: wie als tweede opslaat krijgt dit te zien in
+// plaats van dat zijn werk stilletjes dat van de ander overschrijft.
+const CONFLICT_MELDING =
+  "Een collega heeft dit actiepunt zojuist gewijzigd. De laatste stand is opgehaald; bekijk het en probeer het opnieuw.";
+
+function isVersieConflict(error) {
+  const text = String(error?.message || error || "").toLowerCase();
+  return text.includes("version conflict") || text.includes("row version");
+}
+
+/* Wat er met dit formulier gebeurde, in gewone taal. De database bewaart een code; het
+   scherm hoort een zin te tonen, en een nieuwe formulering mag geen migratie kosten. */
+function describeFormEvent(row) {
+  const type = String(row?.event_type || "").trim().toUpperCase();
+  const vorige = statusLabel(row?.previous_status);
+  const volgende = statusLabel(row?.next_status);
+
+  if (type === "OPGEPAKT") return "Formulier opgepakt";
+  if (type === "ASSIGNED") return "Behandelaar toegewezen";
+  if (type === "ASSIGNMENT_CLEARED") return "Toewijzing vrijgegeven";
+  if (type === "STATUS_CHANGED" && vorige && volgende) return `Van ${vorige} naar ${volgende}`;
+  if (type === "STATUS_CHANGED" && volgende) return `Op ${volgende} gezet`;
+  return type ? type.toLowerCase().replace(/_/g, " ") : "Onbekende handeling";
+}
+
+function describeFormEventDetail(row) {
+  const detail = row?.detail;
+  if (!detail || typeof detail !== "object") return null;
+  if (detail.toegewezen_aan) return `Aan ${detail.toegewezen_aan}`;
+  if (detail.bron === "openen") return "Bij het openen van het formulier";
+  if (detail.action) return `Handeling ${String(detail.action).replace(/_/g, " ")}`;
+  return null;
 }
 
 function buildTeamsChatUrl(email, formInstanceId) {
@@ -366,6 +412,9 @@ function getFollowUpStatusButtonClass(currentStatus, buttonStatus) {
     return `${baseClass} monitor-followup-status-btn--active monitor-followup-status-btn--success`;
   }
 
+  if (buttonStatus === "WACHTENOPINTERN") {
+    return `${baseClass} monitor-followup-status-btn--active monitor-followup-status-btn--waiting-internal`;
+  }
   if (buttonStatus === "WACHTENOPDERDEN") {
     return `${baseClass} monitor-followup-status-btn--active monitor-followup-status-btn--waiting`;
   }
@@ -1700,6 +1749,48 @@ export default function FormsMonitorDetailPage() {
   const [ownerPopupOpen, setOwnerPopupOpen] = useState(false);
 
   const [detail, setDetail] = useState(null);
+  // De Historie hoort bij een tab die niet standaard open staat; hij laadt pas bij openen en
+  // daarna alleen nog op verzoek.
+  const [historyItems, setHistoryItems] = useState([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [historyError, setHistoryError] = useState("");
+  const [historyLoadedFor, setHistoryLoadedFor] = useState("");
+
+  const loadHistory = useCallback(async () => {
+    const clean = String(instanceId || "").trim();
+    if (!clean) return;
+
+    setHistoryLoading(true);
+    setHistoryError("");
+
+    try {
+      const response = await getFormsMonitorEvents(clean);
+      setHistoryItems(
+        (Array.isArray(response?.items) ? response.items : []).map((row) => ({
+          id: String(row.form_instance_event_id),
+          occurred_at: row.created_at,
+          event_type: row.event_type,
+          what: describeFormEvent(row),
+          detail_label: describeFormEventDetail(row),
+          actor_user_object_id: row.actor_user_object_id,
+          actor_name: row.actor_display_name_snapshot || row.created_by,
+          actor_email: row.actor_email_snapshot,
+          is_system: false,
+        }))
+      );
+      setHistoryLoadedFor(clean);
+    } catch (requestError) {
+      setHistoryError(requestError?.message || "De historie kon niet worden opgehaald.");
+    } finally {
+      setHistoryLoading(false);
+    }
+  }, [instanceId]);
+
+  useEffect(() => {
+    if (activeSectionKey !== "history") return;
+    if (historyLoadedFor === String(instanceId || "").trim()) return;
+    void loadHistory();
+  }, [activeSectionKey, instanceId, historyLoadedFor, loadHistory]);
   const [followUps, setFollowUps] = useState([]);
   const [evidenceDocuments, setEvidenceDocuments] = useState([]);
   const [evidenceDocumentsLoaded, setEvidenceDocumentsLoaded] = useState(false);
@@ -1831,7 +1922,8 @@ export default function FormsMonitorDetailPage() {
   const openLikeCount =
     Number(followUpCounts.OPEN ?? 0) +
     Number(followUpCounts.PLANNING_NODIG ?? 0) +
-    Number(followUpCounts.WACHTENOPDERDEN ?? 0);
+    Number(followUpCounts.WACHTENOPDERDEN ?? 0) +
+    Number(followUpCounts.WACHTENOPINTERN ?? 0);
   const viewerUserObjectId = String(detail?.viewer?.user_object_id || "").trim() || null;
   const complimentPoints = Array.isArray(detail?.compliment_points) ? detail.compliment_points : [];
   const currentViewerCompliment = useMemo(() => {
@@ -1850,7 +1942,8 @@ export default function FormsMonitorDetailPage() {
           if (
             group.status === "OPEN" ||
             group.status === "PLANNING_NODIG" ||
-            group.status === "WACHTENOPDERDEN"
+            group.status === "WACHTENOPDERDEN" ||
+            group.status === "WACHTENOPINTERN"
           ) return true;
         }
 
@@ -1907,6 +2000,7 @@ export default function FormsMonitorDetailPage() {
     },
     { key: "feedback", label: "Feedback", Icon: GavelIcon, iconTone: "danger" },
     { key: "relations", label: "Metadata", Icon: ArchiveIcon, iconTone: "warning" },
+    { key: "history", label: "Historie", Icon: HistoryIcon },
     ...(hasFollowFormRelations ? [{ key: "follow_forms", label: "Vervolgformulieren", Icon: ArrowBigRightIcon }] : []),
   ];
   const metadataTabs = [
@@ -2449,13 +2543,25 @@ export default function FormsMonitorDetailPage() {
   async function handleFollowUpAction(followUpActionId, action) {
     if (!followUpActionId || !action || followUpBusyId) return;
 
+    const row = (followUps || []).find(
+      (item) => String(item.follow_up_action_id) === String(followUpActionId)
+    );
+
     setFollowUpBusyId(followUpActionId);
 
     try {
-      await postFormsMonitorFollowUpStatusAction(followUpActionId, { action });
+      await postFormsMonitorFollowUpStatusAction(followUpActionId, {
+        action,
+        row_version: row?.row_version,
+      });
       await refreshDetailOnly();
     } catch (e) {
-      window.alert(e?.message || String(e));
+      if (isVersieConflict(e)) {
+        await refreshDetailOnly();
+        window.alert(CONFLICT_MELDING);
+      } else {
+        window.alert(e?.message || String(e));
+      }
     } finally {
       setFollowUpBusyId(null);
     }
@@ -2577,8 +2683,13 @@ export default function FormsMonitorDetailPage() {
     setError(null);
 
     try {
+      const huidige = (followUps || []).find(
+        (row) => String(row.follow_up_action_id) === String(followUpActionId)
+      );
+
       const res = await putFormsMonitorFollowUpCertificateImpact(followUpActionId, {
         certificate_impact_override: nextValue || null,
+        row_version: huidige?.row_version,
       });
 
       const updated = res?.item || null;
@@ -2589,6 +2700,7 @@ export default function FormsMonitorDetailPage() {
           String(row.follow_up_action_id) === String(followUpActionId)
             ? {
                 ...row,
+                row_version: updated.row_version ?? row.row_version,
                 certificate_impact_override: updated.certificate_impact_override ?? null,
                 effective_certificate_impact:
                   updated.effective_certificate_impact ??
@@ -2601,7 +2713,12 @@ export default function FormsMonitorDetailPage() {
         )
       );
     } catch (e) {
-      setError(String(e?.message || e || "Certificaateffect opslaan mislukt."));
+      if (isVersieConflict(e)) {
+        await refreshDetailOnly();
+        setError(CONFLICT_MELDING);
+      } else {
+        setError(String(e?.message || e || "Certificaateffect opslaan mislukt."));
+      }
     } finally {
       setFollowUpBusyId(null);
     }
@@ -2654,12 +2771,19 @@ export default function FormsMonitorDetailPage() {
     }));
 
     try {
-      await putFormsMonitorFollowUpNote(followUpActionId, { note: noteValue });
+      const huidige = (followUps || []).find(
+        (row) => String(row.follow_up_action_id) === String(followUpActionId)
+      );
+
+      const res = await putFormsMonitorFollowUpNote(followUpActionId, {
+        note: noteValue,
+        row_version: huidige?.row_version,
+      });
 
       setFollowUps((prev) =>
         prev.map((row) =>
           String(row.follow_up_action_id) === String(followUpActionId)
-            ? { ...row, note: noteValue }
+            ? { ...row, note: noteValue, row_version: res?.item?.row_version ?? row.row_version }
             : row
         )
       );
@@ -3437,12 +3561,21 @@ export default function FormsMonitorDetailPage() {
                 </SummaryTag>
 
                 <SummaryTag
-                  title="Filter op wachten op derden"
+                  title="Filter op actiepunten waarbij de klant aan zet is"
                   tone="warning"
                   active={activeStatusFilters.includes("WACHTENOPDERDEN")}
                   onClick={() => toggleStatusFilter("WACHTENOPDERDEN")}
                 >
-                  Wachten op derden {followUpCounts.WACHTENOPDERDEN}
+                  Wachten op klant {followUpCounts.WACHTENOPDERDEN}
+                </SummaryTag>
+
+                <SummaryTag
+                  title="Filter op actiepunten waarbij een collega aan zet is; monteur, relatiebeheerder of verkoper"
+                  tone="waiting-internal"
+                  active={activeStatusFilters.includes("WACHTENOPINTERN")}
+                  onClick={() => toggleStatusFilter("WACHTENOPINTERN")}
+                >
+                  Wachten op intern {followUpCounts.WACHTENOPINTERN}
                 </SummaryTag>
 
                 <SummaryTag
@@ -3689,6 +3822,25 @@ export default function FormsMonitorDetailPage() {
                   </div>
                 ) : null}
 
+              </div>
+            ) : null}
+
+            {activeSectionKey === "history" ? (
+              <div className="monitor-detail-section is-open">
+                <div className="monitor-detail-section__body">
+                  <div className="monitor-detail-section__title">Historie</div>
+                  <p className="muted ember-small-text">
+                    Wie heeft wat gedaan met dit formulier, van indienen tot definitief.
+                  </p>
+
+                  <HistoryTable
+                    items={historyItems}
+                    loading={historyLoading}
+                    error={historyError}
+                    onRefresh={loadHistory}
+                    emptyLabel="Voor dit formulier is nog niets vastgelegd."
+                  />
+                </div>
               </div>
             ) : null}
 
@@ -3939,6 +4091,7 @@ export default function FormsMonitorDetailPage() {
                                       "OPEN",
                                       "PLANNING_NODIG",
                                       "WACHTENOPDERDEN",
+                                      "WACHTENOPINTERN",
                                     ].includes(String(row.status || "").trim());
                                     const rowStatus = String(row.status || "").trim().toUpperCase();
                                     const rowSourceId = row.source_form_instance_id ?? row.form_instance_id;
@@ -4283,6 +4436,7 @@ export default function FormsMonitorDetailPage() {
                                                 className={getFollowUpStatusButtonClass(rowStatus, "WACHTENOPDERDEN")}
                                                 aria-pressed={rowStatus === "WACHTENOPDERDEN"}
                                                 disabled={followUpBusyId === row.follow_up_action_id}
+                                                title="De klant is aan zet"
                                                 onClick={() =>
                                                   handleFollowUpAction(
                                                     row.follow_up_action_id,
@@ -4290,7 +4444,23 @@ export default function FormsMonitorDetailPage() {
                                                   )
                                                 }
                                               >
-                                                Wachten op derden
+                                                Wachten op klant
+                                              </button>
+
+                                              <button
+                                                type="button"
+                                                className={getFollowUpStatusButtonClass(rowStatus, "WACHTENOPINTERN")}
+                                                aria-pressed={rowStatus === "WACHTENOPINTERN"}
+                                                disabled={followUpBusyId === row.follow_up_action_id}
+                                                title="Een collega is aan zet; monteur, relatiebeheerder of verkoper"
+                                                onClick={() =>
+                                                  handleFollowUpAction(
+                                                    row.follow_up_action_id,
+                                                    "set_waiting_internal"
+                                                  )
+                                                }
+                                              >
+                                                Wachten op intern
                                               </button>
 
                                               <button

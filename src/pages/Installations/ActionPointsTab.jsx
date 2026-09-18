@@ -438,7 +438,7 @@ export default function ActionPointsTab({
     setError("");
 
     try {
-      await updateInstallationFollowUpStatus(code, id, status);
+      await updateInstallationFollowUpStatus(code, id, status, item.row_version);
       await load();
     } catch (err) {
       setError(
@@ -458,10 +458,14 @@ export default function ActionPointsTab({
     setError("");
 
     try {
-      await updateInstallationFollowUp(code, id, payload);
+      await updateInstallationFollowUp(code, id, { ...payload, row_version: item.row_version });
       await load();
     } catch (err) {
-      setError(err?.message || "Actiepunt bijwerken is mislukt.");
+      setError(
+        err?.status === 409
+          ? "Het actiepunt is intussen gewijzigd. De actuele gegevens worden opnieuw geladen."
+          : err?.message || "Actiepunt bijwerken is mislukt."
+      );
       await load().catch(() => undefined);
     } finally {
       setRowBusy("");
