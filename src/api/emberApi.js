@@ -246,6 +246,54 @@ export function createInstallationDocumentAttachment(code, documentId, payload =
   );
 }
 
+/* digitale ondertekening */
+
+function documentSignaturePath(code, documentId) {
+  return `/installations/${encodeURIComponent(code)}/documents/${encodeURIComponent(documentId)}/signature`;
+}
+
+export function getDocumentSignature(code, documentId) {
+  return apiGet(documentSignaturePath(code, documentId));
+}
+
+export function createDocumentSignatureRequest(code, documentId, payload = {}) {
+  return apiPost(documentSignaturePath(code, documentId), payload);
+}
+
+export function createDocumentSignatureDesignerSession(code, documentId, signatureRequestId) {
+  return apiPost(
+    `${documentSignaturePath(code, documentId)}/${encodeURIComponent(signatureRequestId)}/designer-session`,
+    {}
+  );
+}
+
+export function sendDocumentSignatureRequest(code, documentId, signatureRequestId) {
+  return apiPost(
+    `${documentSignaturePath(code, documentId)}/${encodeURIComponent(signatureRequestId)}/send`,
+    {}
+  );
+}
+
+export function cancelDocumentSignatureRequest(code, documentId, signatureRequestId, payload = {}) {
+  return apiPost(
+    `${documentSignaturePath(code, documentId)}/${encodeURIComponent(signatureRequestId)}/cancel`,
+    payload
+  );
+}
+
+export function downloadDocumentSignatureFile(code, documentId, signatureRequestId, kind) {
+  return httpDownload(
+    `${documentSignaturePath(code, documentId)}/${encodeURIComponent(signatureRequestId)}/files/${encodeURIComponent(kind)}`
+  );
+}
+
+export function putDocumentVersionSignatureDecision(code, documentId, payload = {}) {
+  return apiPut(
+    `/installations/${encodeURIComponent(code)}/documents/${encodeURIComponent(documentId)}/signature-decision`,
+    payload
+  );
+}
+
 export function getInstallationDrawings(code) {
   return apiGet(`/installations/${encodeURIComponent(code)}/drawings`);
 }

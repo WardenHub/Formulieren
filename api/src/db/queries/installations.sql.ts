@@ -156,6 +156,9 @@ select
   dt.sectie_key as section_key,
   dt.sort_order,
   dt.is_attachment_only,
+  dt.tracks_signature,
+  dt.requires_document_date,
+  dt.supports_esignature,
   dt.is_active,
   cast(
     case

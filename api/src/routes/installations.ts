@@ -99,6 +99,15 @@ import {
   putFormInstanceDocumentFollowUps,
   deleteFormInstanceDocument,
 } from "../controllers/installationsController.js";
+import {
+  getDocumentSignature,
+  postDocumentSignatureRequest,
+  postDocumentSignatureDesignerSession,
+  postDocumentSignatureSend,
+  postDocumentSignatureCancel,
+  getDocumentSignatureFile,
+  putDocumentVersionSignatureDecision,
+} from "../controllers/documentSignatureController.js";
 
 import {
   transcribeAssistantAudio,
@@ -245,6 +254,44 @@ router.post(
   "/:code/documents/:documentId/attachments",
   requireRole(...documentRoles),
   createDocumentAttachment
+);
+
+/* Digitale ondertekening; het ophalen van de stand mag iedereen die documenten ziet,
+   het starten en verzenden hoort bij dezelfde rollen die documenten beheren. */
+router.get(
+  "/:code/documents/:documentId/signature",
+  requireRole(...documentRoles),
+  getDocumentSignature
+);
+router.post(
+  "/:code/documents/:documentId/signature",
+  requireRole(...documentRoles),
+  postDocumentSignatureRequest
+);
+router.post(
+  "/:code/documents/:documentId/signature/:signatureRequestId/designer-session",
+  requireRole(...documentRoles),
+  postDocumentSignatureDesignerSession
+);
+router.post(
+  "/:code/documents/:documentId/signature/:signatureRequestId/send",
+  requireRole(...documentRoles),
+  postDocumentSignatureSend
+);
+router.post(
+  "/:code/documents/:documentId/signature/:signatureRequestId/cancel",
+  requireRole(...documentRoles),
+  postDocumentSignatureCancel
+);
+router.get(
+  "/:code/documents/:documentId/signature/:signatureRequestId/files/:kind",
+  requireRole(...documentRoles),
+  getDocumentSignatureFile
+);
+router.put(
+  "/:code/documents/:documentId/signature-decision",
+  requireRole(...documentRoles),
+  putDocumentVersionSignatureDecision
 );
 
 router.get("/:code/drawings", requireRole(...documentRoles), getInstallationDrawings);

@@ -10,6 +10,7 @@ import {
   createInstallationDocumentReplacement,
   createInstallationDocumentAttachment,
   historicalizeComponentPins,
+  putDocumentVersionSignatureDecision,
 } from "../../api/emberApi.js";
 
 import { ArchiveIcon } from "@/components/ui/archive";
@@ -22,7 +23,9 @@ import { RefreshCWIcon } from "@/components/ui/refresh-cw";
 import { UploadIcon } from "@/components/ui/upload";
 import { FileTextIcon } from "@/components/ui/file-text";
 import { FileStackIcon } from "@/components/ui/file-stack";
+import { SignatureIcon } from "@/components/ui/signature";
 import DateInput from "../../components/DateInput.jsx";
+import DocumentSignatureDialog from "./DocumentSignatureDialog.jsx";
 
 function cx(...parts) {
   return parts.filter(Boolean).join(" ");
@@ -643,6 +646,11 @@ const DocumentsTab = forwardRef(function DocumentsTab(
   const [dragOverRowId, setDragOverRowId] = useState(null);
   const [dragOverReplaceId, setDragOverReplaceId] = useState(null);
   const [dragOverAttachId, setDragOverAttachId] = useState(null);
+  // Het ondertekenscherm hangt aan een document, niet aan een kaart; zo blijft het open
+  // staan wanneer de lijst ondertussen herlaadt.
+  const [signatureTarget, setSignatureTarget] = useState(null);
+  const [decisionBusyId, setDecisionBusyId] = useState(null);
+  const [decisionReasons, setDecisionReasons] = useState({});
   const [sectionDropQueue, setSectionDropQueue] = useState({});
   const [accentRowId, setAccentRowId] = useState(null);
   const [error, setError] = useState(null);
@@ -1142,6 +1150,23 @@ const DocumentsTab = forwardRef(function DocumentsTab(
     }
 
     return changed;
+  }
+
+  // Een nieuwe versie van een ondertekend document erft de ondertekening niet vanzelf;
+  // iemand moet vastleggen of die nog geldt. Dat belandt in het ondertekenspoor.
+  async function beslisVersieOndertekening(row, keepSigned, reason) {
+    setDecisionBusyId(row.document_id);
+    try {
+      await putDocumentVersionSignatureDecision(code, row.document_id, {
+        keep_signed: keepSigned,
+        reason: reason || null,
+      });
+      await refreshDocsAndRehydrate();
+    } catch (err) {
+      setError(err?.message || String(err));
+    } finally {
+      setDecisionBusyId(null);
+    }
   }
 
   async function refreshDocsAndRehydrate() {
@@ -1779,6 +1804,23 @@ const DocumentsTab = forwardRef(function DocumentsTab(
     const tone = getCardTone(row);
     const actionDisabled = readOnly || Boolean(actionBusyKey);
 
+    // Ondertekenen kan alleen op een opgeslagen regel met een bestand; op een concept of
+    // een regel met onbewaarde wijzigingen zou de ronde op verouderde gegevens draaien.
+    const canSign =
+      Boolean(docType?.supports_esignature) &&
+      Boolean(row.has_file) &&
+      !isNewTemp &&
+      !dirtyRows[row.document_id];
+
+    // Bij een vervangende versie van een type waar ondertekening telt is "onbekend" geen
+    // geldige uitkomst; de gebruiker moet kiezen.
+    const awaitsSignatureDecision =
+      Boolean(docType?.tracks_signature) &&
+      String(row.relation_type || "").toUpperCase() === "VERVANGING" &&
+      row.is_signed === null &&
+      !isNewTemp &&
+      !readOnly;
+
     return (
       <div
         key={row.document_id}
@@ -1868,6 +1910,22 @@ const DocumentsTab = forwardRef(function DocumentsTab(
                 </AnimatedActionButton>
               )}
 
+              {canSign && (
+                <AnimatedActionButton
+                  title={row.is_signed === true ? "ondertekening bekijken" : "digitaal laten ondertekenen"}
+                  Icon={SignatureIcon}
+                  onClick={() =>
+                    setSignatureTarget({
+                      documentId: row.document_id,
+                      title: row.title || docType?.document_type_name || "Document",
+                    })
+                  }
+                  disabled={Boolean(actionBusyKey)}
+                >
+                  {row.is_signed === true ? "ondertekening" : "onderteken"}
+                </AnimatedActionButton>
+              )}
+
               <AnimatedActionButton
                 title={editorOpen ? "details inklappen" : "details uitklappen"}
                 Icon={editorOpen ? ChevronDownIcon : ChevronRightIcon}
@@ -1907,6 +1965,52 @@ const DocumentsTab = forwardRef(function DocumentsTab(
               )}
             </div>
           </div>
+
+          {awaitsSignatureDecision && (
+            <div className="doc-sign-decision">
+              <div>
+                <strong>Geldt de ondertekening ook voor deze versie?</strong>
+                <div className="muted">
+                  Deze versie vervangt een eerder document. Leg vast of de bestaande
+                  ondertekening meegaat of dat er opnieuw getekend moet worden.
+                </div>
+              </div>
+
+              <input
+                className="cf-input"
+                placeholder="reden; nodig om de ondertekening te laten meegaan"
+                value={decisionReasons[row.document_id] || ""}
+                onChange={(e) =>
+                  setDecisionReasons((m) => ({ ...m, [row.document_id]: e.target.value }))
+                }
+              />
+
+              <div className="doc-sign-decision__acties">
+                <button
+                  type="button"
+                  className="btn-ghost"
+                  disabled={
+                    decisionBusyId === row.document_id ||
+                    !String(decisionReasons[row.document_id] || "").trim()
+                  }
+                  onClick={() =>
+                    beslisVersieOndertekening(row, true, decisionReasons[row.document_id])
+                  }
+                >
+                  ondertekening blijft geldig
+                </button>
+
+                <button
+                  type="button"
+                  className="btn-ghost"
+                  disabled={decisionBusyId === row.document_id}
+                  onClick={() => beslisVersieOndertekening(row, false, null)}
+                >
+                  opnieuw laten ondertekenen
+                </button>
+              </div>
+            </div>
+          )}
 
           {editorOpen && (
             <div className="doc-card__editor">
@@ -2831,6 +2935,18 @@ const DocumentsTab = forwardRef(function DocumentsTab(
           </div>
         );
       })}
+
+      {signatureTarget && (
+        <DocumentSignatureDialog
+          code={code}
+          documentId={signatureTarget.documentId}
+          documentTitle={signatureTarget.title}
+          onClose={() => setSignatureTarget(null)}
+          onChanged={() => {
+            void refreshDocsAndRehydrate();
+          }}
+        />
+      )}
     </div>
   );
 });

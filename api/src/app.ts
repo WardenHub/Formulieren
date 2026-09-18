@@ -16,6 +16,7 @@ import adminGuidanceRouter from "./routes/adminGuidance.js";
 import adminFeedbackRouter from "./routes/adminFeedback.js";
 import adminAssistantRouter from "./routes/adminAssistant.js";
 import internalMaintenanceRouter from "./routes/internalMaintenance.js";
+import internalValidSignRouter from "./routes/internalValidSign.js";
 import homeRouter from "./routes/home.js";
 import profileRouter from "./routes/profile.js";
 import meFeedbackRouter from "./routes/meFeedback.js";
@@ -114,6 +115,8 @@ console.log("sql database", process.env.SQL_DATABASE);
 console.log("node env", process.env.NODE_ENV);
 console.log("dev auth", process.env.DEV_AUTH);
 console.log("maintenance api key configured", process.env.MAINTENANCE_API_KEY ? "yes" : "no");
+console.log("validsign api key configured", process.env.VALIDSIGN_API_KEY ? "yes" : "no");
+console.log("validsign callback key configured", process.env.VALIDSIGN_CALLBACK_KEY ? "yes" : "no");
 
 const required = ["SQL_SERVER", "SQL_DATABASE"];
 for (const k of required) {
@@ -188,6 +191,10 @@ app.get("/runtime/status", (req, res) => {
 // authenticatie. /home stond daar ook, maar zonder reden; het nieuws komt uit een
 // authenticated feed en de afbeeldingsroute stuurde de inloggegevens van die feed mee.
 app.use("/internal/maintenance", internalMaintenanceRouter);
+
+// ValidSign roept hier binnen met zijn eigen callback-sleutel; ook die route hoort
+// daarom voor de authenticatie.
+app.use("/internal/validsign", internalValidSignRouter);
 
 app.use(authMiddleware);
 app.use("/home", homeRouter);

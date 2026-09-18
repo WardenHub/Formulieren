@@ -293,6 +293,60 @@ export async function downloadInstallationDocumentBlob(storageKey: string) {
 }
 
 /* =========================================================
+   ondertekening; getekend bestand en bewijssamenvatting
+   Deze horen bij een ondertekenronde, niet bij de documentcatalogus, en krijgen
+   daarom een eigen pad onder de installatie.
+   ========================================================= */
+
+export function buildDocumentSignatureStorageKey(
+  installationCode: string,
+  signatureRequestId: string,
+  originalFileName: string
+) {
+  const { baseName, extension } = splitFileNameParts(originalFileName);
+  const safeInstallationCode = sanitizePart(installationCode) || installationCode;
+  const safeRequestId = sanitizePart(signatureRequestId) || signatureRequestId;
+
+  return `installaties/${safeInstallationCode}/ondertekening/${safeRequestId}/${baseName}${extension}`;
+}
+
+export async function uploadDocumentSignatureBlob(args: {
+  installationCode: string;
+  signatureRequestId: string;
+  fileName: string;
+  contentType?: string | null;
+  buffer: Buffer;
+}) {
+  const storageKey = buildDocumentSignatureStorageKey(
+    args.installationCode,
+    args.signatureRequestId,
+    args.fileName
+  );
+
+  return uploadBlob({
+    storageKey,
+    contentType: args.contentType,
+    buffer: args.buffer,
+  });
+}
+
+export async function deleteDocumentSignatureBlob(storageKey: string) {
+  return deleteBlob(storageKey);
+}
+
+export async function createDocumentSignatureDownloadUrl(args: {
+  storageKey: string;
+  expiresInSeconds?: number;
+  downloadFileName?: string | null;
+}) {
+  return createDownloadUrl(args);
+}
+
+export async function downloadDocumentSignatureBlob(storageKey: string) {
+  return downloadBlob(storageKey);
+}
+
+/* =========================================================
    form-instance-documenten
    ========================================================= */
 
