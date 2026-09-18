@@ -1266,6 +1266,41 @@ export default function FormContextPanel({
     }
   }
 
+  // De achtercamera blijft de voorkeur voor een tablet in het veld, maar een laptop heeft
+  // er geen. Vroeg dit scherm environment als harde eis, dan kwam de toestemmingsvraag nog
+  // wel en viel de browser daarna terug op OverconstrainedError; er startte geen beeld en
+  // de melding zei niet waarom. Nu is het een voorkeur, met de gewone camera als terugval.
+  async function requestWebcamStream() {
+    try {
+      return await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: { ideal: "environment" } },
+        audio: false,
+      });
+    } catch (e) {
+      if (String(e?.name || "") !== "OverconstrainedError") throw e;
+      return await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+    }
+  }
+
+  // Een geweigerde camera, een bezette camera en een ontbrekende camera vragen om een ander
+  // vervolg van de invuller. De browser geeft die drie als foutnaam terug; de bijbehorende
+  // message is vaak leeg of Engels.
+  function webcamErrorText(e) {
+    switch (String(e?.name || "")) {
+      case "NotAllowedError":
+      case "SecurityError":
+        return "Toegang tot de camera is geweigerd. Sta de camera toe voor Ember in je browser en probeer opnieuw.";
+      case "NotFoundError":
+      case "OverconstrainedError":
+        return "Er is geen camera gevonden op dit apparaat. Kies Bestand kiezen om een foto toe te voegen.";
+      case "NotReadableError":
+      case "AbortError":
+        return "De camera is in gebruik door een ander programma. Sluit dat programma en probeer opnieuw.";
+      default:
+        return String(e?.message || e || "Webcam openen mislukt.");
+    }
+  }
+
   async function openDesktopWebcam() {
     setCameraError(null);
 
@@ -1279,17 +1314,18 @@ export default function FormContextPanel({
         setWebcamStream(null);
       }
 
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: {
-          facingMode: "environment",
-        },
-        audio: false,
-      });
+      const stream = await requestWebcamStream();
+
+      // Zonder beeldspoor blijft het venster zwart; dan is Bestand kiezen de betere weg.
+      if (!stream.getVideoTracks().length) {
+        stream.getTracks().forEach((track) => track.stop());
+        throw new Error("De camera leverde geen beeld. Kies Bestand kiezen om een foto toe te voegen.");
+      }
 
       setWebcamStream(stream);
       setCameraMode("desktop-webcam");
     } catch (e) {
-      setCameraError(String(e?.message || e || "Webcam openen mislukt."));
+      setCameraError(webcamErrorText(e));
     }
   }
 

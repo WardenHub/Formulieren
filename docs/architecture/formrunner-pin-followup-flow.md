@@ -37,3 +37,22 @@ De lokale ontwikkelomgeving was niet bereikbaar. Nog te accepteren met frontend 
 - Een vervolgformulier controleren; punten van het ouderformulier blijven alleen ter inzage.
 
 Publicatie blijft een afzonderlijke handeling van de product owner.
+
+## Eén richting; tekening volgt het punt
+
+Lokale wijziging, 17 september 2026. Niet gepubliceerd; geen schema- of API-wijziging.
+
+De installatietab werkte omgekeerd aan de FormRunner. Daar plaatste je eerst een pin, sloeg je die op, en vulde je daarna in een tweede formulier met zeven velden een opvolgpunt in. Titel en omschrijving typte je feitelijk twee keer. Beide richtingen zijn nu hetzelfde: een bevinding is leidend, een pin is bewijs dat erbij hoort.
+
+- De pin-editor heeft een schakelaar Hier een opvolgpunt van maken. Standaard aan bij Tekortkoming, uit bij Opmerking en Component geplaatst; de standaard beweegt mee met het type zolang de gebruiker de schakelaar niet zelf heeft aangeraakt. Bij opslaan ontstaan markering en punt in één handeling, met het label en de omschrijving van de pin.
+- De schakelaar verschijnt alleen waar iemand zelf een bevinding vastlegt. Kom je vanuit een formulier om een pin bij een bestaand punt te zetten, dan is er al een punt; `canCreateFollowUp` is daar onwaar.
+- Het losse aanmaakformulier in PinActions is vervallen. Wat blijft: gekoppelde opvolgingen tonen, ontkoppelen, een bestaande opvolging koppelen, en één knop Opvolgpunt maken van deze markering voor een markering die er al staat. Prioriteit, termijn, verantwoordelijke en klantzichtbaarheid stelt de behandelaar in de Monitor in; die velden bestaan daar al.
+- Lukt de markering wel en het punt niet, dan zegt de melding dat en blijft de knop bij de markering over. Opnieuw prikken is nooit nodig.
+
+Pins zonder punt blijven bestaan, want niet elke markering is werk. De tijdelijke vinkjes tijdens het invullen staan daar los van; die blijven op het toestel en verdwijnen bij indienen. Zie `checkedPoints.js`.
+
+Een punt zonder pin is een volwaardig punt. Een algemene tekortkoming zoals een ontbrekend getekend PVE heeft geen plek op de tekening. `missingPointParts` meldt daarom geen ontbrekende locatie meer; stond dat er, dan zag elk algemeen punt er onaf uit en ging de invuller pinnen om van de melding af te komen. De knop heet nu Pin plaatsen en is een aanbod.
+
+Het rechterpaneel van de tekeningtab was sticky maar onbegrensd; zodra editor, opvolgingen en pinlijst samen hoger werden dan het scherm zakten Opslaan en Annuleren onder de vouw. Het paneel scrollt nu zelf en de actieknoppen staan in een sticky voet.
+
+Gecontroleerd: frontendbuild, 40 tests, alle elf validators en gerichte ESLint op de gewijzigde bestanden. Acceptatie in een draaiende omgeving staat nog open.

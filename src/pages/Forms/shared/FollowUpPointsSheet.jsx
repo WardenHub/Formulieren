@@ -6,7 +6,7 @@ import { trapFocus } from "./focusTrap.js";
 
 import { CircleHelpIcon } from "@/components/ui/circle-help";
 
-import { isOpenPoint, missingPointParts } from "./followUpPoints.js";
+import { hasPointLocation, isOpenPoint, missingPointParts } from "./followUpPoints.js";
 
 // Opvolgacties zijn het vehikel waarmee een probleempunt wordt vastgelegd; een pin, foto
 // of bestand is een eigenschap van zo'n punt en geen losse workflow. Deze sheet toont de
@@ -329,7 +329,7 @@ function PointCard({
         <span>{formatKind(point?.kind)}</span>
         {inherited ? <span>Uit gekoppeld formulier {point.form_instance_id}; hier alleen bekijken</span> : null}
         {point?.category ? <span>{point.category}</span> : null}
-        {pins.length > 0 ? <span>{pins.length} op tekening</span> : null}
+        {hasPointLocation(point) ? <span>{pins.length} op tekening</span> : null}
       </div>
 
       {point?.workflow_description ? (
@@ -387,7 +387,7 @@ function PointCard({
               disabled={busy || disabled}
               onClick={() => perform(() => onSetLocation?.(point))}
             >
-              {pins.length > 0 ? "Locatie toevoegen" : "Locatie bepalen"}
+              {pins.length > 0 ? "Pin toevoegen" : "Pin plaatsen"}
             </button>
           ) : null}
 

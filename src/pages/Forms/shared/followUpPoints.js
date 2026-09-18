@@ -13,18 +13,21 @@ export function countOpenPoints(points) {
   return (Array.isArray(points) ? points : []).filter(isOpenPoint).length;
 }
 
-// Laat zien wat er nog aan een punt ontbreekt. Waar en wat zijn de hoofdvragen; een punt
-// zonder locatie of onderbouwing is voor de opvolger minder waard.
+// Laat zien wat er nog aan een punt ontbreekt. Een locatie staat hier bewust niet bij.
+// Lang niet elk punt heeft een plek op de tekening; "er ontbreekt een getekend PVE" gaat over
+// de installatie als geheel. Stond geen locatie als tekort in beeld, dan zag zo'n punt er
+// altijd onaf uit en ging de invuller pinnen om van de melding af te komen. Een pin is een
+// aanbod, geen eis; zie hasPointLocation voor de neutrale weergave daarvan.
 export function missingPointParts(point) {
   const missing = [];
-
-  if (!Array.isArray(point?.drawing_pins) || point.drawing_pins.length === 0) {
-    missing.push("geen locatie");
-  }
 
   if (!String(point?.workflow_description || "").trim()) {
     missing.push("geen toelichting");
   }
 
   return missing;
+}
+
+export function hasPointLocation(point) {
+  return Array.isArray(point?.drawing_pins) && point.drawing_pins.length > 0;
 }

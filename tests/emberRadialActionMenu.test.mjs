@@ -179,7 +179,14 @@ test("de bestaande DrawingPin-interactie en versiecontracten blijven aangesloten
   // hernoemd; de test controleerde daarmee namen in plaats van gedrag en viel stil om.
   // Wat werkelijk vast moet liggen is de afbeelding van snelactie naar pinsoort en het
   // bestaan van de opvolgactie vanaf een pin.
-  assert.match(source, /pin_kind: kind === "defect" \? "DEFICIENCY"/);
-  assert.match(source, /createManualFollowUpForDrawingPin\(code, pin\.drawing_pin_id, draft\)/);
+  assert.match(source, /kind === "defect" \? "DEFICIENCY"/);
+  assert.match(source, /createManualFollowUpForDrawingPin\(code, pin\.drawing_pin_id, \{/);
+
+  // Sinds het losse aanmaakformulier weg is ontstaat een opvolgpunt bij het opslaan van de
+  // markering zelf. Dat is de hele winst van die wijziging; zonder deze regels valt de
+  // tekening terug op twee formulieren achter elkaar.
+  assert.match(source, /create_follow_up: canCreateFollowUp && followUpDefaultForKind\(quickKind\)/);
+  assert.match(source, /const wantsFollowUp = Boolean\(draft\.create_follow_up\)/);
+  assert.match(source, /await createManualFollowUpForDrawingPin\(code, savedPin\.drawing_pin_id, \{/);
   assert.match(source, /selectedDrawing\?\.is_current_version === false/);
 });

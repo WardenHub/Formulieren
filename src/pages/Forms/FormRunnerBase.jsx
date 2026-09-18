@@ -2384,8 +2384,23 @@ export default function FormRunnerBase({ mode }) {
     }
   }
 
+  // Waarom indienen nu niet kan. Leeg betekent dat het wel kan.
+  function submitWaitReason() {
+    if (busy) return "Er loopt nog een handeling op dit formulier. Wacht tot die klaar is en probeer opnieuw.";
+    if (evidenceBusy) return "Er wordt nog een foto of bestand bij een opvolgactie verwerkt. Wacht tot dat klaar is en probeer opnieuw.";
+    if (autosaveRunningRef.current) return "Het formulier wordt nog opgeslagen. Probeer indienen zo opnieuw.";
+    return "";
+  }
+
   async function submit() {
-    if (busy || evidenceBusy || autosaveRunningRef.current) return;
+    // Zwijgend teruggaan liet de knop dood lijken; de invuller klikte opnieuw en wist niet
+    // waarop hij wachtte. De reden staat nu in beeld, en per vlag apart zodat een blijvende
+    // blokkade meteen aanwijsbaar is.
+    const wachtReden = submitWaitReason();
+    if (wachtReden) {
+      setError(wachtReden);
+      return;
+    }
     if (!showSubmit) {
       setError(`Indienen is niet toegestaan in status (${statusLbl}).`);
       return;
@@ -2495,7 +2510,18 @@ export default function FormRunnerBase({ mode }) {
   }
 
   async function confirmSubmitDialog() {
-    if (!submitDialog || submitDialog.submitting || evidenceBusy || pointDrawing) return;
+    if (!submitDialog || submitDialog.submitting) return;
+
+    // Zelfde verhaal als bij submit; de bevestigknop mag niet stil blijven staan.
+    if (pointDrawing) {
+      setError("Sluit eerst de tekening; de locatie bij de opvolgactie is nog open.");
+      return;
+    }
+    const wachtReden = submitWaitReason();
+    if (wachtReden) {
+      setError(wachtReden);
+      return;
+    }
 
     setBusy(true);
     setError(null);
@@ -3869,7 +3895,7 @@ export default function FormRunnerBase({ mode }) {
         onBusyChange={setEvidenceBusy}
       />
 
-      {pointDrawing ? <FormEvidenceDialog title={pointDrawing.linkActionId ? "Locatie bij opvolgactie" : "Gekoppelde pin bekijken"} description="Je formulier blijft op dezelfde plek geopend. Een opgeslagen locatie wordt direct aan deze opvolgactie gekoppeld." wide busy={drawingBusy} onClose={() => { setPointDrawing(null); void loadFollowUpPoints(); }}>
+      {pointDrawing ? <FormEvidenceDialog title={pointDrawing.linkActionId ? "Pin plaatsen bij opvolgactie" : "Gekoppelde pin bekijken"} description="Je formulier blijft op dezelfde plek geopend. Een opgeslagen pin wordt direct aan deze opvolgactie gekoppeld. Een punt zonder plek op de tekening mag ook zonder pin." wide busy={drawingBusy} onClose={() => { setPointDrawing(null); void loadFollowUpPoints(); }}>
         <Suspense fallback={<div role="status" className="ui-empty">Tekening wordt geladen...</div>}>
           <DrawingPinsTab code={code} embedded readOnly={pointDrawing.readOnly} navigationTarget={pointDrawing} onBusyChange={setDrawingBusy} onLinked={() => {
             setPointDrawing(null);

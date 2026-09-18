@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { GlobalWorkerOptions, getDocument as loadPdfDocument } from "pdfjs-dist";
 import pdfWorkerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
-import { BadgeAlert, BriefcaseBusiness, ChevronLeft, ChevronRight, MapPinPlusInside, Maximize2, MessageSquareMore, Minimize2, MoreVertical, PanelRightClose, PanelRightOpen, Pin, PinOff, Scan, X } from "lucide-react";
+import { BadgeAlert, BriefcaseBusiness, ChevronLeft, ChevronRight, MapPinPlusInside, Maximize2, MessageSquareMore, Minimize2, MoreVertical, PanelRightClose, PanelRightOpen, Pin, PinOff, Scan } from "lucide-react";
 
 import EmberRadialActionMenu from "@/components/radial/EmberRadialActionMenu.jsx";
 import { BadgeAlertIcon } from "@/components/ui/badge-alert.jsx";
@@ -10,7 +10,6 @@ import { MapPinPlusInsideIcon } from "@/components/ui/map-pin-plus-inside.jsx";
 import { MessageSquareMoreIcon } from "@/components/ui/message-square-more.jsx";
 import { CircleHelpIcon } from "@/components/ui/circle-help.jsx";
 import { LoaderPinwheelIcon } from "@/components/ui/loader-pinwheel";
-import DateInput from "@/components/DateInput.jsx";
 import { savePointDrawing } from "../Forms/shared/pointEvidence.js";
 import { getResolvedAppearance, subscribeAppearance } from "@/theme/appearance.js";
 import { useDrawingViewer, useFullscreen, usePdfPage } from "@/lib/drawingViewer.js";
@@ -61,20 +60,6 @@ const PIN_TYPE_META = {
   COMPONENT_PLACED: { label: "Component geplaatst", Icon: MapPinPlusInsideIcon, tone: "primary" },
 };
 
-const FOLLOW_UP_PRIORITIES = [
-  { value: "LOW", label: "Laag" },
-  { value: "NORMAL", label: "Normaal" },
-  { value: "HIGH", label: "Hoog" },
-  { value: "CRITICAL", label: "Kritisch" },
-];
-
-const FOLLOW_UP_RESPONSIBILITIES = [
-  { value: "INTERN", label: "Ons bedrijf" },
-  { value: "KLANT", label: "Klant" },
-  { value: "DERDE", label: "Derde partij" },
-  { value: "ONBEPAALD", label: "Nog te bepalen" },
-];
-
 function DrawingLoadingCard({ label = "De PDF en markeringen worden voorbereid." }) {
   return (
     <div className="card ember-loading-card drawing-loading-card" role="status" aria-live="polite">
@@ -85,56 +70,6 @@ function DrawingLoadingCard({ label = "De PDF en markeringen worden voorbereid."
         <div className="ember-loading-title">Tekening wordt geladen</div>
         <div className="muted ember-small-text">{label}</div>
       </div>
-    </div>
-  );
-}
-
-function DrawingChoicePicker({ value, options, onChange, ariaLabel }) {
-  const [open, setOpen] = useState(false);
-  const rootRef = useRef(null);
-  const selected = options.find((option) => option.value === value) || options[0];
-
-  useEffect(() => {
-    if (!open) return undefined;
-    function closeOnOutsidePointer(event) {
-      if (!rootRef.current?.contains(event.target)) setOpen(false);
-    }
-    document.addEventListener("pointerdown", closeOnOutsidePointer);
-    return () => document.removeEventListener("pointerdown", closeOnOutsidePointer);
-  }, [open]);
-
-  return (
-    <div className="drawing-choice-picker" ref={rootRef}>
-      <button
-        type="button"
-        className="drawing-choice-picker__trigger"
-        aria-label={ariaLabel}
-        aria-haspopup="listbox"
-        aria-expanded={open}
-        onClick={() => setOpen((current) => !current)}
-      >
-        <span>{selected?.label || "Kies"}</span>
-        <ChevronRight className={open ? "is-open" : ""} size={17} aria-hidden="true" />
-      </button>
-      {open ? (
-        <div className="drawing-choice-picker__menu" role="listbox" aria-label={ariaLabel}>
-          {options.map((option) => (
-            <button
-              key={option.value}
-              type="button"
-              role="option"
-              aria-selected={option.value === value}
-              className={option.value === value ? "is-selected" : ""}
-              onClick={() => {
-                onChange(option.value);
-                setOpen(false);
-              }}
-            >
-              {option.label}
-            </button>
-          ))}
-        </div>
-      ) : null}
     </div>
   );
 }
@@ -638,7 +573,13 @@ function PinKindPicker({ value, onChange }) {
   );
 }
 
-function PinEditor({ draft, isExisting, busy, floating, onToggleFloating, onChange, onSave, onDelete, onCancel }) {
+// Standaard hoort bij het soort markering. Een tekortkoming die niemand opvolgt is geen
+// tekortkoming; een opmerking of een geplaatst component is juist zelden werk.
+function followUpDefaultForKind(pinKind) {
+  return String(pinKind || "NOTE").toUpperCase() === "DEFICIENCY";
+}
+
+function PinEditor({ draft, isExisting, busy, floating, canCreateFollowUp, onToggleFloating, onChange, onSave, onDelete, onCancel }) {
   const requiresDescription = draft?.pin_kind === "COMPONENT_PLACED";
   const descriptionMissing = requiresDescription && !String(draft?.description || "").trim();
   const canSave = Boolean(String(draft?.label || "").trim()) && !descriptionMissing;
@@ -674,7 +615,16 @@ function PinEditor({ draft, isExisting, busy, floating, onToggleFloating, onChan
       </div>
       <label className="admin-field">
         <span>Type</span>
-        <PinKindPicker value={draft.pin_kind || "NOTE"} onChange={(pin_kind) => onChange({ pin_kind })} />
+        <PinKindPicker
+          value={draft.pin_kind || "NOTE"}
+          onChange={(pin_kind) =>
+            onChange(
+              draft.follow_up_touched
+                ? { pin_kind }
+                : { pin_kind, create_follow_up: followUpDefaultForKind(pin_kind) }
+            )
+          }
+        />
       </label>
       {draft.pin_kind === "COMPONENT_PLACED" ? (
         <label className="admin-field">
@@ -694,6 +644,21 @@ function PinEditor({ draft, isExisting, busy, floating, onToggleFloating, onChan
         <textarea aria-required={requiresDescription ? "true" : undefined} rows={3} value={draft.description || ""} maxLength={2000} onChange={(event) => onChange({ description: event.target.value })} />
         {descriptionMissing ? <small>Beschrijf welk component op de volgende tekenrevisie moet worden verwerkt.</small> : null}
       </label>
+      {canCreateFollowUp && !isExisting ? (
+        <label className={`ember-toggle drawing-pin-editor__follow-up ${draft.create_follow_up ? "is-on" : "is-off"}`}>
+          <input
+            type="checkbox"
+            checked={Boolean(draft.create_follow_up)}
+            onChange={(event) => onChange({ create_follow_up: event.target.checked, follow_up_touched: true })}
+          />
+          <span className="ember-toggle__track"><span className="ember-toggle__thumb" /></span>
+          <span className="ember-toggle__label">
+            Hier een opvolgpunt van maken
+            <small>Label en omschrijving worden overgenomen. Prioriteit, termijn en wat de klant ziet stelt de behandelaar in de Monitor in.</small>
+          </span>
+        </label>
+      ) : null}
+
       <div className="drawing-pin-editor__position">
         x {Number(draft.x_normalized).toFixed(4)}; y {Number(draft.y_normalized).toFixed(4)}
       </div>
@@ -712,100 +677,97 @@ function PinEditor({ draft, isExisting, busy, floating, onToggleFloating, onChan
 
 function PinActions({ code, pin, actions, busy, onChanged }) {
   const [selectedActionId, setSelectedActionId] = useState("");
-  const [showNew, setShowNew] = useState(false);
-  const [draft, setDraft] = useState({
-    title: "",
-    description: "",
-    priority: "NORMAL",
-    responsibility_type: "INTERN",
-    due_date: "",
-    customer_visible: false,
-    customer_note: "",
-  });
+  const [working, setWorking] = useState(false);
+  const [error, setError] = useState("");
   const linkedIds = new Set((pin.follow_up_actions || []).map((item) => String(item.follow_up_action_id)));
   const available = actions.filter((item) => !linkedIds.has(String(item.follow_up_action_id)));
+  const disabled = busy || working;
 
-  async function linkSelected() {
-    if (!selectedActionId) return;
-    await linkDrawingPinAction(code, pin.drawing_pin_id, selectedActionId);
-    setSelectedActionId("");
-    await onChanged?.();
-  }
-
-  async function createAction() {
-    if (!draft.title.trim()) return;
-    await createManualFollowUpForDrawingPin(code, pin.drawing_pin_id, draft);
-    setShowNew(false);
-    setDraft({ title: "", description: "", priority: "NORMAL", responsibility_type: "INTERN", due_date: "", customer_visible: false, customer_note: "" });
-    await onChanged?.({ reloadDirectory: true });
+  // Het aanmaakformulier met zeven velden stond hier; dat is weg. Een opvolgpunt ontstaat nu
+  // bij het plaatsen van de markering zelf, of met deze ene knop voor een markering die er al
+  // staat. Prioriteit, termijn, verantwoordelijke en wat de klant ziet horen bij de behandelaar
+  // in de Monitor, waar die velden al bestaan; op een ladder is dat geen invulwerk.
+  async function run(action) {
+    if (disabled) return;
+    setWorking(true);
+    setError("");
+    try {
+      await action();
+    } catch (requestError) {
+      setError(requestError?.message || String(requestError));
+    } finally {
+      setWorking(false);
+    }
   }
 
   return (
     <div className="drawing-pin-actions">
-      <strong className="drawing-pin-actions__title"><BriefcaseBusiness size={16} aria-hidden="true" /> {showNew ? "Nieuwe opvolging maken" : "Gekoppelde opvolgingen"}</strong>
+      <strong className="drawing-pin-actions__title"><BriefcaseBusiness size={16} aria-hidden="true" /> Gekoppelde opvolgingen</strong>
 
-      {!showNew ? (
-        <>
-          {(pin.follow_up_actions || []).length ? (
-            <div className="drawing-pin-actions__list">
-              {pin.follow_up_actions.map((action) => (
-                <div key={action.follow_up_action_id} className="drawing-pin-action-row">
-                  <div>
-                    <strong>{action.workflow_title}</strong>
-                    <span>{action.status}; {action.priority}</span>
-                  </div>
-                  <button
-                    type="button"
-                    className="icon-btn"
-                    disabled={busy}
-                    title="Koppeling verwijderen"
-                    onClick={async () => {
-                      await unlinkDrawingPinAction(code, pin.drawing_pin_id, action.follow_up_action_id);
-                      await onChanged?.();
-                    }}
-                  >
-                    ×
-                  </button>
-                </div>
-              ))}
+      {(pin.follow_up_actions || []).length ? (
+        <div className="drawing-pin-actions__list">
+          {pin.follow_up_actions.map((action) => (
+            <div key={action.follow_up_action_id} className="drawing-pin-action-row">
+              <div>
+                <strong>{action.workflow_title}</strong>
+                <span>{action.status}; {action.priority}</span>
+              </div>
+              <button
+                type="button"
+                className="icon-btn"
+                disabled={disabled}
+                title="Koppeling verwijderen"
+                onClick={() => run(async () => {
+                  await unlinkDrawingPinAction(code, pin.drawing_pin_id, action.follow_up_action_id);
+                  await onChanged?.();
+                })}
+              >
+                ×
+              </button>
             </div>
-          ) : <span className="muted">Nog geen opvolging gekoppeld.</span>}
-
-          <div className="drawing-pin-actions__link">
-            <select value={selectedActionId} onChange={(event) => setSelectedActionId(event.target.value)}>
-              <option value="">Bestaande opvolging kiezen</option>
-              {available.map((action) => (
-                <option key={action.follow_up_action_id} value={action.follow_up_action_id}>
-                  {action.workflow_title}; {action.status}
-                </option>
-              ))}
-            </select>
-            <button type="button" className="btn btn-secondary" disabled={busy || !selectedActionId} onClick={linkSelected}>Koppelen</button>
-          </div>
-
-          <button type="button" className="btn btn-secondary" onClick={() => setShowNew(true)}>Nieuwe opvolging maken</button>
-        </>
-      ) : null}
-
-      {showNew ? (
-        <div className="drawing-manual-action-form">
-          <label className="admin-field"><span>Titel</span><input maxLength={300} value={draft.title} onChange={(event) => setDraft((current) => ({ ...current, title: event.target.value }))} /></label>
-          <label className="admin-field"><span>Omschrijving</span><textarea rows={3} value={draft.description} onChange={(event) => setDraft((current) => ({ ...current, description: event.target.value }))} /></label>
-          <div className="drawing-manual-action-form__grid">
-            <label className="admin-field"><span>Prioriteit</span><DrawingChoicePicker ariaLabel="Prioriteit kiezen" value={draft.priority} options={FOLLOW_UP_PRIORITIES} onChange={(priority) => setDraft((current) => ({ ...current, priority }))} /></label>
-            <label className="admin-field"><span>Verantwoordelijkheid</span><DrawingChoicePicker ariaLabel="Verantwoordelijkheid kiezen" value={draft.responsibility_type} options={FOLLOW_UP_RESPONSIBILITIES} onChange={(responsibility_type) => setDraft((current) => ({ ...current, responsibility_type }))} /></label>
-            <label className="admin-field"><span>Vervaldatum</span><DateInput value={draft.due_date || null} onChange={(due_date) => setDraft((current) => ({ ...current, due_date: due_date || "" }))} allowEmpty /></label>
-          </div>
-          <label className={`ember-toggle drawing-relation-description-toggle ${draft.customer_visible ? "is-on" : "is-off"}`}>
-            <input type="checkbox" checked={draft.customer_visible} onChange={(event) => setDraft((current) => ({ ...current, customer_visible: event.target.checked }))} />
-            <span className="ember-toggle__track"><span className="ember-toggle__thumb" /></span>
-            <span className="ember-toggle__label">Andere omschrijving voor relatie</span>
-          </label>
-          {draft.customer_visible ? <label className="admin-field"><span>Omschrijving voor relatie</span><textarea rows={2} value={draft.customer_note} onChange={(event) => setDraft((current) => ({ ...current, customer_note: event.target.value }))} /></label> : null}
-          <button type="button" className="btn btn-primary" disabled={busy || !draft.title.trim()} onClick={createAction}>Opvolging maken en koppelen</button>
-          <button type="button" className="btn btn-danger drawing-manual-action-cancel" onClick={() => setShowNew(false)}><X size={17} aria-hidden="true" /> Annuleren</button>
+          ))}
         </div>
-      ) : null}
+      ) : <span className="muted">Nog geen opvolging gekoppeld.</span>}
+
+      <button
+        type="button"
+        className="btn btn-primary"
+        disabled={disabled || !String(pin.label || "").trim()}
+        onClick={() => run(async () => {
+          await createManualFollowUpForDrawingPin(code, pin.drawing_pin_id, {
+            title: pin.label,
+            description: pin.description || "",
+          });
+          await onChanged?.({ reloadDirectory: true });
+        })}
+      >
+        {working ? "Bezig..." : "Opvolgpunt maken van deze markering"}
+      </button>
+
+      <div className="drawing-pin-actions__link">
+        <select value={selectedActionId} disabled={disabled} onChange={(event) => setSelectedActionId(event.target.value)}>
+          <option value="">Bestaande opvolging kiezen</option>
+          {available.map((action) => (
+            <option key={action.follow_up_action_id} value={action.follow_up_action_id}>
+              {action.workflow_title}; {action.status}
+            </option>
+          ))}
+        </select>
+        <button
+          type="button"
+          className="btn btn-secondary"
+          disabled={disabled || !selectedActionId}
+          onClick={() => run(async () => {
+            await linkDrawingPinAction(code, pin.drawing_pin_id, selectedActionId);
+            setSelectedActionId("");
+            await onChanged?.();
+          })}
+        >
+          Koppelen
+        </button>
+      </div>
+
+      {error ? <div className="ember-alert ember-alert--warning">{error}</div> : null}
     </div>
   );
 }
@@ -846,6 +808,11 @@ export default function DrawingPinsTab({ code, readOnly = false, navigationTarge
   const componentReview = Boolean(navigationTarget?.componentReview) || (!embedded && searchParams.get("componentReview") === "1");
   const componentReviewPins = (directory.pins || []).filter((pin) => pin.pin_kind === "COMPONENT_PLACED" && String(pin.pin_status || "").toUpperCase() === "ACTIVE");
   const componentReviewIndex = Math.max(0, componentReviewPins.findIndex((pin) => String(pin.drawing_pin_id) === selectedPinId));
+
+  // Een opvolgpunt aanmaken hoort alleen op de plek waar iemand zelf een bevinding vastlegt.
+  // Kom je hier vanuit een formulier om een locatie bij een bestaand punt te zetten, dan is er
+  // al een punt en zou een tweede alleen verwarring geven.
+  const canCreateFollowUp = !readOnly && !embedded && !linkActionId;
 
   function openComponentReviewPin(offset) {
     if (!componentReviewPins.length) return;
@@ -990,6 +957,11 @@ export default function DrawingPinsTab({ code, readOnly = false, navigationTarge
 
   async function savePin() {
     if (!draft || readOnly) return;
+    // Onthouden vóór het opslaan; savePointDrawing vervangt de draft door de bewaarde pin en
+    // daar zit deze keuze niet in.
+    const wantsFollowUp = Boolean(draft.create_follow_up) && !draft.drawing_pin_id && canCreateFollowUp;
+    const followUpTitle = String(draft.label || "").trim();
+    const followUpDescription = String(draft.description || "");
     setBusy(true);
     setError("");
     try {
@@ -1002,6 +974,20 @@ export default function DrawingPinsTab({ code, readOnly = false, navigationTarge
         onLinked(savedPin);
         return;
       }
+
+      // De markering staat er; lukt het punt niet, dan zegt de melding dat en hoeft niemand
+      // opnieuw te gaan prikken. De knop bij de markering blijft over om het af te maken.
+      if (wantsFollowUp && savedPin?.drawing_pin_id) {
+        try {
+          await createManualFollowUpForDrawingPin(code, savedPin.drawing_pin_id, {
+            title: followUpTitle,
+            description: followUpDescription,
+          });
+        } catch {
+          setError("De markering is opgeslagen, maar het opvolgpunt niet. Gebruik Opvolgpunt maken van deze markering; opnieuw prikken is niet nodig.");
+        }
+      }
+
       setPlacing(false);
       await Promise.all([loadPins(), loadDirectory({ documentId: selectedDocumentId })]);
 
@@ -1075,6 +1061,7 @@ export default function DrawingPinsTab({ code, readOnly = false, navigationTarge
       isExisting={Boolean(draft?.drawing_pin_id)}
       busy={busy}
       floating={editorFloating}
+      canCreateFollowUp={canCreateFollowUp}
       onToggleFloating={toggleEditorFloating}
       onChange={(patch) => setDraft((current) => ({ ...current, ...patch }))}
       onSave={savePin}
@@ -1240,7 +1227,8 @@ export default function DrawingPinsTab({ code, readOnly = false, navigationTarge
                 setPlacing(false);
                 setEditorFloating(false);
                 setSidePanelOpen(true);
-                setDraft({ ...position, label: navigationTarget?.label || "", description: navigationTarget?.description || "", pin_kind: navigationTarget?.pinKind || "NOTE", pin_status: "ACTIVE" });
+                const placedKind = navigationTarget?.pinKind || "NOTE";
+                setDraft({ ...position, label: navigationTarget?.label || "", description: navigationTarget?.description || "", pin_kind: placedKind, pin_status: "ACTIVE", create_follow_up: canCreateFollowUp && followUpDefaultForKind(placedKind) });
                 setEditorOpen(true);
               }}
               onSelect={(pin) => {
@@ -1270,12 +1258,14 @@ export default function DrawingPinsTab({ code, readOnly = false, navigationTarge
                 setPlacing(false);
                 setSidePanelOpen(true);
                 setEditorOpen(true);
+                const quickKind = kind === "defect" ? "DEFICIENCY" : kind === "note" ? "NOTE" : "COMPONENT_PLACED";
                 setDraft({
                   ...position,
-                    label: kind === "defect" ? "Tekortkoming" : kind === "note" ? "Opmerking" : "Component geplaatst",
-                    description: navigationTarget?.description || "",
-                  pin_kind: kind === "defect" ? "DEFICIENCY" : kind === "note" ? "NOTE" : "COMPONENT_PLACED",
+                  label: kind === "defect" ? "Tekortkoming" : kind === "note" ? "Opmerking" : "Component geplaatst",
+                  description: navigationTarget?.description || "",
+                  pin_kind: quickKind,
                   pin_status: "ACTIVE",
+                  create_follow_up: canCreateFollowUp && followUpDefaultForKind(quickKind),
                 });
               }}
             />

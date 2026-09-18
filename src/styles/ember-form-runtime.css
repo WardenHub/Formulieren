@@ -2036,11 +2036,17 @@ html[data-appearance="dark"] .ember-runtime-select option {
 }
 
 /* Knop naar de opvolgacties, naast Bestanden en Assistent. De teller staat op de knop
-   zelf zodat je tijdens het invullen ziet wat je achterlaat, zonder hem te openen. */
+   zelf zodat je tijdens het invullen ziet wat je achterlaat, zonder hem te openen.
+
+   De drie knoppen boven elkaar delen hetzelfde ankerpunt: top op een percentage, met
+   translateY(-50%) zodat de opgegeven waarde het midden van de knop is. Deze knop stond
+   eerder op transform: none, waardoor de 44 pixels tussenruimte die uit de topwaarden
+   volgde netto nog 20 werd en hij over de tekeningknop viel. Nu dezelfde stap van 72
+   pixels als tussen tekening en context; met een knop van 48 blijft er 24 over. */
 .form-runner-floating-actions--points {
-  top: calc(50% - 116px);
+  top: calc(50% - 144px);
   bottom: auto;
-  transform: none;
+  transform: translateY(-50%);
 }
 
 .ember-points-btn {
