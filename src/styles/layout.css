@@ -3190,6 +3190,62 @@ html[data-appearance="light"] .type-telefonie{
 
 /* ondertekenen van een document */
 
+/* Het venster heeft zijn eigen opmaak nodig; ember-form-runtime.css wordt alleen door de
+   FormRunner geladen en is op de installatiepagina dus niet beschikbaar. */
+
+.doc-sign-overlay{
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: grid;
+  place-items: center;
+  padding: 12px;
+  background: var(--backdrop-bg);
+}
+
+.doc-sign-dialog{
+  width: min(720px, 100%);
+  max-height: calc(100dvh - 24px);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg, 16px);
+  box-shadow: var(--shadow-panel);
+}
+
+.doc-sign-dialog--wide{
+  width: min(1500px, 100%);
+  height: calc(100dvh - 24px);
+}
+
+.doc-sign-dialog__head{
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+  padding: 16px;
+  border-bottom: 1px solid var(--border);
+}
+
+.doc-sign-dialog__head h2{
+  margin: 0;
+  font-size: 1.2rem;
+}
+
+.doc-sign-dialog__head p{
+  margin: 6px 0 0;
+}
+
+.doc-sign-dialog__body{
+  padding: 16px;
+  overflow: auto;
+  min-height: 0;
+}
+
+
 .doc-sign__body{
   display: grid;
   gap: 16px;
@@ -3365,6 +3421,19 @@ html[data-appearance="light"] .type-telefonie{
   width: 100%;
   height: 100%;
   border: 0;
+}
+
+.doc-sign-designer__acties{
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.doc-sign-designer__voet{
+  margin: 0;
+  padding: 10px 16px;
+  border-top: 1px solid var(--border);
 }
 
 .doc-sign-decision{

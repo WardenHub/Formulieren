@@ -276,6 +276,25 @@ export default function DocumentSignatureDialog({ code, documentId, documentTitl
     }
   }
 
+  // Een ondertekentoken is eenmalig, dus het tabblad krijgt een eigen sessie. Het venster
+  // gaat meteen bij de klik open; na een await blokkeert de browser het als popup.
+  async function openDesignerInTab() {
+    const venster = window.open("", "_blank", "noopener");
+    setBusy("designer-tab");
+    setError("");
+    try {
+      const data = await createDocumentSignatureDesignerSession(code, documentId, request.signature_request_id);
+      const url = String(data?.url || "");
+      if (venster) venster.location.href = url;
+      else window.location.assign(url);
+    } catch (err) {
+      venster?.close();
+      setError(foutTekst(err));
+    } finally {
+      setBusy("");
+    }
+  }
+
   async function haalBestand(kind) {
     setBusy(`download:${kind}`);
     setError("");
@@ -300,9 +319,9 @@ export default function DocumentSignatureDialog({ code, documentId, documentTitl
 
   if (designerUrl) {
     return (
-      <div className="form-evidence-overlay" role="dialog" aria-modal="true">
-        <div className="form-evidence-dialog form-evidence-dialog--wide doc-sign-designer">
-          <div className="form-evidence-dialog__head">
+      <div className="doc-sign-overlay" role="dialog" aria-modal="true">
+        <div className="doc-sign-dialog doc-sign-dialog--wide doc-sign-designer">
+          <div className="doc-sign-dialog__head">
             <div>
               <h2>Plaats de handtekeningen</h2>
               <p className="muted">
@@ -310,22 +329,31 @@ export default function DocumentSignatureDialog({ code, documentId, documentTitl
                 Sluit dit venster als u klaar bent; versturen doet u daarna in Ember.
               </p>
             </div>
-            <button type="button" className="btn-ghost" onClick={() => setDesignerUrl("")}>
-              klaar met plaatsen
-            </button>
+            <div className="doc-sign-designer__acties">
+              <button type="button" className="btn-ghost" disabled={busy !== ""} onClick={openDesignerInTab}>
+                {busy === "designer-tab" ? "bezig..." : "openen in een nieuw tabblad"}
+              </button>
+              <button type="button" className="btn-primary" onClick={() => setDesignerUrl("")}>
+                klaar met plaatsen
+              </button>
+            </div>
           </div>
           <div className="doc-sign-designer__frame">
             <iframe title="Handtekeningen plaatsen" src={designerUrl} />
           </div>
+          <p className="muted doc-sign-designer__voet">
+            Blijft dit venster leeg of geeft het een melding, dan blokkeert uw browser
+            waarschijnlijk cookies van derden. Open het dan in een nieuw tabblad.
+          </p>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="form-evidence-overlay" role="dialog" aria-modal="true">
-      <div className="form-evidence-dialog doc-sign">
-        <div className="form-evidence-dialog__head">
+    <div className="doc-sign-overlay" role="dialog" aria-modal="true">
+      <div className="doc-sign-dialog doc-sign">
+        <div className="doc-sign-dialog__head">
           <div>
             <h2>Onderteken</h2>
             <p className="muted">{documentTitle || "Document"}</p>
@@ -335,7 +363,7 @@ export default function DocumentSignatureDialog({ code, documentId, documentTitl
           </button>
         </div>
 
-        <div className="form-evidence-dialog__body doc-sign__body">
+        <div className="doc-sign-dialog__body doc-sign__body">
           {loading && <p className="muted">Bezig met laden...</p>}
 
           {!loading && state && !state.provider_configured && (
@@ -359,6 +387,22 @@ export default function DocumentSignatureDialog({ code, documentId, documentTitl
 
           {!loading && request && request.closed_reason && (
             <p className="muted doc-sign__reden">{request.closed_reason}</p>
+          )}
+
+          {/* Zonder deze regel is niet te zien dat plaatsen voor versturen komt. */}
+          {!loading && status === "DRAFT" && (
+            <p className="doc-sign__melding">
+              {request.placement_method === "IN_DOCUMENT"
+                ? "Volgende stap: plaats eerst de handtekeningvakken, en verstuur daarna. Zolang u niet verstuurt, merkt niemand iets."
+                : "Volgende stap: versturen. Ember heeft de ondertekenpagina al achter het document geplaatst; zolang u niet verstuurt, merkt niemand iets."}
+            </p>
+          )}
+
+          {!loading && status === "SENT" && (
+            <p className="doc-sign__melding">
+              De uitnodiging is onderweg. Zodra iedereen getekend heeft, komt het ondertekende
+              document hier terug en wordt het document als ondertekend geregistreerd.
+            </p>
           )}
 
           {!loading && serverSigners.length > 0 && (
