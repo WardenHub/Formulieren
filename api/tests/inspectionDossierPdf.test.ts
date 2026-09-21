@@ -2,6 +2,17 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { buildInspectionDossierHtml } from '../src/services/inspectionDossierPdfService.js';
 
+test('maintenance source and age warning are retained in the dossier export', () => {
+  const html = buildInspectionDossierHtml({case: {}, maintenance_evidence: {
+    latest: {source: 'FORM_RUNNER', title: 'Onderhoud <BMI>', maintenance_date: '2024-03-01'},
+    warning: 'Het laatste onderhoudsdocument is ouder dan één jaar.', undated_count: 1,
+  }}, [], new Date('2026-09-21T12:00:00Z'));
+  assert.match(html, /Ember-formulier/);
+  assert.match(html, /Onderhoud &lt;BMI&gt;/);
+  assert.match(html, /ouder dan één jaar/);
+  assert.match(html, /ontbreekt een geldige onderhoudsdatum/);
+});
+
 const detail = {
   case: {
     inspection_case_id: '3179AD6D-0DE7-484D-874C-4370FB11ABE1',

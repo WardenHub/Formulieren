@@ -33,11 +33,14 @@ import {
   downloadDocumentFile,
   createDocumentReplacement,
   createDocumentAttachment,
+  postDocumentStamp,
   getInstallationDrawings,
+  putInstallationPrimaryDrawing,
   getDrawingResource,
   getDrawingPins,
   postHistoricalizeComponentPins,
   postHistoricalizeAllComponentPins,
+  postCopyDrawingPinsToRevision,
   postDrawingPin,
   putDrawingPin,
   deleteDrawingPin,
@@ -255,6 +258,11 @@ router.post(
   requireRole(...documentRoles),
   createDocumentAttachment
 );
+router.post(
+  "/:code/documents/:documentId/stamps",
+  requireRole(...documentRoles),
+  postDocumentStamp
+);
 
 /* Digitale ondertekening; het ophalen van de stand mag iedereen die documenten ziet,
    het starten en verzenden hoort bij dezelfde rollen die documenten beheren. */
@@ -295,6 +303,7 @@ router.put(
 );
 
 router.get("/:code/drawings", requireRole(...documentRoles), getInstallationDrawings);
+router.put("/:code/drawings/primary", requireRole(...documentRoles), putInstallationPrimaryDrawing);
 // Backward-compatible drawing download for older local preview bundles.
 router.get(
   "/:code/drawings/:documentId",
@@ -304,6 +313,11 @@ router.get(
 router.get("/:code/drawings/:documentId/pins", requireRole(...documentRoles), getDrawingPins);
 router.post("/:code/drawings/:documentId/pins/historicalize-components", requireRole(...documentRoles), postHistoricalizeComponentPins);
 router.post("/:code/drawing-pins/historicalize-components", requireRole(...documentRoles), postHistoricalizeAllComponentPins);
+router.post(
+  "/:code/drawings/:documentId/pins/copy-to/:targetDocumentId",
+  requireRole(...documentRoles),
+  postCopyDrawingPinsToRevision
+);
 router.post(
   "/:code/drawings/:documentId/pins",
   requireRole(...documentRoles),

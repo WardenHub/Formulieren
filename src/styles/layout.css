@@ -2139,6 +2139,29 @@ html[data-appearance="light"] .type-telefonie{
   transition: transform .08s linear;
 }
 
+.installations-startup-card__progress-bar--indeterminate{
+  width: 42%;
+  animation: installations-loading-progress 1.2s ease-in-out infinite;
+}
+
+@keyframes installations-loading-progress{
+  from{
+    transform: translateX(-110%);
+  }
+
+  to{
+    transform: translateX(250%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce){
+  .installations-startup-card__progress-bar--indeterminate{
+    animation: none;
+    width: 100%;
+    opacity: .65;
+  }
+}
+
 .doc-section-shell{
   border: 1px solid var(--border-soft);
   border-radius: var(--radius-xl);
@@ -6312,6 +6335,61 @@ html[data-appearance="dark"] .leaflet-popup-content a{
   font-size: 12px;
 }
 
+.drawing-primary-confirm,
+.drawing-replacement-notice{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:16px;
+}
+
+.drawing-primary-confirm > div:first-child,
+.drawing-replacement-notice > div:first-child{
+  display:grid;
+  gap:4px;
+}
+
+.drawing-primary-confirm__actions{
+  display:flex;
+  gap:8px;
+  flex-wrap:wrap;
+  flex:0 0 auto;
+}
+
+.drawing-replacement-notice__actions,
+.drawing-revision-preview__actions{
+  display:flex;
+  align-items:center;
+  justify-content:flex-end;
+  gap:8px;
+  flex-wrap:wrap;
+  flex:0 0 auto;
+}
+
+.drawing-revision-preview{
+  display:grid;
+  gap:12px;
+}
+
+.drawing-revision-preview > div:first-child{
+  display:grid;
+  gap:5px;
+}
+
+.drawing-revision-preview__acknowledge{
+  display:flex;
+  align-items:center;
+  gap:8px;
+  cursor:pointer;
+  color:var(--text-strong);
+}
+
+.drawing-revision-preview__acknowledge input{
+  width:16px;
+  height:16px;
+  accent-color:var(--accent);
+}
+
 .drawing-pins-help-wrap{position:relative;}
 .drawing-pins-help-wrap > .icon-btn{width:38px;height:38px;}
 .drawing-pins-help-panel{
@@ -6531,10 +6609,19 @@ html[data-appearance="dark"] .drawing-pins-toolbar select{color-scheme:dark;}
 
 .form-drawing-sheet__picker{
   display: grid;
-  gap: 5px;
+  grid-template-columns:minmax(0,1fr) auto;
+  align-items:end;
+  gap:8px 10px;
+  padding:10px 14px;
+  border-bottom:1px solid var(--border-soft);
   color: var(--muted);
   font-size: 12px;
   font-weight: 750;
+}
+
+.form-drawing-sheet__picker > span,
+.form-drawing-sheet__picker > small{
+  grid-column:1 / -1;
 }
 
 .form-drawing-sheet__picker select{
@@ -6544,6 +6631,57 @@ html[data-appearance="dark"] .drawing-pins-toolbar select{color-scheme:dark;}
   border-radius: var(--radius-md);
   background: var(--input-bg);
   color: var(--text);
+}
+
+.form-drawing-sheet__primary{
+  padding:8px 14px;
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:14px;
+  border-bottom:1px solid var(--border-soft);
+  font-size:12px;
+}
+
+.form-drawing-sheet__primary > div{
+  display:grid;
+  gap:2px;
+}
+
+.form-drawing-sheet__primary > div:last-child{
+  max-width:58ch;
+  text-align:right;
+}
+
+@media (max-width:680px){
+  .drawing-primary-confirm,
+  .drawing-replacement-notice{
+    align-items:stretch;
+    flex-direction:column;
+  }
+
+  .drawing-primary-confirm__actions{
+    justify-content:flex-end;
+  }
+
+  .drawing-replacement-notice__actions,
+  .drawing-revision-preview__actions{
+    align-items:stretch;
+    flex-direction:column;
+  }
+
+  .form-drawing-sheet__picker{
+    grid-template-columns:1fr;
+  }
+
+  .form-drawing-sheet__primary{
+    align-items:flex-start;
+    flex-direction:column;
+  }
+
+  .form-drawing-sheet__primary > div:last-child{
+    text-align:left;
+  }
 }
 
 .form-drawing-sheet__state,
@@ -9743,6 +9881,43 @@ html[data-appearance="dark"] .ember-radial-action-menu {
 .inspection-question__ask{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin:0;font-weight:750;line-height:1.35}
 .inspection-question__tag{font-size:.66rem;letter-spacing:.03em;text-transform:uppercase;min-height:20px;padding:0 8px}
 .inspection-question__help{display:flex;align-items:center;gap:6px;margin:0;font-size:.8rem;color:var(--muted)}
+
+/* Documentstempels; dezelfde rustige dialooglaag als documentbewijs en ondertekening. */
+.document-stamp-overlay{z-index:1200;padding:clamp(12px,3vw,34px)}
+.document-stamp-dialog{width:min(1240px,96vw);max-height:94vh;display:flex;flex-direction:column;overflow:hidden;border:1px solid var(--border);border-radius:var(--radius-lg);background:var(--surface);box-shadow:var(--shadow-panel)}
+.document-stamp-dialog__header,.document-stamp-dialog__footer{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px 18px;border-color:var(--border);background:var(--surface)}
+.document-stamp-dialog__header{border-bottom:1px solid var(--border)}
+.document-stamp-dialog__footer{justify-content:flex-end;border-top:1px solid var(--border)}
+.document-stamp-dialog__body{min-height:0;display:grid;grid-template-columns:minmax(220px,280px) minmax(0,1fr);flex:1;overflow:hidden}
+.document-stamp-picker{padding:16px;border-right:1px solid var(--border);overflow:auto;background:var(--surface-2)}
+.document-stamp-picker__grid{display:grid;gap:10px;margin-top:12px}
+.document-stamp-choice{display:block;width:100%;padding:0;border:2px solid transparent;border-radius:12px;background:transparent;cursor:pointer;text-align:left;transition:border-color .16s ease,transform .16s ease,box-shadow .16s ease}
+.document-stamp-choice:hover,.document-stamp-choice:focus-visible{transform:translateY(-1px);border-color:var(--brand-red);box-shadow:var(--shadow-soft);outline:none}
+.document-stamp-choice.is-selected{border-color:var(--brand-red);box-shadow:0 0 0 3px var(--accent-ring)}
+.document-stamp-workspace{min-width:0;padding:12px;overflow:auto;background:var(--bg)}
+.document-stamp-toolbar{position:sticky;top:0;z-index:3;display:flex;align-items:center;justify-content:center;gap:10px;width:max-content;margin:0 auto 10px;padding:6px 10px;border:1px solid var(--border);border-radius:999px;background:var(--surface)}
+.document-stamp-page{position:relative;margin:0 auto;background:#fff;box-shadow:var(--shadow);user-select:none}
+.document-stamp-page.is-placing{cursor:crosshair}
+.document-stamp-page canvas{display:block;max-width:none}
+.document-stamp-placement{position:absolute;display:block;pointer-events:none}
+.document-stamp-preview{position:relative;display:block;width:100%;height:100%;min-height:48px;overflow:hidden;border:1px solid #2870b9;border-radius:11%;background:linear-gradient(180deg,#dce9fb 0%,#9fc2ef 100%);color:#3949ab;font-family:"Segoe UI",Arial,sans-serif}
+.document-stamp-preview__title{position:absolute;left:5.5%;top:6%;font-size:clamp(10px,2.1vw,28px);font-weight:750;line-height:1}
+.document-stamp-preview__brand{position:absolute;right:5%;top:5%;font-size:clamp(13px,2.5vw,34px);font-weight:800;line-height:1;color:#92979c}
+.document-stamp-preview__brand b{color:#ef2525}
+.document-stamp-preview__rows{position:absolute;left:5.5%;right:5%;bottom:7%;display:grid;gap:1px;font-size:clamp(5px,.85vw,11px);line-height:1.15}
+.document-stamp-preview__rows span{display:grid;grid-template-columns:20% 1fr;gap:4px}
+.document-stamp-preview--compact{aspect-ratio:2.4095;min-height:0}
+.document-stamp-preview--compact .document-stamp-preview__title{font-size:clamp(13px,1.45vw,19px)}
+.document-stamp-preview--compact .document-stamp-preview__brand{font-size:clamp(16px,1.8vw,23px)}
+.document-stamp-loading{display:flex;align-items:center;justify-content:center;gap:10px;min-height:280px;color:var(--muted)}
+.document-stamp-hint{text-align:center;margin:10px 0 2px}
+
+@media (max-width:800px){
+  .document-stamp-dialog__body{grid-template-columns:1fr;overflow:auto}
+  .document-stamp-picker{border-right:0;border-bottom:1px solid var(--border)}
+  .document-stamp-picker__grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .document-stamp-workspace{overflow:visible}
+}
 .inspection-question__answer{margin:0;font-size:.78rem;color:var(--muted)}
 .inspection-question__empty{margin:0;font-size:.82rem;color:var(--muted);font-style:italic}
 .inspection-question__lines{margin:0;padding-left:18px;display:grid;gap:3px;font-size:.84rem;color:var(--muted)}

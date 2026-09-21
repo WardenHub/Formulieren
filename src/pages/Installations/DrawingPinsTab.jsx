@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { GlobalWorkerOptions, getDocument as loadPdfDocument } from "pdfjs-dist";
 import pdfWorkerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
-import { BadgeAlert, BriefcaseBusiness, ChevronLeft, ChevronRight, MapPinPlusInside, Maximize2, MessageSquareMore, Minimize2, MoreVertical, PanelRightClose, PanelRightOpen, Pin, PinOff, Scan } from "lucide-react";
+import { BadgeAlert, BriefcaseBusiness, ChevronLeft, ChevronRight, MapPinPlusInside, Maximize2, MessageSquareMore, Minimize2, MoreVertical, PanelRightClose, PanelRightOpen, Pin, PinOff } from "lucide-react";
 
 import EmberRadialActionMenu from "@/components/radial/EmberRadialActionMenu.jsx";
 import { BadgeAlertIcon } from "@/components/ui/badge-alert.jsx";
@@ -17,16 +17,28 @@ import { useDrawingViewer, useFullscreen, usePdfPage } from "@/lib/drawingViewer
 import {
   createDrawingPin,
   createManualFollowUpForDrawingPin,
+  copyDrawingPinsToRevision,
   deleteDrawingPin,
   downloadInstallationDocumentFile,
   getDrawingPins,
   getInstallationDrawings,
   linkDrawingPinAction,
+  setInstallationPrimaryDrawing,
   unlinkDrawingPinAction,
   updateDrawingPin,
 } from "@/api/emberApi.js";
 
 GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
+
+async function readPdfPageSizes(document) {
+  const sizes = [];
+  for (let pageNumber = 1; pageNumber <= document.numPages; pageNumber += 1) {
+    const page = await document.getPage(pageNumber);
+    const viewport = page.getViewport({ scale: 1 });
+    sizes.push({ width: viewport.width, height: viewport.height });
+  }
+  return sizes;
+}
 
 // De lange druk op een tablet. 550 ms is dezelfde tijd als voorheen; de speling is nieuw en
 // ligt bij de 12 pixels die de tekeningviewer voor een tik aanhoudt.
@@ -321,10 +333,6 @@ function PdfPinViewer({ pdfDocument, pageNumber, pageCount, pins, selectedPinId,
         <button type="button" className="icon-btn" title="Inzoomen" onClick={() => setZoom((current) => current + 0.2)}>+</button>
         <span>{Math.round(zoom * 100)}%</span>
         <button type="button" className="icon-btn" title="Uitzoomen" onClick={() => setZoom((current) => current - 0.2)}>−</button>
-        <button type="button" className="icon-btn" title="Passend maken" aria-label="Passend maken" onClick={() => setZoom(1)}>
-          <Scan size={17} aria-hidden="true" />
-        </button>
-        <span className="drawing-zoom-controls__divider" aria-hidden="true" />
         <button
           type="button"
           className="icon-btn"
@@ -782,7 +790,7 @@ export default function DrawingPinsTab({ code, readOnly = false, navigationTarge
   const linkActionId = String(navigationTarget?.linkActionId || (!embedded && searchParams.get("linkAction")) || "").trim();
   const returnTo = String(searchParams.get("returnTo") || "").trim();
 
-  const [directory, setDirectory] = useState({ drawings: [], follow_up_actions: [] });
+  const [directory, setDirectory] = useState({ drawings: [], follow_up_actions: [], primary_drawing_document_id: null });
   const [selectedDocumentId, setSelectedDocumentId] = useState(() => String(navigationTarget?.documentId || (!embedded && searchParams.get("drawing")) || ""));
   const [pins, setPins] = useState([]);
   const [pdfDocument, setPdfDocument] = useState(null);
@@ -799,15 +807,22 @@ export default function DrawingPinsTab({ code, readOnly = false, navigationTarge
   const [editorOpen, setEditorOpen] = useState(false);
   const [editorFloating, setEditorFloating] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
+  const [primaryCandidateId, setPrimaryCandidateId] = useState("");
+  const [primaryNotice, setPrimaryNotice] = useState("");
+  const [revisionPreview, setRevisionPreview] = useState(null);
+  const [revisionCopyAcknowledged, setRevisionCopyAcknowledged] = useState(false);
   const helpIconRef = useRef(null);
 
   useEffect(() => { onBusyChange?.(busy); }, [busy, onBusyChange]);
 
   const selectedDrawing = directory.drawings.find((item) => String(item.document_id) === selectedDocumentId) || null;
+  const primaryDrawing = directory.drawings.find((item) => item.is_primary_drawing) || null;
+  const primaryCandidate = directory.drawings.find((item) => String(item.document_id) === primaryCandidateId) || null;
   const selectedPin = pins.find((item) => String(item.drawing_pin_id) === selectedPinId) || null;
   const componentReview = Boolean(navigationTarget?.componentReview) || (!embedded && searchParams.get("componentReview") === "1");
   const componentReviewPins = (directory.pins || []).filter((pin) => pin.pin_kind === "COMPONENT_PLACED" && String(pin.pin_status || "").toUpperCase() === "ACTIVE");
   const componentReviewIndex = Math.max(0, componentReviewPins.findIndex((pin) => String(pin.drawing_pin_id) === selectedPinId));
+  const previewPins = revisionPreview?.pins || null;
 
   // Een opvolgpunt aanmaken hoort alleen op de plek waar iemand zelf een bevinding vastlegt.
   // Kom je hier vanuit een formulier om een locatie bij een bestaand punt te zetten, dan is er
@@ -869,7 +884,7 @@ export default function DrawingPinsTab({ code, readOnly = false, navigationTarge
   async function loadDirectory(options = {}) {
     const response = await getInstallationDrawings(code);
     setDirectory(response || { drawings: [], follow_up_actions: [] });
-    const preferred = options.documentId || selectedDocumentId || response?.drawings?.[0]?.document_id || "";
+    const preferred = options.documentId || selectedDocumentId || response?.primary_drawing_document_id || response?.drawings?.[0]?.document_id || "";
     if (preferred && preferred !== selectedDocumentId) setSelectedDocumentId(String(preferred));
     return response;
   }
@@ -891,7 +906,7 @@ export default function DrawingPinsTab({ code, readOnly = false, navigationTarge
       .then((response) => {
         if (cancelled) return;
         setDirectory(response || { drawings: [], follow_up_actions: [] });
-        setSelectedDocumentId((current) => String(current || response?.drawings?.[0]?.document_id || ""));
+        setSelectedDocumentId((current) => String(current || response?.primary_drawing_document_id || response?.drawings?.[0]?.document_id || ""));
       })
       .catch((requestError) => {
         if (!cancelled) setError(requestError?.message || String(requestError));
@@ -901,6 +916,100 @@ export default function DrawingPinsTab({ code, readOnly = false, navigationTarge
       });
     return () => { cancelled = true; };
   }, [code]);
+
+  async function confirmPrimaryDrawing() {
+    if (!primaryCandidateId || readOnly) return;
+    setBusy(true);
+    setError("");
+    setPrimaryNotice("");
+    try {
+      const response = await setInstallationPrimaryDrawing(code, primaryCandidateId);
+      setDirectory(response || { drawings: [], follow_up_actions: [], primary_drawing_document_id: primaryCandidateId });
+      setSelectedDocumentId(String(primaryCandidateId));
+      setPrimaryCandidateId("");
+      setPrimaryNotice("De hoofdtekening is opgeslagen en wordt voortaan in de FormRunner gebruikt.");
+    } catch (requestError) {
+      setError(requestError?.message || "Hoofdtekening opslaan is mislukt.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function openRevisionPinPreview() {
+    const sourceDocumentId = String(selectedDrawing?.parent_document_id || "");
+    if (!sourceDocumentId || !pdfDocument) return;
+    setBusy(true);
+    setError("");
+    setRevisionCopyAcknowledged(false);
+    let sourcePdf = null;
+    try {
+      const [sourcePinsResponse, sourceDownload, targetPageSizes] = await Promise.all([
+        getDrawingPins(code, sourceDocumentId, false),
+        downloadInstallationDocumentFile(code, sourceDocumentId),
+        readPdfPageSizes(pdfDocument),
+      ]);
+      sourcePdf = await loadPdfDocument({ data: await sourceDownload.blob.arrayBuffer() }).promise;
+      const sourcePageSizes = await readPdfPageSizes(sourcePdf);
+      const sourcePins = sourcePinsResponse?.pins || [];
+      const comparedPageCount = Math.min(sourcePageSizes.length, targetPageSizes.length);
+      const changedPages = [];
+      for (let index = 0; index < comparedPageCount; index += 1) {
+        const sourceSize = sourcePageSizes[index];
+        const targetSize = targetPageSizes[index];
+        if (Math.abs(sourceSize.width - targetSize.width) > 1 || Math.abs(sourceSize.height - targetSize.height) > 1) {
+          changedPages.push(index + 1);
+        }
+      }
+      const missingPagePins = sourcePins.filter((pin) => Number(pin.page_number) > targetPageSizes.length);
+      setRevisionPreview({
+        sourceDocumentId,
+        pins: sourcePins,
+        sourcePageCount: sourcePageSizes.length,
+        targetPageCount: targetPageSizes.length,
+        changedPages,
+        missingPagePinCount: missingPagePins.length,
+      });
+      setPageNumber(1);
+      setSidePanelOpen(false);
+      setSelectedPinId("");
+      setDraft(null);
+      setEditorOpen(false);
+      setPlacing(false);
+    } catch (requestError) {
+      setError(requestError?.message || "Het pinvoorbeeld kon niet worden opgebouwd.");
+    } finally {
+      await sourcePdf?.destroy?.();
+      setBusy(false);
+    }
+  }
+
+  async function copyRevisionPins() {
+    if (!revisionPreview || revisionPreview.missingPagePinCount > 0 || readOnly) return;
+    setBusy(true);
+    setError("");
+    setPrimaryNotice("");
+    try {
+      const response = await copyDrawingPinsToRevision(
+        code,
+        revisionPreview.sourceDocumentId,
+        selectedDocumentId
+      );
+      await Promise.all([loadPins(selectedDocumentId), loadDirectory({ documentId: selectedDocumentId })]);
+      setRevisionPreview(null);
+      setRevisionCopyAcknowledged(false);
+      const copied = Number(response?.copied_count || 0);
+      const existing = Number(response?.already_copied_count || 0);
+      setPrimaryNotice(
+        copied > 0
+          ? `${copied} pin(s) zijn naar de nieuwe revisie gekopieerd. De oorspronkelijke pins blijven op de vorige revisie bewaard.`
+          : `${existing} pin(s) stonden al op deze revisie; er zijn geen duplicaten gemaakt.`
+      );
+    } catch (requestError) {
+      setError(requestError?.message || "Pins kopiëren naar de nieuwe revisie is mislukt.");
+    } finally {
+      setBusy(false);
+    }
+  }
 
   useEffect(() => {
     if (!selectedDocumentId) {
@@ -1117,6 +1226,8 @@ export default function DrawingPinsTab({ code, readOnly = false, navigationTarge
             value={selectedDocumentId}
             onChange={(event) => {
               const value = event.target.value;
+              setRevisionPreview(null);
+              setRevisionCopyAcknowledged(false);
               setSelectedDocumentId(value);
               setPageNumber(1);
               setSelectedPinId("");
@@ -1129,7 +1240,7 @@ export default function DrawingPinsTab({ code, readOnly = false, navigationTarge
             <option value="">Kies een tekening</option>
             {directory.drawings.map((drawing) => (
               <option key={drawing.document_id} value={drawing.document_id}>
-                {drawing.title || drawing.file_name || drawing.document_type_name}; {drawing.pin_count} pin(s){drawing.is_current_version === false ? "; historische versie" : ""}
+                {drawing.title || drawing.file_name || drawing.document_type_name}; {drawing.pin_count} pin(s){drawing.is_primary_drawing ? "; hoofdtekening" : ""}{drawing.is_current_version === false ? "; historische versie" : ""}
               </option>
             ))}
           </select>
@@ -1138,6 +1249,7 @@ export default function DrawingPinsTab({ code, readOnly = false, navigationTarge
           <div className="drawing-pins-toolbar__meta">
             <strong>{selectedDrawing.title || selectedDrawing.file_name}</strong>
             <span>{selectedDrawing.file_name}; {selectedDrawing.document_type_name}</span>
+            {selectedDrawing.is_primary_drawing ? <span className="ember-label ember-label--success">Hoofdtekening</span> : null}
             {selectedDrawing.is_current_version === false ? <span className="ember-label ember-label--muted">Historische PDF-versie</span> : null}
           </div>
         ) : null}
@@ -1164,7 +1276,7 @@ export default function DrawingPinsTab({ code, readOnly = false, navigationTarge
         <button
           type="button"
           className="btn btn-primary"
-          disabled={readOnly || !selectedDocumentId || !pdfDocument || selectedDrawing?.is_current_version === false}
+          disabled={Boolean(revisionPreview) || readOnly || !selectedDocumentId || !pdfDocument || selectedDrawing?.is_current_version === false}
           onClick={() => {
             setDraft(null);
             setSelectedPinId("");
@@ -1174,6 +1286,11 @@ export default function DrawingPinsTab({ code, readOnly = false, navigationTarge
         >
           Nieuwe pin plaatsen
         </button>
+        {!readOnly && selectedDrawing && selectedDrawing.is_drawing_type && selectedDrawing.is_current_version !== false && !selectedDrawing.is_primary_drawing ? (
+          <button type="button" className="btn btn-secondary" disabled={busy} onClick={() => setPrimaryCandidateId(String(selectedDrawing.document_id))}>
+            Als hoofdtekening gebruiken
+          </button>
+        ) : null}
         <label className={`ember-toggle ${showHistory ? "is-on" : "is-off"}`} title="Toon of verberg historische componentpins en tekenversies">
           <input type="checkbox" checked={showHistory} onChange={(event) => setShowHistory(event.target.checked)} />
           <span className="ember-toggle__track"><span className="ember-toggle__thumb" /></span>
@@ -1182,8 +1299,81 @@ export default function DrawingPinsTab({ code, readOnly = false, navigationTarge
       </div>
 
       {error ? <div className="ember-alert ember-alert--danger">{error}</div> : null}
+      {primaryNotice ? <div className="ember-alert ember-alert--success">{primaryNotice}</div> : null}
+      {primaryCandidate ? (
+        <div className="ember-alert ember-alert--warning drawing-primary-confirm" role="dialog" aria-label="Hoofdtekening wijzigen">
+          <div>
+            <strong>Deze tekening voortaan overal gebruiken?</strong>
+            <div>
+              Ember opent dan <strong>{primaryCandidate.title || primaryCandidate.file_name}</strong> automatisch in de FormRunner.
+              {primaryDrawing?.pin_count
+                ? ` De ${primaryDrawing.pin_count} bestaande pin(s) op ${primaryDrawing.title || primaryDrawing.file_name} blijven veilig aan die exacte PDF-versie gekoppeld en worden niet automatisch verplaatst.`
+                : ""}
+            </div>
+          </div>
+          <div className="drawing-primary-confirm__actions">
+            <button type="button" className="btn btn-secondary" disabled={busy} onClick={() => setPrimaryCandidateId("")}>Annuleren</button>
+            <button type="button" className="btn btn-primary" disabled={busy} onClick={confirmPrimaryDrawing}>{busy ? "Opslaan..." : "Hoofdtekening opslaan"}</button>
+          </div>
+        </div>
+      ) : null}
       {readOnly ? <div className="ember-alert ember-alert--warning">{embedded ? "Deze gekoppelde locatie is hier alleen te bekijken." : "Deze historische installatie is alleen-lezen."}</div> : null}
       {selectedDrawing?.is_current_version === false ? <div className="ember-alert ember-alert--info">Deze pinnen blijven gekoppeld aan de exacte historische PDF-versie. Nieuwe pins kunnen alleen op de actuele tekenversie worden geplaatst.</div> : null}
+      {selectedDrawing?.is_current_version !== false && selectedDrawing?.parent_document_id && selectedDrawing?.previous_version_pin_count > 0 ? (
+        <div className="ember-alert ember-alert--info drawing-replacement-notice">
+          <div>
+            <strong>Nieuwe tekenversie actief</strong>
+            <div>{selectedDrawing.previous_version_pin_count} pin(s) staan op de vorige revisie. Bekijk eerst hoe deze pins op de nieuwe PDF uitkomen en kopieer ze daarna indien gewenst.</div>
+          </div>
+          <div className="drawing-replacement-notice__actions">
+            <button type="button" className="btn btn-primary" disabled={busy} onClick={openRevisionPinPreview}>Voorbeeld op nieuwe revisie</button>
+            <button type="button" className="btn btn-secondary" onClick={() => {
+              const previousId = String(selectedDrawing.parent_document_id);
+              setRevisionPreview(null);
+              setSelectedDocumentId(previousId);
+              setPageNumber(1);
+              setSelectedPinId("");
+              setDraft(null);
+              setShowHistory(true);
+              updateLocation(previousId, 1, "");
+            }}>Vorige revisie bekijken</button>
+          </div>
+        </div>
+      ) : null}
+      {revisionPreview ? (
+        <div className="ember-alert ember-alert--warning drawing-revision-preview" role="region" aria-label="Voorbeeld pins op nieuwe revisie">
+          <div>
+            <strong>Voorbeeld; {revisionPreview.pins.length} pin(s) op de nieuwe revisie</strong>
+            <div>De pins hieronder zijn nog niet gekopieerd. Controleer hun positie op iedere relevante pagina.</div>
+            {revisionPreview.sourcePageCount !== revisionPreview.targetPageCount ? (
+              <div><strong>Let op:</strong> de vorige revisie heeft {revisionPreview.sourcePageCount} pagina('s), de nieuwe {revisionPreview.targetPageCount}.</div>
+            ) : null}
+            {revisionPreview.changedPages.length ? (
+              <div><strong>Let op:</strong> de pagina-afmetingen verschillen op pagina {revisionPreview.changedPages.join(", ")}. Controleer de positie extra zorgvuldig.</div>
+            ) : null}
+            {revisionPreview.missingPagePinCount > 0 ? (
+              <div><strong>Kopiëren geblokkeerd:</strong> {revisionPreview.missingPagePinCount} pin(s) staan op een pagina die niet voorkomt in de nieuwe revisie.</div>
+            ) : null}
+          </div>
+          <div className="drawing-revision-preview__actions">
+            {(revisionPreview.changedPages.length > 0 || revisionPreview.sourcePageCount !== revisionPreview.targetPageCount) && revisionPreview.missingPagePinCount === 0 ? (
+              <label className="drawing-revision-preview__acknowledge">
+                <input type="checkbox" checked={revisionCopyAcknowledged} onChange={(event) => setRevisionCopyAcknowledged(event.target.checked)} />
+                <span>Ik heb de afwijkingen en pinposities gecontroleerd</span>
+              </label>
+            ) : null}
+            <button type="button" className="btn btn-secondary" disabled={busy} onClick={() => { setRevisionPreview(null); setRevisionCopyAcknowledged(false); }}>Voorbeeld sluiten</button>
+            <button
+              type="button"
+              className="btn btn-primary"
+              disabled={busy || revisionPreview.missingPagePinCount > 0 || ((revisionPreview.changedPages.length > 0 || revisionPreview.sourcePageCount !== revisionPreview.targetPageCount) && !revisionCopyAcknowledged)}
+              onClick={copyRevisionPins}
+            >
+              {busy ? "Kopiëren..." : "Pins kopiëren naar nieuwe revisie"}
+            </button>
+          </div>
+        </div>
+      ) : null}
 
       {!directory.drawings.length ? (
         <div className="ui-empty">Geen actieve PDF-tekeningen in het installatiedossier.</div>
@@ -1198,21 +1388,21 @@ export default function DrawingPinsTab({ code, readOnly = false, navigationTarge
               <button type="button" className="btn btn-secondary" disabled={pageNumber <= 1} onClick={() => { const next = pageNumber - 1; setPageNumber(next); updateLocation(selectedDocumentId, next, selectedPinId); }}>Vorige</button>
               <span>Pagina {pageNumber} van {pdfDocument.numPages}</span>
               <button type="button" className="btn btn-secondary" disabled={pageNumber >= pdfDocument.numPages} onClick={() => { const next = pageNumber + 1; setPageNumber(next); updateLocation(selectedDocumentId, next, selectedPinId); }}>Volgende</button>
-              <button type="button" className="icon-btn drawing-side-panel-toggle" title={sidePanelOpen ? "Rechterpaneel inklappen" : "Rechterpaneel uitklappen"} aria-label={sidePanelOpen ? "Rechterpaneel inklappen" : "Rechterpaneel uitklappen"} onClick={() => setSidePanelOpen((current) => !current)}>{sidePanelOpen ? <PanelRightClose size={18} /> : <PanelRightOpen size={18} />}</button>
+              <button type="button" className="icon-btn drawing-side-panel-toggle" disabled={Boolean(revisionPreview)} title={sidePanelOpen ? "Rechterpaneel inklappen" : "Rechterpaneel uitklappen"} aria-label={sidePanelOpen ? "Rechterpaneel inklappen" : "Rechterpaneel uitklappen"} onClick={() => setSidePanelOpen((current) => !current)}>{sidePanelOpen ? <PanelRightClose size={18} /> : <PanelRightOpen size={18} />}</button>
             </div>
             <PdfPinViewer
               pdfDocument={pdfDocument}
               pageNumber={pageNumber}
               pageCount={pdfDocument.numPages}
-              pins={pins}
-              selectedPinId={selectedPinId}
-              selectedPin={selectedPin}
-              componentReview={componentReview}
-              draft={draft}
-              editorOpen={editorOpen}
-              editorContent={editorFloating ? pinEditor : null}
-              placing={placing}
-              readOnly={readOnly || selectedDrawing?.is_current_version === false}
+              pins={previewPins || pins}
+              selectedPinId={revisionPreview ? "" : selectedPinId}
+              selectedPin={revisionPreview ? null : selectedPin}
+              componentReview={revisionPreview ? false : componentReview}
+              draft={revisionPreview ? null : draft}
+              editorOpen={revisionPreview ? false : editorOpen}
+              editorContent={revisionPreview ? null : (editorFloating ? pinEditor : null)}
+              placing={revisionPreview ? false : placing}
+              readOnly={Boolean(revisionPreview) || readOnly || selectedDrawing?.is_current_version === false}
               onPreviousPage={() => {
                 const next = Math.max(1, pageNumber - 1);
                 setPageNumber(next);
@@ -1231,7 +1421,7 @@ export default function DrawingPinsTab({ code, readOnly = false, navigationTarge
                 setDraft({ ...position, label: navigationTarget?.label || "", description: navigationTarget?.description || "", pin_kind: placedKind, pin_status: "ACTIVE", create_follow_up: canCreateFollowUp && followUpDefaultForKind(placedKind) });
                 setEditorOpen(true);
               }}
-              onSelect={(pin) => {
+              onSelect={revisionPreview ? () => undefined : (pin) => {
                 setSelectedPinId(String(pin.drawing_pin_id));
                 setDraft({ ...pin });
                 setPlacing(false);

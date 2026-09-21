@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { listInspectionOverviewSql } from "../src/db/queries/inspections.sql.js";
+import { resolveInspectionChecklistFromDocumentsSql } from "../src/db/queries/inspections.sql.js";
 import { completeInspectionCaseSql, getInspectionCaseSql, processInspectionConclusionSql, signalInspectionCasesSql, refreshInspectionWorkOrdersSql, updateInspectionCaseSql, updateInspectionAssignmentSql, updateInspectionChecklistItemSql } from "../src/db/queries/inspections.sql.js";
 import { getCertificationContextSql } from "../src/db/queries/certificationContext.sql.js";
 import { getInstallationOperationalRowsSql } from "../src/db/queries/installationOperational.sql.js";
@@ -8,6 +9,21 @@ import { certificationPolicyCtes } from "../src/db/queries/certificationPolicy.s
 
 // Structural regression checks supplement the live read-only SQL scenarios.
 // They do not replace transactional API tests with uploaded files.
+test("automatic checklist resolution preserves closed cases and requires a surviving exact file", () => {
+  const sql = resolveInspectionChecklistFromDocumentsSql;
+  assert.match(sql, /InspectionCase with \(updlock, holdlock\)/);
+  assert.match(sql, /@caseStatus in \(N'COMPLETED', N'CANCELLED'\)/);
+  assert.ok(sql.indexOf("select 0 as linked_count") < sql.indexOf("update r"));
+  assert.match(sql, /join dbo\.StoredFile sf on sf\.stored_file_id = d\.stored_file_id and sf\.is_deleted = 0/);
+  assert.match(sql, /d\.is_active = 1/);
+  assert.match(sql, /d\.document_type_key = r\.document_type_key/);
+  assert.match(sql, /r\.status = N'MISSING'/);
+  assert.match(sql, /r\.installation_document_id is null/);
+  assert.match(sql, /d\.created_at desc, d\.document_id desc/);
+  assert.match(sql, /md\.maintenance_date>pick\.document_date/);
+  assert.match(sql, /fi\.status=N'AFGEHANDELD'/);
+  assert.match(sql, /fd\.code=N'MAINT_BMI'/);
+});
 test("monitor planning signals follow Ember planning rather than the Atrium snapshot", () => {
   assert.match(listInspectionOverviewSql, /@attentionFilter<>N'PLANNING_MISSING' or c\.inspection_case_id is not null and c\.planned_date is null/);
   assert.match(listInspectionOverviewSql, /@attentionFilter<>N'APPOINTMENT_UNCONFIRMED' or c\.status=N'PLANNED_UNCONFIRMED'/);

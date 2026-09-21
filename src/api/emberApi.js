@@ -246,6 +246,13 @@ export function createInstallationDocumentAttachment(code, documentId, payload =
   );
 }
 
+export function addInstallationDocumentStamp(code, documentId, payload) {
+  return apiPost(
+    `/installations/${encodeURIComponent(code)}/documents/${encodeURIComponent(documentId)}/stamps`,
+    payload || {}
+  );
+}
+
 /* digitale ondertekening */
 
 function documentSignaturePath(code, documentId) {
@@ -298,6 +305,12 @@ export function getInstallationDrawings(code) {
   return apiGet(`/installations/${encodeURIComponent(code)}/drawings`);
 }
 
+export function setInstallationPrimaryDrawing(code, documentId) {
+  return apiPut(`/installations/${encodeURIComponent(code)}/drawings/primary`, {
+    document_id: documentId,
+  });
+}
+
 export function getDrawingPins(code, documentId, includeHistory = true) {
   return apiGet(
     `/installations/${encodeURIComponent(code)}/drawings/${encodeURIComponent(documentId)}/pins?includeHistory=${includeHistory ? "1" : "0"}`
@@ -317,6 +330,13 @@ export function historicalizeComponentPins(code, documentId) {
 
 export function historicalizeAllComponentPins(code) {
   return apiPost(`/installations/${encodeURIComponent(code)}/drawing-pins/historicalize-components`, {});
+}
+
+export function copyDrawingPinsToRevision(code, sourceDocumentId, targetDocumentId) {
+  return apiPost(
+    `/installations/${encodeURIComponent(code)}/drawings/${encodeURIComponent(sourceDocumentId)}/pins/copy-to/${encodeURIComponent(targetDocumentId)}`,
+    {}
+  );
 }
 
 export function updateDrawingPin(code, drawingPinId, payload = {}) {
@@ -1288,6 +1308,11 @@ export function getOfflineClientLatest() {
 
 export function getRuntimeStatus() {
   return apiGet("/runtime/status");
+}
+
+// De actiepuntenbijlage als los bestand; hetzelfde blad dat achterin het rapport staat.
+export function downloadFormsMonitorActionPointsPdf(formInstanceId) {
+  return httpDownload(`/forms-monitor/${encodeURIComponent(formInstanceId)}/action-points.pdf`);
 }
 
 export function downloadFormsMonitorPdf(formInstanceId) {

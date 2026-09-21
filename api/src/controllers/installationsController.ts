@@ -16,6 +16,7 @@ import * as logbookService from "../services/installationLogbookService.js";
 import * as operationalService from "../services/installationOperationalService.js";
 import * as drawingPinService from "../services/drawingPinService.js";
 import * as certificationService from "../services/certificationService.js";
+import * as documentStampService from "../services/documentStampService.js";
 
 function isHistoricalReadOnlyMessage(msg: string) {
   return String(msg || "").toLowerCase().includes("historical installation read-only");
@@ -29,6 +30,9 @@ function drawingErrorResponse(res: Response, err: any, fallback: string) {
   }
   if (clean.includes("version conflict")) {
     return res.status(409).json({ error: "drawing pin version conflict" });
+  }
+  if (clean.includes("primary drawing migration required")) {
+    return res.status(409).json({ error: "De database-uitbreiding voor de hoofdtekening is nog niet uitgevoerd." });
   }
   if (clean.includes("not found")) {
     return res.status(404).json({ error: message });
@@ -479,6 +483,54 @@ export async function uploadDocumentFile(req: any, res: any) {
 
     console.error(err);
     return res.status(500).json({ error: "uploadDocumentFile failed" });
+  }
+}
+
+export async function postDocumentStamp(req: any, res: any) {
+  try {
+    const result = await documentStampService.addInstallationDocumentStamp(
+      String(req.params.code || ""),
+      String(req.params.documentId || ""),
+      req.body || {},
+      req.user
+    );
+    return res.status(201).json(result);
+  } catch (err: any) {
+    const message = String(err?.message || err || "");
+    const clean = message.toLowerCase();
+    if (isHistoricalReadOnlyMessage(clean)) return res.status(409).json({ error: "historical installation read-only" });
+    if (clean.includes("document stamp migration required")) {
+      return res.status(409).json({ error: "De database-uitbreiding voor documentstempels is nog niet uitgevoerd." });
+    }
+    if (clean.includes("original uploader cannot approve")) {
+      return res.status(409).json({ error: "De oorspronkelijke uploader mag dit document niet zelf als gecontroleerd markeren." });
+    }
+    if (clean.includes("original uploader unknown")) {
+      return res.status(409).json({ error: "De oorspronkelijke uploader is niet betrouwbaar vast te stellen; Gecontroleerd kan daarom niet worden geplaatst." });
+    }
+    if (clean.includes("entra job title missing")) {
+      return res.status(409).json({ error: "Je functie ontbreekt in Microsoft Entra. Laat deze eerst in Microsoft 365 aanvullen." });
+    }
+    if (clean.includes("entra profile unavailable")) {
+      res.setHeader("Retry-After", "5");
+      return res.status(503).json({ error: "Je functie kan nu niet uit Microsoft Entra worden opgehaald. Probeer het zo opnieuw." });
+    }
+    if (clean.includes("signed document cannot be stamped")) {
+      return res.status(409).json({ error: "Een digitaal ondertekend document kan niet meer worden gestempeld. Maak eerst een nieuwe documentversie." });
+    }
+    if (clean.includes("version conflict")) {
+      return res.status(409).json({ error: "Iemand heeft dit document ondertussen gestempeld. Open het document opnieuw en plaats daarna je stempel." });
+    }
+    if (clean.includes("not found") || clean.includes("has no file")) return res.status(404).json({ error: message });
+    if (
+      clean.includes("invalid")
+      || clean.includes("must be pdf")
+      || clean.includes("does not fit")
+      || clean.includes("unreadable")
+      || clean.includes("protected")
+    ) return res.status(400).json({ error: message });
+    console.error(err);
+    return res.status(500).json({ error: "document stamp failed" });
   }
 }
 
@@ -1508,6 +1560,19 @@ export async function getInstallationDrawings(req: any, res: Response) {
   }
 }
 
+export async function putInstallationPrimaryDrawing(req: any, res: Response) {
+  try {
+    const data = await drawingPinService.setPrimaryInstallationDrawing(
+      String(req.params.code || ""),
+      String(req.body?.document_id || ""),
+      req.user
+    );
+    return res.json(data);
+  } catch (err: any) {
+    return drawingErrorResponse(res, err, "putInstallationPrimaryDrawing failed");
+  }
+}
+
 /**
  * Compatibility endpoint for older local bundles that requested the drawing
  * resource without the explicit `/pins` suffix.  A pins query is unambiguous;
@@ -1555,6 +1620,20 @@ export async function postHistoricalizeAllComponentPins(req: any, res: Response)
     return res.json(data);
   } catch (err: any) {
     return drawingErrorResponse(res, err, "historicalizeAllComponentPins failed");
+  }
+}
+
+export async function postCopyDrawingPinsToRevision(req: any, res: Response) {
+  try {
+    const data = await drawingPinService.copyDrawingPinsToRevision(
+      String(req.params.code || ""),
+      String(req.params.documentId || ""),
+      String(req.params.targetDocumentId || ""),
+      req.user
+    );
+    return res.json(data);
+  } catch (err: any) {
+    return drawingErrorResponse(res, err, "copyDrawingPinsToRevision failed");
   }
 }
 

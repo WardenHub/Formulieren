@@ -1,5 +1,6 @@
 // src/pages/Installations/DocumentsTab.jsx
 import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
+import { Stamp as StampIcon } from "lucide-react";
 
 import {
   putDocuments,
@@ -9,7 +10,6 @@ import {
   downloadInstallationDocumentFile,
   createInstallationDocumentReplacement,
   createInstallationDocumentAttachment,
-  historicalizeComponentPins,
   putDocumentVersionSignatureDecision,
 } from "../../api/emberApi.js";
 
@@ -26,6 +26,7 @@ import { FileStackIcon } from "@/components/ui/file-stack";
 import { SignatureIcon } from "@/components/ui/signature";
 import DateInput from "../../components/DateInput.jsx";
 import DocumentSignatureDialog from "./DocumentSignatureDialog.jsx";
+import DocumentStampDialog from "./DocumentStampDialog.jsx";
 
 function cx(...parts) {
   return parts.filter(Boolean).join(" ");
@@ -118,6 +119,9 @@ function newDraft(typeKey, overrides = {}) {
     uploaded_by: null,
     file_last_modified_at: null,
     file_last_modified_by: null,
+    stamp_count: 0,
+    latest_stamp_type: null,
+    latest_stamped_at: null,
     storage_provider: null,
     storage_key: null,
     document_is_active: true,
@@ -160,6 +164,9 @@ function flattenTypeDocuments(items) {
       uploaded_by: doc.uploaded_by ?? null,
       file_last_modified_at: doc.file_last_modified_at ?? null,
       file_last_modified_by: doc.file_last_modified_by ?? null,
+      stamp_count: Number(doc.stamp_count || 0),
+      latest_stamp_type: doc.latest_stamp_type ?? null,
+      latest_stamped_at: doc.latest_stamped_at ?? null,
       storage_provider: doc.storage_provider ?? null,
       storage_key: doc.storage_key ?? null,
       source_system: doc.source_system ?? null,
@@ -649,6 +656,7 @@ const DocumentsTab = forwardRef(function DocumentsTab(
   // Het ondertekenscherm hangt aan een document, niet aan een kaart; zo blijft het open
   // staan wanneer de lijst ondertussen herlaadt.
   const [signatureTarget, setSignatureTarget] = useState(null);
+  const [stampTarget, setStampTarget] = useState(null);
   const [decisionBusyId, setDecisionBusyId] = useState(null);
   const [decisionReasons, setDecisionReasons] = useState({});
   const [sectionDropQueue, setSectionDropQueue] = useState({});
@@ -1546,10 +1554,6 @@ const DocumentsTab = forwardRef(function DocumentsTab(
 
       await uploadInstallationDocumentFile(code, replacementId, file);
 
-      if (window.confirm("Bestaande componentpins op de vorige tekening historisch maken? Kies Annuleren om ze eerst handmatig te beoordelen.")) {
-        await historicalizeComponentPins(code, persistedId);
-      }
-
       await refreshDocsAndRehydrate();
       await onSaved?.();
       onSaveOk?.();
@@ -1800,6 +1804,9 @@ const DocumentsTab = forwardRef(function DocumentsTab(
     const isAttachDragOver = dragOverAttachId === row.document_id;
     const editorKey = `editor:${row.document_id}`;
     const isNewTemp = String(row.document_id || "").startsWith("new:");
+    const canStamp = Boolean(row.has_file)
+      && (String(row.mime_type || "").toLowerCase() === "application/pdf" || String(row.file_name || "").toLowerCase().endsWith(".pdf"))
+      && !isNewTemp;
     const editorOpen = detailOpenMap[editorKey] ?? false;
     const tone = getCardTone(row);
     const actionDisabled = readOnly || Boolean(actionBusyKey);
@@ -1878,6 +1885,7 @@ const DocumentsTab = forwardRef(function DocumentsTab(
                     {row.document_number ? <StatusChip tone="neutral">Nr; {row.document_number}</StatusChip> : null}
                     {row.revision ? <StatusChip tone="neutral">Rev; {row.revision}</StatusChip> : null}
                     {row.document_date ? <StatusChip tone="neutral">Datum; {isoDate(row.document_date)}</StatusChip> : null}
+                    {Number(row.stamp_count || 0) > 0 ? <StatusChip tone="info">{row.stamp_count} stempel{Number(row.stamp_count) === 1 ? "" : "s"}</StatusChip> : null}
                   </div>
                 </div>
 
@@ -1896,6 +1904,20 @@ const DocumentsTab = forwardRef(function DocumentsTab(
                   disabled={actionDisabled}
                 >
                   openen
+                </AnimatedActionButton>
+              )}
+
+              {canStamp && (
+                <AnimatedActionButton
+                  title={row.is_signed === true ? "Een digitaal ondertekend document kan niet worden gestempeld" : "stempel toevoegen"}
+                  Icon={StampIcon}
+                  onClick={() => setStampTarget({
+                    documentId: row.document_id,
+                    title: row.title || row.file_name || docType?.document_type_name || "Document",
+                  })}
+                  disabled={actionDisabled || row.is_signed === true}
+                >
+                  stempel
                 </AnimatedActionButton>
               )}
 
@@ -2945,6 +2967,16 @@ const DocumentsTab = forwardRef(function DocumentsTab(
           onChanged={() => {
             void refreshDocsAndRehydrate();
           }}
+        />
+      )}
+
+      {stampTarget && (
+        <DocumentStampDialog
+          code={code}
+          documentId={stampTarget.documentId}
+          documentTitle={stampTarget.title}
+          onClose={() => setStampTarget(null)}
+          onChanged={refreshDocsAndRehydrate}
         />
       )}
     </div>

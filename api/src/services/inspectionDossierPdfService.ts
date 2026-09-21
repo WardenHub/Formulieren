@@ -165,6 +165,21 @@ export function buildInspectionDossierHtml(detail: any, events: any[], exportedA
     ["Toegewezen aan", item.assigned_user_id || item.assigned_role_display_name || item.assigned_role_code],
   ])}</section>
 
+  ${table("Laatste onderhoudsdocument; actuele bronvergelijking", ["Bron", "Document", "Onderhoudsdatum", "Signaal"],
+    detail.maintenance_evidence?.latest ? [[
+      detail.maintenance_evidence.latest.source === "FORM_RUNNER" ? "Ember-formulier" : "Bijlage onderhoudsrapport",
+      detail.maintenance_evidence.latest.title,
+      formatDate(detail.maintenance_evidence.latest.maintenance_date),
+      detail.maintenance_evidence.warning || "Binnen één jaar",
+    ]] : [], "Geen onderhoudsdocument met een bruikbare onderhoudsdatum gevonden.")}
+  ${detail.maintenance_evidence?.undated_count ? `<p>Bij ${escapeHtml(detail.maintenance_evidence.undated_count)} document(en) ontbreekt een geldige onderhoudsdatum; de volgorde is niet volledig vast te stellen.</p>` : ""}
+  ${detail.maintenance_evidence?.future_dated_count ? `<p>Documenten met een toekomstige onderhoudsdatum zijn niet als laatste uitgevoerd onderhoud gekozen.</p>` : ""}
+  ${detail.maintenance_evidence?.same_date_count > 1 ? `<p>Meerdere documenten hebben dezelfde laatste onderhoudsdatum.</p>` : ""}
+
+  ${detail.maintenance_evidence?.certificate_assessment ? `<p><strong>${escapeHtml(detail.maintenance_evidence.certificate_assessment.label)}</strong><br>
+    Openstaande actiepunten: ${escapeHtml(detail.maintenance_evidence.certificate_assessment.open_count ?? "Onbekend")}; certificaatblokkerende punten: ${escapeHtml(detail.maintenance_evidence.certificate_assessment.certificate_blocking_count ?? "Onbekend")}<br>
+    ${escapeHtml(detail.maintenance_evidence.certificate_assessment.note)}</p>` : detail.maintenance_evidence?.latest ? "<p>Certificaatresultaat en openstaande punten onbekend; bijlage niet automatisch beoordeeld.</p>" : ""}
+
   ${table("Voorbereidingschecklist", ["Onderdeel", "Verplicht", "Status", "Gekoppeld document"],
     (detail.checklist || []).map((row: any) => [
       CHECKLIST_LABELS[row.requirement_key] || String(row.requirement_key).replaceAll("_", " "),

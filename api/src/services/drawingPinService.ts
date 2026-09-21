@@ -1,14 +1,17 @@
 import { sqlQuery } from "../db/index.js";
 import {
   createDrawingPinSql,
+  copyDrawingPinsToRevisionSql,
   createManualFollowUpForPinSql,
   deleteDrawingPinSql,
   getDrawingPinsSql,
   getInstallationDrawingsSql,
+  getPrimaryInstallationDrawingSql,
   getInstallationDrawingPinOverviewSql,
   getInstallationFollowUpChoicesSql,
   historicalizeComponentPinsSql,
   linkDrawingPinActionSql,
+  setPrimaryInstallationDrawingSql,
   unlinkDrawingPinActionSql,
   updateDrawingPinSql,
 } from "../db/queries/drawingPins.sql.js";
@@ -117,13 +120,22 @@ function cleanCode(code: unknown) {
 
 export async function getInstallationDrawings(code: string) {
   const installationCode = cleanCode(code);
-  const [drawings, actions, pins] = await Promise.all([
+  const [drawings, primaryRows, actions, pins] = await Promise.all([
     sqlQuery(getInstallationDrawingsSql, { code: installationCode }),
+    sqlQuery(getPrimaryInstallationDrawingSql, { code: installationCode }),
     sqlQuery(getInstallationFollowUpChoicesSql, { code: installationCode }),
     sqlQuery(getInstallationDrawingPinOverviewSql, { code: installationCode }),
   ]);
+  const primaryDrawingDocumentId = primaryRows?.[0]?.document_id || null;
   return {
-    drawings: (drawings || []).map((row: any) => ({ ...row, pin_count: Number(row.pin_count || 0) })),
+    primary_drawing_document_id: primaryDrawingDocumentId,
+    drawings: (drawings || []).map((row: any) => ({
+      ...row,
+      pin_count: Number(row.pin_count || 0),
+      previous_version_pin_count: Number(row.previous_version_pin_count || 0),
+      is_drawing_type: Boolean(row.is_drawing_type),
+      is_primary_drawing: Boolean(primaryDrawingDocumentId && String(row.document_id) === String(primaryDrawingDocumentId)),
+    })),
     follow_up_actions: actions || [],
     pins: (pins || []).map((row: any) => ({
       ...row,
@@ -134,6 +146,18 @@ export async function getInstallationDrawings(code: string) {
       follow_up_count: Number(row.follow_up_count || 0),
     })),
   };
+}
+
+export async function setPrimaryInstallationDrawing(code: string, documentId: string, user: any) {
+  const installationCode = cleanCode(code);
+  await assertInstallationWritable(installationCode);
+  const cleanDocumentId = uuid(documentId, "document id");
+  await sqlQuery(setPrimaryInstallationDrawingSql, {
+    code: installationCode,
+    documentId: cleanDocumentId,
+    actor: getUserAuditActor(user),
+  });
+  return getInstallationDrawings(installationCode);
 }
 
 export async function getDrawingPins(code: string, documentId: string, includeHistory = false) {
@@ -167,6 +191,27 @@ export async function historicalizeAllComponentPins(code: string, user: any) {
     actor: getUserAuditActor(user),
   });
   return { ok: true, historicalized_count: Number(rows?.[0]?.historicalized_count || 0) };
+}
+
+export async function copyDrawingPinsToRevision(
+  code: string,
+  sourceDocumentId: string,
+  targetDocumentId: string,
+  user: any
+) {
+  const installationCode = cleanCode(code);
+  await assertInstallationWritable(installationCode);
+  const rows = await sqlQuery(copyDrawingPinsToRevisionSql, {
+    code: installationCode,
+    sourceDocumentId: uuid(sourceDocumentId, "source document id"),
+    targetDocumentId: uuid(targetDocumentId, "target document id"),
+    actor: getUserAuditActor(user),
+  });
+  return {
+    ok: true,
+    copied_count: Number(rows?.[0]?.copied_count || 0),
+    already_copied_count: Number(rows?.[0]?.already_copied_count || 0),
+  };
 }
 
 export async function createDrawingPin(code: string, documentId: string, payload: any, user: any) {

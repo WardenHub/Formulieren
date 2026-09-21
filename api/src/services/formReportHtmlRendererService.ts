@@ -622,6 +622,18 @@ function nonEmptyRows(rows: Array<{ label: string; value: any }>) {
   return rows.filter((row) => normalizeText(row?.label));
 }
 
+/* Sommige antwoorden komen als sleutel uit de bron; GEZONDHEIDSZORG_MET_BEDGEBIED hoort niet zo
+   op papier. Alleen wat er echt als sleutel uitziet wordt leesbaar gemaakt: hoofdletters, cijfers
+   en liggende streepjes, zonder spaties. Wat een mens heeft getypt blijft ongemoeid. */
+function humanizeMachineToken(text: string) {
+  /* Een sleutel bestaat uit hoofdletters, cijfers en liggende streepjes en niets anders; die
+     test sluit meteen alles uit waar een spatie of een kleine letter in staat. */
+  if (!text.includes("_")) return text;
+  if (!/^[A-Z0-9_]+$/.test(text)) return text;
+
+  return prettifyKey(text.toLowerCase());
+}
+
 function renderValueCell(value: any) {
   if (Array.isArray(value)) {
     if (!value.length) return `<span class="muted">-</span>`;
@@ -655,39 +667,67 @@ function renderValueCell(value: any) {
     `;
   }
 
-  const text = normalizeText(textValue(value));
+  const text = humanizeMachineToken(normalizeText(textValue(value)));
   if (["JA", "NEE", "NVT"].includes(normalizeToken(text))) {
     return renderAssessmentChip(text);
   }
   return text ? escapeHtml(text) : `<span class="muted">-</span>`;
 }
 
-function renderInfoPairsSection(title: string, rows: Array<{ label: string; value: any }>, sectionClassName = "") {
-  const safeRows = nonEmptyRows(rows);
-  if (!safeRows.length) return "";
+/* Een blok naam-waardeparen als één doorlopende tabel.
 
-  const pairs = Array.from({ length: Math.ceil(safeRows.length / 2) }, (_, index) => safeRows.slice(index * 2, index * 2 + 2));
+   Elke groep was eerst een eigen tabel met een kop ertussen. Dat gaf op de pagina Algemeen
+   zeven losse kaders met evenzoveel onderbrekingen, terwijl het om één lijst gegevens gaat.
+   Nu staat alles in één raster met tussenkoppen, zodat de kolomranden van boven tot onder
+   doorlopen en de regelhoogte overal gelijk is.
+
+   De groepen komen van de aanroeper, dus elk formulier kan dit gebruiken. */
+function renderInfoGridSection(
+  groups: Array<{ title?: string; rows: Array<{ label: string; value: any }> }>,
+  sectionClassName = ""
+) {
+  const gevuldeGroepen = groups
+    .map((groep) => ({ ...groep, rows: nonEmptyRows(groep.rows) }))
+    .filter((groep) => groep.rows.length);
+
+  if (!gevuldeGroepen.length) return "";
+
+  const rijen = gevuldeGroepen
+    .map((groep) => {
+      const paren = Array.from({ length: Math.ceil(groep.rows.length / 2) }, (_, index) =>
+        groep.rows.slice(index * 2, index * 2 + 2)
+      );
+
+      const kop = groep.title
+        ? `<tr class="info-grid-group"><th colspan="4">${escapeHtml(groep.title)}</th></tr>`
+        : "";
+
+      return (
+        kop +
+        paren
+          .map(
+            (paar) => `
+              <tr>
+                <th>${escapeHtml(paar[0].label)}</th>
+                <td>${renderValueCell(paar[0].value)}</td>
+                ${
+                  paar[1]
+                    ? `<th>${escapeHtml(paar[1].label)}</th><td>${renderValueCell(paar[1].value)}</td>`
+                    : `<th></th><td></td>`
+                }
+              </tr>
+            `
+          )
+          .join("")
+      );
+    })
+    .join("");
+
   return `
     <section class="info-section ${escapeHtml(sectionClassName)}">
-      ${title ? `<div class="section-heading">${escapeHtml(title)}</div>` : ""}
-      <table class="report-table info-pairs-table">
-        <tbody>
-          ${pairs
-            .map(
-              (pair) => `
-                <tr>
-                  <th>${escapeHtml(pair[0].label)}</th>
-                  <td>${renderValueCell(pair[0].value)}</td>
-                  ${
-                    pair[1]
-                      ? `<th>${escapeHtml(pair[1].label)}</th><td>${renderValueCell(pair[1].value)}</td>`
-                      : `<td colspan="3"></td>`
-                  }
-                </tr>
-              `
-            )
-            .join("")}
-        </tbody>
+      <table class="report-table info-grid-table">
+        ${renderGridColGroup([5, 7, 5, 7])}
+        <tbody>${rijen}</tbody>
       </table>
     </section>
   `;
@@ -876,10 +916,7 @@ function renderFullWidthSimpleFieldTable(label: string, value: any, dividerPerce
   const safeDivider = Math.max(20, Math.min(80, Number(dividerPercent) || 40));
   return `
     <table class="report-table single-field-table">
-      <colgroup>
-        <col style="width:${safeDivider}%">
-        <col style="width:${100 - safeDivider}%">
-      </colgroup>
+      ${renderGridColGroup([safeDivider, 100 - safeDivider])}
       <tbody>
         <tr>
           <th>${escapeHtml(label)}</th>
@@ -937,43 +974,67 @@ function sumColumnWidths(columns: any[]) {
 
 function renderBmiGeneralPage(model: any, page: any) {
   const answers = model?.answers || {};
-  const renderGroup = (title: string, rows: Array<{ label: string; value: any }>) => renderInfoPairsSection(title, rows, "general-info-section");
 
   return `
     <section class="page-break-before report-page bmi-general-page">
       <div class="page-title">${escapeHtml(firstText(page?.title, "Algemeen"))}</div>
-      ${renderGroup("", [
-        { label: "Datum onderhoud", value: answerDateText(answers, "datum_onderhoud") },
-        { label: "Documentnummer", value: firstText(answerText(answers, "documentnummer"), model?.form?.official_document_number) },
-      ])}
-      ${renderGroup("Bouwwerk", [
-        { label: "Naam", value: answerText(answers, "bouwwerk_naam") },
-        { label: "Soort", value: answerText(answers, "bouwwerk_soort") },
-        { label: "Eisende partij", value: answerText(answers, "eisende_partij") },
-        { label: "Adres", value: joinNonEmpty([answerText(answers, "bouwwerk_straat"), joinNonEmpty([answerText(answers, "bouwwerk_postcode"), answerText(answers, "bouwwerk_plaats")], " ")], ", ") },
-      ])}
-      ${renderGroup("Onderhoudsbedrijf", [
-        { label: "Naam", value: answerText(answers, "onderhoudsbedrijf_naam") },
-        { label: "Adres", value: joinNonEmpty([answerText(answers, "onderhoudsbedrijf_straat_huisnr"), answerText(answers, "onderhoudsbedrijf_postcode_plaats")], ", ") },
-      ])}
-      ${renderGroup("Brandmeldinstallatiebedrijf", [
-        { label: "Naam", value: answerText(answers, "brandmeldinstallatiebedrijf_naam") },
-        { label: "Adres", value: joinNonEmpty([answerText(answers, "brandmeldinstallatiebedrijf_straat_huisnr"), answerText(answers, "brandmeldinstallatiebedrijf_postcode_plaats")], ", ") },
-      ])}
-      ${renderGroup("Eigenaar", [
-        { label: "Naam", value: answerText(answers, "eigenaar_naam") },
-        { label: "Adres", value: answerText(answers, "eigenaar_adres") },
-      ])}
-      ${renderGroup("Gebruiker", [
-        { label: "Naam", value: answerText(answers, "gebruiker_naam") },
-        { label: "Adres", value: answerText(answers, "gebruiker_adres") },
-      ])}
-      ${renderGroup("Doormelding", [
-        { label: "Kiezer", value: answerText(answers, "kiezer_omschrijving") },
-        { label: "Lijnkeuze", value: answerText(answers, "kiezer_lijnkeuze") },
-        { label: "Brand", value: joinNonEmpty([answerText(answers, "brand_ontvangststation"), answerText(answers, "brand_telefoon"), answerText(answers, "brand_meldcode")], " ; ") },
-        { label: "Storing", value: joinNonEmpty([answerText(answers, "storing_ontvangststation"), answerText(answers, "storing_telefoon"), answerText(answers, "storing_meldcode")], " ; ") },
-      ])}
+      ${renderInfoGridSection(
+        [
+          {
+            rows: [
+              { label: "Datum onderhoud", value: answerDateText(answers, "datum_onderhoud") },
+              { label: "Documentnummer", value: firstText(answerText(answers, "documentnummer"), model?.form?.official_document_number) },
+            ],
+          },
+          {
+            title: "Bouwwerk",
+            rows: [
+              { label: "Naam", value: answerText(answers, "bouwwerk_naam") },
+              { label: "Soort", value: answerText(answers, "bouwwerk_soort") },
+              { label: "Eisende partij", value: answerText(answers, "eisende_partij") },
+              { label: "Adres", value: joinNonEmpty([answerText(answers, "bouwwerk_straat"), joinNonEmpty([answerText(answers, "bouwwerk_postcode"), answerText(answers, "bouwwerk_plaats")], " ")], ", ") },
+            ],
+          },
+          {
+            title: "Onderhoudsbedrijf",
+            rows: [
+              { label: "Naam", value: answerText(answers, "onderhoudsbedrijf_naam") },
+              { label: "Adres", value: joinNonEmpty([answerText(answers, "onderhoudsbedrijf_straat_huisnr"), answerText(answers, "onderhoudsbedrijf_postcode_plaats")], ", ") },
+            ],
+          },
+          {
+            title: "Brandmeldinstallatiebedrijf",
+            rows: [
+              { label: "Naam", value: answerText(answers, "brandmeldinstallatiebedrijf_naam") },
+              { label: "Adres", value: joinNonEmpty([answerText(answers, "brandmeldinstallatiebedrijf_straat_huisnr"), answerText(answers, "brandmeldinstallatiebedrijf_postcode_plaats")], ", ") },
+            ],
+          },
+          {
+            title: "Eigenaar",
+            rows: [
+              { label: "Naam", value: answerText(answers, "eigenaar_naam") },
+              { label: "Adres", value: answerText(answers, "eigenaar_adres") },
+            ],
+          },
+          {
+            title: "Gebruiker",
+            rows: [
+              { label: "Naam", value: answerText(answers, "gebruiker_naam") },
+              { label: "Adres", value: answerText(answers, "gebruiker_adres") },
+            ],
+          },
+          {
+            title: "Doormelding",
+            rows: [
+              { label: "Kiezer", value: answerText(answers, "kiezer_omschrijving") },
+              { label: "Lijnkeuze", value: answerText(answers, "kiezer_lijnkeuze") },
+              { label: "Brand", value: joinNonEmpty([answerText(answers, "brand_ontvangststation"), answerText(answers, "brand_telefoon"), answerText(answers, "brand_meldcode")], " ; ") },
+              { label: "Storing", value: joinNonEmpty([answerText(answers, "storing_ontvangststation"), answerText(answers, "storing_telefoon"), answerText(answers, "storing_meldcode")], " ; ") },
+            ],
+          },
+        ],
+        "general-info-section"
+      )}
     </section>
   `;
 }
@@ -1056,6 +1117,211 @@ function matrixColumns(element: any) {
   return (explicitColumns.length ? explicitColumns : fallbackColumns).filter((column: any) => normalizeText(column?.name) && normalizeColumnToken(column?.name) !== "DOCTYPE");
 }
 
+/* ------------------------------------------------------------------ Het kolomraster.
+
+   Het rapport heeft één raster. Elke tabel, op welke pagina en uit welk formulier dan ook,
+   legt zijn kolomranden op dezelfde ladder. Zonder dat staat er op een pagina een tabel van
+   twee kolommen boven een van twaalf, met overal andere verticale lijnen; dat leest als
+   rommel, hoe net de tabellen op zichzelf ook zijn.
+
+   De ladder telt 24 modules over de tekstbreedte. Fijn genoeg voor een telkolom van één
+   cijfer, grof genoeg om het raster te laten zien. Omdat het hier gebeurt en niet per
+   formulier, krijgt een nieuw formulier dit gratis. */
+const REPORT_GRID_MODULES = 24;
+
+function snapWidthsToReportGrid(widths: number[]) {
+  const veilig = widths.map((breedte) => (Number.isFinite(breedte) && breedte > 0 ? breedte : 1));
+  const totaal = veilig.reduce((som, breedte) => som + breedte, 0) || 1;
+
+  /* Meer kolommen dan modules; dan valt er niets te rasteren zonder kolommen te laten
+     verdwijnen, dus blijven de verhoudingen staan. */
+  if (veilig.length > REPORT_GRID_MODULES) {
+    return veilig.map((breedte) => (breedte / totaal) * 100);
+  }
+
+  const ideaal = veilig.map((breedte) => (breedte / totaal) * REPORT_GRID_MODULES);
+  const modules = ideaal.map((waarde) => Math.max(1, Math.round(waarde)));
+
+  /* Afronden verschuift het totaal. Het verschil gaat naar de kolom waar de afronding het
+     verst van de bedoelde breedte af zit, zodat de verhoudingen zo dicht mogelijk blijven. */
+  let verschil = REPORT_GRID_MODULES - modules.reduce((som, waarde) => som + waarde, 0);
+
+  while (verschil !== 0) {
+    const richting = verschil > 0 ? 1 : -1;
+    const kandidaten = modules
+      .map((waarde, index) => ({ index, afwijking: ideaal[index] - waarde, waarde }))
+      .filter((kandidaat) => (richting > 0 ? true : kandidaat.waarde > 1))
+      .sort((links, rechts) =>
+        richting > 0 ? rechts.afwijking - links.afwijking : links.afwijking - rechts.afwijking
+      );
+
+    if (!kandidaten.length) break;
+
+    modules[kandidaten[0].index] += richting;
+    verschil -= richting;
+  }
+
+  return modules.map((waarde) => (waarde / REPORT_GRID_MODULES) * 100);
+}
+
+/* Elke colgroup in het rapport loopt hierlangs. De maten mogen procenten, modules of ruwe
+   verhoudingen zijn; wat eruit komt ligt altijd op het raster. */
+function renderGridColGroup(widths: any[]) {
+  return `<colgroup>${snapWidthsToReportGrid(widths.map((breedte) => percentWidth(breedte) ?? Number(breedte) ?? 1))
+    .map((breedte) => `<col style="width:${breedte.toFixed(4)}%">`)
+    .join("")}</colgroup>`;
+}
+
+/* De dichtheid volgt uit het aantal kolommen en niet uit het formulier. Twee tabellen met
+   evenveel kolommen krijgen daardoor dezelfde regelhoogte en hetzelfde korps, waar ze ook
+   staan; dat is wat een pagina rustig maakt. */
+function tableDensityClass(columnCount: number) {
+  if (columnCount >= 10) return "is-tight";
+  if (columnCount >= 7) return "is-regular";
+  return "is-roomy";
+}
+
+/* Css kan geen kolommen tellen, dus gebeurt het hier; één keer over het hele document, vlak
+   voordat het naar de renderer gaat. Elke tabel die een colgroup van het raster heeft
+   gekregen, krijgt zo de bijbehorende regelhoogte en het bijbehorende korps. Dat geldt ook
+   voor formulieren die nog gemaakt moeten worden; daar is geen eigen printafspraak voor
+   nodig. */
+/* Een tabel die over de paginarand kan vallen draagt zijn eigen kop in de thead, zodat die op
+   de volgende pagina meeloopt. Staat diezelfde tekst er vlak boven ook nog als kop, dan staat
+   hij er twee keer. De kop erboven vervalt dan; de tabel houdt hem zelf vast. */
+function dropDuplicateTableCaptions(html: string) {
+  return html.replace(
+    /<div class="(?:subsection-title|section-heading)">([^<]+)<\/div>(\s*<table[\s\S]{0,6000}?<tr class="matrix-continuation-row"><th colspan="\d+">)\1(<\/th>)/g,
+    (_geheel: string, kop: string, tussen: string, slot: string) => `${tussen}${kop}${slot}`
+  );
+}
+
+/* ------------------------------------------------------------------ Doorlopende kolomlijnen.
+
+   Op het raster liggen is niet hetzelfde als uitlijnen. Twee tabellen kunnen elk keurig op de
+   ladder delen en toch nergens samenvallen; dat is precies wat een pagina druk maakt.
+
+   Daarom sluit elke tabel aan op de tabel die er direct boven staat. Snapte alles op de tabel
+   met de meeste kolommen, dan vond een tabel van vier kolommen daar een passende lijn en de
+   tabel van zes kolommen een andere; beide op het raster, maar niet op elkaar. Van boven naar
+   beneden doorgeven houdt de lijnen van blok tot blok op hun plek, zonder dat er per formulier
+   iets ingesteld hoeft te worden. */
+function colGroupEdges(colgroep: string) {
+  const breedtes = [...colgroep.matchAll(/width\s*:\s*([\d.]+)%/g)].map((treffer) => Number(treffer[1]));
+  if (!breedtes.length) return null;
+
+  const totaal = breedtes.reduce((som, breedte) => som + breedte, 0) || 100;
+  const randen: number[] = [];
+  let gelopen = 0;
+
+  for (const breedte of breedtes) {
+    gelopen += breedte;
+    randen.push((gelopen / totaal) * REPORT_GRID_MODULES);
+  }
+
+  return randen.map((rand) => Math.round(rand));
+}
+/* Hoeveel een tabel zijn scheidingen mag verschuiven om aan te sluiten. Een tabel met brede
+   kolommen mag verder opschuiven dan een tabel die al krap zit; anders zou een telkolom van
+   één module zomaar verdwijnen. */
+function alignToleranceFor(columns: number) {
+  return Math.min(3, Math.max(1, Math.round(REPORT_GRID_MODULES / Math.max(columns, 1) / 2)));
+}
+
+function alignEdgesToSet(randen: number[], voorkeur: number[], reserve: number[], tolerantie: number) {
+  const binnen = randen.slice(0, -1);
+  const uitgelijnd: number[] = [];
+  let ondergrens = 0;
+
+  for (let index = 0; index < binnen.length; index += 1) {
+    const rand = binnen[index];
+    const ruimteErna = binnen.length - index;
+
+    /* Een kandidaat moet voorbij de vorige scheiding liggen en genoeg ruimte overlaten voor de
+       kolommen die nog komen, anders zou er een kolom wegvallen. */
+    const bruikbaar = (doel: number) =>
+      doel > ondergrens &&
+      doel <= REPORT_GRID_MODULES - ruimteErna &&
+      Math.abs(doel - rand) <= tolerantie;
+
+    /* Eerst de lijnen van de tabel er direct boven, want daar plakt het oog aan vast. Zit daar
+       niets bruikbaars, dan een lijn die eerder op de pagina al bestaat; dat houdt het aantal
+       verschillende lijnen laag. Pas als dat ook niets oplevert blijft de scheiding staan. */
+    const kies = (doelen: number[]) =>
+      doelen
+        .filter(bruikbaar)
+        .sort((links, rechts) => Math.abs(links - rand) - Math.abs(rechts - rand) || links - rechts)[0];
+
+    const gekozen = kies(voorkeur) ?? kies(reserve) ?? Math.max(rand, ondergrens + 1);
+    uitgelijnd.push(gekozen);
+    ondergrens = gekozen;
+  }
+
+  uitgelijnd.push(REPORT_GRID_MODULES);
+  return uitgelijnd;
+}
+
+function edgesToColGroup(randen: number[]) {
+  const cols = randen
+    .map((rand, index) => rand - (index ? randen[index - 1] : 0))
+    .map((modules) => `<col style="width:${((modules / REPORT_GRID_MODULES) * 100).toFixed(4)}%">`)
+    .join("");
+
+  return `<colgroup>${cols}</colgroup>`;
+}
+
+function alignTablesWithinPages(html: string) {
+  /* Pagina's zijn te herkennen aan hun eigen klasse; secties binnen een pagina dragen die niet,
+     dus dit knipt op paginagrens en niet op elke sectie. */
+  const delen = html.split(/(?=<section class="page-break-before report-page)/);
+
+  return delen
+    .map((deel) => {
+      const colgroepen = [...deel.matchAll(/<colgroup>[\s\S]*?<\/colgroup>/g)].map((treffer) => treffer[0]);
+      if (colgroepen.length < 2) return deel;
+
+      const uitgelijnd: number[][] = [];
+      const pagina = new Set<number>();
+      let vorige: number[] | null = null;
+
+      for (const colgroep of colgroepen) {
+        const randen = colGroupEdges(colgroep);
+        if (!randen || randen.length < 2) {
+          uitgelijnd.push(randen ?? []);
+          continue;
+        }
+
+        const nieuw = vorige
+          ? alignEdgesToSet(randen, vorige, [...pagina], alignToleranceFor(randen.length))
+          : randen;
+
+        for (const rand of nieuw) pagina.add(rand);
+        uitgelijnd.push(nieuw);
+        vorige = nieuw;
+      }
+
+      let teller = -1;
+      return deel.replace(/<colgroup>[\s\S]*?<\/colgroup>/g, (colgroep) => {
+        teller += 1;
+        const randen = uitgelijnd[teller];
+        return randen && randen.length >= 2 ? edgesToColGroup(randen) : colgroep;
+      });
+    })
+    .join("");
+}
+
+function applyTableDensity(html: string) {
+  return html.replace(
+    /<table class="report-table([^"]*)">(\s*<colgroup>[\s\S]*?<\/colgroup>)/g,
+    (geheel: string, klassen: string, colgroep: string) => {
+      const kolommen = (colgroep.match(/<col\b/g) || []).length;
+      if (!kolommen) return geheel;
+
+      return `<table class="report-table${klassen} ${tableDensityClass(kolommen)}">${colgroep}`;
+    }
+  );
+}
+
 function matrixColumnWidth(column: any, totalColumns: number) {
   const name = normalizeColumnToken(column?.name);
   const explicitWidth = percentWidth(column?.width);
@@ -1085,9 +1351,7 @@ function matrixColumnWidths(columns: any[]) {
     const width = Number(String(matrixColumnWidth(column, columns.length) || "").replace("%", "").trim());
     return Number.isFinite(width) && width > 0 ? width : 1;
   });
-  const totalWidth = rawWidths.reduce((total: number, width: number) => total + width, 0) || 1;
-
-  return rawWidths.map((width: number) => `${((width / totalWidth) * 100).toFixed(4)}%`);
+  return snapWidthsToReportGrid(rawWidths).map((width: number) => `${width.toFixed(4)}%`);
 }
 
 function renderAssessmentChip(value: any) {
@@ -1203,9 +1467,9 @@ function renderEnergySupplyMatrix(element: any, answers: any) {
 
   return `
     <section class="matrix-section is-energy-supply">
-      <div class="subsection-title">Energievoorzieningen</div>
+      <div class="section-heading">Energievoorzieningen</div>
       <table class="report-table energy-supply-table">
-        <colgroup>${columns.map((column) => `<col style="width:${column.width}">`).join("")}</colgroup>
+        ${renderGridColGroup(columns.map((column) => column.width))}
         <thead><tr>${columns.map((column) => `<th>${escapeHtml(column.title)}</th>`).join("")}</tr></thead>
         <tbody>${rows.map((row: any) => `<tr>${columns.map((column) => `<td>${renderValueCell(row?.[column.key])}</td>`).join("")}</tr>`).join("")}</tbody>
       </table>
@@ -1327,6 +1591,7 @@ function renderPanel(element: any, answers: any, options: { dividerPercent?: num
       <section class="panel-section a2-result-section">
         <div class="section-heading">${escapeHtml(labelForElement(element))}</div>
         <table class="report-table availability-result-table">
+          ${renderGridColGroup([5, 7, 5, 7])}
           <tbody><tr>
             <th>Melduren buiten werking</th><td>${renderValueCell(answerFor(answers, "a2_melduren_buiten_werking"))}</td>
             <th>Aantal melders</th><td>${renderValueCell(answerFor(answers, "a2_aantal_melders"))}</td>
@@ -1559,6 +1824,7 @@ function renderAdditionalRemarksPage(model: any, page: any) {
       <div class="page-title">${escapeHtml(firstText(page?.title, "Aanvullende opmerkingen"))}</div>
       <div class="page-intro">Overzicht van de aanvullende opmerkingen en het eventuele gevolg voor het certificaat.</div>
       <table class="report-table remarks-table">
+        ${renderGridColGroup([2, 17, 5])}
         <thead>
           <tr>
             <th>Nr.</th>
@@ -1701,6 +1967,7 @@ function renderSystemAvailabilityResult(elements: any[], answers: any) {
     <section class="availability-result-block pagination-keep-together">
       <div class="subsection-title">Resultaat systeembeschikbaarheid</div>
       <table class="report-table availability-result-table availability-result-vertical">
+        ${renderGridColGroup([10, 14])}
         <tbody>
           <tr>
             <th>${escapeHtml(pveField ? labelForElement(pveField) : "PvE systeembeschikbaarheid")}</th><td>${renderValueCell(pveValue)}</td>
@@ -1724,7 +1991,7 @@ function renderBmiFindingTable(rows: any[]) {
 
   return `
     <table class="report-table bmi-findings-table">
-      <colgroup><col style="width:14%"><col style="width:42%"><col style="width:18%"><col style="width:26%"></colgroup>
+      ${renderGridColGroup([14, 42, 18, 26])}
       <thead><tr><th>Nr</th><th>Onderwerp</th><th>Voldoet</th><th>Opmerking</th></tr></thead>
       <tbody>
         ${printableRows
@@ -1773,14 +2040,14 @@ function renderPerformanceRequirementsPage(model: any, page: any) {
   const overviewPage = `
     <section class="page-break-before report-page landscape-page bmi-performance-page">
       <div class="page-title">${escapeHtml(firstText(page?.title, "Prestatie-eisen (A)"))}</div>
-      <table class="report-table compact-pair-table performance-norm-table"><tbody><tr><th>Geldende norm</th><td>${renderValueCell(answerFor(answers, "performance_normering_view"))}</td></tr></tbody></table>
+      <table class="report-table compact-pair-table performance-norm-table">${renderGridColGroup([7, 17])}<tbody><tr><th>Geldende norm</th><td>${renderValueCell(answerFor(answers, "performance_normering_view"))}</td></tr></tbody></table>
       ${
         rows.length
           ? `
             <section class="bmi-performance-section">
-              <div class="subsection-title">Overzicht prestatie-eisen</div>
+              <div class="section-heading">Overzicht prestatie-eisen</div>
               <table class="report-table performance-requirements-table">
-                <colgroup>${columns.map((column) => `<col style="width:${column.width}">`).join("")}</colgroup>
+                ${renderGridColGroup(columns.map((column) => column.width))}
                 <thead><tr>${columns.map((column) => `<th>${escapeHtml(column.title)}</th>`).join("")}</tr></thead>
                 <tbody>${rows.map((row: any) => `<tr>${columns.map((column) => `<td>${renderValueCell(row?.[column.key])}</td>`).join("")}</tr>`).join("")}</tbody>
               </table>
@@ -1788,7 +2055,7 @@ function renderPerformanceRequirementsPage(model: any, page: any) {
             </section>
             <section class="bmi-performance-results">
               <div class="section-heading">Calculatie maximum aantal onterechte of ongewenste meldingen</div>
-              <table class="report-table performance-results-table"><tbody><tr>
+              <table class="report-table performance-results-table">${renderGridColGroup([5, 3, 5, 3, 5, 3])}<tbody><tr>
                 <th>Met vertraging; intern</th><td>${renderValueCell(answerFor(answers, "performance_total_max_met_intern_view"))}</td>
                 <th>Met vertraging; extern</th><td>${renderValueCell(answerFor(answers, "performance_total_max_met_extern_view"))}</td>
                 <th>Zonder vertraging; extern</th><td>${renderValueCell(answerFor(answers, "performance_total_max_zonder_extern_view"))}</td>
@@ -1813,7 +2080,7 @@ function renderPerformanceRequirementsPage(model: any, page: any) {
               <div class="section-heading">A2; Systeembeschikbaarheid</div>
               <div class="subsection-title">Perioden niet beschikbaar</div>
               <table class="report-table system-availability-table">
-                <colgroup><col style="width:9%"><col style="width:8%"><col style="width:8%"><col style="width:9%"><col style="width:12%"><col style="width:12%"><col style="width:13%"><col style="width:29%"></colgroup>
+                ${renderGridColGroup([9, 8, 8, 9, 12, 12, 13, 29])}
                 <thead>
                   <tr class="matrix-continuation-row"><th colspan="8">Perioden niet beschikbaar</th></tr>
                   <tr><th>Datum</th><th>Tijd begin</th><th>Tijd einde</th><th>Tijdsduur<br>(dagen)</th><th>Uren p.d.<br>niet beschikbaar</th><th># melders<br>niet beschikbaar</th><th># melduren<br>niet beschikbaar</th><th>Omschrijving</th></tr>
@@ -1823,7 +2090,7 @@ function renderPerformanceRequirementsPage(model: any, page: any) {
               <div class="availability-note">De melduren hebben een nummernotatie. Bijvoorbeeld; 0,5 melduren is gelijk aan 30 minuten.</div>
               <section class="availability-result-block pagination-keep-together">
                 <div class="subsection-title">Resultaat systeembeschikbaarheid</div>
-                <table class="report-table availability-result-table availability-result-vertical"><tbody>
+                <table class="report-table availability-result-table availability-result-vertical">${renderGridColGroup([10, 14])}<tbody>
                   <tr><th>Melduren buiten werking</th><td>${renderValueCell(answerFor(answers, "a2_melduren_buiten_werking"))}</td></tr>
                   <tr><th>Aantal melders</th><td>${renderValueCell(answerFor(answers, "a2_aantal_melders"))}</td></tr>
                   <tr><th>Systeembeschikbaarheid volgens PvE</th><td>${renderValueCell(pveValue)}</td></tr>
@@ -1855,19 +2122,25 @@ function renderPerformanceRequirementsPage(model: any, page: any) {
 function renderMeasurementResultsPage(model: any, page: any) {
   const answers = model?.answers || {};
   const detectorRows = bmiRows(answerFor(answers, "melders_regels"));
+
+  /* De verouderingsfactor stond als eigen tabel boven aan de pagina, terwijl het één vast
+     getal is dat bij de accuberekening hoort. Als kleine cursieve aanduiding onder de tabel
+     staat hij waar hij thuishoort zonder een regel van het rapport op te eisen. */
+  const verouderingsfactor = normalizeText(displayText(answerFor(answers, "es_verouderingsfactor"), ""));
+
   return `
     <section class="page-break-before report-page landscape-page bmi-measurements-page">
       <div class="page-title">${escapeHtml(firstText(page?.title, "Meetresultaten (B)"))}</div>
-      <table class="report-table compact-pair-table aging-factor-table"><tbody><tr><th>Verouderingsfactor</th><td>${renderValueCell(answerFor(answers, "es_verouderingsfactor"))}</td></tr></tbody></table>
       ${renderEnergySupplyMatrix({ name: "es_regels" }, answers)}
       <div class="availability-note">1 De accuspanning is gemeten na ten minste 1 uur op noodstroom (tijdstippen metingen t0 en t1 + waarden).</div>
+      ${verouderingsfactor ? `<div class="factor-note">Verouderingsfactor ${escapeHtml(verouderingsfactor)}</div>` : ""}
       ${
         detectorRows.length
           ? `
             <section class="bmi-detectors-section">
-              <div class="subsection-title">Melders</div>
+              <div class="section-heading">Melders</div>
               <table class="report-table detector-table">
-                <colgroup><col style="width:28%"><col style="width:14%"><col style="width:20%"><col style="width:12%"><col style="width:13%"><col style="width:13%"></colgroup>
+                ${renderGridColGroup([28, 14, 20, 12, 13, 13])}
                 <thead><tr><th>Meldertype</th><th>Meldernummer</th><th>Ruimte</th><th>Instelling</th><th>Tijd van</th><th>Tijd t/m</th></tr></thead>
                 <tbody>${detectorRows.map((row: any) => `<tr><td>${renderValueCell(row?.meldertype)}</td><td>${renderValueCell(row?.meldernummer)}</td><td>${renderValueCell(row?.ruimte)}</td><td>${renderValueCell(row?.instelling)}</td><td>${renderValueCell(row?.tijd_van)}</td><td>${renderValueCell(row?.tijd_tot)}</td></tr>`).join("")}</tbody>
               </table>
@@ -1883,7 +2156,7 @@ function renderStuurfunctiematrixDocumentRows(rows: any[]) {
   if (!rows.length) return "";
   return `
     <table class="report-table compact-document-table">
-      <colgroup><col style="width:42%"><col style="width:24%"><col style="width:18%"><col style="width:16%"></colgroup>
+      ${renderGridColGroup([42, 24, 18, 16])}
       <thead><tr><th>Titel</th><th>Documentnr</th><th>Datum</th><th>Revisie</th></tr></thead>
       <tbody>${rows.map((row: any) => `<tr><td>${renderValueCell(row?.doc_titel)}</td><td>${renderValueCell(row?.doc_nummer)}</td><td>${renderValueCell(row?.doc_datum)}</td><td>${renderValueCell(row?.doc_revisie)}</td></tr>`).join("")}</tbody>
     </table>
@@ -2071,62 +2344,369 @@ function renderAttachmentCard(item: any) {
   `;
 }
 
-function renderActionPointSummaryPage(model: any) {
-  const items = (Array.isArray(model?.followUps?.items) ? model.followUps.items : [])
-    .filter((item: any) => normalizeToken(item?.status) !== "AFGEWEZEN")
-    .map((item: any, index: number) => ({ item, index }))
-    .sort((left: any, right: any) => {
-      const leftInformative = normalizeToken(left.item?.status) === "INFORMATIEF" ? 1 : 0;
-      const rightInformative = normalizeToken(right.item?.status) === "INFORMATIEF" ? 1 : 0;
-      return leftInformative - rightInformative || left.index - right.index;
-    })
-    .map(({ item }: any) => item);
-  const attachmentMap = buildFollowUpAttachmentMap(model);
-  if (!items.length) {
-    return "";
+/* De bijlage met actiepunten.
+
+   Dit is het blad dat de klant in de praktijk als eerste pakt en dat bij ons de afspraak
+   vastlegt. Het stond eerder als losse pagina vooraan in het rapport, midden in een
+   normatief document, en was een vlakke tabel waarin niet te zien was wie aan zet was.
+
+   Wat er nu in staat en waarom:
+
+   - De groepering volgt de verantwoordelijke. Dat is de vraag waarop iedereen het blad
+     leest: moet ik iets doen, of doen jullie het. Binnen een groep staat het zwaarste
+     bovenaan; certificaatblokkerend eerst, daarna op volgorde van het rapport.
+   - Certificaatblokkerend staat als eigen kolom en niet verstopt in een toelichting,
+     want dat bepaalt of er wel of niet afgegeven kan worden.
+   - Waar het zit komt uit de pin op de tekening. Zonder pin blijft het leeg in plaats van
+     dat er een streepje staat te suggereren dat er niets is.
+   - Informatieve punten staan onderaan in een eigen blok; ze horen erbij maar vragen niets.
+
+   De bijlage draait in twee vormen. In het rapport sluit hij de rij, zodat het officiële
+   deel aaneengesloten blijft. Los mee te sturen krijgt hij een eigen kop met installatie en
+   datum, want dan staat hij zonder voorblad op tafel. */
+
+/* De naam van het uitvoerende bedrijf. Wardenburg en Hefas staan in dezelfde database en
+   gebruiken hetzelfde rapport; zonder naam zou er "wij" staan op een blad dat los bij een
+   klant op tafel ligt. Is de bedrijfsnaam onbekend, dan blijft het bij de neutrale term. */
+function executingCompanyName(model: any) {
+  const unit = normalizeText(model?.installation?.company_unit);
+  return unit || "het onderhoudsbedrijf";
+}
+
+function responsibilityGroups(model: any): Array<{ key: string; title: string; tone: string }> {
+  const bedrijf = executingCompanyName(model);
+
+  return [
+    {
+      key: "KLANT",
+      title: "Door opdrachtgever uit te voeren",
+      tone: "is-customer",
+    },
+    {
+      key: "INTERN",
+      title: `Door ${bedrijf} uit te voeren`,
+      tone: "is-internal",
+    },
+    {
+      key: "DERDE",
+      title: "Door een derde partij uit te voeren",
+      tone: "is-third",
+    },
+    {
+      key: "ONBEPAALD",
+      title: "Nog te bepalen wie uitvoert",
+      tone: "is-open",
+    },
+  ];
+}
+
+/* Een omschrijving uit het veld kan regeleinden bevatten; die horen te blijven staan. Losse
+   lege regels vallen weg, anders staat er een gat midden in de tabel. */
+function renderMultilineText(value: any) {
+  const tekst = normalizeText(textValue(value));
+  if (!tekst) return "";
+
+  return tekst
+    .split(/\r?\n/)
+    .map((regel) => regel.trim())
+    .filter(Boolean)
+    .map((regel) => escapeHtml(regel))
+    .join("<br />");
+}
+
+function actionPointDueDate(value: any) {
+  const raw = normalizeText(value);
+  if (!raw) return "";
+
+  const parsed = new Date(raw);
+  if (Number.isNaN(parsed.getTime())) return raw;
+
+  const dag = String(parsed.getUTCDate()).padStart(2, "0");
+  const maand = String(parsed.getUTCMonth() + 1).padStart(2, "0");
+  return `${dag}-${maand}-${parsed.getUTCFullYear()}`;
+}
+
+/* Waar het punt zit, volgens de markering op de tekening. Meerdere pins worden samengevat;
+   een lijst van vijf plekken in een tabelcel leest niemand meer. */
+function actionPointLocation(item: any) {
+  const raw = item?.drawing_pins ?? item?.drawing_pins_json;
+  let pins: any[] = [];
+
+  if (Array.isArray(raw)) pins = raw;
+  else if (typeof raw === "string" && raw.trim()) {
+    try {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) pins = parsed;
+    } catch {
+      pins = [];
+    }
   }
 
-  const evidence = items.flatMap((item: any, index: number) =>
-    followUpDocumentsForItem(item, attachmentMap).map((document: any) => ({ document, index: index + 1 }))
-  );
+  if (!pins.length) return "";
+
+  const eerste = pins[0];
+  const tekening = normalizeText(eerste?.document_title) || normalizeText(eerste?.title);
+  const pagina = Number(eerste?.page_number);
+  const delen = [tekening, Number.isFinite(pagina) && pagina > 0 ? `pagina ${pagina}` : ""].filter(Boolean);
+  const plek = delen.join(", ");
+
+  if (pins.length === 1) return plek || "Op tekening";
+  return `${plek || "Op tekening"} en ${pins.length - 1} meer`;
+}
+
+/* Staat de code al vooraan in de titel, dan hoeft hij er niet nog een keer boven. De code
+   moet dan wel als los deel vooraan staan; "C2" telt in "C2 - Doormelding" maar niet in
+   "C20 storing". */
+function titleStartsWithCode(titel: string, code: string) {
+  const kleineTitel = normalizeText(titel).toLowerCase();
+  const kleineCode = normalizeText(code).toLowerCase();
+
+  if (!kleineCode || !kleineTitel.startsWith(kleineCode)) return false;
+
+  const rest = kleineTitel.slice(kleineCode.length);
+
+  return !/^[a-z0-9]/.test(rest);
+}
+
+function renderActionPointRows(items: any[], nummering: Map<any, number>, kolommen: { plek: boolean; termijn: boolean }) {
+  return items
+    .map((item: any) => {
+      const titel = firstText(item?.workflow_title, item?.workflow_description, item?.note, "Actiepunt");
+      const toelichting =
+        normalizeText(item?.workflow_description) && normalizeText(item?.workflow_title)
+          ? `<span class="action-point-description">${renderMultilineText(item.workflow_description)}</span>`
+          : "";
+      /* De code uit het rapport staat klein boven de titel; die beantwoordt de vraag waar het
+         punt vandaan komt. Begint de titel zelf al met die code, dan zou hij er twee keer
+         staan en vervalt de regel erboven. */
+      const code = normalizeText(item?.source_item_code);
+      const herkomst = code && !titleStartsWithCode(titel, code) ? code : "";
+      const plek = actionPointLocation(item);
+      const termijn = actionPointDueDate(item?.due_date);
+      const afhandeling = firstText(item?.resolution_note, item?.resolution_outcome, "");
+
+      return `
+        <tr>
+          <td class="align-center item-code-cell">${nummering.get(item) ?? ""}</td>
+          <td class="action-point-cell">${herkomst ? `<span class="action-point-origin">${escapeHtml(herkomst)}</span>` : ""}<span class="action-point-title">${escapeHtml(titel)}</span>${toelichting}${afhandeling ? `<span class="action-point-resolution"><span>Afhandeling</span> ${renderMultilineText(afhandeling)}</span>` : ""}</td>
+          ${kolommen.plek ? `<td>${plek ? escapeHtml(plek) : ""}</td>` : ""}
+          <td class="align-center">${renderCertificateImpactChip(item?.effective_certificate_impact || item?.certificate_impact)}</td>
+          ${kolommen.termijn ? `<td class="align-center action-point-due">${escapeHtml(termijn)}</td>` : ""}
+          <td class="align-center">${renderFollowUpStatusChip(item?.status)}</td>
+        </tr>
+      `;
+    })
+    .join("");
+}
+
+/* De kop van een blok binnen een tabel.
+
+   Hij staat in de thead en niet erboven, zodat Chromium hem herhaalt wanneer het blok over de
+   paginarand valt; een vervolgpagina zegt dan nog steeds waar de regels bij horen. De
+   actiepuntenbijlage en de documentenpagina gebruiken hem allebei, en elk blok dat later
+   bijkomt kan hem overnemen. */
+function renderTableGroupHead(options: {
+  title: string;
+  columns: number;
+  count?: number;
+  countLabel?: [string, string];
+  intro?: string;
+}) {
+  const aantal =
+    options.count == null || !options.countLabel
+      ? ""
+      : options.count === 1
+        ? `1 ${options.countLabel[0]}`
+        : `${options.count} ${options.countLabel[1]}`;
 
   return `
-    <section class="page-break-before report-page">
-      <div class="page-title">Actiepunten</div>
-      <div class="page-intro">Deze actiepunten beinvloeden het afgeven van een positieve beoordeling.</div>
-      <table class="report-table action-points-table">
-        <thead>
-          <tr>
-            <th>Nr.</th>
-            <th>Actiepunt</th>
-            <th>Status</th>
-            <th>Certificaatimpact</th>
-            <th>Afhandeling</th>
-          </tr>
-        </thead>
-        <tbody>
-          ${items
-            .map(
-              (item: any, index: number) => `
-                <tr>
-                  <td class="align-center item-code-cell">${index + 1}</td>
-                  <td><strong>${escapeHtml(firstText(item?.workflow_title, item?.workflow_description, item?.note, "Actiepunt"))}</strong>${normalizeText(item?.workflow_description) && normalizeText(item?.workflow_title) ? `<div class="table-detail">${renderValueCell(item.workflow_description)}</div>` : ""}</td>
-                  <td class="align-center">${renderFollowUpStatusChip(item?.status)}</td>
-                  <td class="align-center">${renderCertificateImpactChip(item?.effective_certificate_impact || item?.certificate_impact)}</td>
-                  <td>${renderValueCell(firstText(item?.resolution_note, item?.resolution_outcome, item?.note))}</td>
-                </tr>
-              `
-            )
+    <tr class="table-group-row">
+      <th colspan="${options.columns}">
+        <span class="table-group-title">${escapeHtml(options.title)}</span>
+        ${aantal ? `<span class="table-group-count">${escapeHtml(aantal)}</span>` : ""}
+        ${options.intro ? `<span class="table-group-intro">${escapeHtml(options.intro)}</span>` : ""}
+      </th>
+    </tr>
+  `;
+}
+
+function renderActionPointTable(
+  items: any[],
+  nummering: Map<any, number>,
+  kolommen: { plek: boolean; termijn: boolean },
+  groep: { title: string; intro?: string }
+) {
+  /* De kolommen staan één keer beschreven; de colgroup, de koprij en de cellen komen er alle
+     drie uit voort, zodat ze niet uit elkaar kunnen lopen wanneer een kolom wegvalt. */
+  const kolomlijst = [
+    { titel: "Nr.", breedte: 2, gecentreerd: true },
+    { titel: "Actiepunt", breedte: 10, gecentreerd: false },
+    ...(kolommen.plek ? [{ titel: "Waar", breedte: 4, gecentreerd: false }] : []),
+    { titel: "Blokkeert certificaat", breedte: 3, gecentreerd: true },
+    ...(kolommen.termijn ? [{ titel: "Uiterlijke uitvoerdatum", breedte: 4, gecentreerd: true }] : []),
+    { titel: "Status", breedte: 5, gecentreerd: true },
+  ];
+
+  return `
+    <table class="report-table action-points-table">
+      ${renderGridColGroup(kolomlijst.map((kolom) => kolom.breedte))}
+      <thead>
+        ${renderTableGroupHead({
+          title: groep.title,
+          columns: kolomlijst.length,
+          count: items.length,
+          countLabel: ["punt", "punten"],
+          intro: groep.intro,
+        })}
+        <tr>
+          ${kolomlijst
+            .map((kolom) => `<th class="${kolom.gecentreerd ? "align-center" : ""}">${escapeHtml(kolom.titel)}</th>`)
             .join("")}
-        </tbody>
-      </table>
+        </tr>
+      </thead>
+      <tbody>
+        ${renderActionPointRows(items, nummering, kolommen)}
+      </tbody>
+    </table>
+  `;
+}
+
+function renderActionPointsAppendix(model: any, options: { standalone?: boolean } = {}) {
+  const alle = (Array.isArray(model?.followUps?.items) ? model.followUps.items : []).filter(
+    (item: any) => normalizeToken(item?.status) !== "AFGEWEZEN"
+  );
+
+  if (!alle.length) return "";
+
+  const informatief = alle.filter((item: any) => normalizeToken(item?.status) === "INFORMATIEF");
+  const teDoen = alle.filter((item: any) => normalizeToken(item?.status) !== "INFORMATIEF");
+
+  /* Binnen een groep eerst wat het certificaat tegenhoudt; dat is waar het gesprek over gaat.
+     Daarna de volgorde van het rapport zelf, zodat een punt terug te vinden is. */
+  const blokkeert = (item: any) =>
+    normalizeColumnToken(item?.effective_certificate_impact || item?.certificate_impact) === "YES" ? 0 : 1;
+
+  const groepen = responsibilityGroups(model).map((groep) => {
+    const items = teDoen
+      .filter((item: any) => {
+        const soort = normalizeToken(item?.responsibility_type) || "ONBEPAALD";
+        return soort === groep.key;
+      })
+      .map((item: any, index: number) => ({ item, index }))
+      .sort((links: any, rechts: any) => blokkeert(links.item) - blokkeert(rechts.item) || links.index - rechts.index)
+      .map(({ item }: any) => item);
+
+    return { ...groep, items };
+  }).filter((groep) => groep.items.length);
+
+  /* Doorlopende nummering over de hele bijlage; zo kun je naar "punt 4" verwijzen zonder te
+     zeggen in welk blok dat staat. */
+  const nummering = new Map<any, number>();
+  let teller = 0;
+  for (const groep of groepen) for (const item of groep.items) nummering.set(item, ++teller);
+  for (const item of informatief) nummering.set(item, ++teller);
+
+  const blokkerend = teDoen.filter((item: any) => blokkeert(item) === 0).length;
+  const voorKlant = groepen.find((groep) => groep.key === "KLANT")?.items.length ?? 0;
+  const voorOns = groepen.find((groep) => groep.key === "INTERN")?.items.length ?? 0;
+
+  const kolommen = {
+    plek: alle.some((item: any) => Boolean(actionPointLocation(item))),
+    termijn: alle.some((item: any) => Boolean(actionPointDueDate(item?.due_date))),
+  };
+
+  const attachmentMap = buildFollowUpAttachmentMap(model);
+  const bewijs = [...groepen.flatMap((groep) => groep.items), ...informatief].flatMap((item: any) =>
+    followUpDocumentsForItem(item, attachmentMap).map((document: any) => ({ document, nummer: nummering.get(item) }))
+  );
+
+  const installatie = firstText(
+    model?.installation?.installation_name,
+    model?.installation?.object_name,
+    model?.item?.atrium_installation_code,
+    ""
+  );
+  const adres = buildAddress(model);
+
+  return `
+    <section class="page-break-before report-page action-points-appendix">
+      <div class="appendix-header">
+        <div class="appendix-eyebrow">Bijlage</div>
+        <div class="page-title">Actiepunten</div>
+        ${
+          options.standalone
+            ? `<div class="appendix-context">${[installatie, adres]
+                .map((deel: any) => normalizeText(displayText(deel)))
+                .filter((deel: string) => deel && deel !== "-")
+                .map((deel: string) => escapeHtml(deel))
+                .join(" &middot; ")}</div>`
+            : ""
+        }
+        <div class="page-intro">Deze lijst hoort bij het onderhoudsrapport en bevat de actiepunten uit dat rapport. Per punt staat wie het uitvoert en of het de afgifte van een certificaat blokkeert.</div>
+      </div>
+
+      <section class="appendix-summary">
+        <div class="appendix-summary__title">Samenvatting</div>
+        <dl class="appendix-summary__list">
+          <div class="appendix-summary__row">
+            <dt>Openstaande punten</dt>
+            <dd>${teDoen.length}</dd>
+          </div>
+          <div class="appendix-summary__row${blokkerend ? " is-alert" : ""}">
+            <dt>Waarvan certificaatblokkerend</dt>
+            <dd>${blokkerend}</dd>
+          </div>
+          <div class="appendix-summary__row">
+            <dt>Door opdrachtgever uit te voeren</dt>
+            <dd>${voorKlant}</dd>
+          </div>
+          <div class="appendix-summary__row">
+            <dt>Door ${escapeHtml(executingCompanyName(model))} uit te voeren</dt>
+            <dd>${voorOns}</dd>
+          </div>
+          ${informatief.length ? `
+          <div class="appendix-summary__row is-muted">
+            <dt>Ter informatie</dt>
+            <dd>${informatief.length}</dd>
+          </div>` : ""}
+        </dl>
+      </section>
+
+      ${groepen
+        .map(
+          (groep) => `
+            <section class="appendix-group ${groep.tone}">
+              ${renderActionPointTable(groep.items, nummering, kolommen, groep)}
+            </section>
+          `
+        )
+        .join("")}
+
       ${
-        evidence.length
+        informatief.length
           ? `
-            <section class="evidence-section">
+            <section class="appendix-group is-info">
+              ${renderActionPointTable(informatief, nummering, kolommen, {
+                title: "Ter informatie",
+                intro: "Deze punten blokkeren de afgifte van een certificaat niet.",
+              })}
+            </section>
+          `
+          : ""
+      }
+
+      ${
+        bewijs.length
+          ? `
+            <section class="evidence-section appendix-evidence">
               <div class="section-heading">Bewijsstukken</div>
               <div class="attachment-grid">
-                ${evidence.map(({ document, index }: any) => `<div><div class="evidence-label">Actiepunt ${index}</div>${renderAttachmentCard(document)}</div>`).join("")}
+                ${bewijs
+                  .map(
+                    ({ document, nummer }: any) =>
+                      `<div><div class="evidence-label">Punt ${nummer}</div>${renderAttachmentCard(document)}</div>`
+                  )
+                  .join("")}
               </div>
             </section>
           `
@@ -2229,9 +2809,9 @@ function renderContinuationHeaderAnchor(model: any) {
 
 function renderDocumentsPage(model: any) {
   const installationGroups = Array.isArray(model?.installationDocuments?.groups) ? model.installationDocuments.groups : [];
-  const installationDocuments = installationGroups.flatMap((group: any) =>
-    (Array.isArray(group?.items) ? group.items : []).map((item: any) => ({ ...item, document_type: firstText(group?.name, "Overig") }))
-  );
+  const documentGroups = installationGroups.filter((group: any) => Array.isArray(group?.items) && group.items.length);
+  const documentCount = documentGroups.reduce((total: number, group: any) => total + group.items.length, 0);
+
   const formDocuments = Array.isArray(model?.formInstanceDocuments?.items)
     ? model.formInstanceDocuments.items.filter((item: any) => !Array.isArray(item?.follow_ups) || item.follow_ups.length === 0)
     : [];
@@ -2239,29 +2819,44 @@ function renderDocumentsPage(model: any) {
   const chunks = <T>(items: T[], size: number) =>
     Array.from({ length: Math.ceil(items.length / size) }, (_, index) => items.slice(index * size, index * size + size));
   const attachmentBlocks = chunks(formDocuments, 2);
-  const renderDocumentTable = (items: any[]) => `
+
+  /* De documentsoort stond op elke regel opnieuw; bij negen plattegronden staat er negen keer
+     "Plattegronden". De soort is geen eigenschap van een regel maar de kop van een blok, dus
+     hij staat nu één keer boven zijn documenten en loopt mee over de paginarand. */
+  const kolomlijst = [
+    { titel: "Titel", breedte: 9, gecentreerd: false },
+    { titel: "Documentnr", breedte: 4, gecentreerd: false },
+    { titel: "Datum", breedte: 3, gecentreerd: true },
+    { titel: "Revisie", breedte: 2, gecentreerd: true },
+    { titel: "Bestand", breedte: 6, gecentreerd: false },
+  ];
+
+  const renderDocumentGroup = (group: any) => `
     <table class="report-table document-table pagination-splittable-table">
+      ${renderGridColGroup(kolomlijst.map((kolom) => kolom.breedte))}
       <thead>
+        ${renderTableGroupHead({
+          title: firstText(group?.name, "Overig"),
+          columns: kolomlijst.length,
+          count: group.items.length,
+          countLabel: ["document", "documenten"],
+        })}
         <tr>
-          <th>Documentsoort</th>
-          <th>Titel</th>
-          <th>Documentnr</th>
-          <th>Datum</th>
-          <th>Revisie</th>
-          <th>Bestand</th>
+          ${kolomlijst
+            .map((kolom) => `<th class="${kolom.gecentreerd ? "align-center" : ""}">${escapeHtml(kolom.titel)}</th>`)
+            .join("")}
         </tr>
       </thead>
       <tbody>
-        ${items
+        ${group.items
           .map(
             (item: any) => `
               <tr>
-                <td>${escapeHtml(item.document_type)}</td>
                 <td>${escapeHtml(firstText(item?.title, item?.file_name, "Document"))}</td>
                 <td>${escapeHtml(displayText(item?.document_number))}</td>
-                <td>${escapeHtml(displayText(formatExportDate(item?.document_date)))}</td>
-                <td>${escapeHtml(displayText(item?.revision))}</td>
-                <td>${escapeHtml(displayText(item?.file_name))}</td>
+                <td class="align-center">${escapeHtml(displayText(formatExportDate(item?.document_date)))}</td>
+                <td class="align-center">${escapeHtml(displayText(item?.revision))}</td>
+                <td class="document-file-cell">${escapeHtml(displayText(item?.file_name))}</td>
               </tr>
             `
           )
@@ -2271,10 +2866,14 @@ function renderDocumentsPage(model: any) {
   `;
 
   return `
-    <section class="page-break-before report-page landscape-page documents-page">
+    <section class="page-break-before report-page ${documentCount ? "landscape-page" : ""} documents-page">
       <div class="page-title">Documenten</div>
       <div class="page-intro">Installatiebestanden en overige formulierbijlagen die bij dit rapport horen.</div>
-      ${installationDocuments.length ? renderDocumentTable(installationDocuments) : `<div class="empty-box">Geen installatiebestanden gevonden.</div>`}
+      ${
+        documentCount
+          ? documentGroups.map(renderDocumentGroup).join("")
+          : `<div class="page-note">Er zijn geen installatiebestanden aan dit rapport gekoppeld.</div>`
+      }
       ${attachmentBlocks
       .map(
         (items: any[], index: number) => `
@@ -2501,34 +3100,29 @@ function renderSignaturePage(model: any) {
             return `
               <article class="signature-block">
                 <div class="signature-block-header">
-                  <div>
-                    <div class="signature-title">${escapeHtml(firstText(block?.title, "Ondertekening"))}</div>
-                    ${
-                      normalizeText(block?.text)
-                        ? `<div class="signature-subtitle">${escapeHtml(firstText(block?.text))}</div>`
-                        : ""
-                    }
-                  </div>
+                  <div class="signature-title">${escapeHtml(firstText(block?.title, "Ondertekening"))}</div>
                 </div>
+                ${
+                  normalizeText(block?.text)
+                    ? `<div class="signature-subtitle">${escapeHtml(firstText(block?.text))}</div>`
+                    : ""
+                }
                 <div class="signature-body">
-                  <div class="signature-meta">
-                    <div class="signature-field">
-                      <div class="signature-field-label">Naam</div>
-                      <div class="signature-field-value">${escapeHtml(displayText(blockSigner.name || signerName))}</div>
-                    </div>
-                    <div class="signature-field">
-                      <div class="signature-field-label">Datum</div>
-                      <div class="signature-field-value">${escapeHtml(displayText(blockSigner.dateText || onderhoudDatum))}</div>
-                    </div>
-                    ${
-                      toonHandtekening
-                        ? `<div class="signature-field">
-                            <div class="signature-field-label">Handtekening</div>
-                            <div class="signature-field-value">Vastgelegd</div>
-                          </div>`
-                        : ""
-                    }
-                  </div>
+                  <table class="report-table signature-meta-table">
+                    ${renderGridColGroup([8, 8, 8])}
+                    <tbody>
+                      <tr>
+                        <th>Naam</th>
+                        <th>Datum</th>
+                        <th>Handtekening</th>
+                      </tr>
+                      <tr>
+                        <td>${escapeHtml(displayText(blockSigner.name || signerName))}</td>
+                        <td>${escapeHtml(displayText(blockSigner.dateText || onderhoudDatum))}</td>
+                        <td>${toonHandtekening ? "Vastgelegd" : ""}</td>
+                      </tr>
+                    </tbody>
+                  </table>
                   <div class="signature-box">
                     ${
                       toonHandtekening
@@ -2557,9 +3151,9 @@ function renderSignaturePage(model: any) {
 function renderHtmlDocument(model: any) {
   const reportTitle = firstText(reportConfig(model)?.coverMainTitle, "Rapport van Onderhoud");
   const bodyContent = `
-    ${renderActionPointSummaryPage(model)}
     ${renderSurveyPages(model)}
     ${renderSignaturePage(model)}
+    ${renderActionPointsAppendix(model, { standalone: false })}
   `;
 
   return `
@@ -3395,15 +3989,13 @@ function renderHtmlDocument(model: any) {
   `;
 }
 
-function renderBodyHtmlDocument(model: any) {
+/* Het rapportblad; alle pagina's van het rapport delen deze schil en dus deze stylesheet.
+   De uitvoer gaat langs twee bewerkingen: dubbele blokkoppen vervallen en elke tabel krijgt
+   de dichtheidsklasse die bij zijn aantal kolommen hoort. */
+function renderBodyDocumentShell(model: any, bodyContent: string) {
   const reportTitle = firstText(reportConfig(model)?.coverMainTitle, "Rapport van Onderhoud");
-  const bodyContent = `
-    ${renderActionPointSummaryPage(model)}
-    ${renderSurveyPages(model)}
-    ${renderSignaturePage(model)}
-  `;
 
-  return `
+  const html = `
     <!doctype html>
     <html lang="nl">
       <head>
@@ -3734,18 +4326,38 @@ function renderBodyHtmlDocument(model: any) {
           }
 
           .section-heading {
-            font-size: 14pt;
+            font-size: 13.5pt;
             font-weight: 700;
             margin: 0 0 3mm 0;
           }
 
           .subsection-title {
-            font-size: 12.5pt;
+            font-size: 10.5pt;
+            color: var(--muted);
             font-weight: 700;
             margin: 0 0 2.4mm 0;
             break-after: avoid;
             page-break-after: avoid;
           }
+
+          /* Elk blok op een pagina houdt afstand van wat eraan voorafgaat. De koppen zaten met
+             hun ruimte in hun eigen sectie, dus een kop die als eerste in een nieuwe sectie
+             stond plakte tegen de tabel of de voetnoot erboven. De afstand hoort bij het blok
+             zelf; dan geldt hij voor elk formulier, ook voor blokken die nog niet bestaan. */
+          .report-page > * + section,
+          .report-page > * + .section-heading,
+          .report-page > * + .subsection-title,
+          .report-page > * + table,
+          .report-page section > * + .section-heading,
+          .report-page section > * + .subsection-title {
+            margin-top: 7mm;
+          }
+
+          /* Onder de paginatitel begint de inhoud meteen; die ruimte staat al in de titel. */
+          .report-page > .page-title + * {
+            margin-top: 0;
+          }
+
 
           .info-section,
           .followup-section,
@@ -3844,16 +4456,12 @@ function renderBodyHtmlDocument(model: any) {
           .report-table td {
             border: 1px solid var(--line);
             padding: 2.4mm 3mm;
-            vertical-align: top;
+            vertical-align: middle;
             white-space: pre-wrap;
             word-break: normal;
             overflow-wrap: anywhere;
           }
 
-          .matrix-table th,
-          .matrix-table td {
-            vertical-align: middle;
-          }
 
           .report-table th {
             background: var(--panel);
@@ -3875,7 +4483,7 @@ function renderBodyHtmlDocument(model: any) {
 
           .assessment-chip {
             display: inline-block;
-            min-width: 18mm;
+            min-width: 14mm;
             padding: 1.2mm 2.2mm;
             border-radius: 999px;
             border: 1px solid var(--line);
@@ -4034,16 +4642,8 @@ function renderBodyHtmlDocument(model: any) {
             color: var(--muted);
           }
 
-          .document-table th:nth-child(1) { width: 28%; }
-          .document-table th:nth-child(2) { width: 18%; }
-          .document-table th:nth-child(3) { width: 14%; }
-          .document-table th:nth-child(4) { width: 10%; }
-          .document-table th:nth-child(5) { width: 30%; }
 
           .info-table th { width: 34%; }
-          .info-table td { vertical-align: middle; }
-          .info-pairs-table th { width: 17%; vertical-align: middle; }
-          .info-pairs-table td { width: 33%; vertical-align: middle; }
 
           .bmi-general-page {
             padding-top: 1mm;
@@ -4117,29 +4717,312 @@ function renderBodyHtmlDocument(model: any) {
 
           .continuation-header-anchor { height: 6mm; }
 
-          .action-points-table th:nth-child(1),
-          .remarks-table th:nth-child(1) { width: 8%; }
-          .action-points-table th:nth-child(2) { width: 35%; }
-          .action-points-table th:nth-child(3) { width: 16%; }
-          .action-points-table th:nth-child(4) { width: 18%; }
-          .action-points-table th:nth-child(5) { width: 23%; }
-          .remarks-table th:nth-child(2) { width: 70%; }
-          .remarks-table th:nth-child(3) { width: 22%; }
+          /* ------------------------------------------------------ Eén ritme voor alle tabellen.
+
+             De dichtheid komt uit het aantal kolommen en niet uit het formulier, zodat twee
+             tabellen met evenveel kolommen er hetzelfde uitzien waar ze ook staan. De
+             minimumhoogte maakt een regel van één tekstregel overal even hoog; dat is wat
+             opeenvolgende tabellen op een pagina rustig maakt in plaats van hakkelig. */
+          .report-table th,
+          .report-table td {
+            height: 9mm;
+          }
+
+          /* ------------------------------------------------------ Etiketten in een tabelregel.
+
+             Een etiket maakte de regel hoger dan een regel met alleen tekst, waardoor de
+             hoogte van rij tot rij sprong; precies dat maakt een pagina onrustig. Het etiket
+             past nu binnen de minimumhoogte van een regel. Een etiket met een lang opschrift
+             mag nog wel groeien, anders zou de tekst eruit lopen. */
+          .assessment-chip,
+          .availability-value {
+            box-sizing: border-box;
+            min-height: 4.4mm;
+            padding: 0 2.4mm;
+            line-height: 1.15;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+          }
+
+
+          /* In een dichte tabel is een vaste minimumbreedte te veel gevraagd; het etiket duwde
+             de tabel dan breder dan zijn buren op dezelfde pagina. Daar krimpt het mee. */
+          .report-table.is-regular .assessment-chip,
+          .report-table.is-tight .assessment-chip {
+            min-width: 0;
+            padding: 0 1.4mm;
+          }
+          .report-table.is-roomy th,
+          .report-table.is-roomy td {
+            font-size: 9pt;
+            padding: 2.2mm 2.8mm;
+            line-height: 1.3;
+          }
+
+          .report-table.is-regular th,
+          .report-table.is-regular td {
+            font-size: 8.2pt;
+            padding: 1.9mm 2.2mm;
+            line-height: 1.25;
+          }
+
+          .report-table.is-tight th,
+          .report-table.is-tight td {
+            font-size: 7.6pt;
+            padding: 1.5mm 1.6mm;
+            line-height: 1.2;
+          }
+
+          /* Smalle kolommen hebben koppen van twee of drie regels nodig; die mogen breken op
+             een spatie, maar niet midden in een woord. */
+          .report-table.is-regular th,
+          .report-table.is-tight th {
+            white-space: normal;
+            word-break: normal;
+            overflow-wrap: normal;
+          }
+
+          /* ------------------------------------------------------ Naam-waardeparen.
+
+             Eén doorlopend raster met tussenkoppen in plaats van een reeks losse tabellen. */
+
+          /* De waarde is waar het om gaat; het opschrift ervoor mag een toon zachter. */
+          .info-grid-table tbody th {
+            color: var(--muted);
+            font-weight: 400;
+          }
+
+          .info-grid-table td {
+            font-weight: 700;
+          }
+
+          /* De tussenkop was een witte regel en las daardoor als een gat in de tabel in plaats
+             van als een kop. Een gevulde band met een stevige lijn erboven zet de groep af
+             tegen wat eraan voorafgaat; kleine kapitalen maken hem herkenbaar zonder hem
+             groter te maken dan de gegevens eronder. */
+
           .table-detail { margin-top: 1.3mm; color: var(--muted); font-size: 8.8pt; }
           .evidence-section { margin-top: 6mm; }
           .evidence-label { margin: 0 0 1.4mm; color: var(--muted); font-size: 8.5pt; font-weight: 700; }
 
-          .document-table th:nth-child(1) { width: 16%; }
-          .document-table th:nth-child(2) { width: 23%; }
-          .document-table th:nth-child(3) { width: 15%; }
-          .document-table th:nth-child(4) { width: 12%; }
-          .document-table th:nth-child(5) { width: 10%; }
-          .document-table th:nth-child(6) { width: 24%; }
+          /* Bijlage met actiepunten.
 
-          .energy-supply-table th,
-          .energy-supply-table td,
-          .compact-document-table th,
-          .compact-document-table td { font-size: 8.4pt; padding: 1.8mm 2mm; }
+             Het blad moet op zichzelf kunnen staan, want het gaat los mee naar de klant en
+             wordt naast het rapport gelegd. Vandaar een eigen kop, een strip met de cijfers
+             waar het gesprek over gaat, en blokken per verantwoordelijke met een gekleurde
+             rand zodat je in een oogopslag ziet wie aan zet is. */
+          .action-points-appendix .appendix-header {
+            padding-bottom: 3mm;
+            margin-bottom: 5mm;
+            border-bottom: 0.8mm solid var(--accent);
+          }
+
+          .appendix-eyebrow {
+            font-size: 9pt;
+            font-weight: 700;
+            letter-spacing: 0.18em;
+            text-transform: uppercase;
+            color: var(--accent);
+            margin-bottom: 1.5mm;
+          }
+
+          .action-points-appendix .appendix-header .page-title {
+            margin-bottom: 2mm;
+          }
+
+          .appendix-context {
+            font-weight: 700;
+            margin-bottom: 2mm;
+          }
+
+          .action-points-appendix .appendix-header .page-intro {
+            margin-bottom: 0;
+          }
+
+          /* De samenvatting leest als een kerngetallenoverzicht in een rapport en niet als een
+             rij knoppen; geen kaders om de cijfers, nadruk komt van de typografie. Het
+             blokkerende aantal is het enige dat opvalt, want daar gaat het gesprek over. */
+          .appendix-summary {
+            margin-bottom: 7mm;
+            padding: 3.5mm 0 1mm;
+            border-top: 0.5pt solid var(--line);
+            border-bottom: 0.5pt solid var(--line);
+            break-inside: avoid;
+            page-break-inside: avoid;
+          }
+
+          .appendix-summary__title {
+            font-size: 8.4pt;
+            font-weight: 700;
+            letter-spacing: 0.12em;
+            text-transform: uppercase;
+            color: var(--muted);
+            margin-bottom: 2.5mm;
+          }
+
+          .appendix-summary__list {
+            margin: 0;
+            padding: 0;
+          }
+
+          .appendix-summary__row {
+            display: flex;
+            align-items: baseline;
+            gap: 3mm;
+            padding: 1.3mm 0;
+          }
+
+          .appendix-summary__row dt {
+            margin: 0;
+            flex: 1 1 auto;
+          }
+
+          /* Een stippellijn tussen naam en getal, zoals in een inhoudsopgave; dat leest als
+             document en houdt de cijfers op één lijn. */
+          .appendix-summary__row dt::after {
+            content: "";
+            display: inline-block;
+            width: 0;
+          }
+
+          .appendix-summary__row dd {
+            margin: 0;
+            flex: 0 0 14mm;
+            text-align: right;
+            font-weight: 700;
+            font-variant-numeric: tabular-nums;
+          }
+
+          .appendix-summary__row.is-alert dt,
+          .appendix-summary__row.is-alert dd {
+            color: var(--accent);
+            font-weight: 700;
+          }
+
+          .appendix-summary__row.is-muted dt,
+          .appendix-summary__row.is-muted dd {
+            color: var(--muted);
+            font-weight: 400;
+          }
+
+          .appendix-summary__row.is-muted dd {
+            font-weight: 700;
+          }
+
+          /* De omschrijving van een actiepunt.
+
+             Tabelcellen in het rapport staan op pre-wrap voor antwoorden met eigen regels. In
+             deze tabel gaf dat de inspringing van de opmaak terug als witruimte, waardoor
+             regels onnodig hoog werden. Hier dus normaal, met eigen regeleinden. */
+          /* De groepskop staat in de thead en niet erboven, zodat Chromium hem herhaalt wanneer
+             een blok over de paginarand valt. Zonder dat begint een volgende pagina met een
+             tabel die niet zegt wie de punten uitvoert. */
+          /* ------------------------------------------------------ De kop van een blok.
+
+             Eén uiterlijk voor elke tussenkop in een tabel, of het nu de groepen op Algemeen
+             zijn, de documentsoorten of de blokken in de actiepuntenbijlage. Een gevulde band
+             met een stevige lijn erboven zet de groep af tegen wat eraan voorafgaat; kleine
+             kapitalen maken hem herkenbaar zonder hem groter te maken dan de gegevens
+             eronder. */
+          .report-table tr.table-group-row th,
+          .info-grid-table .info-grid-group th {
+            width: auto;
+            height: auto;
+            background: var(--panel-strong);
+            color: var(--ink);
+            font-size: 8.4pt;
+            font-weight: 700;
+            letter-spacing: 0.1em;
+            text-transform: uppercase;
+            text-align: left;
+            white-space: normal;
+            border-top: 1.4pt solid var(--ink);
+            border-left: 0;
+            border-right: 0;
+            padding: 1.8mm 2.8mm;
+          }
+
+          .table-group-count {
+            margin-left: 3mm;
+            font-weight: 400;
+            letter-spacing: 0.04em;
+            text-transform: none;
+            color: var(--muted);
+          }
+
+          .table-group-intro {
+            display: block;
+            margin-top: 1.2mm;
+            font-size: 8.4pt;
+            font-weight: 400;
+            letter-spacing: 0;
+            text-transform: none;
+            color: var(--muted);
+          }
+
+          .action-points-table td,
+          .action-points-table th {
+            white-space: normal;
+          }
+
+          .action-point-cell {
+            line-height: 1.35;
+          }
+
+          .action-point-origin {
+            display: block;
+            font-size: 8pt;
+            font-weight: 700;
+            color: var(--muted);
+            margin-bottom: 0.6mm;
+          }
+
+          .action-point-title {
+            display: block;
+            font-weight: 700;
+          }
+
+          .action-point-description {
+            display: block;
+            margin-top: 0.8mm;
+            color: var(--muted);
+            font-size: 8.8pt;
+          }
+
+          .action-point-resolution {
+            display: block;
+            margin-top: 1.2mm;
+            font-size: 8.8pt;
+          }
+
+          .action-point-resolution span {
+            font-weight: 700;
+            color: var(--muted);
+          }
+
+          .appendix-group {
+            margin-bottom: 6mm;
+            padding-left: 3.5mm;
+            border-left: 1mm solid var(--line);
+          }
+
+          .appendix-group.is-customer { border-left-color: var(--accent); }
+          .appendix-group.is-internal { border-left-color: #0f172a; }
+          .appendix-group.is-third { border-left-color: #878787; }
+          .appendix-group.is-open { border-left-color: #c7c7c7; }
+          .appendix-group.is-info { border-left-color: #e2e2e2; }
+
+          .action-point-due {
+            white-space: nowrap;
+          }
+
+          .appendix-evidence {
+            break-before: auto;
+          }
+
+
+
           .energy-supply-table th {
             line-height: 1.2;
             white-space: normal;
@@ -4150,16 +5033,10 @@ function renderBodyHtmlDocument(model: any) {
           .availability-result-block { margin-top: 5mm; }
           .availability-result-block .availability-result-table { margin-top: 0; }
           .availability-result-table { margin-top: 5mm; }
-          .availability-result-table th { width: 20%; }
-          .availability-result-table td { width: 30%; vertical-align: middle; }
-          .availability-result-table.availability-result-vertical th { width: 42%; }
-          .availability-result-table.availability-result-vertical td { width: 58%; }
-          .availability-value { display: inline-block; padding: 1.2mm 2.2mm; border-radius: 999px; font-weight: 700; }
           .availability-value.is-yes { background: var(--success-soft); color: #135f49; border: 1px solid #9ad8bb; }
           .availability-value.is-no { background: #fff2f1; color: #9f2620; border: 1px solid #f0b0ab; }
 
           .compact-pair-table { margin-bottom: 4mm; }
-          .compact-pair-table th { width: 28%; }
           .bmi-performance-section,
           .bmi-performance-results,
           .bmi-findings-section,
@@ -4170,18 +5047,12 @@ function renderBodyHtmlDocument(model: any) {
           .system-availability-table,
           .energy-supply-table,
           .detector-table { table-layout: fixed; }
-          .performance-requirements-table th,
-          .performance-requirements-table td { font-size: 7.7pt; padding: 1.5mm 1.4mm; white-space: nowrap; overflow-wrap: normal; }
           .performance-requirements-table th:nth-child(1),
           .performance-requirements-table th:nth-child(2),
           .performance-requirements-table td:nth-child(1),
           .performance-requirements-table td:nth-child(2) { white-space: pre-wrap; overflow-wrap: anywhere; }
           .performance-legend,
           .availability-note { margin-top: 3mm; color: var(--muted); font-size: 9pt; }
-          .performance-results-table th { width: 17%; }
-          .performance-results-table td { width: 16.333%; vertical-align: middle; }
-          .system-availability-table th,
-          .system-availability-table td { font-size: 8pt; padding: 1.6mm 1.7mm; }
           .system-availability-table th {
             line-height: 1.2;
             white-space: normal;
@@ -4189,8 +5060,6 @@ function renderBodyHtmlDocument(model: any) {
             overflow-wrap: normal;
           }
           .system-availability-table td:last-child { white-space: pre-wrap; overflow-wrap: anywhere; }
-          .bmi-findings-table th,
-          .bmi-findings-table td { vertical-align: middle; }
           .advice-block { margin: 0 0 3mm 0; }
           .advice-label {
             background: var(--panel);
@@ -4220,21 +5089,30 @@ function renderBodyHtmlDocument(model: any) {
             gap: 4mm;
           }
 
+          /* De kop van een ondertekenblok volgt dezelfde band als de tussenkoppen in de
+             tabellen; zo ziet een blok op deze pagina er hetzelfde uit als een blok elders in
+             het rapport. De toelichting staat eronder, buiten de band, omdat het een zin is
+             en geen opschrift. */
           .signature-block-header {
             display: flex;
             justify-content: space-between;
             gap: 4mm;
-            align-items: flex-start;
-            padding: 3.4mm 3.8mm 0 3.8mm;
+            align-items: baseline;
+            background: var(--panel-strong);
+            border-bottom: 1px solid var(--line);
+            padding: 1.8mm 3.8mm;
           }
 
           .signature-title {
-            font-size: 12pt;
+            font-size: 8.4pt;
             font-weight: 700;
+            letter-spacing: 0.1em;
+            text-transform: uppercase;
+            color: var(--ink);
           }
 
           .signature-subtitle {
-            margin-top: 1.2mm;
+            padding: 3mm 3.8mm 0 3.8mm;
             color: var(--muted);
             font-size: 9pt;
             line-height: 1.35;
@@ -4244,30 +5122,44 @@ function renderBodyHtmlDocument(model: any) {
             max-width: 46mm;
             text-align: right;
             color: var(--muted);
-            font-size: 8.8pt;
+            font-size: 8.4pt;
             font-weight: 700;
           }
 
+          /* Het ondertekenblok volgt hetzelfde kolomraster als de rest van het rapport; de
+             naam-, datum- en handtekeningkolom stonden in een eigen css-raster en kwamen
+             daardoor nergens op een lijn uit. Als tabel loopt het blok mee in de uitlijning
+             per pagina.
+
+             De blokinhoud loopt van rand tot rand, zodat de tabel en het handtekeningvak
+             precies op de rand van de kaart staan; eerder zat er een tweede lijn een paar
+             millimeter naar binnen en dat las als een kader in een kader. */
           .signature-body {
-            padding: 3.8mm;
+            padding: 0;
           }
 
-          .signature-meta {
-            display: grid;
-            grid-template-columns: repeat(3, minmax(0, 1fr));
-            gap: 3mm;
-            margin-bottom: 3.4mm;
+          .signature-meta-table {
+            border-left: 0;
+            border-right: 0;
+            border-top: 0;
           }
 
           .signature-box {
-            border: 1px solid var(--line);
-            min-height: 28mm;
+            border: 0;
+            border-bottom: 1px solid var(--line);
+            min-height: 26mm;
             display: flex;
             align-items: center;
             justify-content: center;
             background: white;
             overflow: hidden;
             padding: 3mm 5mm;
+          }
+          .signature-meta {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 3mm;
+            margin-bottom: 3.4mm;
           }
 
           .signature-box img {
@@ -4323,6 +5215,22 @@ function renderBodyHtmlDocument(model: any) {
             color: var(--muted);
           }
 
+          /* Een kleine cursieve aanduiding onder een tabel; een vast gegeven dat erbij hoort
+             maar geen eigen regel in het rapport verdient. */
+          .factor-note {
+            margin-top: 1.5mm;
+            color: var(--muted);
+            font-size: 8.4pt;
+            font-style: italic;
+          }
+
+          /* Een losse mededeling op een pagina; geen kader, want er staat niets in dat kader
+             hoeft te worden. */
+          .page-note {
+            color: var(--muted);
+            margin-bottom: 5mm;
+          }
+
           .empty-box {
             border: 1px dashed var(--line);
             padding: 5mm;
@@ -4332,31 +5240,6 @@ function renderBodyHtmlDocument(model: any) {
 
           .landscape-page {
             page: landscape;
-          }
-
-          .landscape-page .report-table {
-            table-layout: auto;
-          }
-
-          .landscape-page .matrix-section.is-prestatie-eisen .report-table {
-            table-layout: fixed;
-          }
-
-          .landscape-page .matrix-section.is-prestatie-eisen .report-table th,
-          .landscape-page .matrix-section.is-prestatie-eisen .report-table td {
-            font-size: 7.7pt;
-            padding: 1.5mm 1.5mm;
-          }
-
-          .landscape-page .matrix-section.is-prestatie-eisen .report-table td:nth-child(1),
-          .landscape-page .matrix-section.is-prestatie-eisen .report-table td:nth-child(2) {
-            white-space: pre-wrap;
-          }
-
-          .landscape-page .report-table th,
-          .landscape-page .report-table td {
-            font-size: 9pt;
-            padding: 2.2mm 2.4mm;
           }
 
           .landscape-page .field-grid,
@@ -4397,6 +5280,27 @@ function renderBodyHtmlDocument(model: any) {
       </body>
     </html>
   `;
+
+  return applyTableDensity(alignTablesWithinPages(dropDuplicateTableCaptions(html)));
+}
+
+/* Het volledige rapport. De bijlage met actiepunten sluit de rij; een normatief document
+   hoort niet halverwege onderbroken te worden door een eigen hoofdstuk, dus de lijst staat
+   achteraan in plaats van vooraan. */
+function renderBodyHtmlDocument(model: any) {
+  return renderBodyDocumentShell(
+    model,
+    `
+      ${renderSurveyPages(model)}
+      ${renderSignaturePage(model)}
+      ${renderActionPointsAppendix(model, { standalone: false })}
+    `
+  );
+}
+
+/* Dezelfde bijlage, maar als zelfstandig document om los mee te sturen. */
+export function renderActionPointsDocument(model: any) {
+  return renderBodyDocumentShell(model, renderActionPointsAppendix(model, { standalone: true }));
 }
 
 async function getBrowser(reportProgress?: RenderProgressReporter) {
@@ -4646,6 +5550,38 @@ export async function renderHtmlToPdf(
   } finally {
     await page.close().catch(() => {});
   }
+}
+
+/* De actiepuntenbijlage als los document.
+
+   Nancy typte deze lijst met de hand over in een mail; dit is hetzelfde blad dat achterin
+   het rapport staat, maar dan zelfstandig, met installatie en adres in de kop zodat het
+   losgeknipt nog steeds te plaatsen is. Kop, voet en marges zijn gelijk aan het rapport,
+   zodat het er niet uitziet als een ander document van een andere partij.
+
+   Levert null wanneer er geen actiepunten zijn; dan valt er niets mee te sturen en hoort de
+   knop niet te doen alsof. */
+export async function tryBuildActionPointsPdf(model: any): Promise<Buffer | null> {
+  const html = renderActionPointsDocument(model);
+  if (!normalizeText(html)) return null;
+
+  return await renderHtmlToPdf(html, {
+    headerTemplate: buildPdfHeaderTemplate(model),
+    footerTemplate: `
+      <div style="width:100%;padding:0 12mm;font-size:8pt;color:#52627a;font-family:Calibri,Arial,sans-serif;box-sizing:border-box;">
+        <div style="width:100%;display:flex;justify-content:space-between;align-items:center;">
+          <span>${escapeHtml(footerLeftLabel(model))}</span>
+          <span>Pagina <span class="pageNumber"></span> / <span class="totalPages"></span></span>
+        </div>
+      </div>
+    `,
+    margin: {
+      top: "24mm",
+      right: "12mm",
+      bottom: "16mm",
+      left: "12mm",
+    },
+  });
 }
 
 export async function tryBuildHtmlFormReportPdf(model: any, reportProgress?: RenderProgressReporter): Promise<any> {

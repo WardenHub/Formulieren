@@ -189,4 +189,46 @@ test("de bestaande DrawingPin-interactie en versiecontracten blijven aangesloten
   assert.match(source, /const wantsFollowUp = Boolean\(draft\.create_follow_up\)/);
   assert.match(source, /await createManualFollowUpForDrawingPin\(code, savedPin\.drawing_pin_id, \{/);
   assert.match(source, /selectedDrawing\?\.is_current_version === false/);
+  assert.doesNotMatch(source, /Passend maken/);
+  assert.doesNotMatch(source, /<Scan\b/);
+  assert.match(source, /setInstallationPrimaryDrawing\(code, primaryCandidateId\)/);
+  assert.match(source, /Vorige revisie bekijken/);
+  assert.match(source, /Voorbeeld op nieuwe revisie/);
+  assert.match(source, /Pins kopiëren naar nieuwe revisie/);
+  assert.match(source, /readPdfPageSizes\(pdfDocument\)/);
+  assert.match(source, /missingPagePinCount/);
+  assert.match(source, /copyDrawingPinsToRevision\(/);
+});
+
+test("hoofdtekening en meerdere opvolgactiebijlagen blijven end-to-end aangesloten", async () => {
+  const [drawingSheet, followUpSheet, documentsTab, routes, drawingQueries] = await Promise.all([
+    readFile(new URL("../src/pages/Forms/shared/FormDrawingSheet.jsx", import.meta.url), "utf8"),
+    readFile(new URL("../src/pages/Forms/shared/FollowUpPointsSheet.jsx", import.meta.url), "utf8"),
+    readFile(new URL("../src/pages/Installations/DocumentsTab.jsx", import.meta.url), "utf8"),
+    readFile(new URL("../api/src/routes/installations.ts", import.meta.url), "utf8"),
+    readFile(new URL("../api/src/db/queries/drawingPins.sql.ts", import.meta.url), "utf8"),
+  ]);
+
+  assert.doesNotMatch(drawingSheet, /Passend maken/);
+  assert.doesNotMatch(drawingSheet, /<Scan\b/);
+  assert.match(drawingSheet, /primary_drawing_document_id/);
+  assert.match(drawingSheet, /setInstallationPrimaryDrawing\(code, selectionId\)/);
+
+  assert.match(followUpSheet, /multiple/);
+  assert.match(followUpSheet, /onLinkDocuments/);
+  assert.match(followUpSheet, /Bestaande formulierbijlage koppelen aan opvolgactie/);
+  assert.match(followUpSheet, /bestanden koppelen/);
+  assert.doesNotMatch(documentsTab, /Bestaande componentpins op de vorige tekening historisch maken/);
+  assert.doesNotMatch(documentsTab, /historicalizeComponentPins/);
+
+  assert.match(routes, /router\.put\("\/:code\/drawings\/primary"/);
+  assert.match(routes, /pins\/copy-to\/:targetDocumentId/);
+  assert.match(drawingQueries, /dt\.sectie_key = N'doc_tekening'/);
+  assert.match(drawingQueries, /previous_version_pin_count/);
+  assert.match(drawingQueries, /getPrimaryInstallationDrawingSql/);
+  assert.match(drawingQueries, /setPrimaryInstallationDrawingSql/);
+  assert.match(drawingQueries, /copyDrawingPinsToRevisionSql/);
+  assert.match(drawingQueries, /source_map\.follow_up_action_id/);
+  assert.match(drawingQueries, /hashbytes\(/);
+  assert.match(drawingQueries, /with \(updlock, holdlock\)/);
 });

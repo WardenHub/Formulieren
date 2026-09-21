@@ -2,7 +2,7 @@
 import { randomUUID } from "node:crypto";
 import type { Response } from "express";
 import * as service from "../services/formsMonitorService.js";
-import { buildFormReportPdf } from "../services/formReportPdfService.js";
+import { buildActionPointsPdf, buildFormReportPdf } from "../services/formReportPdfService.js";
 import {
   createFormReportPdfJob,
   getFormReportPdfJob,
@@ -44,6 +44,48 @@ export async function downloadFormsMonitorPdf(req: any, res: any) {
     console.error("[form report pdf] failed", err);
     return res.status(500).json({
       error: message.includes("timed out") ? message : "downloadFormsMonitorPdf failed",
+    });
+  }
+}
+
+/* De actiepuntenbijlage los downloaden.
+
+   Dezelfde leespoort als het rapport zelf; wie het formulier niet mag openen, mag de
+   bijlage ook niet hebben. Zonder actiepunten komt er geen leeg vel maar een 404, zodat het
+   scherm kan zeggen dat er niets mee te sturen valt. */
+export async function downloadFormsMonitorActionPointsPdf(req: any, res: any) {
+  try {
+    await service.assertMayReadFormInstance(req.params.formInstanceId, {
+      user: req.user,
+      roles: req.roles || [],
+    });
+
+    const result: any = await buildActionPointsPdf(req.params.formInstanceId, req.user);
+
+    if (result?.error === "not found") {
+      return res.status(404).json({ error: "not found" });
+    }
+
+    if (result?.empty) {
+      return res.status(404).json({ error: "geen actiepunten" });
+    }
+
+    res.setHeader("Content-Type", result.contentType);
+    res.setHeader("Content-Length", String(result.contentLength));
+    res.setHeader("Content-Disposition", result.contentDisposition);
+    res.setHeader("Cache-Control", "no-store");
+
+    return res.status(200).send(result.buffer);
+  } catch (err) {
+    const message = String((err as any)?.message || err || "downloadFormsMonitorActionPointsPdf failed");
+
+    if (message.toLowerCase().includes("forbidden")) {
+      return res.status(403).json({ error: "forbidden" });
+    }
+
+    console.error("[action points pdf] failed", err);
+    return res.status(500).json({
+      error: message.includes("timed out") ? message : "downloadFormsMonitorActionPointsPdf failed",
     });
   }
 }

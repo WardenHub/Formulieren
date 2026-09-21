@@ -4,6 +4,7 @@ import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom"
 
 import {
   getFormsMonitorDetail,
+  downloadFormsMonitorActionPointsPdf,
   getFormsMonitorEvents,
   getFormsMonitorFollowUps,
   getFormsMonitorFollowUpReview,
@@ -1751,10 +1752,33 @@ export default function FormsMonitorDetailPage() {
   const [detail, setDetail] = useState(null);
   // De Historie hoort bij een tab die niet standaard open staat; hij laadt pas bij openen en
   // daarna alleen nog op verzoek.
+  // De actiepuntenbijlage is een klein document; die gaat rechtstreeks en niet via de
+  // achtergrondtaak die het volledige rapport gebruikt.
+  const [actionPointsExporting, setActionPointsExporting] = useState(false);
   const [historyItems, setHistoryItems] = useState([]);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [historyError, setHistoryError] = useState("");
   const [historyLoadedFor, setHistoryLoadedFor] = useState("");
+
+  async function handleDownloadActionPoints() {
+    if (actionPointsExporting) return;
+
+    setActionPointsExporting(true);
+    setError(null);
+
+    try {
+      await downloadFormsMonitorActionPointsPdf(instanceId);
+    } catch (e) {
+      const melding = String(e?.message || e || "");
+      setError(
+        e?.status === 404 || melding.toLowerCase().includes("geen actiepunten")
+          ? "Dit formulier heeft geen actiepunten om mee te sturen."
+          : melding || "De actiepuntenbijlage kon niet worden gemaakt."
+      );
+    } finally {
+      setActionPointsExporting(false);
+    }
+  }
 
   const loadHistory = useCallback(async () => {
     const clean = String(instanceId || "").trim();
@@ -3303,6 +3327,18 @@ export default function FormsMonitorDetailPage() {
                       {pdfExporting
                         ? `${getPdfExportPhaseLabel(pdfExportPhase || "queued")}${pdfExportElapsedSeconds > 0 ? ` ; ${pdfExportElapsedSeconds}s` : ""}`
                         : "PDF"}
+                    </button>
+
+                    {/* Nancy typte deze lijst met de hand over in een mail; dit is hetzelfde
+                        blad dat achterin het rapport staat, los mee te sturen. */}
+                    <button
+                      type="button"
+                      className="btn btn-secondary"
+                      disabled={actionPointsExporting}
+                      title="Alleen de actiepunten als losse bijlage, om mee te sturen met de klant"
+                      onClick={handleDownloadActionPoints}
+                    >
+                      {actionPointsExporting ? "Bezig..." : "Actiepunten"}
                     </button>
 
                     {(allowedActions.set_afgehandeld || allowedActions.review_followups) && (

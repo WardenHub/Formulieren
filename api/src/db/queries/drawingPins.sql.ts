@@ -3,6 +3,8 @@ select
   d.document_id,
   d.document_type_key,
   dt.naam as document_type_name,
+  case when dt.sectie_key = N'doc_tekening' then cast(1 as bit) else cast(0 as bit) end as is_drawing_type,
+  d.parent_document_id,
   d.title,
   d.document_number,
   d.document_date,
@@ -21,6 +23,13 @@ select
   sf.file_extension,
   sf.file_size_bytes,
   sf.uploaded_at,
+  (
+    select count(*)
+    from dbo.DrawingPin previous_pin
+    where previous_pin.installation_document_id = d.parent_document_id
+      and previous_pin.is_deleted = 0
+      and previous_pin.pin_status = N'ACTIVE'
+  ) as previous_version_pin_count,
   count(p.drawing_pin_id) as pin_count
 from dbo.InstallationDocument d
 join dbo.DocumentType dt
@@ -32,6 +41,15 @@ left join dbo.DrawingPin p
   on p.installation_document_id = d.document_id
  and p.is_deleted = 0
 where d.atrium_installation_code = @code
+  and (
+    dt.sectie_key = N'doc_tekening'
+    or exists (
+      select 1
+      from dbo.DrawingPin legacy_pin
+      where legacy_pin.installation_document_id = d.document_id
+        and legacy_pin.is_deleted = 0
+    )
+  )
   and (
     d.is_active = 1
     or exists (
@@ -63,6 +81,8 @@ group by
   d.document_id,
   d.document_type_key,
   dt.naam,
+  dt.sectie_key,
+  d.parent_document_id,
   d.title,
   d.document_number,
   d.document_date,
@@ -76,6 +96,82 @@ group by
   sf.file_size_bytes,
   sf.uploaded_at
 order by coalesce(d.document_date, cast(d.created_at as date)) desc, d.created_at desc;
+`;
+
+export const getPrimaryInstallationDrawingSql = `
+if col_length(N'dbo.InstallationDocument', N'is_primary_drawing') is null
+begin
+  select cast(null as uniqueidentifier) as document_id;
+  return;
+end;
+
+exec sp_executesql N'
+  select top (1) document_id
+  from dbo.InstallationDocument
+  where atrium_installation_code = @installationCode
+    and is_primary_drawing = 1
+    and is_active = 1;',
+  N'@installationCode nvarchar(450)',
+  @installationCode = @code;
+`;
+
+export const setPrimaryInstallationDrawingSql = `
+if col_length(N'dbo.InstallationDocument', N'is_primary_drawing') is null
+begin
+  throw 50000, 'primary drawing migration required', 1;
+end;
+
+if not exists (
+  select 1
+  from dbo.InstallationDocument d
+  join dbo.DocumentType dt on dt.document_type_key = d.document_type_key
+  join dbo.StoredFile sf on sf.stored_file_id = d.stored_file_id and sf.is_deleted = 0
+  where d.atrium_installation_code = @code
+    and d.document_id = @documentId
+    and d.is_active = 1
+    and dt.sectie_key = N'doc_tekening'
+    and (
+      lower(coalesce(sf.mime_type, N'')) = N'application/pdf'
+      or lower(coalesce(sf.file_extension, N'')) = N'pdf'
+      or lower(coalesce(sf.file_name, N'')) like N'%.pdf'
+    )
+    and not exists (
+      select 1
+      from dbo.InstallationDocument replacement
+      where replacement.parent_document_id = d.document_id
+        and replacement.relation_type = N'VERVANGING'
+        and replacement.is_active = 1
+    )
+)
+begin
+  throw 50000, 'primary drawing invalid', 1;
+end;
+
+begin transaction;
+
+exec sp_executesql N'
+  update dbo.InstallationDocument
+  set is_primary_drawing = 0,
+      updated_at = sysutcdatetime(),
+      updated_by = @changedBy
+  where atrium_installation_code = @installationCode
+    and is_primary_drawing = 1
+    and document_id <> @targetDocumentId;
+
+  update dbo.InstallationDocument
+  set is_primary_drawing = 1,
+      updated_at = sysutcdatetime(),
+      updated_by = @changedBy
+  where atrium_installation_code = @installationCode
+    and document_id = @targetDocumentId;',
+  N'@installationCode nvarchar(450), @targetDocumentId uniqueidentifier, @changedBy nvarchar(200)',
+  @installationCode = @code,
+  @targetDocumentId = @documentId,
+  @changedBy = @actor;
+
+commit transaction;
+
+select @documentId as document_id;
 `;
 
 export const getDrawingPinsSql = `
@@ -267,6 +363,131 @@ join dbo.DrawingPin p on p.drawing_pin_id = target.drawing_pin_id;
 commit transaction;
 
 select count(*) as historicalized_count from @targets;
+`;
+
+export const copyDrawingPinsToRevisionSql = `
+set nocount on;
+set xact_abort on;
+
+if not exists (
+  select 1
+  from dbo.InstallationDocument source_document
+  join dbo.InstallationDocument target_document
+    on target_document.atrium_installation_code = source_document.atrium_installation_code
+   and target_document.parent_document_id = source_document.document_id
+   and target_document.relation_type = N'VERVANGING'
+   and target_document.is_active = 1
+  where source_document.atrium_installation_code = @code
+    and source_document.document_id = @sourceDocumentId
+    and target_document.document_id = @targetDocumentId
+)
+  throw 50000, 'drawing revision relation invalid', 1;
+
+declare @pinMap table (
+  source_pin_id uniqueidentifier primary key,
+  target_pin_id uniqueidentifier not null unique
+);
+
+insert into @pinMap (source_pin_id, target_pin_id)
+select
+  source_pin.drawing_pin_id,
+  convert(uniqueidentifier, substring(hashbytes(
+    'SHA2_256',
+    convert(varbinary(16), source_pin.drawing_pin_id) + convert(varbinary(16), @targetDocumentId)
+  ), 1, 16))
+from dbo.DrawingPin source_pin
+where source_pin.installation_document_id = @sourceDocumentId
+  and source_pin.pin_status = N'ACTIVE'
+  and source_pin.is_deleted = 0;
+
+begin transaction;
+
+insert into dbo.DrawingPin (
+  drawing_pin_id,
+  installation_document_id,
+  stored_file_id,
+  page_number,
+  x_normalized,
+  y_normalized,
+  label,
+  description,
+  pin_kind,
+  pin_status,
+  created_by
+)
+select
+  pin_map.target_pin_id,
+  target_document.document_id,
+  target_document.stored_file_id,
+  source_pin.page_number,
+  source_pin.x_normalized,
+  source_pin.y_normalized,
+  source_pin.label,
+  source_pin.description,
+  source_pin.pin_kind,
+  N'ACTIVE',
+  @actor
+from @pinMap pin_map
+join dbo.DrawingPin source_pin on source_pin.drawing_pin_id = pin_map.source_pin_id
+join dbo.InstallationDocument target_document on target_document.document_id = @targetDocumentId
+where not exists (
+  select 1
+  from dbo.DrawingPin existing with (updlock, holdlock)
+  where existing.drawing_pin_id = pin_map.target_pin_id
+);
+
+declare @copiedCount int = @@rowcount;
+
+insert into dbo.FollowUpActionDrawingPinMap (
+  follow_up_action_id,
+  drawing_pin_id,
+  created_by
+)
+select
+  source_map.follow_up_action_id,
+  pin_map.target_pin_id,
+  @actor
+from @pinMap pin_map
+join dbo.FollowUpActionDrawingPinMap source_map on source_map.drawing_pin_id = pin_map.source_pin_id
+join dbo.DrawingPin target_pin on target_pin.drawing_pin_id = pin_map.target_pin_id
+where not exists (
+  select 1
+  from dbo.FollowUpActionDrawingPinMap existing_map
+  where existing_map.follow_up_action_id = source_map.follow_up_action_id
+    and existing_map.drawing_pin_id = pin_map.target_pin_id
+);
+
+insert into dbo.DrawingPinEvent (
+  drawing_pin_id,
+  event_type,
+  after_json,
+  event_by
+)
+select
+  pin_map.target_pin_id,
+  N'CREATED',
+  (
+    select
+      @sourceDocumentId as source_document_id,
+      pin_map.source_pin_id as source_drawing_pin_id,
+      @targetDocumentId as installation_document_id,
+      N'REVISION_COPY' as creation_reason
+    for json path, without_array_wrapper
+  ),
+  @actor
+from @pinMap pin_map
+where not exists (
+  select 1
+  from dbo.DrawingPinEvent event_row
+  where event_row.drawing_pin_id = pin_map.target_pin_id
+    and event_row.event_type = N'CREATED'
+);
+
+commit transaction;
+
+select
+  @copiedCount as copied_count,
+  (select count(*) from @pinMap) - @copiedCount as already_copied_count;
 `;
 
 export const createDrawingPinSql = `

@@ -154,3 +154,25 @@ Normale installatiekaart: certificaattypefilter toegevoegd aan Meer filters, doo
 - De 28 gerichte regressietests opnieuw groen. Zij dekken beleid, structurele SQL-gates, sleutel-/datumvalidatie en invoerbehoud; niet de volledige operationele keten met echte identiteiten.
 - Test-API op localhost:8080 bij hervatting niet bereikbaar (connection refused). Geen nieuwe ketentestresultaten. Laatst bevestigde dossierstatus ORDERED, geen gekoppelde werkbon; dit kon vandaag niet opnieuw live worden gelezen.
 - Volgende noodzakelijke input: testomgeving beschikbaar, geldige werkbon voor testinstallatie 01 en echte roltestidentiteiten. Geen push, deployment, bronwijziging of nieuw testrecord uitgevoerd.
+
+## Hervatting 21 september 2026
+
+### Onderhoudsdocument vergelijken op datum
+
+- Product owner bevestigt: uitsluitend status Definitief. In de bestaande monitor is dit AFGEHANDELD; SQL-filter behouden en defensieve statuscontrole in onderhoudsselectie toegevoegd. De eerdere vraag over ingediende formulieren is hiermee gesloten.
+- Bij het gekozen definitieve formulier worden actuele workflowactiepunten en onopgeloste certificaatblokkerende punten geteld, inclusief certificate_impact_override. Dit betreft de punten van dat specifieke formulier, niet willekeurig alle installatiepunten. Scherm en PDF-HTML tonen aantallen en verwijzen voor het historische ondertekende oordeel naar het rapport; nul blokkades wordt niet voorgesteld als afgegeven certificaat. Bij losse bijlagen blijft beoordeling onbekend.
+- 13 gerichte datum/selectie/PDF-HTML-tests en API-typecheck geslaagd. Geen live gegevens gewijzigd en geen deployment uitgevoerd. Gevulde weergave met definitief onderhoudsformulier nog niet live geaccepteerd.
+
+- Nieuwe actuele leesprojectie vergelijkt actieve onderhoudsrapport-bijlagen met afgehandelde MAINT_BMI-formulieren van dezelfde installatie. Bijlagen gebruiken document_date; formulieren datum_onderhoud met bestaande legacy-alias Datum_onderhoud_af_date. Geen terugval op upload/aanmaakdatum. Parent/child-formulieren worden op eigen onderhoudsdatum vergeleken, niet op hoogste instance-ID.
+- Bron, titel en onderhoudsdatum verschijnen in procesoverzicht, volledig dossier en de PDF-HTML. Waarschuwing vanaf de dag na de kalenderjaardag; 29 februari wordt in een niet-schrikkeljaar 28 februari. Ongeldige/ontbrekende en toekomstige datums krijgen aparte signalen, gelijke datums een melding.
+- Automatische checklistresolver kiest geen oudere onderhoudsrapport-bijlage wanneer een nieuwer afgehandeld formulier bestaat. Een eerder opgeslagen document wordt niet vervangen. Onderhoudsbijlagen zonder datum of met toekomstige datum worden niet automatisch gekoppeld.
+- Browsercontrole op installatie 01 gelukt: procesoverzicht en lege onderhoudsvergelijking zichtbaar, lichte desktopweergave gecontroleerd. Er was geen kwalificerend onderhoudsdocument; gevulde bronselectie en ouderdomswaarschuwing zijn met unit tests getest, niet met een nieuwe live testregistratie.
+- 34 inspectietests, 4 datum-/bronselectietests, 11 SQL-contracttests en API-typecheck groen. PDF-HTML bevat bron en waarschuwing volgens regressietest; daadwerkelijke PDF-rendering van deze nieuwe sectie nog niet visueel geaccepteerd.
+- Voorlopig alleen AFGEHANDELD; vraag of INGEDIEND ook mag meetellen staat bij de product owner. Deze leesprojectie legt nog geen immutable formulier-PDF vast als dossierbijlage. Die koppeling en de volledige afrondingsgate blijven vervolgwerk; geen schemawijziging of publicatie uitgevoerd.
+
+- Huidige checkout opnieuw onderzocht; bevat inmiddels InspectionStepPanel, InspectionProcessTrack, automatische documentkoppeling en dossier-PDF. Nieuwere en niet-gerelateerde lokale wijzigingen behouden.
+- Automatische checklistkoppeling lokaal gecorrigeerd: alleen actieve InstallationDocuments met een niet-verwijderd StoredFile. Afgeronde en geannuleerde dossiers leveren zonder wijzigingen linked_count=0. Een transactielock op het dossier voorkomt gelijktijdige afsluiting tijdens koppeling; gelijke documentdatums krijgen een deterministische sortering op document_id.
+- 33 inspectietests en 27 certificerings-/validatietests geslaagd, inclusief nieuwe structurele regressietest. API-typecheck en git diff --check geslaagd. Dit bewijst geen live SQL-uitvoering of volledige browseracceptatie.
+- Browserprobe naar localhost:5173 geeft ERR_CONNECTION_REFUSED. Geen devserver gestart, geen API-write, push, deployment of databasewijziging uitgevoerd.
+- Open: visuele controle en daadwerkelijke PDF-download in de draaiende testomgeving. Ook de automatische route van afgerond BMI-formulier naar onderhoudsrapportbewijs is nog niet aangetoond; de huidige checklistresolver zoekt uitsluitend InstallationDocument/StoredFile, niet FormInstance. Een formulier mag niet zonder geldig bewijsbestand als aanwezig worden gemarkeerd.
+- Oudere checkpoints hierboven spreken elkaar deels tegen over de laatst gelezen dossierstatus. Deze hervatting heeft geen actuele dossierstatus live bevestigd; behandel oudere statusmeldingen als historische waarnemingen.

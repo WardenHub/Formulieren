@@ -160,7 +160,7 @@ where s.inspection_case_id = @caseId order by f.created_at desc;
 
 select e.* from dbo.InspectionCaseEvent e where e.inspection_case_id = @caseId order by e.event_at desc, e.inspection_case_event_id desc;
 
-select d.document_id, d.stored_file_id, d.document_type_key, d.title, sf.file_name, sf.mime_type as content_type, sf.checksum_sha256, d.created_at
+select d.document_id, d.stored_file_id, d.document_type_key, d.title, sf.file_name, sf.mime_type as content_type, sf.checksum_sha256, d.created_at, d.document_date
 from dbo.InstallationDocument d
 join dbo.InspectionCase c on c.atrium_installation_code = d.atrium_installation_code
 join dbo.StoredFile sf on sf.stored_file_id = d.stored_file_id and sf.is_deleted = 0
@@ -197,6 +197,27 @@ where c.inspection_case_id=@caseId and t.is_active=1
   and c.status not in(N'COMPLETED',N'CANCELLED')
   and t.target_status not in(N'REPORT_RECEIVED',N'REPAIR_REQUIRED',N'REINSPECTION_REQUIRED',N'CERTIFICATE_RECEIVED',N'COMPLETED')
 order by t.target_status;
+
+-- Onderhoudsdatum uit het rapport; aanmaak-, upload- en afrondingsdatums zijn geen vervanging.
+select fi.form_instance_id, coalesce(fi.instance_title, fd.name) as title, fi.status as form_status,
+  fi.finalized_at, points.open_count, points.certificate_blocking_count,
+  coalesce(json_value(a.answers, '$.datum_onderhoud'), json_value(a.answers, '$.Datum_onderhoud_af_date')) as maintenance_date
+from dbo.FormInstance fi
+join dbo.FormDefinitionVersion fv on fv.form_version_id=fi.form_version_id
+join dbo.FormDefinition fd on fd.form_id=fv.form_id
+join dbo.FormAnswer fa on fa.form_instance_id=fi.form_instance_id
+join dbo.InspectionCase c on c.atrium_installation_code=fi.atrium_installation_code
+cross apply (select case when isjson(fa.answers_json)=1 then fa.answers_json else N'{}' end as answers) a
+outer apply (
+  select count(case when f.kind=N'workflow' and sd.is_actionable=1 then 1 end) as open_count,
+    count(case when f.kind=N'workflow' and isnull(f.certificate_impact_override,f.certificate_impact)=N'YES'
+      and (isnull(f.resolution_outcome,N'')<>N'OPGELOST' or sd.is_actionable=1) then 1 end) as certificate_blocking_count
+  from dbo.FollowUpActionFormSource fs
+  join dbo.FollowUpAction f on f.follow_up_action_id=fs.follow_up_action_id
+  join dbo.FollowUpStatusDefinition sd on sd.status_code=f.status
+  where fs.form_instance_id=fi.form_instance_id
+) points
+where c.inspection_case_id=@caseId and fd.code=N'MAINT_BMI' and fi.status=N'AFGEHANDELD';
 `;
 
 /* Wat Ember al heeft hoeft niemand nog te bevestigen. Per openstaande checklistregel
@@ -206,8 +227,17 @@ order by t.target_status;
 export const resolveInspectionChecklistFromDocumentsSql = `
 set nocount on; set xact_abort on; begin transaction;
 begin try
-  declare @code nvarchar(450) = (select atrium_installation_code from dbo.InspectionCase where inspection_case_id=@caseId);
+  declare @code nvarchar(450), @caseStatus nvarchar(80);
+  select @code=atrium_installation_code, @caseStatus=status
+  from dbo.InspectionCase with (updlock, holdlock) where inspection_case_id=@caseId;
   if @code is null throw 50000, 'inspection case not found', 1;
+  -- Automatisch aanvullen mag een afgesloten dossier niet achteraf wijzigen.
+  if @caseStatus in (N'COMPLETED', N'CANCELLED')
+  begin
+    commit transaction;
+    select 0 as linked_count;
+    return;
+  end;
 
   declare @linked table (requirement_key nvarchar(80), document_title nvarchar(250));
 
@@ -220,18 +250,33 @@ begin try
   output inserted.requirement_key, pick.title into @linked
   from dbo.InspectionCaseDocumentRequirement r
   cross apply (
-    select top 1 d.document_id, d.stored_file_id, d.title
+    select top 1 d.document_id, d.stored_file_id, d.title, d.document_date
     from dbo.InstallationDocument d
     join dbo.DocumentType dt on dt.document_type_key = d.document_type_key
+    join dbo.StoredFile sf on sf.stored_file_id = d.stored_file_id and sf.is_deleted = 0
     where d.atrium_installation_code = @code
       and d.document_type_key = r.document_type_key
       and d.is_active = 1
       and d.stored_file_id is not null
-    order by case when dt.requires_document_date = 1 then d.document_date end desc, d.created_at desc
+      and (r.requirement_key<>N'LAST_MAINTENANCE_REPORT' or
+        d.document_date<=convert(date,sysutcdatetime() at time zone 'UTC' at time zone 'W. Europe Standard Time'))
+    order by case when dt.requires_document_date = 1 then d.document_date end desc, d.created_at desc, d.document_id desc
   ) pick
   where r.inspection_case_id = @caseId
     and r.status = N'MISSING'
-    and r.installation_document_id is null;
+    and r.installation_document_id is null
+    -- Een nieuwer afgerond formulier mag niet door een oudere bijlage worden verdrongen.
+    and not (r.requirement_key=N'LAST_MAINTENANCE_REPORT' and exists (
+      select 1 from dbo.FormInstance fi
+      join dbo.FormDefinitionVersion fv on fv.form_version_id=fi.form_version_id
+      join dbo.FormDefinition fd on fd.form_id=fv.form_id
+      join dbo.FormAnswer fa on fa.form_instance_id=fi.form_instance_id
+      cross apply (select case when isjson(fa.answers_json)=1 then fa.answers_json else N'{}' end as answers) a
+      cross apply (select try_convert(date,coalesce(json_value(a.answers,'$.datum_onderhoud'),json_value(a.answers,'$.Datum_onderhoud_af_date')),23) as maintenance_date) md
+      where fi.atrium_installation_code=@code and fi.status=N'AFGEHANDELD' and fd.code=N'MAINT_BMI'
+        and md.maintenance_date>pick.document_date
+        and md.maintenance_date<=convert(date,sysutcdatetime() at time zone 'UTC' at time zone 'W. Europe Standard Time')
+    ));
 
   if exists (select 1 from @linked)
     insert dbo.InspectionCaseEvent (inspection_case_id, event_type, after_json, event_by)

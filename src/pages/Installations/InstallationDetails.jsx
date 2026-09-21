@@ -23,6 +23,8 @@ import SaveButton from "../../components/SaveButton.jsx";
 import Tabs from "../../components/Tabs.jsx";
 import InstallationTypeRequiredPanel from "../../components/InstallationTypeRequiredPanel.jsx";
 import InstallationTypeTag from "../../components/InstallationTypeTag.jsx";
+import ApiStartupLoader from "@/components/ApiStartupLoader.jsx";
+import { useApiStartupLoader } from "@/components/apiStartupLoaderState.js";
 
 import { ChevronLeftIcon } from "@/components/ui/chevron-left";
 import { IdCardIcon } from "@/components/ui/id-card";
@@ -346,7 +348,6 @@ export default function InstallationDetails() {
   const backIconRef = useRef(null);
   const collapseAllIconRef = useRef(null);
   const formsBusyIconRef = useRef(null);
-  const pageBusyIconRef = useRef(null);
 
   const atriumRef = useRef(null);
   const customSaveRef = useRef(null);
@@ -382,6 +383,9 @@ export default function InstallationDetails() {
   const [error, setError] = useState(null);
 
   const [pageLoading, setPageLoading] = useState(true);
+  const pageStartupLoader = useApiStartupLoader(pageLoading, {
+    loadingCopy: "De installatiegegevens worden opgehaald.",
+  });
 
   const [installationTypes, setInstallationTypesState] = useState([]);
   const [typeSaving, setTypeSaving] = useState(false);
@@ -732,10 +736,8 @@ export default function InstallationDetails() {
 
   useEffect(() => {
     const formsBusyIcon = formsBusyIconRef.current;
-    const pageBusyIcon = pageBusyIconRef.current;
     return () => {
       formsBusyIcon?.stopAnimation?.();
-      pageBusyIcon?.stopAnimation?.();
     };
   }, []);
 
@@ -746,14 +748,6 @@ export default function InstallationDetails() {
       formsBusyIconRef.current?.stopAnimation?.();
     }
   }, [formsBusy]);
-
-  useEffect(() => {
-    if (pageLoading) {
-      pageBusyIconRef.current?.startAnimation?.();
-    } else {
-      pageBusyIconRef.current?.stopAnimation?.();
-    }
-  }, [pageLoading]);
 
   useEffect(() => {
     function onBeforeUnload(e) {
@@ -1551,10 +1545,12 @@ export default function InstallationDetails() {
         )}
 
         {pageLoading && (
-          <BusyOverlay
-            iconRef={pageBusyIconRef}
-            title="Installatie laden..."
-            label="Bezig met installatiegegevens ophalen."
+          <ApiStartupLoader
+            state={pageStartupLoader}
+            cardWhileLoading
+            loadingTitle="Installatie laden..."
+            loadingCopy="Bezig met installatiegegevens ophalen."
+            startupTitle="Ember start de API op"
           />
         )}
 

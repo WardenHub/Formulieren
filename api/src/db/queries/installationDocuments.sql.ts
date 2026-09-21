@@ -5,6 +5,48 @@ export const getInstallationDocumentsReadSql = `
 
 declare @installationTypeKey nvarchar(50) = null;
 
+create table #DocumentStampSummary (
+  installation_document_id uniqueidentifier not null primary key,
+  stamp_count bigint not null,
+  latest_stamp_type nvarchar(30) null,
+  latest_stamped_at datetime2(3) null
+);
+
+if object_id(N'dbo.InstallationDocumentStamp', N'U') is not null
+begin
+  exec sp_executesql N'
+    ;with ranked as (
+      select
+        stamp.installation_document_id,
+        stamp.stamp_type,
+        stamp.stamped_at,
+        count_big(*) over (partition by stamp.installation_document_id) as stamp_count,
+        row_number() over (
+          partition by stamp.installation_document_id
+          order by stamp.stamped_at desc, stamp.document_stamp_id desc
+        ) as rn
+      from dbo.InstallationDocumentStamp stamp
+      join dbo.InstallationDocument document
+        on document.document_id = stamp.installation_document_id
+      where document.atrium_installation_code = @installationCode
+    )
+    insert into #DocumentStampSummary (
+      installation_document_id,
+      stamp_count,
+      latest_stamp_type,
+      latest_stamped_at
+    )
+    select
+      installation_document_id,
+      stamp_count,
+      stamp_type,
+      stamped_at
+    from ranked
+    where rn = 1;',
+    N'@installationCode nvarchar(450)',
+    @installationCode = @code;
+end;
+
 select top 1
   @installationTypeKey = i.installation_type_key
 from dbo.Installation i
@@ -79,6 +121,10 @@ select
   sf.storage_url,
   sf.checksum_sha256,
 
+  coalesce(stamps.stamp_count, 0) as stamp_count,
+  stamps.latest_stamp_type,
+  stamps.latest_stamped_at,
+
   d.source_system,
   d.source_reference,
 
@@ -96,6 +142,8 @@ left join dbo.InstallationDocument pd
 left join dbo.StoredFile sf
   on sf.stored_file_id = d.stored_file_id
  and sf.is_deleted = 0
+left join #DocumentStampSummary stamps
+  on stamps.installation_document_id = d.document_id
 left join dbo.DocumentType pdt
   on pdt.document_type_key = pd.document_type_key
 where dt.is_active = 1
@@ -294,6 +342,49 @@ select
 export const getInstallationDocumentContextSql = `
 -- expects: @code, @documentId
 
+create table #DocumentStampEffective (
+  installation_document_id uniqueidentifier not null primary key,
+  stored_file_id uniqueidentifier not null,
+  storage_container nvarchar(200) null,
+  storage_key nvarchar(1000) null,
+  mime_type nvarchar(150) null,
+  file_size_bytes bigint null,
+  checksum_sha256 varchar(64) null,
+  stamp_count bigint not null
+);
+
+if object_id(N'dbo.InstallationDocumentStamp', N'U') is not null
+begin
+  exec sp_executesql N'
+    insert into #DocumentStampEffective (
+      installation_document_id,
+      stored_file_id,
+      storage_container,
+      storage_key,
+      mime_type,
+      file_size_bytes,
+      checksum_sha256,
+      stamp_count
+    )
+    select top 1
+      stamp.installation_document_id,
+      result_file.stored_file_id,
+      result_file.storage_container,
+      result_file.storage_key,
+      result_file.mime_type,
+      result_file.file_size_bytes,
+      result_file.checksum_sha256,
+      count_big(*) over ()
+    from dbo.InstallationDocumentStamp stamp
+    join dbo.StoredFile result_file
+      on result_file.stored_file_id = stamp.result_stored_file_id
+     and result_file.is_deleted = 0
+    where stamp.installation_document_id = @installationDocumentId
+    order by stamp.stamped_at desc, stamp.document_stamp_id desc;',
+    N'@installationDocumentId uniqueidentifier',
+    @installationDocumentId = @documentId;
+end;
+
 select top 1
   d.document_id,
   d.installation_id,
@@ -307,6 +398,7 @@ select top 1
   d.document_date,
   d.revision,
   d.is_signed,
+  d.stored_file_id as original_stored_file_id,
   sf.file_name,
   sf.mime_type,
   sf.file_extension,
@@ -319,6 +411,13 @@ select top 1
   sf.storage_container,
   sf.storage_key,
   sf.storage_url,
+  coalesce(latest_result.stored_file_id, sf.stored_file_id) as effective_stored_file_id,
+  coalesce(latest_result.storage_container, sf.storage_container) as effective_storage_container,
+  coalesce(latest_result.storage_key, sf.storage_key) as effective_storage_key,
+  coalesce(latest_result.mime_type, sf.mime_type) as effective_mime_type,
+  coalesce(latest_result.file_size_bytes, sf.file_size_bytes) as effective_file_size_bytes,
+  coalesce(latest_result.checksum_sha256, sf.checksum_sha256) as effective_checksum_sha256,
+  coalesce(latest_result.stamp_count, 0) as stamp_count,
   d.is_active,
   d.created_at,
   d.created_by,
@@ -328,6 +427,8 @@ from dbo.InstallationDocument d
 left join dbo.StoredFile sf
   on sf.stored_file_id = d.stored_file_id
  and sf.is_deleted = 0
+left join #DocumentStampEffective latest_result
+  on latest_result.installation_document_id = d.document_id
 where d.atrium_installation_code = @code
   and d.document_id = @documentId;
 `;
@@ -633,6 +734,47 @@ if @@rowcount = 0
 begin
   rollback tran;
   throw 50000, 'document file could not be linked', 1;
+end;
+
+-- Een vervangende PDF neemt de hoofdtekeningstatus pas over nadat het bestand echt is
+-- opgeslagen. Dynamische SQL houdt deze release bruikbaar totdat de migratie is uitgevoerd.
+if col_length(N'dbo.InstallationDocument', N'is_primary_drawing') is not null
+begin
+  exec sp_executesql N'
+    if exists (
+      select 1
+      from dbo.InstallationDocument replacement
+      join dbo.InstallationDocument previous
+        on previous.document_id = replacement.parent_document_id
+       and previous.atrium_installation_code = replacement.atrium_installation_code
+      where replacement.document_id = @replacementDocumentId
+        and replacement.atrium_installation_code = @installationCode
+        and replacement.relation_type = N''VERVANGING''
+        and previous.is_primary_drawing = 1
+    )
+    begin
+      update previous
+      set previous.is_primary_drawing = 0,
+          previous.updated_at = sysutcdatetime(),
+          previous.updated_by = @changedBy
+      from dbo.InstallationDocument previous
+      join dbo.InstallationDocument replacement
+        on replacement.parent_document_id = previous.document_id
+       and replacement.atrium_installation_code = previous.atrium_installation_code
+      where replacement.document_id = @replacementDocumentId
+        and replacement.atrium_installation_code = @installationCode;
+
+      update dbo.InstallationDocument
+      set is_primary_drawing = 1,
+          updated_at = sysutcdatetime(),
+          updated_by = @changedBy
+      where document_id = @replacementDocumentId
+        and atrium_installation_code = @installationCode;
+    end;',
+    N'@installationCode nvarchar(450), @replacementDocumentId uniqueidentifier, @changedBy nvarchar(200)',
+    @installationCode = @code,
+    @replacementDocumentId = @documentId,
+    @changedBy = @updatedBy;
 end;
 
 commit tran;

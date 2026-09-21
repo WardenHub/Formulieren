@@ -135,6 +135,28 @@ function InspectionCaseDetail({caseId}){
       <button className="btn btn-secondary" disabled={pdfBusy} onClick={()=>void downloadDossierPdf()}><Download size={16}/>{pdfBusy?"Pdf wordt gemaakt...":"Dossier als pdf"}</button>
     </div>
     <InspectionProcessTrack phases={phases}/>
+    {(view==="dossier"||sections.includes("checklist"))&&data.maintenance_evidence?<section className="card inspection-section" aria-label="Laatste onderhoudsdocument">
+      <h2>Laatste onderhoudsdocument</h2>
+      <p className="muted">Vergelijking op onderhoudsdatum tussen definitieve Ember-formulieren en actieve bijlagen ‘onderhoudsrapport’; niet op uploaddatum.</p>
+      {data.maintenance_evidence.latest?<>
+        <span className={`ember-label ember-label--${data.maintenance_evidence.older_than_year?"warning":"accent"}`}>
+          {data.maintenance_evidence.older_than_year?"Ouder dan één jaar":"Binnen één jaar"}
+        </span>
+        <p><strong>{data.maintenance_evidence.latest.title}</strong> · {formatDate(data.maintenance_evidence.latest.maintenance_date)} · {data.maintenance_evidence.latest.source==="FORM_RUNNER"?"Ember-formulier":"Bijlage onderhoudsrapport"}</p>
+        {data.maintenance_evidence.latest.source==="FORM_RUNNER"?<Link className="btn btn-secondary" to={`/monitor/formulieren/${encodeURIComponent(data.maintenance_evidence.latest.source_id)}`}>Onderhoudsformulier bekijken</Link>:null}
+      </>:<p>Geen onderhoudsdocument met een bruikbare onderhoudsdatum gevonden.</p>}
+      {data.maintenance_evidence.warning?<p role="status" className="ember-label ember-label--warning">{data.maintenance_evidence.warning}</p>:null}
+      {data.maintenance_evidence.certificate_assessment?<div>
+        <p><strong>{data.maintenance_evidence.certificate_assessment.label}</strong></p>
+        <p>Openstaande actiepunten: {data.maintenance_evidence.certificate_assessment.open_count??"Onbekend"} · Certificaatblokkerende punten: {data.maintenance_evidence.certificate_assessment.certificate_blocking_count??"Onbekend"}</p>
+        <p className="muted">{data.maintenance_evidence.certificate_assessment.note}</p>
+        {!data.maintenance_evidence.certificate_assessment.finalization_recorded?<p className="muted">Het definitief-maakmoment is niet vastgelegd; controleer de ondertekening in het rapport.</p>:null}
+      </div>:data.maintenance_evidence.latest?<p className="muted">Certificaatresultaat en openstaande punten: onbekend; de inhoud van deze bijlage is niet automatisch beoordeeld.</p>:null}
+      {data.maintenance_evidence.undated_count>0?<p className="muted">Bij {data.maintenance_evidence.undated_count} document(en) ontbreekt een geldige onderhoudsdatum. Controleer deze; de volgorde is niet volledig vast te stellen.</p>:null}
+      {data.maintenance_evidence.future_dated_count>0?<p className="muted">Er zijn documenten met een toekomstige onderhoudsdatum. Deze zijn niet als laatste uitgevoerd onderhoud gekozen.</p>:null}
+      {data.maintenance_evidence.same_date_count>1?<p className="muted">Meerdere documenten hebben dezelfde laatste onderhoudsdatum; op datum is geen onderscheid mogelijk.</p>:null}
+      <p className="muted">Dit is de actuele bronvergelijking. Een eerder vastgelegde dossierbijlage wordt niet automatisch vervangen.</p>
+    </section>:null}
     {view==="process"&&step?<InspectionStepPanel step={step} busy={busy} readOnly={readOnlyCase} intro={nextStep.text}
       onField={(field,value)=>setEditor((v)=>({...v,[field]:value}))}
       onStatus={(value)=>setEditor((v)=>({...v,status:value}))}

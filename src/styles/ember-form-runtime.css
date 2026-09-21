@@ -2352,6 +2352,66 @@ html[data-appearance="dark"] .ember-runtime-select option {
   min-height: 40px;
 }
 
+.ember-point-action {
+  min-width: 74px;
+  min-height: 42px;
+  padding: 6px 10px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md, 10px);
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 800;
+  cursor: pointer;
+  transition: background-color 150ms ease, border-color 150ms ease, transform 150ms ease;
+}
+
+.ember-point-action:hover:not(:disabled),
+.ember-point-action:focus-visible {
+  border-color: var(--brand-teal, #008f83);
+  background: var(--row-bg-hover);
+  transform: translateY(-1px);
+}
+
+.ember-point-action:focus-visible {
+  outline: 3px solid var(--focus-ring, var(--brand-red));
+  outline-offset: 2px;
+}
+
+.ember-point-action:disabled {
+  cursor: not-allowed;
+  opacity: .55;
+}
+
+.ember-point__document-choices {
+  max-height: 180px;
+  display: grid;
+  gap: 6px;
+  overflow: auto;
+}
+
+.ember-point__document-choice {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-md, 10px);
+  background: var(--row-bg);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.ember-point__document-choice:has(input:checked) {
+  border-color: var(--brand-teal, #008f83);
+  background: var(--success-bg-soft);
+}
+
 /* De opvolgacties-sheet ingebed in de indien-dialoog. */
 .ember-points-inline {
   padding: 12px;

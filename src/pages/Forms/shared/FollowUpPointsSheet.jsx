@@ -5,6 +5,10 @@ import { createPortal } from "react-dom";
 import { trapFocus } from "./focusTrap.js";
 
 import { CircleHelpIcon } from "@/components/ui/circle-help";
+import { MapPinPlusInsideIcon } from "@/components/ui/map-pin-plus-inside.jsx";
+import { CameraIcon } from "@/components/ui/camera.jsx";
+import { AttachFileIcon } from "@/components/ui/attach-file.jsx";
+import { FileStackIcon } from "@/components/ui/file-stack.jsx";
 
 import { hasPointLocation, isOpenPoint, missingPointParts } from "./followUpPoints.js";
 
@@ -27,6 +31,28 @@ function formatKind(kind) {
   return String(kind || "").trim() === "report-only" ? "Rapportopmerking" : "Actiepunt";
 }
 
+function PointActionButton({ Icon, label, disabled, onClick }) {
+  const iconRef = useRef(null);
+
+  return (
+    <button
+      type="button"
+      className="ember-point-action"
+      disabled={disabled}
+      title={label}
+      aria-label={label}
+      onClick={onClick}
+      onMouseEnter={() => iconRef.current?.startAnimation?.()}
+      onMouseLeave={() => iconRef.current?.stopAnimation?.()}
+      onFocus={() => iconRef.current?.startAnimation?.()}
+      onBlur={() => iconRef.current?.stopAnimation?.()}
+    >
+      <Icon ref={iconRef} size={19} aria-hidden="true" />
+      <span>{label}</span>
+    </button>
+  );
+}
+
 export default function FollowUpPointsSheet({
   open,
   onClose,
@@ -43,7 +69,7 @@ export default function FollowUpPointsSheet({
   onSetLocation,
   onAttachFile,
   documents = [],
-  onLinkDocument,
+  onLinkDocuments,
   onViewPin,
   onOpenAttachment,
   actionBusy = false,
@@ -106,7 +132,7 @@ export default function FollowUpPointsSheet({
             onSetLocation={onSetLocation}
             onAttachFile={!currentFormInstanceId || String(point.form_instance_id) === String(currentFormInstanceId) ? onAttachFile : undefined}
             documents={documents}
-            onLinkDocument={!currentFormInstanceId || String(point.form_instance_id) === String(currentFormInstanceId) ? onLinkDocument : undefined}
+            onLinkDocuments={!currentFormInstanceId || String(point.form_instance_id) === String(currentFormInstanceId) ? onLinkDocuments : undefined}
             inherited={Boolean(currentFormInstanceId && String(point.form_instance_id) !== String(currentFormInstanceId))}
             onViewPin={onViewPin}
             onOpenAttachment={onOpenAttachment}
@@ -267,7 +293,7 @@ function PointCard({
   onSetLocation,
   onAttachFile,
   documents = [],
-  onLinkDocument,
+  onLinkDocuments,
   onViewPin,
   onOpenAttachment,
   disabled = false,
@@ -279,7 +305,7 @@ function PointCard({
   const [attachError, setAttachError] = useState("");
   const fotoRef = useRef(null);
   const bestandRef = useRef(null);
-  const [documentId, setDocumentId] = useState("");
+  const [documentIds, setDocumentIds] = useState([]);
 
   async function perform(action) {
     if (busy || disabled) return;
@@ -297,18 +323,31 @@ function PointCard({
   }
 
   async function attach(event) {
-    const file = event?.target?.files?.[0];
+    const files = Array.from(event?.target?.files || []);
     event.target.value = "";
 
-    if (!file) return;
+    if (!files.length) return;
 
-    await perform(() => onAttachFile?.(point, file));
+    await perform(async () => {
+      let primaryAssigned = (Array.isArray(point?.attachments) ? point.attachments : []).some((item) => item.is_primary);
+      for (const file of files) {
+        await onAttachFile?.(point, file, { isPrimary: !primaryAssigned });
+        primaryAssigned = true;
+      }
+    });
   }
 
   const pins = Array.isArray(point?.drawing_pins) ? point.drawing_pins : [];
   const missing = missingPointParts(point);
   const attachments = Array.isArray(point?.attachments) ? point.attachments : [];
   const availableDocuments = documents.filter((doc) => !(doc.follow_ups || []).some((link) => String(link.follow_up_action_id) === String(point.follow_up_action_id)));
+
+  function toggleDocument(documentId) {
+    const cleanId = String(documentId || "");
+    setDocumentIds((current) => current.includes(cleanId)
+      ? current.filter((id) => id !== cleanId)
+      : [...current, cleanId]);
+  }
 
   return (
     <div className={`card ember-point ${dimmed ? "ember-point--dimmed" : ""}`}>
@@ -381,34 +420,28 @@ function PointCard({
       {!dimmed && (onSetLocation || onAttachFile) ? (
         <div className="ember-point__actions">
           {canSetLocation ? (
-            <button
-              type="button"
-              className="btn btn-secondary"
+            <PointActionButton
+              Icon={MapPinPlusInsideIcon}
+              label={pins.length > 0 ? "Pin toevoegen" : "Pin plaatsen"}
               disabled={busy || disabled}
               onClick={() => perform(() => onSetLocation?.(point))}
-            >
-              {pins.length > 0 ? "Pin toevoegen" : "Pin plaatsen"}
-            </button>
+            />
           ) : null}
 
           {onAttachFile ? (
             <>
-              <button
-                type="button"
-                className="btn btn-secondary"
+              <PointActionButton
+                Icon={CameraIcon}
+                label={busy ? "Bezig..." : "Foto"}
                 disabled={busy || disabled}
                 onClick={() => fotoRef.current?.click()}
-              >
-                {busy ? "Bezig..." : "Foto"}
-              </button>
-              <button
-                type="button"
-                className="btn btn-secondary"
+              />
+              <PointActionButton
+                Icon={AttachFileIcon}
+                label="Bestanden"
                 disabled={busy || disabled}
                 onClick={() => bestandRef.current?.click()}
-              >
-                Bestand
-              </button>
+              />
 
               <input
                 ref={fotoRef}
@@ -418,7 +451,7 @@ function PointCard({
                 hidden
                 onChange={attach}
               />
-              <input ref={bestandRef} type="file" hidden onChange={attach} />
+              <input ref={bestandRef} type="file" multiple hidden onChange={attach} />
             </>
           ) : null}
         </div>
@@ -431,14 +464,30 @@ function PointCard({
         </button>)}
       </div> : null}
 
-      {!dimmed && onLinkDocument && availableDocuments.length ? <div className="ember-point__existing-file">
-        <label className="ember-points-add__field"><span>Bestaande formulierbijlage koppelen</span>
-          <select className="ember-runtime-select" value={documentId} disabled={busy || disabled} onChange={(event) => setDocumentId(event.target.value)}>
-            <option value="">Kies een bestand</option>
-            {availableDocuments.map((doc) => <option key={doc.form_instance_document_id} value={doc.form_instance_document_id}>{doc.title || doc.file_name}</option>)}
-          </select>
-        </label>
-        <button type="button" className="btn btn-secondary" disabled={!documentId || busy || disabled} onClick={() => perform(async () => { await onLinkDocument(point, documentId); setDocumentId(""); })}>Bestand koppelen</button>
+      {!dimmed && onLinkDocuments && availableDocuments.length ? <div className="ember-point__existing-file">
+        <div className="ember-points-add__field">
+          <span>Bestaande formulierbijlage koppelen aan opvolgactie</span>
+          <div className="ember-point__document-choices">
+            {availableDocuments.map((doc) => {
+              const id = String(doc.form_instance_document_id);
+              return (
+                <label key={id} className="ember-point__document-choice">
+                  <input type="checkbox" checked={documentIds.includes(id)} disabled={busy || disabled} onChange={() => toggleDocument(id)} />
+                  <span>{doc.title || doc.file_name}</span>
+                </label>
+              );
+            })}
+          </div>
+        </div>
+        <PointActionButton
+          Icon={FileStackIcon}
+          label={documentIds.length === 1 ? "1 bestand koppelen" : `${documentIds.length} bestanden koppelen`}
+          disabled={!documentIds.length || busy || disabled}
+          onClick={() => perform(async () => {
+            await onLinkDocuments(point, documentIds);
+            setDocumentIds([]);
+          })}
+        />
       </div> : null}
 
       {attachError ? <div className="ember-points-sheet__error">{attachError}</div> : null}

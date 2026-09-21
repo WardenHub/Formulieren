@@ -571,6 +571,9 @@ export async function getInstallationDocuments(code: string) {
       uploaded_by: r.uploaded_by ?? null,
       file_last_modified_at: r.file_last_modified_at ?? null,
       file_last_modified_by: r.file_last_modified_by ?? null,
+      stamp_count: Number(r.stamp_count || 0),
+      latest_stamp_type: r.latest_stamp_type ?? null,
+      latest_stamped_at: r.latest_stamped_at ?? null,
 
       storage_provider: r.storage_provider ?? null,
       storage_key: r.storage_key ?? null,

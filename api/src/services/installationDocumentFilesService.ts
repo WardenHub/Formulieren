@@ -190,12 +190,13 @@ export async function getDocumentDownloadUrl(
     throw new Error("document not found");
   }
 
-  if (!document.storage_key) {
+  const storageKey = document.effective_storage_key || document.storage_key;
+  if (!storageKey) {
     throw new Error("document has no file");
   }
 
   const url = await createInstallationDocumentDownloadUrl({
-    storageKey: String(document.storage_key),
+    storageKey: String(storageKey),
     expiresInSeconds: 300,
     downloadFileName: document.file_name ?? null,
   });
@@ -222,16 +223,17 @@ export async function downloadDocumentFile(
     throw new Error("document not found");
   }
 
-  if (!document.storage_key) {
+  const storageKey = document.effective_storage_key || document.storage_key;
+  if (!storageKey) {
     throw new Error("document has no file");
   }
 
-  const blobResult = await downloadInstallationDocumentBlob(String(document.storage_key));
+  const blobResult = await downloadInstallationDocumentBlob(String(storageKey));
 
   return {
     ok: true,
     buffer: blobResult.buffer,
-    contentType: document.mime_type || blobResult.contentType || "application/octet-stream",
+    contentType: document.effective_mime_type || document.mime_type || blobResult.contentType || "application/octet-stream",
     contentLength: blobResult.contentLength ?? blobResult.buffer.length,
     fileName: document.file_name ?? "document",
     contentDisposition: buildAttachmentDisposition(document.file_name ?? "document"),

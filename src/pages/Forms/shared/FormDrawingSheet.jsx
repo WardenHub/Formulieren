@@ -9,12 +9,12 @@
    indienen verdwijnen. Zie checkedPoints.js voor waarom dat zo is. */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Check, ChevronLeft, ChevronRight, Maximize2, Minimize2, Scan, X } from "lucide-react";
+import { Check, ChevronLeft, ChevronRight, Maximize2, Minimize2, X } from "lucide-react";
 import { GlobalWorkerOptions, getDocument as loadPdfDocument } from "pdfjs-dist";
 import pdfWorkerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 
 import { useDrawingViewer, useFullscreen, usePdfPage } from "@/lib/drawingViewer.js";
-import { downloadInstallationDocumentFile, getInstallationDrawings } from "@/api/emberApi.js";
+import { downloadInstallationDocumentFile, getInstallationDrawings, setInstallationPrimaryDrawing } from "@/api/emberApi.js";
 import { LoaderPinwheelIcon } from "@/components/ui/loader-pinwheel";
 
 import { readCheckedPoints, saveCheckedPoints } from "./checkedPoints.js";
@@ -25,6 +25,8 @@ export default function FormDrawingSheet({ code, instanceId, onClose, readOnly =
   const shellRef = useRef(null);
   const [drawings, setDrawings] = useState([]);
   const [documentId, setDocumentId] = useState("");
+  const [selectionId, setSelectionId] = useState("");
+  const [selectionBusy, setSelectionBusy] = useState(false);
   const [pdfDocument, setPdfDocument] = useState(null);
   const [pageNumber, setPageNumber] = useState(1);
   const [shellWidth, setShellWidth] = useState(900);
@@ -55,9 +57,12 @@ export default function FormDrawingSheet({ code, instanceId, onClose, readOnly =
       .then((response) => {
         if (cancelled) return;
         const list = response?.drawings || [];
-        setDrawings(list);
-        setDocumentId(String(list[0]?.document_id || ""));
-        if (!list.length) setLoading(false);
+        const selectable = list.filter((drawing) => drawing.is_drawing_type && drawing.is_current_version !== false);
+        setDrawings(selectable);
+        const primaryId = String(response?.primary_drawing_document_id || "");
+        setDocumentId(primaryId);
+        setSelectionId(primaryId || String(selectable[0]?.document_id || ""));
+        if (!primaryId) setLoading(false);
       })
       .catch((requestError) => {
         if (cancelled) return;
@@ -69,6 +74,24 @@ export default function FormDrawingSheet({ code, instanceId, onClose, readOnly =
       cancelled = true;
     };
   }, [code]);
+
+  async function savePrimaryDrawing() {
+    if (!selectionId || readOnly || selectionBusy) return;
+    setSelectionBusy(true);
+    setError("");
+    try {
+      const response = await setInstallationPrimaryDrawing(code, selectionId);
+      const list = (response?.drawings || drawings).filter((drawing) => drawing.is_drawing_type && drawing.is_current_version !== false);
+      const primaryId = String(response?.primary_drawing_document_id || selectionId);
+      setDrawings(list);
+      setDocumentId(primaryId);
+      setSelectionId(primaryId);
+    } catch (requestError) {
+      setError(requestError?.message || "Hoofdtekening opslaan is mislukt.");
+    } finally {
+      setSelectionBusy(false);
+    }
+  }
 
   useEffect(() => {
     if (!documentId) return undefined;
@@ -171,17 +194,36 @@ export default function FormDrawingSheet({ code, instanceId, onClose, readOnly =
         </div>
       </div>
 
-      {drawings.length > 1 ? (
-        <label className="form-drawing-sheet__picker">
-          <span>Tekening</span>
-          <select value={documentId} onChange={(event) => setDocumentId(event.target.value)}>
-            {drawings.map((drawing) => (
-              <option key={drawing.document_id} value={drawing.document_id}>
-                {drawing.title || drawing.document_number || "Tekening"}
-              </option>
-            ))}
-          </select>
-        </label>
+      {drawings.length > 0 && !documentId ? (
+        <div className="form-drawing-sheet__picker">
+          <span>Kies eenmalig de hoofdtekening voor deze installatie</span>
+          <label>
+            <span className="sr-only">Hoofdtekening</span>
+            <select value={selectionId} disabled={selectionBusy || readOnly} onChange={(event) => setSelectionId(event.target.value)}>
+              {drawings.map((drawing) => (
+                <option key={drawing.document_id} value={drawing.document_id}>
+                  {drawing.title || drawing.document_number || "Tekening"}
+                </option>
+              ))}
+            </select>
+          </label>
+          <small className="muted">Deze keuze wordt ook in het installatiedetail gebruikt. Andere PDF-bijlagen verschijnen hier niet.</small>
+          <button type="button" className="btn btn-primary" disabled={!selectionId || selectionBusy || readOnly} onClick={savePrimaryDrawing}>
+            {selectionBusy ? "Opslaan..." : "Hoofdtekening gebruiken"}
+          </button>
+        </div>
+      ) : null}
+
+      {documentId ? (
+        <div className="form-drawing-sheet__primary">
+          <div>
+            <strong>Hoofdtekening</strong>
+            <span className="muted">{drawings.find((drawing) => String(drawing.document_id) === documentId)?.title || drawings.find((drawing) => String(drawing.document_id) === documentId)?.file_name || "gekozen tekening"}</span>
+          </div>
+          <div className="muted">
+            Tik op de tekening om tijdelijk af te vinken wat je hebt gecontroleerd. Een blijvende pin plaats je bij de betreffende opvolgactie.
+          </div>
+        </div>
       ) : null}
 
       <div ref={shellRef} className={`drawing-pdf-shell${fullscreen.active ? " is-fullscreen" : ""}`}>
@@ -197,10 +239,6 @@ export default function FormDrawingSheet({ code, instanceId, onClose, readOnly =
           <button type="button" className="icon-btn" title="Inzoomen" onClick={() => setZoom((current) => current + 0.2)}>+</button>
           <span>{Math.round(zoom * 100)}%</span>
           <button type="button" className="icon-btn" title="Uitzoomen" onClick={() => setZoom((current) => current - 0.2)}>−</button>
-          <button type="button" className="icon-btn" title="Passend maken" aria-label="Passend maken" onClick={() => setZoom(1)}>
-            <Scan size={17} aria-hidden="true" />
-          </button>
-          <span className="drawing-zoom-controls__divider" aria-hidden="true" />
           <button
             type="button"
             className="icon-btn"
@@ -224,6 +262,10 @@ export default function FormDrawingSheet({ code, instanceId, onClose, readOnly =
 
         {!loading && !error && !drawings.length ? (
           <div className="form-drawing-sheet__state">Bij deze installatie staat geen tekening.</div>
+        ) : null}
+
+        {!loading && !error && drawings.length > 0 && !documentId ? (
+          <div className="form-drawing-sheet__state">Kies hierboven eerst de hoofdtekening.</div>
         ) : null}
 
         <div ref={viewportRef} className="drawing-pdf-viewport" {...handlers}>

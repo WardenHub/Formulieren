@@ -12,7 +12,7 @@ import { inspectionPhase, INSPECTION_PHASES } from "./inspectionProcess.js";
 const CHECKLIST_QUESTIONS = {
   LAST_MAINTENANCE_REPORT: {
     question: "Is het laatste onderhoudsrapport beschikbaar?",
-    help: "Bij een BMI-installatie is dit het ingevulde onderhoudsformulier uit Ember.",
+    help: "Het nieuwste definitieve Ember-onderhoudsformulier of de bijlage onderhoudsrapport, op basis van de onderhoudsdatum. De actuele vergelijking staat boven deze stap; een formulier is nog geen gekoppelde dossierbijlage.",
   },
   MAINTENANCE_CERTIFICATE: {
     question: "Is het onderhoudscertificaat beschikbaar?",

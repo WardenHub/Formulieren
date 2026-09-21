@@ -1,4 +1,5 @@
 import { sqlQuery, sqlQueryRaw } from "../db/index.js";
+import { maintenanceEvidence } from "./inspectionMaintenanceEvidence.js";
 import { certificationDate, certificationIdentifier, CertificationValidationError } from "../utils/certificationValidation.js";
 import {
   completeInspectionCaseSql,
@@ -190,6 +191,10 @@ export async function getInspectionCase(caseId: string) {
     certification_requirements: sets[10] || [],
     current_certificates: (sets[11] || []).map((item: any) => ({ ...item, scopes: parseJson(item.scopes_json).map((scope: any) => scope.scope), scopes_json: undefined })),
     editable_statuses: (sets[12] || []).map((item: any) => item.target_status),
+    maintenance_evidence: maintenanceEvidence([
+      ...(sets[8] || []).filter((item: any) => item.document_type_key === "onderhoudsrapport").map((item: any) => ({ source: "ATTACHMENT" as const, source_id: String(item.document_id), title: item.title || item.file_name, maintenance_date: item.document_date })),
+      ...(sets[13] || []).map((item: any) => ({ source: "FORM_RUNNER" as const, source_id: String(item.form_instance_id), title: item.title, maintenance_date: item.maintenance_date, form_status: item.form_status, finalized_at: item.finalized_at, open_count: item.open_count, certificate_blocking_count: item.certificate_blocking_count })),
+    ]),
   };
 }
 

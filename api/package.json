@@ -15,18 +15,20 @@
     "playwright:bundle-linux-libs": "bash ./scripts/playwright-bundle-linux-libs.sh",
     "test:forms-hub-context": "node --import tsx --test ./tests/formsHubContext.test.ts",
     "test:follow-up-classification": "node --import tsx --test ./tests/followUpClassification.test.ts",
-    "test": "node --import tsx --test ./tests/formsHubContext.test.ts ./tests/followUpClassification.test.ts ./tests/answerKeys.test.ts ./tests/parentInstanceGuard.test.ts ./tests/calculationFields.test.ts ./tests/kamSclPoc.test.ts ./tests/roleGate.test.ts ./tests/offlineSync.test.ts ./tests/relationGroupFilter.test.ts ./tests/offlineClientManifest.test.ts ./tests/offlineReturnDocument.test.ts ./tests/offlinePrefillKeys.test.ts",
+    "test": "node --import tsx --test ./tests/formsHubContext.test.ts ./tests/followUpClassification.test.ts ./tests/answerKeys.test.ts ./tests/parentInstanceGuard.test.ts ./tests/calculationFields.test.ts ./tests/kamSclPoc.test.ts ./tests/roleGate.test.ts ./tests/offlineSync.test.ts ./tests/relationGroupFilter.test.ts ./tests/offlineClientManifest.test.ts ./tests/offlineReturnDocument.test.ts ./tests/offlinePrefillKeys.test.ts ./tests/documentStamp.test.ts",
     "typecheck": "node ./node_modules/typescript/bin/tsc --noEmit -p tsconfig.json",
     "verify": "npm run typecheck && npm run test",
     "test:answer-keys": "node --import tsx --test ./tests/answerKeys.test.ts",
     "test:parenting": "node --import tsx --test ./tests/parentInstanceGuard.test.ts",
     "test:calculation-fields": "node --import tsx --test ./tests/calculationFields.test.ts",
-  "test:signatures": "node --import tsx --test ./tests/documentSignature.test.ts",
-  "test:inspections": "node --import tsx --test ./tests/inspectionQuestions.test.ts ./tests/inspectionProcess.test.ts ./tests/inspectionJourney.test.ts ./tests/inspectionEditor.test.ts ./tests/inspectionDossierPdf.test.ts ./tests/inspectionAudit.test.ts"
+    "test:signatures": "node --import tsx --test ./tests/documentSignature.test.ts",
+    "test:inspections": "node --import tsx --test ./tests/inspectionQuestions.test.ts ./tests/inspectionProcess.test.ts ./tests/inspectionJourney.test.ts ./tests/inspectionEditor.test.ts ./tests/inspectionDossierPdf.test.ts ./tests/inspectionAudit.test.ts",
+    "test:stamps": "node --import tsx --test ./tests/documentStamp.test.ts"
   },
   "dependencies": {
     "@azure/identity": "^4.13.0",
     "@azure/storage-blob": "^12.26.0",
+    "@pdf-lib/fontkit": "^1.1.1",
     "applicationinsights": "^3.16.0",
     "cors": "^2.8.6",
     "dotenv": "^17.2.3",

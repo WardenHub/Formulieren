@@ -2166,13 +2166,22 @@ export default function FormRunnerBase({ mode }) {
     });
   }
 
-  async function handleLinkDocumentToPoint(point, documentId) {
+  async function handleLinkDocumentsToPoint(point, documentIds) {
     const response = await getFormInstanceDocuments(code, instanceId);
-    const doc = normalizeFormDocumentsResponse(response).find((item) => String(item.form_instance_document_id) === String(documentId));
-    if (!doc || !hasStoredFormDocumentFile(doc)) throw new Error("Dit bestand is niet meer beschikbaar. Ververs de bijlagen.");
-    const links = addPointToDocumentLinks(doc.follow_ups, point.follow_up_action_id);
-    await putFormInstanceDocumentFollowUps(code, instanceId, documentId, links);
-    setEvidenceNotice("Bestand gekoppeld aan de opvolgactie.");
+    const requestedIds = [...new Set((Array.isArray(documentIds) ? documentIds : [documentIds]).map(String).filter(Boolean))];
+    const documentsById = new Map(normalizeFormDocumentsResponse(response).map((item) => [String(item.form_instance_document_id), item]));
+    const selected = requestedIds.map((id) => documentsById.get(id));
+    if (!selected.length || selected.some((doc) => !doc || !hasStoredFormDocumentFile(doc))) {
+      throw new Error("Een of meer bestanden zijn niet meer beschikbaar. Ververs de bijlagen.");
+    }
+
+    await Promise.all(selected.map((doc) => {
+      const links = addPointToDocumentLinks(doc.follow_ups, point.follow_up_action_id);
+      return putFormInstanceDocumentFollowUps(code, instanceId, doc.form_instance_document_id, links);
+    }));
+    setEvidenceNotice(selected.length === 1
+      ? "Bestand gekoppeld aan de opvolgactie."
+      : `${selected.length} bestanden gekoppeld aan de opvolgactie.`);
     await loadFollowUpPoints();
   }
 
@@ -2185,7 +2194,7 @@ export default function FormRunnerBase({ mode }) {
 
   // Een foto of bestand bij een punt. Loopt via dezelfde formulierbijlagen als het
   // contextpaneel, en wordt daarna aan het punt gekoppeld; zo is er één soort bijlage.
-  async function handleAttachFileToPoint(point, file) {
+  async function handleAttachFileToPoint(point, file, options = {}) {
     const actionId = String(point?.follow_up_action_id || "").trim();
     if (!actionId || !file) return;
 
@@ -2215,7 +2224,10 @@ export default function FormRunnerBase({ mode }) {
     await uploadFormInstanceDocumentFile(code, instanceId, documentId, file);
     try {
       await putFormInstanceDocumentFollowUps(code, instanceId, documentId, [
-        { follow_up_action_id: actionId, is_primary: !(point.attachments || []).some((item) => item.is_primary) },
+        {
+          follow_up_action_id: actionId,
+          is_primary: options.isPrimary ?? !(point.attachments || []).some((item) => item.is_primary),
+        },
       ]);
     } catch {
       await loadFollowUpPoints();
@@ -3888,7 +3900,7 @@ export default function FormRunnerBase({ mode }) {
         onSetLocation={handleSetPointLocation}
         onAttachFile={!isGeneric && code ? handleAttachFileToPoint : undefined}
         documents={pointDocuments}
-        onLinkDocument={!isGeneric && code ? handleLinkDocumentToPoint : undefined}
+        onLinkDocuments={!isGeneric && code ? handleLinkDocumentsToPoint : undefined}
         onViewPin={!isGeneric && code ? handleSetPointLocation : undefined}
         onOpenAttachment={handleOpenPointAttachment}
         actionBusy={evidenceBusy || busy}
@@ -3998,7 +4010,7 @@ export default function FormRunnerBase({ mode }) {
                   onSetLocation={handleSetPointLocation}
                   onAttachFile={!isGeneric && code ? handleAttachFileToPoint : undefined}
                   documents={pointDocuments}
-                  onLinkDocument={!isGeneric && code ? handleLinkDocumentToPoint : undefined}
+                  onLinkDocuments={!isGeneric && code ? handleLinkDocumentsToPoint : undefined}
                   onViewPin={!isGeneric && code ? handleSetPointLocation : undefined}
                   onOpenAttachment={handleOpenPointAttachment}
                   actionBusy={evidenceBusy || submitDialog.submitting}

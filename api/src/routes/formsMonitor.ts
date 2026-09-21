@@ -16,6 +16,7 @@ import {
   putFormsMonitorFollowUpCertificateImpact,
   putFormsMonitorFollowUpClassification,
   downloadFormsMonitorPdf,
+  downloadFormsMonitorActionPointsPdf,
   postFormsMonitorPdfJob,
   getFormsMonitorPdfJob,
   downloadFormsMonitorPdfJob,
@@ -31,6 +32,7 @@ router.post("/:formInstanceId/pdf-jobs", requireRole("admin", "gebruiker", "docu
 router.get("/pdf-jobs/:jobId", requireRole("admin", "gebruiker", "documentbeheerder"), getFormsMonitorPdfJob);
 router.get("/pdf-jobs/:jobId/download", requireRole("admin", "gebruiker", "documentbeheerder"), downloadFormsMonitorPdfJob);
 router.get("/:formInstanceId/pdf", requireRole("admin", "gebruiker", "documentbeheerder"), downloadFormsMonitorPdf);
+router.get("/:formInstanceId/action-points.pdf", requireRole("admin", "gebruiker", "documentbeheerder"), downloadFormsMonitorActionPointsPdf);
 router.get("/:formInstanceId/follow-ups", requireRole("admin", "gebruiker", "documentbeheerder", "kam_coordinator"), getFormsMonitorFollowUps);
 router.get("/:formInstanceId/follow-up-review", requireRole("admin", "gebruiker", "documentbeheerder", "kam_coordinator"), getFormsMonitorFollowUpReview);
 // Ruimer dan de handeling zelf; resolveFormProcessor in de service bepaalt per formulier

@@ -292,6 +292,31 @@ export async function downloadInstallationDocumentBlob(storageKey: string) {
   return downloadBlob(storageKey);
 }
 
+export async function uploadInstallationDocumentStampBlob(args: {
+  installationCode: string;
+  documentId: string;
+  documentStampId: string;
+  fileName: string;
+  buffer: Buffer;
+}) {
+  const { baseName } = splitFileNameParts(args.fileName);
+  const safeInstallationCode = sanitizePart(args.installationCode) || args.installationCode;
+  const safeDocumentId = sanitizePart(args.documentId) || args.documentId;
+  const safeStampId = sanitizePart(args.documentStampId) || args.documentStampId;
+  const safeBaseName = baseName || "document";
+  const storageKey = `installaties/${safeInstallationCode}/bestanden/${safeDocumentId}/stempels/${safeStampId}/${safeBaseName}.pdf`;
+
+  return uploadBlob({
+    storageKey,
+    contentType: "application/pdf",
+    buffer: args.buffer,
+  });
+}
+
+export async function deleteInstallationDocumentStampBlob(storageKey: string) {
+  return deleteBlob(storageKey);
+}
+
 /* =========================================================
    ondertekening; getekend bestand en bewijssamenvatting
    Deze horen bij een ondertekenronde, niet bij de documentcatalogus, en krijgen
