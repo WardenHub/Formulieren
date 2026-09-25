@@ -149,6 +149,16 @@ export function updateInstallationFollowUp(code, followUpActionId, payload) {
   );
 }
 
+export function uploadFollowUpEvidence(code, followUpActionId, file) {
+  const fd = new FormData();
+  fd.append("file", file);
+
+  return httpUpload(
+    `/installations/${encodeURIComponent(code)}/follow-ups/${encodeURIComponent(followUpActionId)}/attachments`,
+    fd
+  );
+}
+
 export function getInstallationFollowUpAttachmentUrl(code, followUpActionId, storedFileId) {
   return apiGet(
     `/installations/${encodeURIComponent(code)}/follow-ups/${encodeURIComponent(followUpActionId)}/attachments/${encodeURIComponent(storedFileId)}/download-url`
@@ -204,6 +214,16 @@ export function setInstallationType(code, installation_type_key) {
 
 export function putDocuments(code, documents) {
   return apiPut(`/installations/${code}/documents`, { documents });
+}
+
+export function deleteFollowUpAction(followUpActionId) {
+  return apiDelete(`/forms-monitor/follow-ups/${encodeURIComponent(followUpActionId)}`);
+}
+
+export function deleteEmptyInstallationDocument(code, documentId) {
+  return apiDelete(
+    `/installations/${encodeURIComponent(code)}/documents/${encodeURIComponent(documentId)}/empty`
+  );
 }
 
 export function uploadInstallationDocumentFile(code, documentId, file) {

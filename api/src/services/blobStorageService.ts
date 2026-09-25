@@ -703,3 +703,49 @@ export async function createOfflineClientDownloadUrl(args: {
     containerName: getOfflineClientContainerName(),
   });
 }
+
+/* Bewijs bij een opvolgpunt dat niet uit een formulier komt.
+
+   Tot nu toe kwam bewijs altijd binnen als formulierbijlage; op de tekeningentab is er geen
+   formulier om het aan te hangen, en dus was er geen manier om een foto bij een markering te
+   zetten. De koppeltabel FollowUpActionAttachmentMap kijkt alleen naar stored_file_id, dus een
+   tweede manier van binnenkomen splitst niets op: alles wat het punt leest, leest die tabel. */
+export function buildFollowUpEvidenceStorageKey(
+  installationCode: string,
+  followUpActionId: string,
+  storedFileId: string,
+  originalFileName: string
+) {
+  const { baseName, extension } = splitFileNameParts(originalFileName);
+  const safeInstallationCode = sanitizePart(installationCode) || installationCode;
+  const safeActionId = sanitizePart(followUpActionId) || followUpActionId;
+  const safeFileId = sanitizePart(storedFileId) || storedFileId;
+
+  return `installaties/${safeInstallationCode}/opvolgpunten/${safeActionId}/${safeFileId}-${baseName}${extension}`;
+}
+
+export async function uploadFollowUpEvidenceBlob(args: {
+  installationCode: string;
+  followUpActionId: string;
+  storedFileId: string;
+  fileName: string;
+  contentType?: string | null;
+  buffer: Buffer;
+}) {
+  const storageKey = buildFollowUpEvidenceStorageKey(
+    args.installationCode,
+    args.followUpActionId,
+    args.storedFileId,
+    args.fileName
+  );
+
+  return uploadBlob({
+    storageKey,
+    contentType: args.contentType,
+    buffer: args.buffer,
+  });
+}
+
+export async function deleteFollowUpEvidenceBlob(storageKey: string) {
+  return deleteBlob(storageKey);
+}

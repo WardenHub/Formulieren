@@ -9,6 +9,14 @@ import { certificationPolicyCtes } from "../src/db/queries/certificationPolicy.s
 
 // Structural regression checks supplement the live read-only SQL scenarios.
 // They do not replace transactional API tests with uploaded files.
+test("inspection planning filters on the server before totals and orders by planning date", () => {
+  assert.match(listInspectionOverviewSql, /@planningWindow=N'NEXT90' and c\.execution_date is null/);
+  for (const mode of ['ALL', 'UNDATED', 'OVERDUE']) assert.ok(listInspectionOverviewSql.includes(`@planningWindow=N'${mode}'`));
+  assert.match(listInspectionOverviewSql, /dateadd\(day,90,/);
+  assert.match(listInspectionOverviewSql, /order by coalesce\(c\.planned_date,c\.due_date,o\.inspection_due_date/);
+  assert.match(listInspectionOverviewSql, /o\.object_code/);
+  assert.match(listInspectionOverviewSql, /when o\.gebruiker_naam is not null then o\.gebruiker_code/);
+});
 test("automatic checklist resolution preserves closed cases and requires a surviving exact file", () => {
   const sql = resolveInspectionChecklistFromDocumentsSql;
   assert.match(sql, /InspectionCase with \(updlock, holdlock\)/);

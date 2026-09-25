@@ -12,6 +12,7 @@ import {
   postFormsMonitorFollowUpStatusAction,
   postFormsMonitorManualFollowUp,
   putFormsMonitorFollowUpNote,
+  deleteFormsMonitorFollowUp,
   getFormsMonitorFollowUpAttachmentUrl,
   putFormsMonitorFollowUpCertificateImpact,
   putFormsMonitorFollowUpClassification,
@@ -49,6 +50,13 @@ router.put("/:formInstanceId/compliment-point", requireRole("admin", "documentbe
 router.post("/:formInstanceId/follow-ups", requireRole("admin", "documentbeheerder"), postFormsMonitorManualFollowUp);
 router.post("/follow-ups/:followUpActionId/status-action", requireRole("admin", "documentbeheerder", "kam_coordinator"), postFormsMonitorFollowUpStatusAction);
 router.put("/follow-ups/:followUpActionId/note", requireRole("admin", "documentbeheerder"), putFormsMonitorFollowUpNote);
+/* Wie wat mag weghalen zit in de service; de route laat iedereen door die uberhaupt met punten
+   werkt, zodat een gebruiker zijn eigen vergissing kan herstellen. */
+router.delete(
+  "/follow-ups/:followUpActionId",
+  requireRole("admin", "documentbeheerder", "kam_coordinator", "gebruiker"),
+  deleteFormsMonitorFollowUp
+);
 router.get(
   "/follow-ups/:followUpActionId/attachments/:storedFileId/download-url",
   requireRole("admin", "gebruiker", "documentbeheerder", "kam_coordinator"),

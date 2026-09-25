@@ -207,6 +207,9 @@ function normalizeFollowUpPoints(data) {
       workflow_title: String(item?.workflow_title || "Actiepunt").trim(),
       workflow_description: String(item?.workflow_description || "").trim(),
       source_item_code: String(item?.source_item_code || "").trim(),
+      // Nodig om vanuit een punt naar de vraag te kunnen springen waar de toelichting vandaan
+      // komt; zonder dit veld weet het paneel niet welke vraag dat is.
+      source_question_name: String(item?.source_question_name || "").trim(),
       kind: String(item?.kind || "").trim(),
       status: String(item?.status || "").trim(),
       category: String(item?.category || "").trim(),
@@ -1376,6 +1379,34 @@ export default function FormRunnerBase({ mode }) {
 
     requestAnimationFrame(() => {
       scrollToQuestionByName(item.questionName);
+    });
+  }
+
+  /* Springt naar de vraag waar een opvolgpunt uit voortkomt.
+
+     De toelichting van een punt komt 1:1 uit het antwoord op die vraag; de synchronisatie
+     schrijft hem bij elke opslag opnieuw. Hem hier laten wijzigen zou dus een bewerking zijn
+     die bij de volgende opslag verdwijnt. Het formulier staat toch al open, dus de kortste weg
+     naar een betere toelichting is de vraag zelf. */
+  function openPointSourceQuestion(point) {
+    const questionName = String(point?.source_question_name || "").trim();
+    if (isDebug || !questionName || !surveyModelRef.current) return;
+
+    const model = surveyModelRef.current;
+    const question = model.getQuestionByName?.(questionName) || null;
+    const targetPage = question?.page || question?.parent?.page || null;
+
+    if (targetPage) {
+      const pageIndex = model.visiblePages.indexOf(targetPage);
+      if (pageIndex >= 0) {
+        setRuntimePageIndex(pageIndex, { closeBookmarks: true });
+      }
+    }
+
+    setPointsOpen(false);
+
+    requestAnimationFrame(() => {
+      scrollToQuestionByName(questionName);
     });
   }
 
@@ -3902,6 +3933,7 @@ export default function FormRunnerBase({ mode }) {
         documents={pointDocuments}
         onLinkDocuments={!isGeneric && code ? handleLinkDocumentsToPoint : undefined}
         onViewPin={!isGeneric && code ? handleSetPointLocation : undefined}
+        onOpenSourceQuestion={openPointSourceQuestion}
         onOpenAttachment={handleOpenPointAttachment}
         actionBusy={evidenceBusy || busy}
         onBusyChange={setEvidenceBusy}
@@ -4012,6 +4044,7 @@ export default function FormRunnerBase({ mode }) {
                   documents={pointDocuments}
                   onLinkDocuments={!isGeneric && code ? handleLinkDocumentsToPoint : undefined}
                   onViewPin={!isGeneric && code ? handleSetPointLocation : undefined}
+        onOpenSourceQuestion={openPointSourceQuestion}
                   onOpenAttachment={handleOpenPointAttachment}
                   actionBusy={evidenceBusy || submitDialog.submitting}
                   onBusyChange={setEvidenceBusy}

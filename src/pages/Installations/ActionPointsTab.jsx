@@ -11,6 +11,7 @@ import {
   updateDrawingPin,
   updateInstallationFollowUp,
   updateInstallationFollowUpStatus,
+  deleteFollowUpAction,
 } from "../../api/emberApi.js";
 import AnimatedIconButton from "../../components/AnimatedIconButton.jsx";
 import DateInput from "../../components/DateInput.jsx";
@@ -427,6 +428,22 @@ export default function ActionPointsTab({
       );
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function removeActionPoint(item) {
+    const id = String(item.follow_up_action_id);
+
+    setRowBusy(id);
+    setError("");
+
+    try {
+      await deleteFollowUpAction(id);
+      await load();
+    } catch (err) {
+      setError(err?.message || "Verwijderen is mislukt.");
+    } finally {
+      setRowBusy("");
     }
   }
 
@@ -930,6 +947,8 @@ export default function ActionPointsTab({
                     onOpenDrawing={openDrawing}
                     onSetLocation={onSetLocation}
                     onOpenPhoto={openPhoto}
+                    onDelete={removeActionPoint}
+                    canDelete={!readOnly}
                   />
                 ))}
               </div>

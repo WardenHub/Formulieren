@@ -683,6 +683,38 @@ values
            case when @isResolved = 1 then @actor else null end as resolved_by
     for json path, without_array_wrapper), @actor);
 
+/*  Een markering hoort bij werk dat nog moet gebeuren. Is het punt afgehandeld, dan wijst de
+    pin naar iets dat er niet meer is en loopt de tekening vol met punten die allang klaar zijn.
+    Hij gaat daarom vanzelf op historisch, zonder dat er iets gevraagd wordt.
+
+    Historisch en niet verwijderd, want afhandelen kan worden teruggedraaid en dan is de plek
+    weg; opnieuw prikken op de juiste plaats kan niemand uit het hoofd. De koppeling met het
+    punt blijft ook staan, zodat heropenen de markering terugbrengt.
+
+    Een pin die ook aan een ander, nog openstaand punt hangt blijft actief; daar is het werk
+    niet klaar.  */
+if @isResolved = 1
+begin
+  update p
+  set pin_status = N'HISTORICAL',
+      updated_at = sysutcdatetime(),
+      updated_by = @actor
+  from dbo.DrawingPin p
+  join dbo.FollowUpActionDrawingPinMap m
+    on m.drawing_pin_id = p.drawing_pin_id
+  where m.follow_up_action_id = @followUpActionId
+    and p.pin_status = N'ACTIVE'
+    and not exists (
+      select 1
+      from dbo.FollowUpActionDrawingPinMap ander
+      join dbo.FollowUpAction a2
+        on a2.follow_up_action_id = ander.follow_up_action_id
+      where ander.drawing_pin_id = p.drawing_pin_id
+        and ander.follow_up_action_id <> @followUpActionId
+        and a2.status not in (N'AFGEHANDELD', N'AFGEWEZEN', N'VERVALLEN')
+    );
+end;
+
 select top 1 a.follow_up_action_id, convert(varchar(18), convert(binary(8), a.row_version), 1) as row_version,
   fs.form_instance_id, a.kind, a.status,
   a.internal_note as note, a.resolution_outcome, a.resolution_note,
@@ -829,4 +861,160 @@ select top 1
   a.updated_by
 from dbo.FollowUpAction a
 where a.follow_up_action_id = @followUpActionId;
+`;
+
+/* Een opvolgpunt verwijderen.
+
+   Een punt dat per ongeluk is aangemaakt hoort weg te kunnen, en niet als "afgewezen" in de
+   lijst te blijven staan; dat leest als een besluit terwijl het een vergissing was.
+
+   Wie: een beheerder altijd, een gebruiker alleen zijn eigen punt en alleen kort na het
+   aanmaken. Dat venster staat in de service, niet hier, zodat er een plek is waar het te
+   veranderen valt.
+
+   Wat er niet weg mag: een punt dat al is afgehandeld, en een punt waar een inspectiedossier
+   aan hangt. Dat laatste is andermans administratie; die stilzwijgend meeslopen zou een
+   inspectie kunnen breken. In beide gevallen weigert de query met een eigen melding. */
+export const deleteFollowUpActionSql = `
+set nocount on;
+
+declare @status nvarchar(30);
+declare @createdAt datetime2(3);
+declare @createdBy nvarchar(200);
+
+select
+  @status = a.status,
+  @createdAt = a.created_at,
+  @createdBy = a.created_by
+from dbo.FollowUpAction a
+where a.follow_up_action_id = @followUpActionId;
+
+if @status is null
+begin
+  throw 50000, 'follow-up action not found', 1;
+end;
+
+if @status in (N'AFGEHANDELD')
+begin
+  throw 50000, 'follow-up action already resolved', 1;
+end;
+
+if exists (
+  select 1 from dbo.FollowUpActionInspectionCaseSource where follow_up_action_id = @followUpActionId
+) or exists (
+  select 1 from dbo.InspectionCaseDocumentRequirement where follow_up_action_id = @followUpActionId
+)
+begin
+  throw 50000, 'follow-up action belongs to an inspection case', 1;
+end;
+
+-- Alleen een beheerder mag andermans punt weghalen, en alleen binnen het venster dat de service
+-- meegeeft mag de maker zijn eigen punt weghalen.
+if @isAdmin = 0
+begin
+  if @createdBy is null or lower(ltrim(rtrim(@createdBy))) <> lower(ltrim(rtrim(@actor)))
+  begin
+    throw 50000, 'follow-up action belongs to someone else', 1;
+  end;
+
+  if datediff(minute, @createdAt, sysutcdatetime()) > @windowMinutes
+  begin
+    throw 50000, 'follow-up action too old to delete', 1;
+  end;
+end;
+
+-- De eigen administratie van het punt gaat mee; de markering op de tekening blijft staan, want
+-- die kan ook zonder punt betekenis hebben.
+delete from dbo.FollowUpActionDrawingPinMap where follow_up_action_id = @followUpActionId;
+delete from dbo.FollowUpActionAttachmentMap where follow_up_action_id = @followUpActionId;
+delete from dbo.FollowUpActionReview where follow_up_action_id = @followUpActionId;
+delete from dbo.FollowUpActionEvent where follow_up_action_id = @followUpActionId;
+delete from dbo.FollowUpActionFormSource where follow_up_action_id = @followUpActionId;
+delete from dbo.FollowUpActionAtriumContext where follow_up_action_id = @followUpActionId;
+delete from dbo.FollowUpActionInstallationContext where follow_up_action_id = @followUpActionId;
+
+delete from dbo.FollowUpAction where follow_up_action_id = @followUpActionId;
+
+select @@rowcount as deleted_rows;
+`;
+
+/* Een foto of bestand bij een opvolgpunt, zonder formulier.
+
+   Het bestand wordt vastgelegd als StoredFile en meteen aan het punt gekoppeld. De koppeltabel
+   is dezelfde als die van formulierbijlagen, dus alles wat bewijs leest, ziet dit ook: de
+   monitor, de actiepuntenlijst en de bijlage in het rapport. Er ontstaat geen tweede soort
+   bewijs, alleen een tweede manier om het binnen te brengen.
+
+   Het eerste bestand bij een punt wordt het primaire; dat is wat als voorbeeld wordt getoond. */
+export const insertFollowUpEvidenceSql = `
+set nocount on;
+set xact_abort on;
+
+begin transaction;
+
+if not exists (
+  select 1
+  from dbo.FollowUpAction a
+  join dbo.FollowUpActionInstallationContext c
+    on c.follow_up_action_id = a.follow_up_action_id
+  where a.follow_up_action_id = @followUpActionId
+    and c.atrium_installation_code = @code
+)
+begin
+  rollback transaction;
+  throw 50000, 'follow-up action not found for installation', 1;
+end;
+
+insert into dbo.StoredFile (
+  stored_file_id,
+  storage_provider,
+  storage_container,
+  storage_key,
+  storage_url,
+  file_name,
+  mime_type,
+  file_extension,
+  file_size_bytes,
+  checksum_sha256,
+  uploaded_by,
+  created_by
+)
+values (
+  @storedFileId,
+  @storageProvider,
+  @storageContainer,
+  @storageKey,
+  @storageUrl,
+  @fileName,
+  @mimeType,
+  @fileExtension,
+  @fileSizeBytes,
+  @checksumSha256,
+  @actor,
+  @actor
+);
+
+declare @isPrimary bit = case
+  when exists (
+    select 1 from dbo.FollowUpActionAttachmentMap
+    where follow_up_action_id = @followUpActionId and is_primary = 1
+  ) then 0 else 1
+end;
+
+insert into dbo.FollowUpActionAttachmentMap (
+  follow_up_action_id, stored_file_id, attachment_role, is_primary, customer_visible, created_by
+)
+values (@followUpActionId, @storedFileId, N'EVIDENCE', @isPrimary, 0, @actor);
+
+insert into dbo.FollowUpActionEvent (
+  follow_up_action_id, event_type, new_values_json, actor_display_name_snapshot
+) values (
+  @followUpActionId, N'ATTACHMENT_ADDED',
+  (select @storedFileId as stored_file_id, @fileName as file_name for json path, without_array_wrapper),
+  @actorDisplayName
+);
+
+commit transaction;
+
+select @storedFileId as stored_file_id, @isPrimary as is_primary;
 `;

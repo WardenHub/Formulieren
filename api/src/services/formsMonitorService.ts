@@ -24,6 +24,7 @@ import {
   getFormFollowUpByIdSql,
   getFormInstanceWorkflowRoleAccessSql,
   updateFormFollowUpStatusSql,
+  deleteFollowUpActionSql,
   updateFormFollowUpNoteSql,
   updateFormFollowUpCertificateImpactSql,
   updateFormFollowUpClassificationSql,
@@ -176,6 +177,24 @@ function expectedRowVersion(value: any): string {
     throw new Error("row version required");
   }
   return clean;
+}
+
+/* Hoe lang een gebruiker zijn eigen punt nog mag weghalen. Kort genoeg om te voorkomen dat
+   iemand later de administratie opschoont, lang genoeg om een vergissing te herstellen die je
+   pas merkt als je het scherm weer opent. Een beheerder heeft dit venster niet. */
+const FOLLOW_UP_DELETE_WINDOW_MINUTES = 60;
+
+export async function deleteFollowUpAction(followUpActionId: string, context: any) {
+  const roles = context?.roles || [];
+
+  const rows = await sqlQuery(deleteFollowUpActionSql, {
+    followUpActionId: String(followUpActionId || ""),
+    actor: getUserAuditActor(context?.user),
+    isAdmin: isManager(roles) ? 1 : 0,
+    windowMinutes: FOLLOW_UP_DELETE_WINDOW_MINUTES,
+  });
+
+  return { ok: true, deleted_rows: Number(rows?.[0]?.deleted_rows ?? 0) };
 }
 
 function isManager(roles: string[]) {

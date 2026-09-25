@@ -21,7 +21,7 @@ import {
   getUserDisplayNameSnapshot,
   getUserObjectId,
 } from "../utils/userIdentity.js";
-import { isOriginalDocumentUploader } from "./documentStampPolicy.js";
+import { isOriginalDocumentUploader, isValidSelfApprovalReason } from "./documentStampPolicy.js";
 
 function numberInRange(value: unknown, min: number, max: number, field: string) {
   const parsed = Number(value);
@@ -78,10 +78,23 @@ export async function addInstallationDocumentStamp(
   if (context.is_signed === true) throw new Error("signed document cannot be stamped");
   if (!context.effective_storage_key || !context.effective_stored_file_id) throw new Error("document has no file");
 
+  // Wie zijn eigen upload aftekent mag dat, mits hij zegt waarom; het komt met zijn naam op
+  // het stempel te staan. Zie documentStampPolicy.
+  let selfApprovalOverride = false;
+  const selfApprovalReason = String(payload?.self_approval_reason || "").trim();
+
   if (stampType === "GECONTROLEERD") {
     if (!context.original_uploaded_by) throw new Error("original uploader unknown");
+
     if (isOriginalDocumentUploader(user, context.original_uploaded_by)) {
-      throw new Error("original uploader cannot approve document");
+      if (payload?.self_approval_override !== true) {
+        throw new Error("original uploader cannot approve document");
+      }
+      if (!isValidSelfApprovalReason(selfApprovalReason)) {
+        throw new Error("self approval reason required");
+      }
+
+      selfApprovalOverride = true;
     }
   }
 
@@ -128,6 +141,8 @@ export async function addInstallationDocumentStamp(
       storageContainer: uploaded.storageContainer,
       storageKey: uploaded.storageKey,
       storageUrl: uploaded.storageUrl,
+      selfApprovalOverride: selfApprovalOverride ? 1 : 0,
+      selfApprovalReason: selfApprovalOverride ? selfApprovalReason : null,
       fileName,
       fileSizeBytes: rendered.buffer.length,
       checksumSha256,

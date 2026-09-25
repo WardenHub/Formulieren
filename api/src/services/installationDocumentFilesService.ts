@@ -8,14 +8,17 @@ import {
   createInstallationDocumentAttachmentSql,
   setInstallationDocumentFileSql,
 } from "../db/queries/installationDocuments.sql.js";
+import { insertFollowUpEvidenceSql } from "../db/queries/formFollowUps.sql.js";
 import {
   uploadInstallationDocumentBlob,
   deleteInstallationDocumentBlob,
   createInstallationDocumentDownloadUrl,
   downloadInstallationDocumentBlob,
+  uploadFollowUpEvidenceBlob,
+  deleteFollowUpEvidenceBlob,
 } from "./blobStorageService.js";
 import { assertInstallationWritable } from "./installationsService.js";
-import { getUserAuditActor } from "../utils/userIdentity.js";
+import { getUserAuditActor, getUserDisplayNameSnapshot } from "../utils/userIdentity.js";
 
 function toNullableString(v: any) {
   if (v === null || v === undefined) return null;
@@ -238,4 +241,68 @@ export async function downloadDocumentFile(
     fileName: document.file_name ?? "document",
     contentDisposition: buildAttachmentDisposition(document.file_name ?? "document"),
   };
+}
+
+/* Een foto of bestand rechtstreeks bij een opvolgpunt zetten.
+
+   Op de tekeningentab is er geen formulier waar een bijlage aan kan hangen, dus liep het bewijs
+   bij een markering vast: je zag de markering wel, maar je kon er niets bij zetten. Dit is
+   dezelfde route als een formulierbijlage, alleen zonder formulier; het bestand komt in
+   StoredFile en gaat via dezelfde koppeltabel aan het punt.
+
+   Gaat het wegschrijven in de database mis nadat de blob er al staat, dan wordt de blob weer
+   opgeruimd; anders blijft er een bestand achter waar niets naar verwijst. */
+export async function uploadFollowUpEvidence(
+  code: string,
+  followUpActionId: string,
+  file: Express.Multer.File,
+  user: any
+) {
+  await assertInstallationWritable(code);
+
+  if (!file) throw new Error("missing file");
+
+  const storedFileId = crypto.randomUUID();
+  const checksum = crypto.createHash("sha256").update(file.buffer).digest("hex");
+
+  let uploaded: Awaited<ReturnType<typeof uploadFollowUpEvidenceBlob>> | null = null;
+
+  try {
+    uploaded = await uploadFollowUpEvidenceBlob({
+      installationCode: code,
+      followUpActionId,
+      storedFileId,
+      fileName: file.originalname,
+      contentType: file.mimetype || "application/octet-stream",
+      buffer: file.buffer,
+    });
+
+    const rows = await sqlQuery(insertFollowUpEvidenceSql, {
+      code,
+      followUpActionId,
+      storedFileId,
+      fileName: file.originalname,
+      mimeType: file.mimetype || "application/octet-stream",
+      fileExtension: String(file.originalname || "").split(".").pop()?.toLowerCase() || null,
+      fileSizeBytes: file.size ?? file.buffer.length,
+      storageProvider: uploaded.storageProvider,
+      storageContainer: uploaded.storageContainer,
+      storageKey: uploaded.storageKey,
+      storageUrl: uploaded.storageUrl,
+      checksumSha256: checksum,
+      actor: getUserAuditActor(user),
+      actorDisplayName: getUserDisplayNameSnapshot(user),
+    });
+
+    return { ok: true, attachment: rows?.[0] ?? null };
+  } catch (err) {
+    if (uploaded?.storageKey) {
+      try {
+        await deleteFollowUpEvidenceBlob(uploaded.storageKey);
+      } catch {
+        /* Het opruimen is een nette poging; de fout die ertoe doet is die van de database. */
+      }
+    }
+    throw err;
+  }
 }

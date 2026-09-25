@@ -150,6 +150,7 @@ export async function listInspectionOverview(filters: any = {}) {
     certificateType: enumValue(filters.certificate_type, new Set(["MAINTENANCE", "INSPECTION"]), "INSPECTION"),
     certificateStatus: filters.certificate_status ? enumValue(filters.certificate_status, new Set(["VALID", "EXPIRING", "EXPIRED", "MISSING", "UNKNOWN", "CONTRACT_ENDED"])) : null,
     includeHistorical: bool(filters.include_historical, false),
+    planningWindow: enumValue(filters.planning_window, new Set(["ALL", "NEXT90", "OVERDUE", "UNDATED"]), "ALL"),
     qLike: q ? `%${q}%` : null,
     scope: filters.scope ? enumValue(filters.scope, SCOPE_SET) : null,
     status: filters.status ? enumValue(filters.status, STATUS_SET) : null,

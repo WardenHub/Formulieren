@@ -17,6 +17,7 @@ import { useDrawingViewer, useFullscreen, usePdfPage } from "@/lib/drawingViewer
 import {
   createDrawingPin,
   createManualFollowUpForDrawingPin,
+  uploadFollowUpEvidence,
   copyDrawingPinsToRevision,
   deleteDrawingPin,
   downloadInstallationDocumentFile,
@@ -27,6 +28,13 @@ import {
   unlinkDrawingPinAction,
   updateDrawingPin,
 } from "@/api/emberApi.js";
+import {
+  openWebcamStream,
+  stopWebcamStream,
+  captureVideoFrameToFile,
+  webcamErrorText,
+  isProbablyMobileDevice,
+} from "../Forms/shared/webcam.js";
 
 GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
 
@@ -684,17 +692,90 @@ function PinEditor({ draft, isExisting, busy, floating, canCreateFollowUp, onTog
 }
 
 function PinActions({ code, pin, actions, busy, onChanged }) {
+  const fotoRef = useRef(null);
+  const bestandRef = useRef(null);
+  const videoRef = useRef(null);
+  const [cameraStream, setCameraStream] = useState(null);
+  const [cameraFout, setCameraFout] = useState("");
+
+  useEffect(() => () => stopWebcamStream(cameraStream), [cameraStream]);
   const [selectedActionId, setSelectedActionId] = useState("");
   const [working, setWorking] = useState(false);
   const [error, setError] = useState("");
+  // Een tweede opvolgpunt op dezelfde markering is bijna altijd per ongeluk; de knop stond
+  // even prominent als de eerste keer en er was niets dat zei dat er al een punt hing.
+  const [duplicaatBevestigd, setDuplicaatBevestigd] = useState(false);
+  const [duplicaatGevraagd, setDuplicaatGevraagd] = useState(false);
   const linkedIds = new Set((pin.follow_up_actions || []).map((item) => String(item.follow_up_action_id)));
   const available = actions.filter((item) => !linkedIds.has(String(item.follow_up_action_id)));
   const disabled = busy || working;
+  const aantalPunten = (pin.follow_up_actions || []).length;
+  const heeftPunt = aantalPunten > 0;
 
   // Het aanmaakformulier met zeven velden stond hier; dat is weg. Een opvolgpunt ontstaat nu
   // bij het plaatsen van de markering zelf, of met deze ene knop voor een markering die er al
   // staat. Prioriteit, termijn, verantwoordelijke en wat de klant ziet horen bij de behandelaar
   // in de Monitor, waar die velden al bestaan; op een ladder is dat geen invulwerk.
+  async function zorgVoorPunt() {
+    const bestaand = (pin.follow_up_actions || [])[0];
+    if (bestaand?.follow_up_action_id) return String(bestaand.follow_up_action_id);
+
+    const gemaakt = await createManualFollowUpForDrawingPin(code, pin.drawing_pin_id, {
+      title: pin.label || "Bevinding",
+      description: pin.description || "",
+    });
+
+    const id = String(gemaakt?.follow_up_action?.follow_up_action_id || "").trim();
+    if (!id) throw new Error("Het opvolgpunt kon niet worden aangemaakt; probeer het opnieuw.");
+
+    return id;
+  }
+
+  async function voegBestandenToe(files) {
+    const lijst = Array.from(files || []).filter(Boolean);
+    if (!lijst.length) return;
+
+    await run(async () => {
+      const actionId = await zorgVoorPunt();
+      for (const file of lijst) {
+        await uploadFollowUpEvidence(code, actionId, file);
+      }
+      await onChanged?.({ reloadDirectory: true });
+    });
+  }
+
+  async function openCamera() {
+    if (disabled) return;
+
+    if (isProbablyMobileDevice()) {
+      fotoRef.current?.click();
+      return;
+    }
+
+    setCameraFout("");
+
+    try {
+      setCameraStream(await openWebcamStream());
+    } catch (e) {
+      setCameraFout(webcamErrorText(e));
+    }
+  }
+
+  function sluitCamera() {
+    stopWebcamStream(cameraStream);
+    setCameraStream(null);
+  }
+
+  async function maakFoto() {
+    try {
+      const file = await captureVideoFrameToFile(videoRef.current);
+      sluitCamera();
+      await voegBestandenToe([file]);
+    } catch (e) {
+      setCameraFout(String(e?.message || e || "Foto maken mislukt."));
+    }
+  }
+
   async function run(action) {
     if (disabled) return;
     setWorking(true);
@@ -710,9 +791,17 @@ function PinActions({ code, pin, actions, busy, onChanged }) {
 
   return (
     <div className="drawing-pin-actions">
-      <strong className="drawing-pin-actions__title"><BriefcaseBusiness size={16} aria-hidden="true" /> Gekoppelde opvolgingen</strong>
+      <strong className="drawing-pin-actions__title">
+        <BriefcaseBusiness size={16} aria-hidden="true" />
+        Gekoppelde opvolgingen
+        {heeftPunt ? (
+          <span className="drawing-pin-actions__count" title="Aan deze markering hangt al werk">
+            {aantalPunten}
+          </span>
+        ) : null}
+      </strong>
 
-      {(pin.follow_up_actions || []).length ? (
+      {heeftPunt ? (
         <div className="drawing-pin-actions__list">
           {pin.follow_up_actions.map((action) => (
             <div key={action.follow_up_action_id} className="drawing-pin-action-row">
@@ -737,20 +826,148 @@ function PinActions({ code, pin, actions, busy, onChanged }) {
         </div>
       ) : <span className="muted">Nog geen opvolging gekoppeld.</span>}
 
-      <button
-        type="button"
-        className="btn btn-primary"
-        disabled={disabled || !String(pin.label || "").trim()}
-        onClick={() => run(async () => {
-          await createManualFollowUpForDrawingPin(code, pin.drawing_pin_id, {
-            title: pin.label,
-            description: pin.description || "",
-          });
-          await onChanged?.({ reloadDirectory: true });
-        })}
-      >
-        {working ? "Bezig..." : "Opvolgpunt maken van deze markering"}
-      </button>
+      {heeftPunt ? (
+        <div className="drawing-pin-actions__duplicate">
+          {!duplicaatGevraagd ? (
+            <button
+              type="button"
+              className="btn-ghost drawing-pin-actions__duplicate-open"
+              disabled={disabled}
+              onClick={() => setDuplicaatGevraagd(true)}
+            >
+              Nog een opvolgpunt maken van deze markering
+            </button>
+          ) : (
+            <div className="ember-alert ember-alert--warning drawing-pin-actions__duplicate-warning">
+              <strong>Deze markering heeft al {aantalPunten === 1 ? "een opvolgpunt" : `${aantalPunten} opvolgpunten`}.</strong>
+              <span>
+                Een tweede punt op dezelfde markering betekent dat er twee keer werk uitstaat voor
+                dezelfde plek. Meestal is koppelen aan het bestaande punt of het punt in de Monitor
+                aanpassen wat je zoekt.
+              </span>
+
+              <label className="drawing-pin-actions__duplicate-confirm">
+                <input
+                  type="checkbox"
+                  checked={duplicaatBevestigd}
+                  onChange={(event) => setDuplicaatBevestigd(event.target.checked)}
+                  disabled={disabled}
+                />
+                <span>Ik weet dat er al een opvolgpunt aan deze markering hangt</span>
+              </label>
+
+              <div className="drawing-pin-actions__duplicate-buttons">
+                <button
+                  type="button"
+                  className="btn btn-danger"
+                  disabled={disabled || !duplicaatBevestigd || !String(pin.label || "").trim()}
+                  onClick={() => run(async () => {
+                    await createManualFollowUpForDrawingPin(code, pin.drawing_pin_id, {
+                      title: pin.label,
+                      description: pin.description || "",
+                    });
+                    setDuplicaatGevraagd(false);
+                    setDuplicaatBevestigd(false);
+                    await onChanged?.({ reloadDirectory: true });
+                  })}
+                >
+                  {working ? "Bezig..." : "Toch een tweede opvolgpunt maken"}
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  disabled={disabled}
+                  onClick={() => {
+                    setDuplicaatGevraagd(false);
+                    setDuplicaatBevestigd(false);
+                  }}
+                >
+                  Annuleren
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      ) : (
+        <button
+          type="button"
+          className="btn btn-primary"
+          disabled={disabled || !String(pin.label || "").trim()}
+          onClick={() => run(async () => {
+            await createManualFollowUpForDrawingPin(code, pin.drawing_pin_id, {
+              title: pin.label,
+              description: pin.description || "",
+            });
+            await onChanged?.({ reloadDirectory: true });
+          })}
+        >
+          {working ? "Bezig..." : "Opvolgpunt maken van deze markering"}
+        </button>
+      )}
+
+      <div className="drawing-pin-actions__evidence">
+        <button type="button" className="btn btn-secondary" disabled={disabled} onClick={openCamera}>
+          Foto
+        </button>
+        <button
+          type="button"
+          className="btn btn-secondary"
+          disabled={disabled}
+          onClick={() => bestandRef.current?.click()}
+        >
+          Bestand
+        </button>
+
+        <input
+          ref={fotoRef}
+          type="file"
+          accept="image/*"
+          capture="environment"
+          hidden
+          onChange={(event) => {
+            const files = Array.from(event.target.files || []);
+            event.target.value = "";
+            voegBestandenToe(files);
+          }}
+        />
+        <input
+          ref={bestandRef}
+          type="file"
+          multiple
+          hidden
+          onChange={(event) => {
+            const files = Array.from(event.target.files || []);
+            event.target.value = "";
+            voegBestandenToe(files);
+          }}
+        />
+      </div>
+
+      {cameraStream ? (
+        <div className="drawing-pin-actions__camera">
+          <video
+            ref={(el) => {
+              videoRef.current = el;
+              if (el && el.srcObject !== cameraStream) {
+                el.srcObject = cameraStream;
+                el.play?.().catch(() => {});
+              }
+            }}
+            playsInline
+            muted
+          />
+          <div className="drawing-pin-actions__camera-buttons">
+            <button type="button" className="btn btn-primary" disabled={disabled} onClick={maakFoto}>
+              Foto maken
+            </button>
+            <button type="button" className="btn btn-secondary" disabled={disabled} onClick={sluitCamera}>
+              Sluiten
+            </button>
+          </div>
+        </div>
+      ) : null}
+
+      {cameraFout ? <div className="ember-alert ember-alert--warning">{cameraFout}</div> : null}
 
       <div className="drawing-pin-actions__link">
         <select value={selectedActionId} disabled={disabled} onChange={(event) => setSelectedActionId(event.target.value)}>
@@ -793,6 +1010,15 @@ export default function DrawingPinsTab({ code, readOnly = false, navigationTarge
   const [directory, setDirectory] = useState({ drawings: [], follow_up_actions: [], primary_drawing_document_id: null });
   const [selectedDocumentId, setSelectedDocumentId] = useState(() => String(navigationTarget?.documentId || (!embedded && searchParams.get("drawing")) || ""));
   const [pins, setPins] = useState([]);
+  const [toonHistorisch, setToonHistorisch] = useState(false);
+  // Een markering van een afgehandeld punt gaat op historisch. Hij blijft bestaan, want
+  // heropenen moet de plek kunnen terughalen, maar hij hoort niet in het werkbeeld.
+  const historischAantal = pins.filter(
+    (pin) => String(pin.pin_status || "").toUpperCase() === "HISTORICAL"
+  ).length;
+  const zichtbarePins = toonHistorisch
+    ? pins
+    : pins.filter((pin) => String(pin.pin_status || "").toUpperCase() !== "HISTORICAL");
   const [pdfDocument, setPdfDocument] = useState(null);
   const [pageNumber, setPageNumber] = useState(() => Math.max(1, Number(navigationTarget?.pageNumber || (!embedded && searchParams.get("page")) || 1)));
   const [selectedPinId, setSelectedPinId] = useState(() => String(navigationTarget?.pinId || (!embedded && searchParams.get("pin")) || ""));
@@ -1394,7 +1620,7 @@ export default function DrawingPinsTab({ code, readOnly = false, navigationTarge
               pdfDocument={pdfDocument}
               pageNumber={pageNumber}
               pageCount={pdfDocument.numPages}
-              pins={previewPins || pins}
+              pins={previewPins || zichtbarePins}
               selectedPinId={revisionPreview ? "" : selectedPinId}
               selectedPin={revisionPreview ? null : selectedPin}
               componentReview={revisionPreview ? false : componentReview}
@@ -1489,7 +1715,23 @@ export default function DrawingPinsTab({ code, readOnly = false, navigationTarge
             ) : null}
             <div className="drawing-pin-list">
                 <strong>Pins op deze tekening</strong>
-                {pins.length ? pins.map((pin) => {
+
+                {historischAantal ? (
+                  <label className="drawing-pin-list__historical">
+                    <input
+                      type="checkbox"
+                      checked={toonHistorisch}
+                      onChange={(event) => setToonHistorisch(event.target.checked)}
+                    />
+                    <span>
+                      {historischAantal === 1
+                        ? "1 afgehandelde markering tonen"
+                        : `${historischAantal} afgehandelde markeringen tonen`}
+                    </span>
+                  </label>
+                ) : null}
+
+                {zichtbarePins.length ? zichtbarePins.map((pin) => {
                   const meta = PIN_TYPE_META[pin.pin_kind] || PIN_TYPE_META.NOTE;
                   const Icon = meta.Icon;
                   const isHistorical = String(pin.pin_status || "").toUpperCase() === "HISTORICAL";

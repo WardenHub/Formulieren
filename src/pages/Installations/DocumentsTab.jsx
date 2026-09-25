@@ -11,9 +11,11 @@ import {
   createInstallationDocumentReplacement,
   createInstallationDocumentAttachment,
   putDocumentVersionSignatureDecision,
+  deleteEmptyInstallationDocument,
 } from "../../api/emberApi.js";
 
 import { ArchiveIcon } from "@/components/ui/archive";
+import { CheckCheckIcon } from "@/components/ui/check-check";
 import { HistoryIcon } from "@/components/ui/history";
 import { PlusIcon } from "@/components/ui/plus";
 import { ChevronDownIcon } from "@/components/ui/chevron-down";
@@ -444,6 +446,51 @@ function buildDocumentRequirementState(documentTypes, rowsByType, pendingFilesBy
   };
 }
 
+/* Kiest een documenttype op naam. Tikken filtert; de lijst staat op alfabet. De waarde die
+   naar buiten gaat is de sleutel, niet de naam, dus een half getypte naam levert niets op
+   totdat hij klopt. */
+function DocumentTypePicker({ documentTypes, value, onChange, disabled, listId }) {
+  const gesorteerd = useMemo(
+    () =>
+      [...(documentTypes || [])].sort((a, b) =>
+        String(a.document_type_name || "").localeCompare(String(b.document_type_name || ""), "nl")
+      ),
+    [documentTypes]
+  );
+
+  const gekozen = gesorteerd.find((dt) => dt.document_type_key === value) || null;
+  const [getypt, setGetypt] = useState(null);
+  const tekst = getypt === null ? gekozen?.document_type_name || "" : getypt;
+
+  function kies(naam) {
+    setGetypt(naam);
+
+    const treffer = gesorteerd.find(
+      (dt) => String(dt.document_type_name || "").toLowerCase() === String(naam || "").trim().toLowerCase()
+    );
+
+    onChange?.(treffer?.document_type_key || "");
+  }
+
+  return (
+    <>
+      <input
+        className="input"
+        list={listId}
+        value={tekst}
+        onChange={(e) => kies(e.target.value)}
+        placeholder="Zoek documenttype"
+        disabled={disabled}
+      />
+      <datalist id={listId}>
+        {gesorteerd.map((dt) => (
+          <option key={dt.document_type_key} value={dt.document_type_name} />
+        ))}
+      </datalist>
+    </>
+  );
+}
+
 function BulkUploadModal({
   open,
   documentTypes,
@@ -518,6 +565,7 @@ function BulkUploadModal({
           ) : (
             items.map((item) => {
               const blocked = !String(item.document_type_key || "").trim();
+              const gekozenType = documentTypes.find((dt) => dt.document_type_key === item.document_type_key) || null;
 
               return (
               <div
@@ -543,19 +591,13 @@ function BulkUploadModal({
                 </div>
 
                 <div className="doc-bulk-item__fields">
-                  <select
-                    className="input"
+                  <DocumentTypePicker
+                    documentTypes={documentTypes}
                     value={item.document_type_key}
-                    onChange={(e) => onUpdateItem?.(item.id, { document_type_key: e.target.value })}
+                    onChange={(key) => onUpdateItem?.(item.id, { document_type_key: key })}
                     disabled={readOnly}
-                  >
-                    <option value="">Kies documenttype</option>
-                    {documentTypes.map((dt) => (
-                      <option key={dt.document_type_key} value={dt.document_type_key}>
-                        {dt.document_type_name}
-                      </option>
-                    ))}
-                  </select>
+                    listId={`doc-type-list-${item.id}`}
+                  />
 
                   <input
                     className="input"
@@ -591,6 +633,18 @@ function BulkUploadModal({
                     placeholder="Revisie"
                     disabled={readOnly}
                   />
+
+                  {gekozenType?.tracks_signature ? (
+                    <label className="doc-bulk-item__signed" title="Is dit document al ondertekend?">
+                      <input
+                        type="checkbox"
+                        checked={item.is_signed === true}
+                        onChange={(e) => onUpdateItem?.(item.id, { is_signed: e.target.checked })}
+                        disabled={readOnly}
+                      />
+                      <span>Ondertekend</span>
+                    </label>
+                  ) : null}
 
                   <button type="button" className="btn btn-secondary" onClick={() => onRemoveItem?.(item.id)}>
                     Verwijderen
@@ -663,6 +717,7 @@ const DocumentsTab = forwardRef(function DocumentsTab(
   const [accentRowId, setAccentRowId] = useState(null);
   const [error, setError] = useState(null);
   const [viewFilter, setViewFilter] = useState("all");
+  const [documentSearch, setDocumentSearch] = useState("");
   const [bulkModalOpen, setBulkModalOpen] = useState(false);
   const [bulkItems, setBulkItems] = useState([]);
   const [bulkAutoSavePending, setBulkAutoSavePending] = useState(false);
@@ -1047,6 +1102,7 @@ const DocumentsTab = forwardRef(function DocumentsTab(
         document_date: todayIsoDate(),
         revision: "",
         note: "",
+        is_signed: null,
         prefilled_date: true,
       }));
   }
@@ -1123,6 +1179,7 @@ const DocumentsTab = forwardRef(function DocumentsTab(
         document_date: item.document_date || null,
         revision: item.revision || "",
         note: item.note || "",
+        is_signed: item.is_signed === true ? true : null,
       });
 
       if (!firstRowId && rowId) firstRowId = rowId;
@@ -1135,6 +1192,36 @@ const DocumentsTab = forwardRef(function DocumentsTab(
     if (firstRowId) accentAndScrollRow(firstRowId, "smooth");
   }
 
+  /* Een regel die nog niet is opgeslagen draagt zijn sleutel als "new:<guid>"; het voorvoegsel
+     zegt alleen dat hij nog niet bestaat. De guid erachter is de sleutel die de database
+     krijgt, zodat de regel na het opslaan onder diezelfde sleutel terug te vinden is. */
+  function persistedIdFor(rowId) {
+    const id = String(rowId || "");
+    return id.startsWith("new:") ? id.slice("new:".length) : id;
+  }
+
+  /* Draait regels terug die in deze handeling zijn aangemaakt en waarvan het bestand niet is
+     aangekomen. Zonder dit blijft er een document "zonder bestand" staan; probeert iemand het
+     daarna nog een keer, dan staan er twee. De server weigert het verwijderen zodra er wel een
+     bestand aan hangt, dus een geslaagde upload kan hier niet door geraakt worden. */
+  async function rollbackFailedNewRows(rowIds) {
+    const opgeruimd = [];
+
+    for (const rowId of rowIds) {
+      if (!String(rowId || "").startsWith("new:")) continue;
+
+      try {
+        await deleteEmptyInstallationDocument(code, persistedIdFor(rowId));
+        opgeruimd.push(rowId);
+      } catch {
+        /* Lukt het opruimen niet, dan blijft de regel staan; de gebruiker ziet de foutmelding
+           van de upload zelf en kan hem met de hand weghalen. */
+      }
+    }
+
+    return opgeruimd;
+  }
+
   function compileChangedRows() {
     const changed = [];
 
@@ -1143,7 +1230,7 @@ const DocumentsTab = forwardRef(function DocumentsTab(
         if (!dirtyRows[r.document_id]) continue;
 
         changed.push({
-          document_id: String(r.document_id || "").startsWith("new:") ? null : r.document_id,
+          document_id: persistedIdFor(r.document_id),
           document_type_key: r.document_type_key,
           title: r.title || null,
           note: r.note || null,
@@ -1232,35 +1319,31 @@ const DocumentsTab = forwardRef(function DocumentsTab(
       }
 
       if (hasQueuedFiles) {
-        const usedIds = new Set();
         const uploadedPersistedIds = [];
+        const nietGelukt = [];
 
         for (const item of queuedEntries) {
-          const isNewRow = String(item.row.document_id || "").startsWith("new:");
-          const wasDirty = Boolean(dirtyRows[item.rowId]);
+          const persistedId = persistedIdFor(item.rowId);
 
-          let persistedId = null;
-
-          if (!isNewRow && !wasDirty) {
-            persistedId = String(item.row.document_id);
-          } else {
-            const match = findPersistedMatch(
-              item.row.document_type_key,
-              item.row,
-              refreshedRowsByType[item.row.document_type_key] || [],
-              usedIds
-            );
-
-            if (!match?.document_id) {
-              throw new Error(`documentregel niet teruggevonden voor bestand ${item.file?.name || ""}`);
-            }
-
-            persistedId = String(match.document_id);
-            usedIds.add(persistedId);
+          try {
+            await uploadInstallationDocumentFile(code, persistedId, item.file);
+            uploadedPersistedIds.push(persistedId);
+          } catch (uploadError) {
+            nietGelukt.push({ rowId: item.rowId, file: item.file, error: uploadError });
           }
+        }
 
-          await uploadInstallationDocumentFile(code, persistedId, item.file);
-          uploadedPersistedIds.push(persistedId);
+        if (nietGelukt.length) {
+          /* De regels zijn aangemaakt omdat er een bestand bij hoorde; kwam dat bestand niet
+             aan, dan hoort de regel er ook niet te zijn. */
+          await rollbackFailedNewRows(nietGelukt.map((item) => item.rowId));
+
+          const namen = nietGelukt.map((item) => item.file?.name).filter(Boolean).join(", ");
+          throw new Error(
+            nietGelukt.length === 1
+              ? `Uploaden van ${namen || "het bestand"} is mislukt; de lege documentregel is weer verwijderd.`
+              : `Uploaden van ${nietGelukt.length} bestanden is mislukt (${namen}); de lege documentregels zijn weer verwijderd.`
+          );
         }
 
         if (uploadedPersistedIds.length > 0) {
@@ -1317,33 +1400,9 @@ const DocumentsTab = forwardRef(function DocumentsTab(
     }
   }
 
-  function findPersistedMatch(typeKey, localRow, refreshedRowsForType, usedIds = new Set()) {
-    const candidates = (refreshedRowsForType || []).filter((r) => {
-      if (!r?.document_id) return false;
-      if (usedIds.has(String(r.document_id))) return false;
-      if (String(r.document_type_key || "") !== String(typeKey || "")) return false;
-      if (String(r.relation_type || "").toUpperCase() === "BIJLAGE") return false;
-
-      return (
-        String(r.title || "") === String(localRow.title || "") &&
-        String(r.note || "") === String(localRow.note || "") &&
-        String(r.document_number || "") === String(localRow.document_number || "") &&
-        String(isoDate(r.document_date) || "") === String(isoDate(localRow.document_date) || "") &&
-        String(r.revision || "") === String(localRow.revision || "") &&
-        Boolean(r.is_signed) === Boolean(localRow.is_signed) &&
-        Boolean(r.document_is_active) === Boolean(localRow.document_is_active)
-      );
-    });
-
-    candidates.sort((a, b) => {
-      const da = a.created_at ? new Date(a.created_at).getTime() : 0;
-      const db = b.created_at ? new Date(b.created_at).getTime() : 0;
-      return db - da;
-    });
-
-    return candidates[0] || null;
-  }
-
+  /* Levert de sleutel waaronder de regel in de database staat; een nog niet opgeslagen of
+     gewijzigde regel wordt eerst weggeschreven. De sleutel is bekend voordat er iets naar de
+     server gaat, dus er valt na afloop niets terug te zoeken. */
   async function ensurePersistedRow(typeKey, row) {
     const rowId = String(row?.document_id || "");
     const isNew = rowId.startsWith("new:");
@@ -1351,23 +1410,10 @@ const DocumentsTab = forwardRef(function DocumentsTab(
 
     if (!isNew && !isDirty) return rowId;
 
-    const localSnapshot = {
-      ...row,
-      document_date: row.document_date || null,
-    };
-
     const ok = await save();
     if (!ok) return null;
 
-    const fresh = await getDocuments(code);
-    const freshRowsByType = buildRowsByTypeFromDocs(documentTypes, fresh).rowsByType;
-    const match = findPersistedMatch(typeKey, localSnapshot, freshRowsByType[typeKey] || []);
-
-    if (!match?.document_id) {
-      throw new Error("opgeslagen documentregel niet teruggevonden");
-    }
-
-    return String(match.document_id);
+    return persistedIdFor(rowId);
   }
 
   async function getDocumentUrl(row) {
@@ -1485,22 +1531,29 @@ const DocumentsTab = forwardRef(function DocumentsTab(
         return;
       }
 
-      const fresh = await getDocuments(code);
-      const freshRowsByType = buildRowsByTypeFromDocs(documentTypes, fresh).rowsByType;
-      const usedIds = new Set();
       let firstPersistedId = null;
+      const nietGelukt = [];
 
       for (const item of localSnapshots) {
-        const match = findPersistedMatch(typeKey, item.row, freshRowsByType[typeKey] || [], usedIds);
+        const persistedId = persistedIdFor(item.row.document_id);
 
-        if (!match?.document_id) {
-          throw new Error(`documentregel niet teruggevonden voor bestand ${item.file?.name || ""}`);
+        try {
+          await uploadInstallationDocumentFile(code, persistedId, item.file);
+          if (!firstPersistedId) firstPersistedId = persistedId;
+        } catch (uploadError) {
+          nietGelukt.push({ rowId: item.row.document_id, file: item.file, error: uploadError });
         }
+      }
 
-        usedIds.add(String(match.document_id));
-        if (!firstPersistedId) firstPersistedId = String(match.document_id);
+      if (nietGelukt.length) {
+        await rollbackFailedNewRows(nietGelukt.map((item) => item.rowId));
 
-        await uploadInstallationDocumentFile(code, String(match.document_id), item.file);
+        const namen = nietGelukt.map((item) => item.file?.name).filter(Boolean).join(", ");
+        throw new Error(
+          nietGelukt.length === 1
+            ? `Uploaden van ${namen || "het bestand"} is mislukt; de lege documentregel is weer verwijderd.`
+            : `Uploaden van ${nietGelukt.length} bestanden is mislukt (${namen}); de lege documentregels zijn weer verwijderd.`
+        );
       }
 
       setPendingFilesByRowId((m) => {
@@ -1773,20 +1826,38 @@ const DocumentsTab = forwardRef(function DocumentsTab(
     };
   }
 
+  const zoekterm = documentSearch.trim().toLowerCase();
+
   const visibleGrouped = useMemo(() => {
-    if (viewFilter !== "missing_required") return grouped;
+    const past = (dt) => {
+      if (String(dt.document_type_name || "").toLowerCase().includes(zoekterm)) return true;
+
+      return (rowsByType[dt.document_type_key] || []).some((row) =>
+        [row.title, row.document_number, row.revision, row.file_name, row.note]
+          .filter(Boolean)
+          .some((veld) => String(veld).toLowerCase().includes(zoekterm))
+      );
+    };
+
+    const gefilterd = !zoekterm
+      ? grouped
+      : grouped
+          .map((group) => ({ ...group, types: group.types.filter(past) }))
+          .filter((group) => group.types.length > 0);
+
+    if (viewFilter !== "missing_required") return gefilterd;
 
     const missingKeys = new Set(
       requirementState.missingRequiredItems.map((item) => item.document_type_key)
     );
 
-    return grouped
+    return gefilterd
       .map((group) => ({
         ...group,
         types: group.types.filter((type) => missingKeys.has(type.document_type_key)),
       }))
       .filter((group) => group.types.length > 0);
-  }, [grouped, requirementState, viewFilter]);
+  }, [grouped, requirementState, viewFilter, zoekterm, rowsByType]);
 
   function renderDocumentCard(typeKey, row, options = {}) {
     const compact = options.compact === true;
@@ -2138,7 +2209,7 @@ const DocumentsTab = forwardRef(function DocumentsTab(
 
                   <ClickableDropBar
                     compact
-                    title={canUpload ? "Opslaan en uploaden" : "Sleep bestand hierheen of klik om te bladeren"}
+                    title={canUpload ? "Nog een bestand toevoegen" : "Sleep bestand hierheen of klik om te bladeren"}
                     subtitle={
                       canUpload
                         ? `Wordt geüpload bij opslaan; ${pendingFile?.name || ""}`
@@ -2504,6 +2575,31 @@ const DocumentsTab = forwardRef(function DocumentsTab(
         </div>
       )}
 
+      <div className="doc-search">
+        <input
+          className="input doc-search__input"
+          type="search"
+          value={documentSearch}
+          onChange={(e) => setDocumentSearch(e.target.value)}
+          placeholder="Zoek in documenten; type, titel, nummer, revisie of bestandsnaam"
+          aria-label="Zoek in documenten"
+        />
+        {zoekterm ? (
+          <button type="button" className="btn btn-secondary" onClick={() => setDocumentSearch("")}>
+            Wissen
+          </button>
+        ) : null}
+      </div>
+
+      {zoekterm && visibleGrouped.length === 0 ? (
+        <div className="card doc-help-card">
+          <div className="doc-help-card__title">Niets gevonden</div>
+          <div className="muted doc-help-card__text">
+            Geen documenttype of document dat past bij "{documentSearch.trim()}".
+          </div>
+        </div>
+      ) : null}
+
       {visibleGrouped.length === 0 && viewFilter === "missing_required" ? (
         <div className="card doc-help-card">
           <div className="doc-help-card__title">Geen ontbrekende verplichte documenten</div>
@@ -2514,7 +2610,7 @@ const DocumentsTab = forwardRef(function DocumentsTab(
       ) : null}
 
       {visibleGrouped.map((g) => {
-        const isOpen = Boolean(sectionOpenMap[g.section_key]);
+        const isOpen = zoekterm ? true : Boolean(sectionOpenMap[g.section_key]);
         const sectionIsDragOver = dragOverSectionKey === g.section_key;
         const sectionQueuedFiles = sectionDropQueue[g.section_key] || [];
 
@@ -2701,7 +2797,13 @@ const DocumentsTab = forwardRef(function DocumentsTab(
                               requirement?.is_missing_required ? (
                                 <StatusChip tone="danger">Verplicht ontbreekt</StatusChip>
                               ) : (
-                                <StatusChip tone="success">Verplicht aanwezig</StatusChip>
+                                <span
+                                  className="doc-type-head__required-ok"
+                                  title="Verplicht document aanwezig"
+                                  aria-label="Verplicht document aanwezig"
+                                >
+                                  <CheckCheckIcon size={15} />
+                                </span>
                               )
                             ) : null}
                             {queuedCount > 0 ? <StatusChip tone="warning">{queuedCount} in wachtrij</StatusChip> : null}

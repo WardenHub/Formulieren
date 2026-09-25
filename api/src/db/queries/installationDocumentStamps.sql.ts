@@ -106,7 +106,9 @@ insert into dbo.InstallationDocumentStamp (
   stamped_by_user_object_id,
   stamped_by_display_name_snapshot,
   stamped_by_job_title_snapshot,
-  created_by
+  created_by,
+  self_approval_override,
+  self_approval_reason
 )
 values (
   @documentStampId,
@@ -121,7 +123,9 @@ values (
   @actorUserObjectId,
   @actorDisplayName,
   @actorJobTitle,
-  @actor
+  @actor,
+  @selfApprovalOverride,
+  @selfApprovalReason
 );
 
 commit transaction;

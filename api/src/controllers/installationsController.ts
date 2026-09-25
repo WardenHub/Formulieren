@@ -456,6 +456,67 @@ export async function putDocuments(req: any, res: any) {
   }
 }
 
+export async function deleteEmptyDocument(req: any, res: any) {
+  try {
+    const code = String(req.params.code || "");
+    const documentId = String(req.params.documentId || "");
+
+    const result = await service.deleteEmptyInstallationDocument(code, documentId, req.user);
+    return res.json(result);
+  } catch (err: any) {
+    const msg = (err?.message || String(err)).toLowerCase();
+
+    if (isHistoricalReadOnlyMessage(msg)) {
+      return res.status(409).json({ error: "historical installation read-only" });
+    }
+    if (msg.includes("document not found")) {
+      return res.status(404).json({ error: "document not found" });
+    }
+    if (msg.includes("document has a file")) {
+      return res.status(409).json({ error: "document has a file" });
+    }
+    if (msg.includes("document is in use")) {
+      return res.status(409).json({ error: "document is in use" });
+    }
+
+    console.error(err);
+    return res.status(500).json({ error: "deleteEmptyDocument failed" });
+  }
+}
+
+/* Een foto of bestand bij een opvolgpunt, zonder tussenkomst van een formulier. Bedoeld voor
+   de tekeningentab, waar je een markering ziet maar geen formulier hebt om iets aan te hangen. */
+export async function uploadFollowUpEvidenceFile(req: any, res: any) {
+  try {
+    const code = String(req.params.code || "");
+    const followUpActionId = String(req.params.followUpActionId || "");
+
+    const result = await documentFilesService.uploadFollowUpEvidence(
+      code,
+      followUpActionId,
+      req.file,
+      req.user
+    );
+
+    return res.json(result);
+  } catch (err: any) {
+    const msg = (err?.message || String(err)).toLowerCase();
+
+    if (isHistoricalReadOnlyMessage(msg)) {
+      return res.status(409).json({ error: "historical installation read-only" });
+    }
+    if (msg.includes("missing file")) {
+      return res.status(400).json({ error: "geen bestand ontvangen" });
+    }
+    if (msg.includes("follow-up action not found")) {
+      return res.status(404).json({ error: "opvolgpunt niet gevonden bij deze installatie" });
+    }
+
+    console.error(err);
+    return res.status(500).json({ error: "uploadFollowUpEvidenceFile failed" });
+  }
+}
+
 export async function uploadDocumentFile(req: any, res: any) {
   try {
     const code = String(req.params.code || "");
@@ -503,7 +564,18 @@ export async function postDocumentStamp(req: any, res: any) {
       return res.status(409).json({ error: "De database-uitbreiding voor documentstempels is nog niet uitgevoerd." });
     }
     if (clean.includes("original uploader cannot approve")) {
-      return res.status(409).json({ error: "De oorspronkelijke uploader mag dit document niet zelf als gecontroleerd markeren." });
+      /* Het scherm gebruikt deze code om de uitzondering aan te bieden; de tekst alleen is niet
+         genoeg om op te sturen, want die verandert nog weleens. */
+      return res.status(409).json({
+        error: "Je hebt dit document zelf geupload; normaal tekent een ander het af.",
+        code: "self_approval_blocked",
+      });
+    }
+    if (clean.includes("self approval reason required")) {
+      return res.status(400).json({
+        error: "Geef kort aan waarom je je eigen upload aftekent; minstens tien tekens.",
+        code: "self_approval_reason_required",
+      });
     }
     if (clean.includes("original uploader unknown")) {
       return res.status(409).json({ error: "De oorspronkelijke uploader is niet betrouwbaar vast te stellen; Gecontroleerd kan daarom niet worden geplaatst." });

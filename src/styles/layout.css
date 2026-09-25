@@ -2279,6 +2279,17 @@ html[data-appearance="light"] .type-telefonie{
   gap: 4px;
 }
 
+/* Een verplicht documenttype dat compleet is, is de normale toestand; een klein groen vinkje
+   volstaat. Een volwaardig etiket trok de aandacht net zo hard als een ontbrekend document,
+   waardoor de pagina vol stond met meldingen over dingen die in orde waren. */
+.doc-type-head__required-ok{
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  color:#15803d;
+  flex:0 0 auto;
+}
+
 .doc-type-head__title-row{
   display: flex;
   gap: 8px;
@@ -9883,7 +9894,21 @@ html[data-appearance="dark"] .ember-radial-action-menu {
 .inspection-question__help{display:flex;align-items:center;gap:6px;margin:0;font-size:.8rem;color:var(--muted)}
 
 /* Documentstempels; dezelfde rustige dialooglaag als documentbewijs en ondertekening. */
-.document-stamp-overlay{z-index:1200;padding:clamp(12px,3vw,34px)}
+/* Het stempelvenster leende zijn opmaak van de FormRunner, met de klasse
+   form-evidence-overlay. Die staat in ember-form-runtime.css, en die stylesheet wordt alleen
+   door FormRunnerBase geimporteerd. Op de installatiepagina was er dus geen enkele regel voor
+   dit venster: geen vaste positie, geen achtergrond, geen centrering. Het viel daardoor gewoon
+   onderaan de documentenlijst in de normale tekststroom. Dezelfde oorzaak als bij het
+   ondertekenvenster; nu ook hier eigen klassen in een stylesheet die overal geladen wordt. */
+.document-stamp-overlay{
+  position:fixed;
+  inset:0;
+  z-index:1200;
+  display:grid;
+  place-items:center;
+  padding:clamp(12px,3vw,34px);
+  background:var(--backdrop-bg, rgba(15,23,42,.55));
+}
 .document-stamp-dialog{width:min(1240px,96vw);max-height:94vh;display:flex;flex-direction:column;overflow:hidden;border:1px solid var(--border);border-radius:var(--radius-lg);background:var(--surface);box-shadow:var(--shadow-panel)}
 .document-stamp-dialog__header,.document-stamp-dialog__footer{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px 18px;border-color:var(--border);background:var(--surface)}
 .document-stamp-dialog__header{border-bottom:1px solid var(--border)}
@@ -10218,4 +10243,123 @@ html[data-appearance="dark"] .ember-radial-action-menu {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* Zoeken in de documentcatalogus. De lijst met documenttypen is lang; zonder zoekveld moet je
+   alle secties openklappen om te zien of een document er al is. */
+.doc-search{
+  display:flex;
+  gap:10px;
+  align-items:center;
+  margin-bottom:12px;
+}
+
+.doc-search__input{
+  flex:1 1 auto;
+}
+
+/* Het vinkje "al ondertekend" bij het bulksgewijs toevoegen. */
+.doc-bulk-item__signed{
+  display:inline-flex;
+  align-items:center;
+  gap:6px;
+  white-space:nowrap;
+}
+
+/* Een markering met werk eraan. De knop om er nog een punt bij te maken stond even prominent
+   als de eerste keer, waardoor een tweede punt op dezelfde plek een kwestie van een klik was. */
+.drawing-pin-actions__count{
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  min-width:18px;
+  height:18px;
+  padding:0 5px;
+  border-radius:999px;
+  background:#15803d;
+  color:#fff;
+  font-size:11px;
+  font-weight:700;
+}
+
+.drawing-pin-actions__duplicate-open{
+  font-size:12px;
+  text-decoration:underline;
+}
+
+.drawing-pin-actions__duplicate-warning{
+  display:flex;
+  flex-direction:column;
+  gap:8px;
+}
+
+.drawing-pin-actions__duplicate-confirm{
+  display:flex;
+  align-items:center;
+  gap:8px;
+}
+
+.drawing-pin-actions__duplicate-buttons{
+  display:flex;
+  gap:8px;
+  flex-wrap:wrap;
+}
+
+/* Afgehandelde markeringen staan standaard uit het zicht; de tekening laat zien wat er nog
+   moet gebeuren. De schakelaar haalt ze terug wanneer iemand wil weten wat er ooit stond. */
+.drawing-pin-list__historical{
+  display:flex;
+  align-items:center;
+  gap:8px;
+  font-size:12px;
+  color:var(--muted, #6b7280);
+  margin:4px 0 8px;
+}
+
+/* Zelf aftekenen wat je zelf hebt geupload. Mag, maar niet zonder dat er iets bij staat; de
+   reden komt met de naam van de stempelaar op het stempel terecht. */
+.document-stamp-selfcheck{
+  display:flex;
+  flex-direction:column;
+  gap:8px;
+}
+
+.document-stamp-selfcheck__field{
+  display:flex;
+  flex-direction:column;
+  gap:4px;
+}
+
+.document-stamp-selfcheck__actions{
+  display:flex;
+  gap:8px;
+}
+
+/* Bewijs bij een markering. Bewijs hangt in Ember aan het opvolgpunt, niet aan de markering;
+   op de tekening zie je alleen de markering, dus stond je met je telefoon in de hand voor de
+   melder zonder ergens de foto kwijt te kunnen. Heeft de markering nog geen punt, dan ontstaat
+   dat hier in dezelfde handeling. */
+.drawing-pin-actions__evidence{
+  display:flex;
+  gap:8px;
+  flex-wrap:wrap;
+}
+
+.drawing-pin-actions__camera{
+  display:flex;
+  flex-direction:column;
+  gap:8px;
+}
+
+.drawing-pin-actions__camera video{
+  width:100%;
+  max-height:240px;
+  background:#000;
+  border-radius:8px;
+  object-fit:contain;
+}
+
+.drawing-pin-actions__camera-buttons{
+  display:flex;
+  gap:8px;
 }

@@ -7,6 +7,13 @@ import { trapFocus } from "./focusTrap.js";
 import { CircleHelpIcon } from "@/components/ui/circle-help";
 import { MapPinPlusInsideIcon } from "@/components/ui/map-pin-plus-inside.jsx";
 import { CameraIcon } from "@/components/ui/camera.jsx";
+import {
+  openWebcamStream,
+  stopWebcamStream,
+  captureVideoFrameToFile,
+  webcamErrorText,
+  isProbablyMobileDevice,
+} from "./webcam.js";
 import { AttachFileIcon } from "@/components/ui/attach-file.jsx";
 import { FileStackIcon } from "@/components/ui/file-stack.jsx";
 
@@ -72,6 +79,7 @@ export default function FollowUpPointsSheet({
   onLinkDocuments,
   onViewPin,
   onOpenAttachment,
+  onOpenSourceQuestion,
   actionBusy = false,
   onBusyChange,
   // "inline" rendert dezelfde inhoud zonder eigen paneel, voor gebruik in een dialoog.
@@ -129,6 +137,7 @@ export default function FollowUpPointsSheet({
             point={point}
             installationCode={installationCode}
             canSetLocation={canSetLocation && (!currentFormInstanceId || String(point.form_instance_id) === String(currentFormInstanceId))}
+            onOpenSourceQuestion={onOpenSourceQuestion}
             onSetLocation={onSetLocation}
             onAttachFile={!currentFormInstanceId || String(point.form_instance_id) === String(currentFormInstanceId) ? onAttachFile : undefined}
             documents={documents}
@@ -296,6 +305,7 @@ function PointCard({
   onLinkDocuments,
   onViewPin,
   onOpenAttachment,
+  onOpenSourceQuestion,
   disabled = false,
   inherited = false,
   onBusyChange,
@@ -305,7 +315,14 @@ function PointCard({
   const [attachError, setAttachError] = useState("");
   const fotoRef = useRef(null);
   const bestandRef = useRef(null);
+  const videoRef = useRef(null);
   const [documentIds, setDocumentIds] = useState([]);
+  // Foto en Bestanden deden op een laptop hetzelfde: beide openden de bestandskiezer, want
+  // capture="environment" wordt daar genegeerd. Op een laptop gaat de knop nu de camera in.
+  const [cameraStream, setCameraStream] = useState(null);
+  const [cameraFout, setCameraFout] = useState("");
+
+  useEffect(() => () => stopWebcamStream(cameraStream), [cameraStream]);
 
   async function perform(action) {
     if (busy || disabled) return;
@@ -319,6 +336,47 @@ function PointCard({
     } finally {
       setBusy(false);
       onBusyChange?.(false);
+    }
+  }
+
+  async function openCamera() {
+    if (busy || disabled) return;
+
+    // Een telefoon doet het met zijn eigen camera-app; die levert een betere foto dan een
+    // videoframe en scheelt een scherm.
+    if (isProbablyMobileDevice()) {
+      fotoRef.current?.click();
+      return;
+    }
+
+    setCameraFout("");
+
+    try {
+      const stream = await openWebcamStream();
+      setCameraStream(stream);
+    } catch (e) {
+      setCameraFout(webcamErrorText(e));
+    }
+  }
+
+  function sluitCamera() {
+    stopWebcamStream(cameraStream);
+    setCameraStream(null);
+  }
+
+  async function maakFoto() {
+    try {
+      const file = await captureVideoFrameToFile(videoRef.current);
+      sluitCamera();
+
+      await perform(async () => {
+        const heeftPrimair = (Array.isArray(point?.attachments) ? point.attachments : []).some(
+          (item) => item.is_primary
+        );
+        await onAttachFile?.(point, file, { isPrimary: !heeftPrimair });
+      });
+    } catch (e) {
+      setCameraFout(String(e?.message || e || "Foto maken mislukt."));
     }
   }
 
@@ -375,6 +433,17 @@ function PointCard({
         <div className="ember-point__description">{point.workflow_description}</div>
       ) : null}
 
+      {!inherited && onOpenSourceQuestion && point?.source_question_name ? (
+        <button
+          type="button"
+          className="btn-ghost ember-point__source-link"
+          onClick={() => onOpenSourceQuestion(point)}
+          title="De toelichting komt uit het antwoord op deze vraag; pas hem daar aan"
+        >
+          Naar de vraag in het formulier
+        </button>
+      ) : null}
+
       {missing.length > 0 && !dimmed ? (
         <div className="ember-point__missing">
           <CircleHelpIcon size={14} />
@@ -419,10 +488,10 @@ function PointCard({
 
       {!dimmed && (onSetLocation || onAttachFile) ? (
         <div className="ember-point__actions">
-          {canSetLocation ? (
+          {canSetLocation && pins.length === 0 ? (
             <PointActionButton
               Icon={MapPinPlusInsideIcon}
-              label={pins.length > 0 ? "Pin toevoegen" : "Pin plaatsen"}
+              label="Pin plaatsen"
               disabled={busy || disabled}
               onClick={() => perform(() => onSetLocation?.(point))}
             />
@@ -434,7 +503,7 @@ function PointCard({
                 Icon={CameraIcon}
                 label={busy ? "Bezig..." : "Foto"}
                 disabled={busy || disabled}
-                onClick={() => fotoRef.current?.click()}
+                onClick={openCamera}
               />
               <PointActionButton
                 Icon={AttachFileIcon}
@@ -456,6 +525,33 @@ function PointCard({
           ) : null}
         </div>
       ) : null}
+
+      {cameraStream ? (
+        <div className="ember-point__camera">
+          <video
+            ref={(el) => {
+              videoRef.current = el;
+              if (el && el.srcObject !== cameraStream) {
+                el.srcObject = cameraStream;
+                el.play?.().catch(() => {});
+              }
+            }}
+            className="ember-point__camera-view"
+            playsInline
+            muted
+          />
+          <div className="ember-point__camera-actions">
+            <button type="button" className="btn btn-primary" disabled={busy} onClick={maakFoto}>
+              Foto maken
+            </button>
+            <button type="button" className="btn btn-secondary" disabled={busy} onClick={sluitCamera}>
+              Sluiten
+            </button>
+          </div>
+        </div>
+      ) : null}
+
+      {cameraFout ? <div className="ember-alert ember-alert--warning">{cameraFout}</div> : null}
 
       {attachments.length ? <div className="ember-point__attachments" aria-label="Gekoppelde bestanden">
         <strong>{attachments.length} gekoppeld(e) bestand(en)</strong>

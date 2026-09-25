@@ -18,6 +18,7 @@ import {
 
 import {
   getInstallationDocumentsReadSql,
+  deleteEmptyInstallationDocumentSql,
   upsertInstallationDocumentsMetadataSql,
 } from "../db/queries/installationDocuments.sql.js";
 
@@ -1298,6 +1299,26 @@ export async function upsertInstallationDocuments(code: string, documents: any[]
   });
 
   return { ok: true, result };
+}
+
+/* Verwijdert een documentregel die nooit een bestand heeft gekregen.
+
+   Bedoeld om een mislukte upload terug te draaien. De regel wordt aangemaakt voordat het
+   bestand wordt verstuurd; ging dat versturen mis, dan bleef er een document "zonder bestand"
+   achter en dat stapelt zich op zodra iemand het nog een keer probeert. Archiveren helpt niet,
+   want dan verhuist de rommel alleen naar het archief.
+
+   De query weigert alles wat geen mislukte poging is: een regel met een bestand, of een regel
+   waar iets aan hangt. */
+export async function deleteEmptyInstallationDocument(code: string, documentId: string, user: any) {
+  await assertInstallationWritable(code);
+
+  const rows = await sqlQuery(deleteEmptyInstallationDocumentSql, {
+    code: String(code || ""),
+    documentId: String(documentId || ""),
+  });
+
+  return { ok: true, deleted_rows: Number(rows?.[0]?.deleted_rows ?? 0) };
 }
 
 export async function getInstallationTypes() {

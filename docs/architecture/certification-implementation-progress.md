@@ -157,6 +157,14 @@ Normale installatiekaart: certificaattypefilter toegevoegd aan Meer filters, doo
 
 ## Hervatting 21 september 2026
 
+### Inspectiemonitor: planning en compacte kaart
+
+- Archiefcheckbox vervangen door bestaande ember-toggle met toegankelijke switchstatus. Weergavekeuze gebruikt bestaande ember-segmented.
+- Standaard inspectieplanning komende 90 dagen; datum verstreken, zonder datum en alles apart selecteerbaar. Server filtert voor windowtotalen en TOP en sorteert op geplande datum, anders uiterste datum. Reeds uitgevoerde/beoordeelde dossiers vallen niet onder komende inspecties. Bestaande grain blijft een actief dossier per installatie; geen volledige lijst van parallelle dossiers.
+- Kaart toont alle periodes met dezelfde overige filters; expliciet benoemd. KPI-blokken alleen op lijst, extra filters ingeklapt. Zo komt de kaart hoger te staan zonder bestaande filtermogelijkheden te verwijderen.
+- Relatiecode en objectcode toegevoegd aan API/lijst. Relatiecode volgt dezelfde rolkeuze als de relatienaam. Inspectiedatum duidelijk bij installatie, met onderscheid gepland versus uiterste datum.
+- Typecheck, gerichte lint en bestaande contracttests groen; aanvullende querycontracttest toegevoegd. Visuele browseracceptatie nog open: localhost:5173 gaf ERR_CONNECTION_REFUSED. Niets gepubliceerd of in de database geschreven.
+
 ### Onderhoudsdocument vergelijken op datum
 
 - Product owner bevestigt: uitsluitend status Definitief. In de bestaande monitor is dit AFGEHANDELD; SQL-filter behouden en defensieve statuscontrole in onderhoudsselectie toegevoegd. De eerdere vraag over ingediende formulieren is hiermee gesloten.

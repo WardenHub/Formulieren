@@ -62,6 +62,8 @@ export default function ActionPointCard({
   onOpenDrawing,
   onSetLocation,
   onOpenPhoto,
+  onDelete,
+  canDelete = false,
 }) {
   const loadPhotoUrl = useCallback(
     (storedFileId) =>
@@ -270,6 +272,21 @@ export default function ActionPointCard({
         </div>
 
         <div className="action-point-card__actions-right">
+          {canDelete ? (
+            <button
+              type="button"
+              className="btn btn-compact btn-danger"
+              disabled={readOnly || busy}
+              title="Dit opvolgpunt verwijderen"
+              onClick={() => {
+                if (!window.confirm("Dit opvolgpunt verwijderen? Dat kan niet worden teruggedraaid.")) return;
+                onDelete?.(item);
+              }}
+            >
+              Verwijderen
+            </button>
+          ) : null}
+
           <label className="action-point-card__status">
             <span className="sr-only">Status van dit actiepunt</span>
             <select

@@ -28,7 +28,9 @@ import {
   postInstallationNoteReaction,
   deleteInstallationNote,
   putDocuments,
+  deleteEmptyDocument,
   uploadDocumentFile,
+  uploadFollowUpEvidenceFile,
   getDocumentDownloadUrl,
   downloadDocumentFile,
   createDocumentReplacement,
@@ -221,6 +223,12 @@ router.get(
   requireRole(...documentRoles),
   getInstallationFollowUpAttachmentDownloadUrl
 );
+router.post(
+  "/:code/follow-ups/:followUpActionId/attachments",
+  requireRole(...documentRoles),
+  upload.single("file"),
+  uploadFollowUpEvidenceFile
+);
 router.put("/:code/custom-values", requireRole("admin", "gebruiker"), putCustomValues);
 
 router.get("/:code/documents", requireRole(...documentRoles), getDocuments);
@@ -232,6 +240,11 @@ router.post("/:code/logbook/synchronize", requireRole(...documentRoles), synchro
 router.post("/:code/logbook/syncs/:syncId/undo", requireRole(...documentRoles), undoInstallationLogbookSync);
 router.post("/:code/logbook/documents/:documentId/reimport", requireRole(...documentRoles), reimportInstallationLogbookDocument);
 router.put("/:code/documents", requireRole(...documentRoles), putDocuments);
+router.delete(
+  "/:code/documents/:documentId/empty",
+  requireRole(...documentRoles),
+  deleteEmptyDocument
+);
 router.post(
   "/:code/documents/:documentId/upload",
   requireRole(...documentRoles),

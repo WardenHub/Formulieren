@@ -450,6 +450,50 @@ export async function postFormsMonitorManualFollowUp(req: any, res: Response) {
   }
 }
 
+/* Een opvolgpunt weghalen. De regels staan in de service en de query; hier vertalen we alleen
+   de weigeringen naar iets dat een mens leest. */
+export async function deleteFormsMonitorFollowUp(req: any, res: Response) {
+  try {
+    const followUpActionId = String(req.params.followUpActionId || "");
+
+    const data = await service.deleteFollowUpAction(followUpActionId, {
+      user: req.user,
+      roles: req.roles || [],
+    });
+
+    return res.json(data);
+  } catch (err: any) {
+    const msg = (err?.message || String(err)).toLowerCase();
+
+    if (msg.includes("not found")) {
+      return res.status(404).json({ error: "opvolgpunt niet gevonden" });
+    }
+    if (msg.includes("already resolved")) {
+      return res.status(409).json({
+        error: "Dit punt is al afgehandeld; een afgehandeld punt blijft staan als verantwoording.",
+      });
+    }
+    if (msg.includes("belongs to an inspection case")) {
+      return res.status(409).json({
+        error: "Aan dit punt hangt een inspectiedossier; het kan daarom niet worden verwijderd.",
+      });
+    }
+    if (msg.includes("belongs to someone else")) {
+      return res.status(403).json({
+        error: "Je kunt alleen je eigen opvolgpunten verwijderen; vraag een beheerder.",
+      });
+    }
+    if (msg.includes("too old to delete")) {
+      return res.status(403).json({
+        error: "Dit punt staat er te lang; verwijderen kan alleen kort na het aanmaken. Vraag een beheerder.",
+      });
+    }
+
+    console.error(err);
+    return res.status(500).json({ error: "deleteFormsMonitorFollowUp failed" });
+  }
+}
+
 export async function putFormsMonitorFollowUpNote(req: any, res: Response) {
   try {
     const followUpActionId = String(req.params.followUpActionId || "");

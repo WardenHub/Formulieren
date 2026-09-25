@@ -2458,3 +2458,35 @@ html[data-appearance="dark"] .ember-runtime-select option {
 .ember-points-sheet select, .ember-points-inline select { background-color: var(--surface-2); color: var(--text); }
 .ember-points-sheet select option, .ember-points-inline select option { background-color: var(--surface); color: var(--text); }
 .ember-points-sheet .ember-point, .ember-points-inline .ember-point { background: var(--surface-2); }
+
+/* Camerabeeld bij een opvolgpunt. Op een laptop negeert de browser capture="environment", dus
+   daar opent de fotoknop de webcam in plaats van de bestandskiezer. */
+.ember-point__camera{
+  display:flex;
+  flex-direction:column;
+  gap:8px;
+  margin-top:10px;
+}
+
+.ember-point__camera-view{
+  width:100%;
+  max-height:320px;
+  background:#000;
+  border-radius:8px;
+  object-fit:contain;
+}
+
+.ember-point__camera-actions{
+  display:flex;
+  gap:8px;
+  flex-wrap:wrap;
+}
+
+/* De toelichting van een punt komt uit het antwoord op een vraag; de synchronisatie schrijft
+   hem bij elke opslag opnieuw. Aanpassen doe je dus bij de vraag, niet hier. */
+.ember-point__source-link{
+  align-self:flex-start;
+  font-size:12px;
+  text-decoration:underline;
+  padding:0;
+}

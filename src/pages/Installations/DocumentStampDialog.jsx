@@ -56,6 +56,10 @@ export default function DocumentStampDialog({ code, documentId, documentTitle, o
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  // Wie zijn eigen upload aftekent krijgt niet zomaar een foutmelding onderin; hij krijgt te
+  // zien waarom het opvalt en kan er met een reden overheen. Die reden komt op het stempel.
+  const [zelfAftekenen, setZelfAftekenen] = useState(false);
+  const [zelfReden, setZelfReden] = useState("");
 
   const stampLabel = useMemo(
     () => STAMPS.find(([value]) => value === stampType)?.[1] || "",
@@ -148,8 +152,14 @@ export default function DocumentStampDialog({ code, documentId, documentTitle, o
 
   async function saveStamp() {
     if (!stampType || !position) return;
+    if (zelfAftekenen && zelfReden.trim().length < 10) {
+      setError("Geef kort aan waarom je je eigen upload aftekent; minstens tien tekens.");
+      return;
+    }
+
     setSaving(true);
     setError("");
+
     try {
       await addInstallationDocumentStamp(code, documentId, {
         stamp_type: stampType,
@@ -157,18 +167,28 @@ export default function DocumentStampDialog({ code, documentId, documentTitle, o
         x_normalized: position.x,
         y_normalized: position.y,
         width_normalized: STAMP_WIDTH_NORMALIZED,
+        ...(zelfAftekenen
+          ? { self_approval_override: true, self_approval_reason: zelfReden.trim() }
+          : {}),
       });
       await onChanged?.();
       onClose?.();
     } catch (requestError) {
-      setError(errorText(requestError));
+      // De server zegt met een code dat dit het vierogenpunt is; dan bieden we de uitzondering
+      // aan in plaats van alleen te melden dat het niet mag.
+      if (requestError?.payload?.code === "self_approval_blocked") {
+        setZelfAftekenen(true);
+        setError("");
+      } else {
+        setError(errorText(requestError));
+      }
     } finally {
       setSaving(false);
     }
   }
 
   return (
-    <div className="form-evidence-overlay document-stamp-overlay" role="dialog" aria-modal="true" aria-label="Document stempelen">
+    <div className="document-stamp-overlay" role="dialog" aria-modal="true" aria-label="Document stempelen">
       <div className="document-stamp-dialog">
         <header className="document-stamp-dialog__header">
           <div>
@@ -212,6 +232,42 @@ export default function DocumentStampDialog({ code, documentId, documentTitle, o
             {loading ? (
               <div className="document-stamp-loading" role="status"><LoaderPinwheelIcon size={30} active /><span>PDF wordt voorbereid...</span></div>
             ) : null}
+            {zelfAftekenen ? (
+              <div className="ember-alert ember-alert--warning document-stamp-selfcheck">
+                <strong>Je hebt dit document zelf geüpload.</strong>
+                <span>
+                  Gecontroleerd betekent normaal dat iemand anders ernaar heeft gekeken. Upload je
+                  voor een collega, dan mag je zelf aftekenen; het komt dan met je naam en deze
+                  reden op het stempel te staan.
+                </span>
+
+                <label className="document-stamp-selfcheck__field">
+                  <span>Waarom teken je je eigen upload af?</span>
+                  <textarea
+                    className="input"
+                    rows={2}
+                    value={zelfReden}
+                    onChange={(event) => setZelfReden(event.target.value)}
+                    placeholder="Bijvoorbeeld: geüpload namens Nancy, zij heeft het document gecontroleerd"
+                  />
+                </label>
+
+                <div className="document-stamp-selfcheck__actions">
+                  <button
+                    type="button"
+                    className="btn btn-secondary"
+                    disabled={saving}
+                    onClick={() => {
+                      setZelfAftekenen(false);
+                      setZelfReden("");
+                    }}
+                  >
+                    Toch niet
+                  </button>
+                </div>
+              </div>
+            ) : null}
+
             {error ? <div className="ember-alert ember-alert--warning">{error}</div> : null}
             {!loading && pdfDocument ? (
               <div className={`document-stamp-page${stampType ? " is-placing" : ""}`} style={{ width: pageSize.width || "auto", height: pageSize.height || "auto" }} onClick={choosePosition}>
@@ -234,8 +290,17 @@ export default function DocumentStampDialog({ code, documentId, documentTitle, o
 
         <footer className="document-stamp-dialog__footer">
           <button type="button" className="btn btn-secondary" onClick={onClose} disabled={saving}>Annuleren</button>
-          <button type="button" className="btn btn-primary" onClick={saveStamp} disabled={saving || !stampType || !position}>
-            {saving ? "Stempel verwerken..." : "Stempel definitief plaatsen"}
+          <button
+            type="button"
+            className={zelfAftekenen ? "btn btn-danger" : "btn btn-primary"}
+            onClick={saveStamp}
+            disabled={saving || !stampType || !position || (zelfAftekenen && zelfReden.trim().length < 10)}
+          >
+            {saving
+              ? "Stempel verwerken..."
+              : zelfAftekenen
+                ? "Eigen upload aftekenen en vastleggen"
+                : "Stempel definitief plaatsen"}
           </button>
         </footer>
       </div>

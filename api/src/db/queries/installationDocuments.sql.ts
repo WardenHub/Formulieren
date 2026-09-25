@@ -817,3 +817,50 @@ left join dbo.StoredFile sf
 where d.atrium_installation_code = @code
   and d.document_id = @documentId;
 `;
+
+export const deleteEmptyInstallationDocumentSql = `
+-- expects: @code, @documentId
+
+set nocount on;
+
+declare @stored_file_id uniqueidentifier;
+declare @exists bit = 0;
+
+select
+  @exists = 1,
+  @stored_file_id = d.stored_file_id
+from dbo.InstallationDocument d
+where d.document_id = @documentId
+  and d.atrium_installation_code = @code;
+
+if @exists = 0
+begin
+  throw 50000, 'document not found', 1;
+end;
+
+-- Alleen een regel die nooit een bestand heeft gehad mag weg. Zodra er een bestand aan hangt
+-- is het een document en geen mislukte poging meer.
+if @stored_file_id is not null
+begin
+  throw 50000, 'document has a file', 1;
+end;
+
+-- En alleen wanneer er niets aan hangt. Een pas aangemaakte regel heeft niets, dus dit raakt
+-- de terugdraaiactie niet; het houdt de route wel veilig voor al het andere.
+if exists (select 1 from dbo.InstallationDocument where parent_document_id = @documentId)
+  or exists (select 1 from dbo.InstallationDocumentStamp where installation_document_id = @documentId)
+  or exists (select 1 from dbo.DocumentSignatureRequest where document_id = @documentId)
+  or exists (select 1 from dbo.DrawingPin where installation_document_id = @documentId)
+  or exists (select 1 from dbo.InstallationLogbookDocument where installation_document_id = @documentId)
+  or exists (select 1 from dbo.InstallationCertificate where installation_document_id = @documentId)
+begin
+  throw 50000, 'document is in use', 1;
+end;
+
+delete from dbo.InstallationDocument
+where document_id = @documentId
+  and atrium_installation_code = @code
+  and stored_file_id is null;
+
+select @@rowcount as deleted_rows;
+`;

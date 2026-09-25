@@ -2,7 +2,9 @@ import { operationalCtes } from "./installationOperational.sql.js";
 
 export const listInspectionOverviewSql = `${operationalCtes}
 select top (@take)
-  o.atrium_installation_code,o.installation_name,o.object_name,o.formatted_address,o.latitude,o.longitude,o.installation_status,
+  o.atrium_installation_code,o.installation_name,o.object_name,o.object_code,o.formatted_address,o.latitude,o.longitude,o.installation_status,
+  case when o.gebruiker_naam is not null then o.gebruiker_code when o.eigenaar_naam is not null then o.eigenaar_code else o.debiteur_code end as relation_code,
+  coalesce(c.planned_date,c.due_date,o.inspection_due_date) as next_inspection_date,
   count_big(*) over() as total_count,
   sum(case when o.attention_status=N'CRITICAL' then 1 else 0 end) over() as critical_count,
   sum(case when selected_cert.certificate_status in(N'MISSING',N'EXPIRED') then 1 else 0 end) over() as certificate_problem_count,
@@ -42,7 +44,7 @@ outer apply (
   from dbo.InspectionCase ic
   join dbo.InspectionCaseStatusDefinition sd on sd.status_code=ic.status and sd.is_terminal=0
   where ic.atrium_installation_code=o.atrium_installation_code
-  order by case ic.status when N'REPAIR_REQUIRED' then 1 when N'REINSPECTION_REQUIRED' then 2 when N'ATTENTION_REQUIRED' then 3 else 10 end,coalesce(ic.due_date,convert(date,'99991231')),ic.created_at
+  order by coalesce(ic.planned_date,ic.due_date,convert(date,'99991231')),ic.created_at,ic.inspection_case_id
 ) c
 outer apply (
   select top 1 ic.certificate_number,ic.valid_until as certificate_valid_until
@@ -80,7 +82,13 @@ where (selected_cert.required_count>0 or selected_cert.certificate_status in(N'C
   and (@attentionFilter<>N'REPORT_MISSING' or c.status=N'EXECUTED_AWAITING_REPORT' and not exists(select 1 from dbo.InspectionCaseReport r where r.inspection_case_id=c.inspection_case_id and r.is_current=1))
   and (@attentionFilter<>N'REINSPECTION_REQUIRED' or c.reinspection_required=1)
   and (@attentionFilter<>N'OPEN_ACTIONS' or coalesce(act.open_action_count,0)>0)
-order by case o.attention_status when N'CRITICAL' then 0 when N'ATTENTION' then 1 else 2 end,coalesce(c.due_date,o.inspection_due_date,convert(date,'99991231')),o.object_name,o.atrium_installation_code;
+  and (@planningWindow=N'ALL'
+    or (@planningWindow=N'UNDATED' and coalesce(c.planned_date,c.due_date,o.inspection_due_date) is null)
+    or (@planningWindow=N'OVERDUE' and coalesce(c.planned_date,c.due_date,o.inspection_due_date)<convert(date,sysutcdatetime() at time zone 'UTC' at time zone 'W. Europe Standard Time'))
+    or (@planningWindow=N'NEXT90' and c.execution_date is null and (c.status is null or c.status in(N'ATTENTION_REQUIRED',N'OFFER_REQUIRED',N'ORDERED',N'PLANNING_REQUIRED',N'PLANNED_UNCONFIRMED',N'PLANNED_CONFIRMED'))
+      and coalesce(c.planned_date,c.due_date,o.inspection_due_date)>=convert(date,sysutcdatetime() at time zone 'UTC' at time zone 'W. Europe Standard Time')
+      and coalesce(c.planned_date,c.due_date,o.inspection_due_date)<dateadd(day,90,convert(date,sysutcdatetime() at time zone 'UTC' at time zone 'W. Europe Standard Time'))))
+order by coalesce(c.planned_date,c.due_date,o.inspection_due_date,convert(date,'99991231')),o.object_name,o.atrium_installation_code;
 `;
 
 export const listInspectionCasesSql = `
