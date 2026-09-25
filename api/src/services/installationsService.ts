@@ -1310,7 +1310,7 @@ export async function upsertInstallationDocuments(code: string, documents: any[]
 
    De query weigert alles wat geen mislukte poging is: een regel met een bestand, of een regel
    waar iets aan hangt. */
-export async function deleteEmptyInstallationDocument(code: string, documentId: string, user: any) {
+export async function deleteEmptyInstallationDocument(code: string, documentId: string, _user: any) {
   await assertInstallationWritable(code);
 
   const rows = await sqlQuery(deleteEmptyInstallationDocumentSql, {
