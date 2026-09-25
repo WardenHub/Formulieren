@@ -2606,9 +2606,15 @@ function renderActionPointsAppendix(model: any, options: { standalone?: boolean 
   for (const groep of groepen) for (const item of groep.items) nummering.set(item, ++teller);
   for (const item of informatief) nummering.set(item, ++teller);
 
-  const blokkerend = teDoen.filter((item: any) => blokkeert(item) === 0).length;
-  const voorKlant = groepen.find((groep) => groep.key === "KLANT")?.items.length ?? 0;
-  const voorOns = groepen.find((groep) => groep.key === "INTERN")?.items.length ?? 0;
+  /* De tabel toont ook afgehandelde punten, zodat zichtbaar is wat er gedaan is; de
+     samenvatting telt alleen wat nog openstaat. */
+  const isOpen = (item: any) => !["AFGEHANDELD", "VERVALLEN"].includes(normalizeToken(item?.status));
+  const open = teDoen.filter(isOpen);
+  const blokkerend = open.filter((item: any) => blokkeert(item) === 0).length;
+  const openVoor = (key: string) =>
+    open.filter((item: any) => (normalizeToken(item?.responsibility_type) || "ONBEPAALD") === key).length;
+  const voorKlant = openVoor("KLANT");
+  const voorOns = openVoor("INTERN");
 
   const kolommen = {
     plek: alle.some((item: any) => Boolean(actionPointLocation(item))),
@@ -2650,7 +2656,7 @@ function renderActionPointsAppendix(model: any, options: { standalone?: boolean 
         <dl class="appendix-summary__list">
           <div class="appendix-summary__row">
             <dt>Openstaande punten</dt>
-            <dd>${teDoen.length}</dd>
+            <dd>${open.length}</dd>
           </div>
           <div class="appendix-summary__row${blokkerend ? " is-alert" : ""}">
             <dt>Waarvan certificaatblokkerend</dt>
